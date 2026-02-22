@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pocket Synth — Aether's Friday Night Jam</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0d0d1a;
+  color: #e0e0e0;
+  font-family: 'Courier New', monospace;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  overflow: hidden;
+  user-select: none;
+}
+h1 { font-size: 1.2em; color: #7b68ee; margin-bottom: 4px; letter-spacing: 2px; }
+.sub { font-size: 0.7em; color: #555; margin-bottom: 20px; }
+#keyboard {
+  display: flex;
+  position: relative;
+  height: 200px;
+  margin-bottom: 24px;
+}
+.white-key {
+  width: 52px;
+  height: 200px;
+  background: linear-gradient(180deg, #f8f8f8 0%, #e8e8e8 100%);
+  border: 1px solid #999;
+  border-radius: 0 0 6px 6px;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+  transition: background 0.05s;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 10px;
+  font-size: 11px;
+  color: #999;
+}
+.white-key.active {
+  background: linear-gradient(180deg, #d0d0ff 0%, #b8b8ee 100%);
+}
+.black-key {
+  width: 32px;
+  height: 125px;
+  background: linear-gradient(180deg, #2a2a2a 0%, #111 100%);
+  border: 1px solid #000;
+  border-radius: 0 0 4px 4px;
+  cursor: pointer;
+  position: absolute;
+  z-index: 2;
+  transition: background 0.05s;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 8px;
+  font-size: 9px;
+  color: #555;
+}
+.black-key.active {
+  background: linear-gradient(180deg, #4a3a8a 0%, #2a1a5a 100%);
+}
+#controls {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+.control-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.control-group label { font-size: 0.65em; color: #666; text-transform: uppercase; letter-spacing: 1px; }
+select, input[type=range] { cursor: pointer; }
+select {
+  background: #1a1a2e;
+  color: #7b68ee;
+  border: 1px solid #333;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.8em;
+}
+input[type=range] {
+  -webkit-appearance: none;
+  width: 100px;
+  height: 4px;
+  background: #333;
+  border-radius: 2px;
+  outline: none;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #7b68ee;
+  border-radius: 50%;
+  cursor: pointer;
+}
+#viz {
+  width: 90vw;
+  max-width: 600px;
+  height: 80px;
+  border-radius: 8px;
+  background: #111;
+  margin-bottom: 12px;
+}
+.hint { font-size: 0.6em; color: #444; }
+</style>
+</head>
+<body>
+<h1>🎹 POCKET SYNTH</h1>
+<div class="sub">friday night jam session</div>
+<canvas id="viz"></canvas>
+<div id="keyboard"></div>
+<div id="controls">
+  <div class="control-group">
+    <label>Wave</label>
+    <select id="waveform">
+      <option value="sine">Sine</option>
+      <option value="triangle" selected>Triangle</option>
+      <option value="sawtooth">Sawtooth</option>
+      <option value="square">Square</option>
+    </select>
+  </div>
+  <div class="control-group">
+    <label>Attack</label>
+    <input type="range" id="attack" min="0.01" max="1" step="0.01" value="0.05">
+  </div>
+  <div class="control-group">
+    <label>Release</label>
+    <input type="range" id="release" min="0.05" max="2" step="0.05" value="0.3">
+  </div>
+  <div class="control-group">
+    <label>Reverb</label>
+    <input type="range" id="reverb" min="0" max="1" step="0.05" value="0.3">
+  </div>
+  <div class="control-group">
+    <label>Delay</label>
+    <input type="range" id="delay" min="0" max="0.8" step="0.05" value="0">
+  </div>
+  <div class="control-group">
+    <label>Octave</label>
+    <select id="octave">
+      <option value="3">3</option>
+      <option value="4" selected>4</option>
+      <option value="5">5</option>
+    </select>
+  </div>
+</div>
+<div class="hint">keyboard: A-L + W-P for two octaves · Z/X shift octave</div>
+
+<script>
+const notes = [
+  { note: 'C',  white: true },
+  { note: 'C#', white: false },
+  { note: 'D',  white: true },
+  { note: 'D#', white: false },
+  { note: 'E',  white: true },
+  { note: 'F',  white: true },
+  { note: 'F#', white: false },
+  { note: 'G',  white: true },
+  { note: 'G#', white: false },
+  { note: 'A',  white: true },
+  { note: 'A#', white: false },
+  { note: 'B',  white: true },
+  { note: 'C2', white: true },
+];
+
+const keyMap = {
+  'a': 0, 'w': 1, 's': 2, 'e': 3, 'd': 4,
+  'f': 5, 't': 6, 'g': 7, 'y': 8, 'h': 9,
+  'u': 10, 'j': 11, 'k': 12
+};
+
+const freqBase = {
+  'C': 261.63, 'C#': 277.18, 'D': 293.66, 'D#': 311.13,
+  'E': 329.63, 'F': 349.23, 'F#': 369.99, 'G': 392.00,
+  'G#': 415.30, 'A': 440.00, 'A#': 466.16, 'B': 493.88,
+  'C2': 523.25
+};
+
+let audioCtx, analyser, convolver, delayNode, delayGain, masterGain;
+let activeOscs = {};
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 256;
+
+  // Reverb via convolver
+  convolver = audioCtx.createConvolver();
+  const len = audioCtx.sampleRate * 2;
+  const impulse = audioCtx.createBuffer(2, len, audioCtx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = impulse.getChannelData(ch);
+    for (let i = 0; i < len; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.5);
+    }
+  }
+  convolver.buffer = impulse;
+
+  // Delay
+  delayNode = audioCtx.createDelay(1.0);
+  delayNode.delayTime.value = 0.35;
+  delayGain = audioCtx.createGain();
+  delayGain.gain.value = 0;
+  delayNode.connect(delayGain);
+  delayGain.connect(delayNode);
+  delayGain.connect(analyser);
+
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.5;
+  masterGain.connect(analyser);
+  masterGain.connect(convolver);
+  masterGain.connect(delayNode);
+  convolver.connect(analyser);
+  analyser.connect(audioCtx.destination);
+
+  drawViz();
+}
+
+function getFreq(noteIdx) {
+  const n = notes[noteIdx].note;
+  const oct = parseInt(document.getElementById('octave').value);
+  const base = freqBase[n];
+  return base * Math.pow(2, oct - 4);
+}
+
+function playNote(idx) {
+  initAudio();
+  if (activeOscs[idx]) return;
+
+  const freq = getFreq(idx);
+  const wave = document.getElementById('waveform').value;
+  const attack = parseFloat(document.getElementById('attack').value);
+  const reverbAmt = parseFloat(document.getElementById('reverb').value);
+  const delayAmt = parseFloat(document.getElementById('delay').value);
+
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+
+  osc.type = wave;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0, audioCtx.currentTime);
+  gain.gain.linearRampToValueAtTime(0.35, audioCtx.currentTime + attack);
+
+  osc.connect(gain);
+
+  // Dry path
+  const dryGain = audioCtx.createGain();
+  dryGain.gain.value = 1 - reverbAmt * 0.5;
+  gain.connect(dryGain);
+  dryGain.connect(masterGain);
+
+  // Wet (reverb) path
+  const wetGain = audioCtx.createGain();
+  wetGain.gain.value = reverbAmt;
+  gain.connect(wetGain);
+  wetGain.connect(convolver);
+
+  // Delay
+  delayGain.gain.value = delayAmt;
+
+  osc.start();
+  activeOscs[idx] = { osc, gain, dryGain, wetGain };
+
+  // Visual feedback
+  const el = document.querySelector(`[data-idx="${idx}"]`);
+  if (el) el.classList.add('active');
+}
+
+function stopNote(idx) {
+  const entry = activeOscs[idx];
+  if (!entry) return;
+
+  const release = parseFloat(document.getElementById('release').value);
+  const now = audioCtx.currentTime;
+  entry.gain.gain.cancelScheduledValues(now);
+  entry.gain.gain.setValueAtTime(entry.gain.gain.value, now);
+  entry.gain.gain.linearRampToValueAtTime(0, now + release);
+  entry.osc.stop(now + release + 0.1);
+  delete activeOscs[idx];
+
+  const el = document.querySelector(`[data-idx="${idx}"]`);
+  if (el) el.classList.remove('active');
+}
+
+// Build keyboard
+const keyboard = document.getElementById('keyboard');
+let whiteIdx = 0;
+const whiteWidth = 52;
+
+notes.forEach((n, i) => {
+  const key = document.createElement('div');
+  key.dataset.idx = i;
+
+  if (n.white) {
+    key.className = 'white-key';
+    key.style.position = 'relative';
+    const label = Object.keys(keyMap).find(k => keyMap[k] === i);
+    key.textContent = label ? label.toUpperCase() : '';
+    keyboard.appendChild(key);
+    whiteIdx++;
+  } else {
+    key.className = 'black-key';
+    key.style.left = (whiteIdx * whiteWidth - 16) + 'px';
+    const label = Object.keys(keyMap).find(k => keyMap[k] === i);
+    key.textContent = label ? label.toUpperCase() : '';
+    keyboard.appendChild(key);
+  }
+
+  key.addEventListener('pointerdown', e => { e.preventDefault(); playNote(i); });
+  key.addEventListener('pointerup', () => stopNote(i));
+  key.addEventListener('pointerleave', () => stopNote(i));
+});
+
+// Keyboard input
+const pressed = {};
+document.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z') {
+    const sel = document.getElementById('octave');
+    sel.value = Math.max(3, parseInt(sel.value) - 1);
+    return;
+  }
+  if (k === 'x') {
+    const sel = document.getElementById('octave');
+    sel.value = Math.min(5, parseInt(sel.value) + 1);
+    return;
+  }
+  if (k in keyMap && !pressed[k]) {
+    pressed[k] = true;
+    playNote(keyMap[k]);
+  }
+});
+document.addEventListener('keyup', e => {
+  const k = e.key.toLowerCase();
+  if (k in keyMap) {
+    pressed[k] = false;
+    stopNote(keyMap[k]);
+  }
+});
+
+// Visualizer
+const canvas = document.getElementById('viz');
+const ctx = canvas.getContext('2d');
+function drawViz() {
+  canvas.width = canvas.offsetWidth * 2;
+  canvas.height = canvas.offsetHeight * 2;
+  ctx.scale(2, 2);
+  const W = canvas.offsetWidth;
+  const H = canvas.offsetHeight;
+  const bufLen = analyser.frequencyBinCount;
+  const data = new Uint8Array(bufLen);
+
+  function draw() {
+    requestAnimationFrame(draw);
+    analyser.getByteFrequencyData(data);
+
+    ctx.fillStyle = 'rgba(17, 17, 17, 0.3)';
+    ctx.fillRect(0, 0, W, H);
+
+    const barW = W / bufLen * 2.5;
+    for (let i = 0; i < bufLen; i++) {
+      const v = data[i] / 255;
+      const h = v * H;
+      const hue = 240 + v * 60;
+      ctx.fillStyle = `hsla(${hue}, 70%, ${40 + v * 30}%, ${0.5 + v * 0.5})`;
+      ctx.fillRect(i * barW, H - h, barW - 1, h);
+    }
+  }
+  draw();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a1a;overflow:hidden;font-family:'Courier New',monospace;color:#fff;user-select:none}
+canvas{display:block}
+#ui{position:fixed;top:16px;left:16px;pointer-events:none}
+#score{font-size:14px;color:rgba(255,255,255,0.6);letter-spacing:1px}
+#hint{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);font-size:13px;color:rgba(255,255,255,0.35);letter-spacing:2px;pointer-events:none;transition:opacity 2s}
+#best{font-size:11px;color:rgba(255,255,255,0.35);margin-top:4px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="score">ORBITS: 0</div>
+  <div id="best">BEST: 0</div>
+</div>
+<div id="hint">click + drag to launch · orbit the sun · collect stars</div>
+<script>
+const C = document.getElementById('c');
+const ctx = C.getContext('2d');
+let W, H;
+function resize() { W = C.width = innerWidth; H = C.height = innerHeight; }
+resize();
+addEventListener('resize', resize);
+
+// State
+const G = 800;
+let sun = { x: 0, y: 0, r: 28, mass: 1 };
+let planets = [];
+let probes = [];
+let stars = [];
+let trails = [];
+let particles = [];
+let dragging = false;
+let dragStart = { x: 0, y: 0 };
+let dragEnd = { x: 0, y: 0 };
+let orbits = 0;
+let best = 0;
+let bgStars = [];
+
+// Init background stars
+for (let i = 0; i < 200; i++) {
+  bgStars.push({
+    x: Math.random(), y: Math.random(),
+    s: Math.random() * 1.5 + 0.3,
+    b: Math.random(), sp: Math.random() * 1.5 + 0.5, off: Math.random() * Math.PI * 2
+  });
+}
+
+// Spawn collectible stars
+function spawnStar() {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = 120 + Math.random() * 200;
+  stars.push({
+    x: sun.x + Math.cos(angle) * dist,
+    y: sun.y + Math.sin(angle) * dist,
+    r: 5, pulse: Math.random() * Math.PI * 2,
+    alive: true
+  });
+}
+
+// Spawn orbiting planets
+function spawnPlanets() {
+  planets = [];
+  const count = 2 + Math.floor(Math.random() * 2);
+  for (let i = 0; i < count; i++) {
+    const dist = 140 + i * 100 + Math.random() * 40;
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.sqrt(G * sun.mass / dist) * (Math.random() > 0.5 ? 1 : -1);
+    planets.push({
+      x: sun.x + Math.cos(angle) * dist,
+      y: sun.y + Math.sin(angle) * dist,
+      vx: -Math.sin(angle) * speed,
+      vy: Math.cos(angle) * speed,
+      r: 6 + Math.random() * 6,
+      mass: 0.08 + Math.random() * 0.05,
+      hue: Math.random() * 360,
+      trail: []
+    });
+  }
+}
+
+function init() {
+  sun.x = W / 2;
+  sun.y = H / 2;
+  probes = [];
+  stars = [];
+  trails = [];
+  particles = [];
+  orbits = 0;
+  document.getElementById('score').textContent = 'ORBITS: 0';
+  spawnPlanets();
+  for (let i = 0; i < 5; i++) spawnStar();
+}
+init();
+
+// Input
+C.addEventListener('mousedown', e => {
+  dragging = true;
+  dragStart.x = e.clientX;
+  dragStart.y = e.clientY;
+  dragEnd.x = e.clientX;
+  dragEnd.y = e.clientY;
+});
+C.addEventListener('mousemove', e => {
+  if (dragging) { dragEnd.x = e.clientX; dragEnd.y = e.clientY; }
+});
+C.addEventListener('mouseup', e => {
+  if (!dragging) return;
+  dragging = false;
+  const dx = dragStart.x - e.clientX;
+  const dy = dragStart.y - e.clientY;
+  const power = 0.08;
+  probes.push({
+    x: dragStart.x, y: dragStart.y,
+    vx: dx * power, vy: dy * power,
+    trail: [],
+    alive: true,
+    angle: 0, lastAngle: null, totalAngle: 0,
+    hue: 180 + Math.random() * 60
+  });
+  // Fade hint
+  document.getElementById('hint').style.opacity = '0';
+});
+
+// Touch support
+C.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  dragging = true;
+  dragStart.x = t.clientX; dragStart.y = t.clientY;
+  dragEnd.x = t.clientX; dragEnd.y = t.clientY;
+}, { passive: false });
+C.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (dragging) { const t = e.touches[0]; dragEnd.x = t.clientX; dragEnd.y = t.clientY; }
+}, { passive: false });
+C.addEventListener('touchend', e => {
+  e.preventDefault();
+  if (!dragging) return;
+  dragging = false;
+  const t = e.changedTouches[0];
+  const dx = dragStart.x - t.clientX;
+  const dy = dragStart.y - t.clientY;
+  const power = 0.08;
+  probes.push({
+    x: dragStart.x, y: dragStart.y,
+    vx: dx * power, vy: dy * power,
+    trail: [],
+    alive: true,
+    angle: 0, lastAngle: null, totalAngle: 0,
+    hue: 180 + Math.random() * 60
+  });
+  document.getElementById('hint').style.opacity = '0';
+}, { passive: false });
+
+function addParticles(x, y, count, hue) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = Math.random() * 3 + 1;
+    particles.push({
+      x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      life: 1, decay: 0.01 + Math.random() * 0.03,
+      hue, size: Math.random() * 3 + 1
+    });
+  }
+}
+
+let time = 0;
+const dt = 1 / 60;
+
+function applyGravity(obj, attractor) {
+  const dx = attractor.x - obj.x;
+  const dy = attractor.y - obj.y;
+  const distSq = dx * dx + dy * dy;
+  const dist = Math.sqrt(distSq);
+  if (dist < attractor.r + 2) return 'collide';
+  const force = G * attractor.mass / distSq;
+  obj.vx += dx / dist * force * dt;
+  obj.vy += dy / dist * force * dt;
+  return dist;
+}
+
+function update() {
+  time += dt;
+
+  // Update planets
+  for (const p of planets) {
+    applyGravity(p, sun);
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.trail.push({ x: p.x, y: p.y });
+    if (p.trail.length > 80) p.trail.shift();
+  }
+
+  // Update probes
+  for (const pr of probes) {
+    if (!pr.alive) continue;
+
+    // Gravity from sun
+    const sunDist = applyGravity(pr, sun);
+    if (sunDist === 'collide') {
+      pr.alive = false;
+      addParticles(pr.x, pr.y, 20, 40);
+      continue;
+    }
+
+    // Gravity from planets
+    for (const p of planets) {
+      const d = applyGravity(pr, { x: p.x, y: p.y, r: p.r, mass: p.mass });
+      if (d === 'collide') {
+        pr.alive = false;
+        addParticles(pr.x, pr.y, 15, p.hue);
+        break;
+      }
+    }
+    if (!pr.alive) continue;
+
+    pr.x += pr.vx * dt;
+    pr.y += pr.vy * dt;
+
+    // Track orbits around sun
+    const angle = Math.atan2(pr.y - sun.y, pr.x - sun.x);
+    if (pr.lastAngle !== null) {
+      let delta = angle - pr.lastAngle;
+      if (delta > Math.PI) delta -= Math.PI * 2;
+      if (delta < -Math.PI) delta += Math.PI * 2;
+      pr.totalAngle += delta;
+      if (Math.abs(pr.totalAngle) >= Math.PI * 2) {
+        orbits++;
+        pr.totalAngle = 0;
+        document.getElementById('score').textContent = 'ORBITS: ' + orbits;
+        if (orbits > best) {
+          best = orbits;
+          document.getElementById('best').textContent = 'BEST: ' + best;
+        }
+        addParticles(pr.x, pr.y, 8, pr.hue);
+      }
+    }
+    pr.lastAngle = angle;
+
+    pr.trail.push({ x: pr.x, y: pr.y });
+    if (pr.trail.length > 150) pr.trail.shift();
+
+    // Check star collection
+    for (const s of stars) {
+      if (!s.alive) continue;
+      const dx = pr.x - s.x, dy = pr.y - s.y;
+      if (dx * dx + dy * dy < (pr.r || 4 + s.r) ** 2) {
+        s.alive = false;
+        orbits += 3;
+        document.getElementById('score').textContent = 'ORBITS: ' + orbits;
+        if (orbits > best) {
+          best = orbits;
+          document.getElementById('best').textContent = 'BEST: ' + best;
+        }
+        addParticles(s.x, s.y, 25, 50);
+        setTimeout(spawnStar, 2000);
+      }
+    }
+
+    // Off screen? Kill it
+    if (pr.x < -200 || pr.x > W + 200 || pr.y < -200 || pr.y > H + 200) {
+      pr.alive = false;
+    }
+  }
+
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= 0.97; p.vy *= 0.97;
+    p.life -= p.decay;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // Cleanup dead probes (keep last 5 trails)
+  const dead = probes.filter(p => !p.alive);
+  if (dead.length > 5) probes = probes.filter(p => p.alive).concat(dead.slice(-5));
+}
+
+function draw() {
+  ctx.fillStyle = '#0a0a1a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Background stars
+  for (const s of bgStars) {
+    const b = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(time * s.sp + s.off));
+    ctx.fillStyle = `rgba(255,255,255,${b * 0.6})`;
+    ctx.beginPath();
+    ctx.arc(s.x * W, s.y * H, s.s, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Planet trails
+  for (const p of planets) {
+    if (p.trail.length < 2) continue;
+    ctx.beginPath();
+    ctx.moveTo(p.trail[0].x, p.trail[0].y);
+    for (let i = 1; i < p.trail.length; i++) {
+      ctx.lineTo(p.trail[i].x, p.trail[i].y);
+    }
+    ctx.strokeStyle = `hsla(${p.hue},60%,50%,0.15)`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // Probe trails
+  for (const pr of probes) {
+    if (pr.trail.length < 2) continue;
+    for (let i = 1; i < pr.trail.length; i++) {
+      const alpha = (i / pr.trail.length) * (pr.alive ? 0.6 : 0.2);
+      ctx.beginPath();
+      ctx.moveTo(pr.trail[i - 1].x, pr.trail[i - 1].y);
+      ctx.lineTo(pr.trail[i].x, pr.trail[i].y);
+      ctx.strokeStyle = `hsla(${pr.hue},80%,65%,${alpha})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  // Sun glow
+  const sunGrad = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, sun.r * 4);
+  sunGrad.addColorStop(0, 'rgba(255,200,50,0.3)');
+  sunGrad.addColorStop(0.5, 'rgba(255,150,30,0.08)');
+  sunGrad.addColorStop(1, 'transparent');
+  ctx.fillStyle = sunGrad;
+  ctx.beginPath();
+  ctx.arc(sun.x, sun.y, sun.r * 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Sun
+  const pulse = 1 + 0.03 * Math.sin(time * 3);
+  ctx.fillStyle = '#ffcc33';
+  ctx.shadowColor = '#ffaa00';
+  ctx.shadowBlur = 30;
+  ctx.beginPath();
+  ctx.arc(sun.x, sun.y, sun.r * pulse, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Planets
+  for (const p of planets) {
+    ctx.fillStyle = `hsl(${p.hue},55%,55%)`;
+    ctx.shadowColor = `hsl(${p.hue},60%,40%)`;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // Probes
+  for (const pr of probes) {
+    if (!pr.alive) continue;
+    ctx.fillStyle = `hsl(${pr.hue},80%,70%)`;
+    ctx.shadowColor = `hsl(${pr.hue},80%,60%)`;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(pr.x, pr.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // Stars (collectibles)
+  for (const s of stars) {
+    if (!s.alive) continue;
+    const p = 0.7 + 0.3 * Math.sin(time * 4 + s.pulse);
+    ctx.fillStyle = `rgba(255,255,100,${p})`;
+    ctx.shadowColor = '#ffff66';
+    ctx.shadowBlur = 15;
+    // Draw star shape
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = (i * 4 * Math.PI / 5) - Math.PI / 2 + time;
+      const r = i % 2 === 0 ? s.r : s.r * 0.4;
+      const method = i === 0 ? 'moveTo' : 'lineTo';
+      ctx[method](s.x + Math.cos(a) * r, s.y + Math.sin(a) * r);
+    }
+    // Actually draw 10 points for a proper star
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  // Particles
+  for (const p of particles) {
+    ctx.fillStyle = `hsla(${p.hue},80%,65%,${p.life})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Drag line
+  if (dragging) {
+    const dx = dragStart.x - dragEnd.x;
+    const dy = dragStart.y - dragEnd.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+
+    // Launch direction arrow
+    ctx.strokeStyle = 'rgba(100,200,255,0.5)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(dragStart.x, dragStart.y);
+    ctx.lineTo(dragStart.x + dx, dragStart.y + dy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Start dot
+    ctx.fillStyle = 'rgba(100,200,255,0.8)';
+    ctx.beginPath();
+    ctx.arc(dragStart.x, dragStart.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Power indicator
+    const power = Math.min(len / 300, 1);
+    ctx.fillStyle = `rgba(100,200,255,0.3)`;
+    ctx.font = '11px Courier New';
+    ctx.fillText(`power: ${Math.round(power * 100)}%`, dragStart.x + 12, dragStart.y - 12);
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+
+// Reset on R key
+addEventListener('keydown', e => {
+  if (e.key === 'r' || e.key === 'R') init();
+});
+</script>
+</body>
+</html>

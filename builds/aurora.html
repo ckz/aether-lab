@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aurora Borealis</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; }
+  canvas { display: block; }
+  #info {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.4);
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    letter-spacing: 2px;
+    pointer-events: none;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="info">move your mouse · click to ripple · scroll to shift palette</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+let mouseX = 0.5, mouseY = 0.5;
+let time = 0;
+let hueShift = 0;
+let ripples = [];
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+window.addEventListener('mousemove', e => {
+  mouseX = e.clientX / W;
+  mouseY = e.clientY / H;
+});
+
+window.addEventListener('click', e => {
+  ripples.push({
+    x: e.clientX / W,
+    y: e.clientY / H,
+    birth: time,
+    strength: 1
+  });
+  if (ripples.length > 8) ripples.shift();
+});
+
+window.addEventListener('wheel', e => {
+  hueShift += e.deltaY * 0.1;
+});
+
+// Simplex-ish noise (fast enough for our purposes)
+function noise(x, y, z) {
+  const p = [151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,
+    69,142,8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,
+    203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,
+    165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,
+    92,41,55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,
+    89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,
+    226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,
+    182,189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,
+    43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,
+    228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,107,
+    49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,138,
+    236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180];
+  const perm = [...p, ...p];
+
+  const X = Math.floor(x) & 255;
+  const Y = Math.floor(y) & 255;
+  const Z = Math.floor(z) & 255;
+  const xf = x - Math.floor(x);
+  const yf = y - Math.floor(y);
+  const zf = z - Math.floor(z);
+  const u = fade(xf), v = fade(yf), w = fade(zf);
+
+  const A = perm[X] + Y, AA = perm[A] + Z, AB = perm[A + 1] + Z;
+  const B = perm[X + 1] + Y, BA = perm[B] + Z, BB = perm[B + 1] + Z;
+
+  return lerp(w,
+    lerp(v,
+      lerp(u, grad(perm[AA], xf, yf, zf), grad(perm[BA], xf - 1, yf, zf)),
+      lerp(u, grad(perm[AB], xf, yf - 1, zf), grad(perm[BB], xf - 1, yf - 1, zf))
+    ),
+    lerp(v,
+      lerp(u, grad(perm[AA + 1], xf, yf, zf - 1), grad(perm[BA + 1], xf - 1, yf, zf - 1)),
+      lerp(u, grad(perm[AB + 1], xf, yf - 1, zf - 1), grad(perm[BB + 1], xf - 1, yf - 1, zf - 1))
+    )
+  );
+}
+
+function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+function lerp(t, a, b) { return a + t * (b - a); }
+function grad(hash, x, y, z) {
+  const h = hash & 15;
+  const u = h < 8 ? x : y;
+  const v = h < 4 ? y : h === 12 || h === 14 ? x : z;
+  return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+}
+
+// Multi-octave noise
+function fbm(x, y, z, octaves = 4) {
+  let val = 0, amp = 0.5, freq = 1;
+  for (let i = 0; i < octaves; i++) {
+    val += amp * noise(x * freq, y * freq, z * freq);
+    amp *= 0.5;
+    freq *= 2.1;
+  }
+  return val;
+}
+
+// Stars
+const stars = Array.from({ length: 300 }, () => ({
+  x: Math.random(),
+  y: Math.random() * 0.6,
+  size: Math.random() * 1.8 + 0.3,
+  twinkleSpeed: Math.random() * 2 + 1,
+  twinkleOffset: Math.random() * Math.PI * 2
+}));
+
+function drawStars() {
+  for (const s of stars) {
+    const brightness = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(time * s.twinkleSpeed + s.twinkleOffset));
+    ctx.fillStyle = `rgba(255,255,255,${brightness * 0.8})`;
+    ctx.beginPath();
+    ctx.arc(s.x * W, s.y * H, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// HSL to RGB for gradient stops
+function hsl(h, s, l, a = 1) {
+  return `hsla(${((h + hueShift) % 360 + 360) % 360}, ${s}%, ${l}%, ${a})`;
+}
+
+// Draw aurora curtains
+function drawAurora() {
+  const columns = Math.ceil(W / 3);
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+
+  // Precompute ripple influence
+  const activeRipples = ripples.filter(r => (time - r.birth) < 3);
+
+  for (let x = 0; x < W; x += 2) {
+    const nx = x / W;
+    const mouseInfluence = Math.exp(-Math.pow((nx - mouseX) * 3, 2));
+
+    // Multiple curtain layers
+    for (let layer = 0; layer < 3; layer++) {
+      const layerOffset = layer * 1.7;
+      const speed = 0.15 + layer * 0.05;
+      const baseY = 0.15 + layer * 0.08;
+
+      // Curtain shape from noise
+      const curtainNoise = fbm(nx * 2.5 + layerOffset, time * speed, layer * 3.3, 4);
+      const curtainWave = Math.sin(nx * 6 + time * 0.3 + layer * 2) * 0.05;
+      const curtainTop = (baseY + curtainNoise * 0.15 + curtainWave + mouseInfluence * 0.05 * Math.sin(time * 2)) * H;
+      const curtainHeight = (0.25 + fbm(nx * 1.5, time * 0.1 + layer, 0, 3) * 0.2) * H;
+
+      // Ripple displacement
+      let rippleDisp = 0;
+      for (const r of activeRipples) {
+        const age = time - r.birth;
+        const dist = Math.abs(nx - r.x);
+        const wave = Math.sin(dist * 30 - age * 8) * Math.exp(-dist * 5) * Math.exp(-age * 1.5);
+        rippleDisp += wave * 30 * r.strength;
+      }
+
+      // Color varies along curtain
+      const baseHue = layer === 0 ? 140 : layer === 1 ? 170 : 280;
+
+      for (let y = Math.max(0, Math.floor(curtainTop + rippleDisp)); y < Math.min(H, curtainTop + curtainHeight + rippleDisp); y++) {
+        const progress = (y - curtainTop - rippleDisp) / curtainHeight;
+        if (progress < 0 || progress > 1) continue;
+
+        // Intensity: bright at top, fading down
+        const verticalFade = Math.pow(1 - progress, 1.5);
+        const edgeFade = Math.pow(Math.sin(progress * Math.PI), 0.5);
+        const shimmer = 0.7 + 0.3 * noise(nx * 8, y / H * 4, time * 0.5 + layer);
+        const intensity = verticalFade * edgeFade * shimmer * (0.3 + mouseInfluence * 0.3);
+
+        if (intensity < 0.01) continue;
+
+        const hue = baseHue + fbm(nx * 3, progress * 2, time * 0.2 + layer, 2) * 40;
+        const h = ((hue + hueShift) % 360 + 360) % 360;
+        const s = 0.7 + 0.3 * shimmer;
+        const l = 0.3 + 0.4 * verticalFade;
+
+        // HSL to RGB
+        const c = (1 - Math.abs(2 * l - 1)) * s;
+        const x2 = c * (1 - Math.abs((h / 60) % 2 - 1));
+        const m = l - c / 2;
+        let r, g, b;
+        if (h < 60) { r = c; g = x2; b = 0; }
+        else if (h < 120) { r = x2; g = c; b = 0; }
+        else if (h < 180) { r = 0; g = c; b = x2; }
+        else if (h < 240) { r = 0; g = x2; b = c; }
+        else if (h < 300) { r = x2; g = 0; b = c; }
+        else { r = c; g = 0; b = x2; }
+
+        const alpha = intensity * 0.6;
+
+        // Write to both x and x+1 for performance (we step by 2)
+        for (let dx = 0; dx < 2 && x + dx < W; dx++) {
+          const idx = (y * W + x + dx) * 4;
+          const existing_a = data[idx + 3] / 255;
+          const new_a = alpha + existing_a * (1 - alpha);
+          if (new_a > 0) {
+            data[idx] = Math.min(255, ((r + m) * 255 * alpha + data[idx] * existing_a * (1 - alpha)) / new_a);
+            data[idx + 1] = Math.min(255, ((g + m) * 255 * alpha + data[idx + 1] * existing_a * (1 - alpha)) / new_a);
+            data[idx + 2] = Math.min(255, ((b + m) * 255 * alpha + data[idx + 2] * existing_a * (1 - alpha)) / new_a);
+            data[idx + 3] = Math.min(255, new_a * 255);
+          }
+        }
+      }
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+}
+
+// Ground silhouette
+function drawGround() {
+  ctx.fillStyle = '#050510';
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  for (let x = 0; x <= W; x += 4) {
+    const nx = x / W;
+    const hill1 = Math.sin(nx * 3 + 0.5) * 0.04;
+    const hill2 = Math.sin(nx * 7 + 2) * 0.015;
+    const hill3 = noise(nx * 5, 0, 0) * 0.02;
+    const y = H * (0.88 - hill1 - hill2 - hill3);
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(W, H);
+  ctx.closePath();
+  ctx.fill();
+
+  // Tree silhouettes
+  const treeSeed = 42;
+  for (let i = 0; i < 60; i++) {
+    const tx = ((i * 137.5 + treeSeed) % W);
+    const nx = tx / W;
+    const hill1 = Math.sin(nx * 3 + 0.5) * 0.04;
+    const hill2 = Math.sin(nx * 7 + 2) * 0.015;
+    const baseY = H * (0.88 - hill1 - hill2);
+    const treeH = 15 + (noise(i * 0.5, 0, 0) + 1) * 20;
+    const treeW = 4 + (noise(i * 0.7, 1, 0) + 1) * 3;
+
+    ctx.fillStyle = '#030308';
+    ctx.beginPath();
+    ctx.moveTo(tx - 1.5, baseY);
+    ctx.lineTo(tx + 1.5, baseY);
+    ctx.lineTo(tx + 1, baseY - treeH * 0.4);
+    ctx.lineTo(tx + treeW, baseY - treeH * 0.3);
+    ctx.lineTo(tx + 1, baseY - treeH * 0.6);
+    ctx.lineTo(tx + treeW * 0.7, baseY - treeH * 0.55);
+    ctx.lineTo(tx, baseY - treeH);
+    ctx.lineTo(tx - treeW * 0.7, baseY - treeH * 0.55);
+    ctx.lineTo(tx - 1, baseY - treeH * 0.6);
+    ctx.lineTo(tx - treeW, baseY - treeH * 0.3);
+    ctx.lineTo(tx - 1, baseY - treeH * 0.4);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+// Ambient glow on horizon
+function drawGlow() {
+  const gradient = ctx.createLinearGradient(0, H * 0.3, 0, H * 0.9);
+  gradient.addColorStop(0, 'transparent');
+  gradient.addColorStop(0.5, hsl(150, 50, 15, 0.08));
+  gradient.addColorStop(0.8, hsl(160, 40, 10, 0.05));
+  gradient.addColorStop(1, 'transparent');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function frame() {
+  time += 0.016;
+
+  // Night sky gradient
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
+  skyGrad.addColorStop(0, '#000510');
+  skyGrad.addColorStop(0.4, '#0a0a20');
+  skyGrad.addColorStop(0.7, '#0d1025');
+  skyGrad.addColorStop(1, '#050510');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  drawStars();
+  drawAurora();
+  drawGlow();
+  drawGround();
+
+  requestAnimationFrame(frame);
+}
+
+frame();
+
+// Fade in info text
+setTimeout(() => {
+  document.getElementById('info').style.transition = 'opacity 3s';
+  document.getElementById('info').style.opacity = '0';
+}, 8000);
+</script>
+</body>
+</html>
