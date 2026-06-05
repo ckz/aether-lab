@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Aether Flow Field</title>
+<style>
+  html,body{margin:0;height:100%;background:#0a0e17;color:#d6deff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;overflow:hidden}
+  header{position:fixed;inset:auto 0 0 0;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;pointer-events:none;z-index:2;background:linear-gradient(to top,rgba(10,14,23,.85),transparent)}
+  h1{font-size:14px;letter-spacing:.4px;margin:0;opacity:.9}
+  .controls{pointer-events:auto;display:flex;gap:8px;align-items:center}
+  button{background:#131c2f;color:#d6deff;border:1px solid #233054;padding:6px 10px;border-radius:10px;cursor:pointer;font:inherit;font-size:12px}
+  button:hover{background:#1b2740}
+  canvas{display:block;width:100vw;height:100vh}
+  .meta{position:fixed;top:14px;left:16px;font-size:11px;opacity:.75;z-index:2;pointer-events:none}
+</style>
+</head>
+<body>
+  <div class="meta">Flow Field · June 2026</div>
+  <header>
+    <h1>Aether Flow Field</h1>
+    <div class="controls">
+      <button id="reset">Reset</button>
+      <button id="style">Switch style</button>
+    </div>
+  </header>
+  <canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, dpr;
+let particles = [];
+let styleIndex = 0;
+const palettes = [
+  ['#7dd3fc','#93c5fd','#a78bfa','#f0abfc','#fb7185'],
+  ['#fde68a','#fdba74','#fb7185','#f472b6','#c084fc'],
+  ['#a7f3d0','#6ee7b7','#34d399','#22d3ee','#818cf8']
+];
+const styles = ['trails','rings','sparks'];
+let style = styles[styleIndex];
+let time = 0;
+
+function resize(){
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener('resize', ()=>{ resize(); init(); });
+
+function noise(x,y,t){
+  return Math.sin(x*.004 + t) * Math.cos(y*.004 + t*.7) +
+         Math.sin((x+y)*.0027 + t*.35) * .6 +
+         Math.cos(x*.009 - y*.006 + t*.25) * .4;
+}
+
+class Particle{
+  constructor(){
+    this.reset();
+  }
+  reset(){
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.age = 0;
+    this.life = 220 + Math.random() * 240;
+    this.speed = .45 + Math.random() * .75;
+    this.size = .6 + Math.random() * 1.4;
+    this.palette = palettes[styleIndex];
+    this.color = this.palette[Math.floor(Math.random()*this.palette.length)];
+  }
+  step(){
+    const n = noise(this.x, this.y, time * .35);
+    const angle = n * Math.PI * 2;
+    this.x += Math.cos(angle) * this.speed;
+    this.y += Math.sin(angle) * this.speed;
+    this.age += 1;
+    if(this.age > this.life || this.x < -20 || this.x > W+20 || this.y < -20 || this.y > H+20){
+      this.reset();
+    }
+  }
+  draw(){
+    const t = this.age / this.life;
+    const a = Math.sin(t * Math.PI) * .85;
+    ctx.fillStyle = this.color;
+    ctx.globalAlpha = a;
+    if(style === 'trails'){
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+      ctx.fill();
+    } else if(style === 'rings'){
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size * (1 + t * 2.5), 0, Math.PI*2);
+      ctx.strokeStyle = this.color;
+      ctx.lineWidth = .6;
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size * (1 - t * .6), 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+}
+
+function init(){
+  resize();
+  particles = [];
+  const count = Math.min(1200, Math.floor((W*H)/1400));
+  for(let i=0;i<count;i++) particles.push(new Particle());
+}
+
+function frame(){
+  if(style === 'trails'){
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = .06;
+    ctx.fillStyle = '#0a0e17';
+    ctx.fillRect(0,0,W,H);
+    ctx.globalCompositeOperation = 'screen';
+  } else {
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = .12;
+    ctx.fillStyle = '#0a0e17';
+    ctx.fillRect(0,0,W,H);
+    ctx.globalCompositeOperation = 'screen';
+  }
+  ctx.globalAlpha = 1;
+  for(const p of particles){ p.step(); p.draw(); }
+  time += .01;
+  requestAnimationFrame(frame);
+}
+
+document.getElementById('reset').onclick = ()=> init();
+document.getElementById('style').onclick = ()=>{
+  styleIndex = (styleIndex + 1) % styles.length;
+  style = styles[styleIndex];
+  for(const p of particles) p.palette = palettes[styleIndex];
+};
+init();
+frame();
+</script>
+</body>
+</html>
