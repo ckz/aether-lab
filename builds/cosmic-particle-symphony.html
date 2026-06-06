@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosmic Particle Symphony</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #e0e0e0;
+    height: 100vh;
+    cursor: crosshair;
+  }
+  canvas {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+  .controls {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    background: rgba(10, 10, 20, 0.85);
+    padding: 18px 22px;
+    border-radius: 12px;
+    border: 1px solid rgba(120, 100, 255, 0.3);
+    backdrop-filter: blur(10px);
+    min-width: 240px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  }
+  .controls h2 {
+    font-size: 14px;
+    letter-spacing: 2px;
+    margin-bottom: 14px;
+    color: #a78bfa;
+    text-transform: uppercase;
+  }
+  .controls label {
+    display: block;
+    margin: 10px 0 4px;
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: #888;
+    text-transform: uppercase;
+  }
+  .controls input[type="range"] {
+    width: 100%;
+    accent-color: #7c3aed;
+    margin-bottom: 4px;
+  }
+  .controls select, .controls button {
+    width: 100%;
+    margin-top: 6px;
+    background: rgba(120, 100, 255, 0.15);
+    border: 1px solid rgba(120, 100, 255, 0.4);
+    color: #e0e0e0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .controls button:hover {
+    background: rgba(120, 100, 255, 0.3);
+    border-color: #a78bfa;
+  }
+  .stats {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10;
+    background: rgba(10, 10, 20, 0.85);
+    padding: 14px 18px;
+    border-radius: 12px;
+    border: 1px solid rgba(120, 100, 255, 0.3);
+    backdrop-filter: blur(10px);
+    font-size: 11px;
+    letter-spacing: 1px;
+    line-height: 1.8;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  }
+  .stats div span { color: #a78bfa; }
+  .hint {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: rgba(200, 200, 200, 0.5);
+    text-transform: uppercase;
+    pointer-events: none;
+    animation: pulse 3s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.9; }
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div class="controls">
+  <h2>✦ Particle Symphony ✦</h2>
+  <label>Particle Count</label>
+  <input type="range" id="count" min="50" max="600" value="220">
+  <label>Connection Distance</label>
+  <input type="range" id="dist" min="50" max="250" value="130">
+  <label>Speed</label>
+  <input type="range" id="speed" min="1" max="10" value="3">
+  <label>Color Theme</label>
+  <select id="theme">
+    <option value="cosmic">Cosmic Purple</option>
+    <option value="aurora">Aurora Borealis</option>
+    <option value="fire">Solar Flare</option>
+    <option value="ocean">Deep Ocean</option>
+    <option value="neon">Neon Tokyo</option>
+    <option value="mono">Minimal Mono</option>
+  </select>
+  <label>Shape</label>
+  <select id="shape">
+    <option value="circle">Circle</option>
+    <option value="square">Square</option>
+    <option value="triangle">Triangle</option>
+    <option value="star">Star</option>
+    <option value="mixed">Mixed</option>
+  </select>
+  <button id="reset">⟳ New Universe</button>
+  <button id="pause">⏸ Pause</button>
+</div>
+
+<div class="stats">
+  <div>Particles: <span id="statCount">220</span></div>
+  <div>FPS: <span id="statFps">60</span></div>
+  <div>Connections: <span id="statConn">0</span></div>
+</div>
+
+<div class="hint">click anywhere to attract · hold to repel</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const themes = {
+  cosmic: ['#a78bfa', '#7c3aed', '#c4b5fd', '#818cf8', '#e0e7ff', '#ddd6fe'],
+  aurora: ['#34d399', '#22d3ee', '#818cf8', '#a78bfa', '#f0abfc', '#86efac'],
+  fire: ['#f97316', '#ef4444', '#fbbf24', '#fcd34d', '#fca5a5', '#fdba74'],
+  ocean: ['#0ea5e9', '#0284c7', '#6366f1', '#38bdf8', '#7dd3fc', '#a78bfa'],
+  neon:  ['#f0abfc', '#fb7185', '#f472b6', '#e879f9', '#a78bfa', '#c4b5fd'],
+  mono:  ['#ffffff', '#e5e5e5', '#cccccc', '#b3b3b3', '#999999', '#f5f5f5']
+};
+
+let particles = [];
+let mouse = { x: -1000, y: -1000, down: false };
+let paused = false;
+let frameCount = 0, lastFps = performance.now(), fps = 60;
+let connectionCount = 0;
+
+function rand(min, max) { return Math.random() * (max - min) + min; }
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+class Particle {
+  constructor() {
+    this.x = rand(0, W);
+    this.y = rand(0, H);
+    this.vx = rand(-1, 1);
+    this.vy = rand(-1, 1);
+    this.size = rand(1.5, 4.5);
+    this.color = '';
+    this.baseSize = this.size;
+    this.angle = rand(0, Math.PI * 2);
+    this.spin = rand(-0.02, 0.02);
+    this.pulse = rand(0, Math.PI * 2);
+  }
+  setColor(theme) {
+    const c = themes[theme] || themes.cosmic;
+    this.color = c[Math.floor(Math.random() * c.length)];
+  }
+  update(speedMult) {
+    this.x += this.vx * speedMult;
+    this.y += this.vy * speedMult;
+    this.angle += this.spin;
+    this.pulse += 0.03;
+
+    if (this.x < -50) this.x = W + 50;
+    if (this.x > W + 50) this.x = -50;
+    if (this.y < -50) this.y = H + 50;
+    if (this.y > H + 50) this.y = -50;
+
+    // Mouse interaction
+    const d = dist(this, mouse);
+    if (d < 200) {
+      const force = (200 - d) / 200;
+      if (mouse.down) {
+        // repel
+        const angle = Math.atan2(this.y - mouse.y, this.x - mouse.x);
+        this.vx += Math.cos(angle) * force * 0.8;
+        this.vy += Math.sin(angle) * force * 0.8;
+      } else {
+        // attract gently
+        const angle = Math.atan2(mouse.y - this.y, mouse.x - this.x);
+        this.vx += Math.cos(angle) * force * 0.15;
+        this.vy += Math.sin(angle) * force * 0.15;
+      }
+    }
+
+    // friction
+    this.vx *= 0.99;
+    this.vy *= 0.99;
+
+    const maxV = 3;
+    const v = Math.hypot(this.vx, this.vy);
+    if (v > maxV) {
+      this.vx = (this.vx / v) * maxV;
+      this.vy = (this.vy / v) * maxV;
+    }
+
+    this.size = this.baseSize + Math.sin(this.pulse) * 0.8;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+    ctx.fillStyle = this.color;
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = this.color;
+    ctx.beginPath();
+    const s = Math.max(0.5, this.size);
+    switch (currentShape) {
+      case 'circle':
+        ctx.arc(0, 0, s, 0, Math.PI * 2);
+        break;
+      case 'square':
+        ctx.rect(-s, -s, s * 2, s * 2);
+        break;
+      case 'triangle':
+        ctx.moveTo(0, -s * 1.2);
+        ctx.lineTo(s, s * 0.8);
+        ctx.lineTo(-s, s * 0.8);
+        ctx.closePath();
+        break;
+      case 'star':
+        for (let i = 0; i < 5; i++) {
+          const a = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+          const r = i === 0 ? s * 1.2 : s;
+          ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+          const a2 = a + (2 * Math.PI) / 5;
+          ctx.lineTo(Math.cos(a2) * s * 0.5, Math.sin(a2) * s * 0.5);
+        }
+        ctx.closePath();
+        break;
+      case 'mixed':
+        if (Math.random() < 0.33) {
+          ctx.arc(0, 0, s, 0, Math.PI * 2);
+        } else if (Math.random() < 0.5) {
+          ctx.rect(-s, -s, s * 2, s * 2);
+        } else {
+          ctx.moveTo(0, -s * 1.2);
+          ctx.lineTo(s, s * 0.8);
+          ctx.lineTo(-s, s * 0.8);
+          ctx.closePath();
+        }
+        break;
+    }
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function init() {
+  const count = parseInt(document.getElementById('count').value);
+  particles = [];
+  for (let i = 0; i < count; i++) {
+    const p = new Particle();
+    p.setColor(document.getElementById('theme').value);
+    particles.push(p);
+  }
+}
+
+let currentTheme = 'cosmic';
+let currentShape = 'circle';
+
+function updateTheme() {
+  currentTheme = document.getElementById('theme').value;
+  particles.forEach(p => p.setColor(currentTheme));
+}
+
+function drawConnections() {
+  const maxDist = parseInt(document.getElementById('dist').value);
+  let conn = 0;
+  for (let i = 0; i < particles.length; i++) {
+    for (let j = i + 1; j < particles.length; j++) {
+      const d = dist(particles[i], particles[j]);
+      if (d < maxDist) {
+        conn++;
+        const alpha = (1 - d / maxDist) * 0.5;
+        const gradient = ctx.createLinearGradient(
+          particles[i].x, particles[i].y,
+          particles[j].x, particles[j].y
+        );
+        gradient.addColorStop(0, particles[i].color + hexAlpha(alpha));
+        gradient.addColorStop(1, particles[j].color + hexAlpha(alpha));
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = alpha * 1.5;
+        ctx.beginPath();
+        ctx.moveTo(particles[i].x, particles[i].y);
+        ctx.lineTo(particles[j].x, particles[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+  connectionCount = conn;
+}
+
+function hexAlpha(a) {
+  const hex = Math.round(a * 255).toString(16);
+  return hex.length === 1 ? '0' + hex : hex;
+}
+
+function animate() {
+  if (!paused) {
+    ctx.fillStyle = 'rgba(10, 10, 18, 0.18)';
+    ctx.fillRect(0, 0, W, H);
+
+    const speed = parseInt(document.getElementById('speed').value) / 3;
+    currentShape = document.getElementById('shape').value;
+
+    particles.forEach(p => {
+      p.update(speed);
+      p.draw(ctx);
+    });
+
+    drawConnections();
+  }
+
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFps > 500) {
+    fps = Math.round((frameCount * 1000) / (now - lastFps));
+    frameCount = 0;
+    lastFps = now;
+    document.getElementById('statFps').textContent = fps;
+    document.getElementById('statConn').textContent = connectionCount;
+    document.getElementById('statCount').textContent = particles.length;
+  }
+
+  requestAnimationFrame(animate);
+}
+
+// Event listeners
+document.getElementById('count').addEventListener('input', init);
+document.getElementById('theme').addEventListener('change', updateTheme);
+document.getElementById('reset').addEventListener('click', init);
+document.getElementById('pause').addEventListener('click', function() {
+  paused = !paused;
+  this.textContent = paused ? '▶ Play' : '⏸ Pause';
+});
+document.getElementById('shape').addEventListener('change', function() {
+  currentShape = this.value;
+});
+
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+canvas.addEventListener('mousedown', () => mouse.down = true);
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mouseleave', () => {
+  mouse.x = -1000;
+  mouse.y = -1000;
+  mouse.down = false;
+});
+
+// Touch support
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+}, { passive: false });
+canvas.addEventListener('touchstart', e => {
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  mouse.down = true;
+});
+canvas.addEventListener('touchend', () => {
+  mouse.down = false;
+  mouse.x = -1000;
+  mouse.y = -1000;
+});
+
+init();
+animate();
+</script>
+</body>
+</html>
