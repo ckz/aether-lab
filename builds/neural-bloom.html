@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neural Bloom</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #05060a;
+    font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+  }
+  canvas {
+    display: block;
+    cursor: none;
+  }
+  #ui {
+    position: fixed;
+    top: 16px; left: 16px;
+    color: rgba(180, 210, 255, 0.8);
+    font-size: 11px;
+    pointer-events: none;
+    text-shadow: 0 0 8px rgba(120, 180, 255, 0.5);
+  }
+  #ui h1 {
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  #ui p {
+    opacity: 0.6;
+    line-height: 1.6;
+  }
+  #controls {
+    position: fixed;
+    bottom: 16px; left: 16px; right: 16px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    pointer-events: all;
+  }
+  .btn {
+    background: rgba(20, 30, 50, 0.7);
+    border: 1px solid rgba(100, 160, 255, 0.3);
+    color: rgba(180, 210, 255, 0.9);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 11px;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+  .btn:hover {
+    background: rgba(40, 70, 120, 0.8);
+    border-color: rgba(140, 200, 255, 0.6);
+    box-shadow: 0 0 16px rgba(100, 160, 255, 0.3);
+  }
+  .btn.active {
+    background: rgba(60, 120, 200, 0.6);
+    border-color: rgba(160, 210, 255, 0.8);
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Neural Bloom</h1>
+  <p>move — grow &nbsp;|&nbsp; click — pulse &nbsp;|&nbsp; space — clear</p>
+</div>
+<div id="controls">
+  <button class="btn active" data-mode="grow">Grow</button>
+  <button class="btn" data-mode="weave">Weave</button>
+  <button class="btn" data-mode="storm">Storm</button>
+  <button class="btn" data-mode="zen">Zen</button>
+  <button class="btn" data-mood="cycle">Mood: <span id="moodLabel">Deep</span></button>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+
+  let W, H;
+  const resize = () => {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  };
+  resize();
+  window.addEventListener('resize', resize);
+
+  // --- Moods ---
+  const moods = {
+    deep:   { bg: '#05060a', palette: [[80,160,255],[120,200,255],[40,100,200],[180,220,255],[60,140,220]], glow: 0.6 },
+    aurora: { bg: '#040a08', palette: [[80,255,180],[120,255,200],[40,200,140],[180,255,220],[60,220,160]], glow: 0.7 },
+    ember:  { bg: '#0a0604', palette: [[255,140,60],[255,180,100],[220,100,40],[255,200,140],[255,120,80]],  glow: 0.7 },
+    void:   { bg: '#08050a', palette: [[200,120,255],[240,160,255],[160,80,220],[220,180,255],[180,100,240]], glow: 0.6 },
+    gold:   { bg: '#0a0804', palette: [[255,220,80],[255,200,100],[220,160,40],[255,240,160],[240,180,60]],  glow: 0.7 },
+  };
+  const moodKeys = Object.keys(moods);
+  let moodIdx = 0;
+
+  // --- Tendrils ---
+  const MAX_TENDRILS = 120;
+  const MAX_NODES = 180;
+
+  class Tendril {
+    constructor(x, y, hue) {
+      this.x = x; this.y = y;
+      this.ox = x; this.oy = y;
+      this.angle = Math.random() * Math.PI * 2;
+      this.speed = 0.3 + Math.random() * 1.8;
+      this.life = 1;
+      this.decay = 0.0003 + Math.random() * 0.001;
+      this.nodes = [{x, y, r: 1.5 + Math.random() * 2.5}];
+      this.hue = hue;
+      this.wander = 0;
+      this.attracted = 0;
+    }
+    update(mx, my, mode) {
+      if (this.life <= 0) return;
+      this.life -= this.decay;
+      const dx = mx - this.x, dy = my - this.y;
+      const d = Math.hypot(dx, dy) || 1;
+
+      // Attraction / behavior
+      if (mode === 'grow') {
+        if (d < 220) {
+          this.angle += (Math.atan2(dy, dx) - this.angle) * 0.04;
+          this.attracted = Math.min(1, this.attracted + 0.02);
+        } else {
+          this.angle += (Math.random() - 0.5) * 0.6;
+          this.attracted = Math.max(0, this.attracted - 0.01);
+        }
+      } else if (mode === 'weave') {
+        this.angle += Math.sin(this.wander * 0.03) * 0.15 + (Math.random() - 0.5) * 0.3;
+        if (d < 150) this.angle += (Math.atan2(dy, dx) - this.angle) * 0.02;
+        this.attracted = 0.5;
+      } else if (mode === 'storm') {
+        const perpAngle = Math.atan2(dy, dx) + Math.PI / 2;
+        this.angle += Math.sin(this.wander * 0.05) * 0.4 + (Math.random() - 0.5) * 1.2;
+        if (d < 300) this.angle += (perpAngle - this.angle) * 0.06;
+        this.attracted = 0.3;
+      } else { // zen
+        this.angle += Math.sin(this.wander * 0.01) * 0.06 + (Math.random() - 0.5) * 0.15;
+        this.attracted = 0;
+      }
+
+      const s = this.speed * (0.6 + this.attracted * 0.8);
+      this.ox = this.x; this.oy = this.y;
+      this.x += Math.cos(this.angle) * s;
+      this.y += Math.sin(this.angle) * s;
+      this.wander++;
+
+      // Bounce off edges softly
+      if (this.x < 0 || this.x > W) this.angle = Math.PI - this.angle;
+      if (this.y < 0 || this.y > H) this.angle = -this.angle;
+      this.x = Math.max(0, Math.min(W, this.x));
+      this.y = Math.max(0, Math.min(H, this.y));
+
+      this.nodes.push({x: this.x, y: this.y, r: 1.2 + Math.random() * 1.8});
+      if (this.nodes.length > MAX_NODES) this.nodes.shift();
+    }
+    draw(ctx, palette, glow) {
+      if (this.nodes.length < 2 || this.life <= 0) return;
+      const alpha = Math.min(1, this.life * 1.3);
+      const ci = Math.floor(this.hue * palette.length) % palette.length;
+      const [r, g, b] = palette[ci];
+      ctx.strokeStyle = `rgba(${r},${g},${b},${alpha * 0.55})`;
+      ctx.lineWidth = 0.6 + this.attracted * 1.2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(this.nodes[0].x, this.nodes[0].y);
+      for (let i = 1; i < this.nodes.length; i++) {
+        const prev = this.nodes[i - 1], curr = this.nodes[i];
+        const mx = (prev.x + curr.x) / 2, my = (prev.y + curr.y) / 2;
+        ctx.quadraticCurveTo(prev.x, prev.y, mx, my);
+      }
+      ctx.stroke();
+
+      // Glow at head
+      const head = this.nodes[this.nodes.length - 1];
+      const gr = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, 6 + this.attracted * 8);
+      gr.addColorStop(0, `rgba(${r},${g},${b},${alpha * glow})`);
+      gr.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.fillStyle = gr;
+      ctx.beginPath();
+      ctx.arc(head.x, head.y, 6 + this.attracted * 8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // --- State ---
+  const tendrils = [];
+  let mode = 'grow';
+  let mx = W / 2, my = H / 2;
+  let pulse = 0;
+  let mouseActive = false;
+
+  const spawn = (x, y, n = 4) => {
+    const mood = moods[moodKeys[moodIdx]];
+    for (let i = 0; i < n; i++) {
+      if (tendrils.length >= MAX_TENDRILS) tendrils.shift();
+      tendrils.push(new Tendril(x, y, Math.random()));
+    }
+  };
+
+  // --- Events ---
+  window.addEventListener('mousemove', e => {
+    mx = e.clientX; my = e.clientY;
+    mouseActive = true;
+    if (tendrils.length < MAX_TENDRILS * 0.7) spawn(mx, my, 2);
+  });
+  window.addEventListener('touchmove', e => {
+    e.preventDefault();
+    mx = e.touches[0].clientX; my = e.touches[0].clientY;
+    mouseActive = true;
+    if (tendrils.length < MAX_TENDRILS * 0.7) spawn(mx, my, 2);
+  }, {passive: false});
+  canvas.addEventListener('click', e => {
+    spawn(e.clientX, e.clientY, 15);
+    pulse = 1;
+  });
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      tendrils.length = 0;
+    }
+  });
+
+  document.querySelectorAll('.btn[data-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.btn[data-mode]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      mode = btn.dataset.mode;
+    });
+  });
+  document.querySelector('[data-mood]').addEventListener('click', () => {
+    moodIdx = (moodIdx + 1) % moodKeys.length;
+    document.getElementById('moodLabel').textContent =
+      moodKeys[moodIdx].charAt(0).toUpperCase() + moodKeys[moodIdx].slice(1);
+  });
+
+  // --- Fade trail ---
+  let lastFade = performance.now();
+  const fadeInterval = 1000 / 45;
+
+  // --- Loop ---
+  const loop = now => {
+    requestAnimationFrame(loop);
+    const elapsed = now - lastFade;
+    if (elapsed < fadeInterval) return;
+    lastFade = now;
+
+    const mood = moods[moodKeys[moodIdx]];
+
+    // Semi-transparent overlay for trails
+    ctx.fillStyle = mood.bg + 'ee';
+    ctx.fillRect(0, 0, W, H);
+
+    // Spawn idle tendrils
+    if (tendrils.length < 25 && Math.random() < 0.15) {
+      spawn(Math.random() * W, Math.random() * H, 1);
+    }
+
+    // Mouse proximity attractor when idle
+    if (!mouseActive && tendrils.length < 40 && Math.random() < 0.2) {
+      spawn(Math.random() * W, Math.random() * H, 1);
+    }
+    mouseActive = false;
+
+    // Update & draw
+    for (let i = tendrils.length - 1; i >= 0; i--) {
+      const t = tendrils[i];
+      t.update(mx, my, mode);
+      t.draw(ctx, mood.palette, mood.glow);
+      if (t.life <= 0) tendrils.splice(i, 1);
+    }
+
+    // Pulse ring
+    if (pulse > 0.01) {
+      const pr = ctx.createRadialGradient(mx, my, 0, mx, my, 80 + (1 - pulse) * 120);
+      const [r,g,b] = mood.palette[0];
+      pr.addColorStop(0, `rgba(${r},${g},${b},${pulse * 0.4})`);
+      pr.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.strokeStyle = `rgba(${r},${g},${b},${pulse * 0.6})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(mx, my, 80 + (1 - pulse) * 140, 0, Math.PI * 2);
+      ctx.stroke();
+      pulse *= 0.94;
+    }
+
+    // Custom cursor
+    const [cr,cg,cb] = mood.palette[0];
+    ctx.fillStyle = `rgba(${cr},${cg},${cb},0.8)`;
+    ctx.beginPath();
+    ctx.arc(mx, my, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${cr},${cg},${cb},0.3)`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(mx, my, 10, 0, Math.PI * 2);
+    ctx.stroke();
+  };
+
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
