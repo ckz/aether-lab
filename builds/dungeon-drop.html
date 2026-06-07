@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dungeon Drop — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 1rem;
+  }
+  h1 {
+    font-weight: 300;
+    letter-spacing: 0.2em;
+    font-size: 1.4rem;
+    margin-bottom: 1rem;
+    color: #facc15;
+  }
+  canvas {
+    background: #12121a;
+    border: 1px solid #1e1e2e;
+    border-radius: 8px;
+    image-rendering: pixelated;
+    max-width: 100%;
+  }
+  .info {
+    margin-top: 0.8rem;
+    color: #777;
+    font-size: 0.8rem;
+  }
+</style>
+</head>
+<body>
+<h1>DUNGEON DROP</h1>
+<canvas id="c" width="480" height="480"></canvas>
+<p class="info">Arrow keys / WASD to move · Space to descend a floor · G to grab gold</p>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const TILE = 32;
+const COLS = W/TILE, ROWS = H/TILE;
+
+const state = {
+  floor: 1,
+  gold: 0,
+  hp: 5,
+  x: 1, y: 1,
+  map: [],
+  messages: ["Welcome to Dungeon Drop..."]
+};
+
+function pushMsg(m){ state.messages.unshift(m); if(state.messages.length>4)state.messages.pop(); }
+
+function genMap(){
+  const m = [];
+  for(let y=0;y<ROWS;y++){
+    m[y]=[];
+    for(let x=0;x<COLS;x++){
+      if(x===0||x===COLS-1||y===0||y===ROWS-1) m[y][x]=1;
+      else if(Math.random()<0.18) m[y][x]=1;
+      else m[y][x]=0;
+    }
+  }
+  m[state.y][state.x]=0;
+  let placed=false;
+  while(!placed){
+    let gx=Math.floor(Math.random()*(COLS-2))+1;
+    let gy=Math.floor(Math.random()*(ROWS-2))+1;
+    if(m[gy][gx]===0 && !(gx===state.x && gy===state.y)){
+      m[gy][gx]=2; // gold
+      placed=true;
+    }
+  }
+  if(state.floor%5===0){
+    let placedE=false;
+    while(!placedE){
+      let ex=Math.floor(Math.random()*(COLS-2))+1;
+      let ey=Math.floor(Math.random()*(ROWS-2))+1;
+      if(m[ey][ex]===0 && !(ex===state.x && ey===state.y)){
+        m[ey][ex]=3; placedE=true; // enemy
+      }
+    }
+  }
+  state.map=m;
+}
+
+function draw(){
+  ctx.fillStyle='#0a0a0f'; ctx.fillRect(0,0,W,H);
+  for(let y=0;y<ROWS;y++){
+    for(let x=0;x<COLS;x++){
+      const t=state.map[y][x];
+      if(t===1){
+        ctx.fillStyle='#1a1a2e'; ctx.fillRect(x*TILE,y*TILE,TILE,TILE);
+        ctx.fillStyle='#232340'; ctx.fillRect(x*TILE,y*TILE,TILE,2); ctx.fillRect(x*TILE,y*TILE,2,TILE);
+      }
+    }
+  }
+  // gold sparkle
+  ctx.fillStyle='#facc15';
+  const t=Date.now()/200;
+  for(let y=0;y<ROWS;y++){
+    for(let x=0;x<COLS;x++){
+      if(state.map[y][x]===2){
+        const cx=x*TILE+TILE/2, cy=y*TILE+TILE/2;
+        ctx.globalAlpha=0.7+Math.sin(t+x+y)*0.3;
+        ctx.beginPath(); ctx.arc(cx,cy,4+Math.sin(t*2)*1,0,Math.PI*2); ctx.fill();
+      }
+      if(state.map[y][x]===3){
+        const cx=x*TILE+TILE/2, cy=y*TILE+TILE/2;
+        ctx.globalAlpha=0.9;
+        ctx.fillStyle='#ff4d6a';
+        ctx.beginPath(); ctx.arc(cx,cy,6,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#ffb3c1';
+        ctx.beginPath(); ctx.arc(cx-2,cy-2,2,0,Math.PI*2); ctx.fill();
+      }
+    }
+  }
+  ctx.globalAlpha=1;
+  // player
+  const px=state.x*TILE+TILE/2, py=state.y*TILE+TILE/2;
+  ctx.fillStyle='#60a5fa';
+  ctx.beginPath(); ctx.arc(px,py,10,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#bfdbfe';
+  ctx.beginPath(); ctx.arc(px,py-3,3,0,Math.PI*2); ctx.fill();
+  // HUD
+  ctx.fillStyle='#e0e0e0';
+  ctx.font='14px system-ui';
+  ctx.fillText(`Floor ${state.floor}  ❤️ ${state.hp}  💰 ${state.gold}`, 10, H-12);
+  ctx.fillStyle='#facc15'; ctx.fillText(state.messages[0]||'', W-220, H-12);
+}
+
+function tryMove(dx,dy){
+  const nx=state.x+dx, ny=state.y+dy;
+  const t=state.map[ny][nx];
+  if(t===1) return;
+  if(t===2){ state.gold++; state.map[ny][nx]=0; pushMsg('Gold +1'); }
+  if(t===3){ state.hp--; state.map[ny][nx]=0; pushMsg('Ouch! -1 HP'); if(state.hp<=0){ pushMsg('You died! Refresh to retry.'); }}
+  state.x=nx; state.y=ny;
+  draw();
+}
+
+function descend(){
+  state.floor++;
+  pushMsg(`Descended to floor ${state.floor}`);
+  state.x=1; state.y=1;
+  genMap();
+  draw();
+}
+
+function init(){
+  state.x=1; state.y=1; state.map=[]; genMap(); draw();
+}
+
+window.addEventListener('keydown', e=>{
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','w','a','s','d',' ','g'].includes(e.key)){
+    e.preventDefault();
+  }
+  if(e.key==='ArrowUp'||e.key==='w') tryMove(0,-1);
+  if(e.key==='ArrowDown'||e.key==='s') tryMove(0,1);
+  if(e.key==='ArrowLeft'||e.key==='a') tryMove(-1,0);
+  if(e.key==='ArrowRight'||e.key==='d') tryMove(1,0);
+  if(e.key===' ') descend();
+});
+init();
+</script>
+</body>
+</html>
