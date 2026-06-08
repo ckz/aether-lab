@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Particle Garden ✨</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #050510;
+    color: #e0e0e0;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  canvas {
+    display: block;
+    cursor: crosshair;
+    flex: 1;
+  }
+
+  .ui {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    background: rgba(20, 20, 40, 0.85);
+    backdrop-filter: blur(10px);
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    min-width: 260px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  }
+
+  .ui h1 {
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 0.3rem;
+    letter-spacing: 0.02em;
+  }
+
+  .ui .subtitle {
+    font-size: 0.75rem;
+    color: #888;
+    margin-bottom: 1rem;
+    line-height: 1.4;
+  }
+
+  .controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .control {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.8rem;
+  }
+
+  .control label {
+    color: #aaa;
+    flex-shrink: 0;
+  }
+
+  .control input[type="range"] {
+    width: 110px;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: #2a2a3e;
+    border-radius: 2px;
+    outline: none;
+  }
+
+  .control input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #8b9cf7;
+    cursor: pointer;
+  }
+
+  .btn-group {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    margin-top: 0.4rem;
+  }
+
+  .btn {
+    padding: 0.35rem 0.7rem;
+    font-size: 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+    color: #ccc;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #fff;
+  }
+
+  .btn.active {
+    background: rgba(139, 156, 247, 0.25);
+    border-color: #8b9cf7;
+    color: #fff;
+  }
+
+  .stats {
+    font-size: 0.7rem;
+    color: #666;
+    margin-top: 0.8rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    line-height: 1.6;
+  }
+
+  .stats span {
+    color: #8b9cf7;
+    font-weight: 600;
+  }
+
+  .hint {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #444;
+    font-size: 0.75rem;
+    pointer-events: none;
+    text-align: center;
+    z-index: 10;
+  }
+
+  @media (max-width: 500px) {
+    .ui { min-width: auto; width: calc(100vw - 40px); }
+  }
+</style>
+</head>
+<body>
+
+<div class="ui">
+  <h1>🌿 Particle Garden</h1>
+  <p class="subtitle">Click or drag to plant seeds.<br>Watch them grow into organic structures.</p>
+
+  <div class="controls">
+    <div class="control">
+      <label>Growth</label>
+      <input type="range" id="growthSlider" min="3" max="14" value="8">
+    </div>
+    <div class="control">
+      <label>Branches</label>
+      <input type="range" id="branchSlider" min="1" max="6" value="3">
+    </div>
+    <div class="control">
+      <label>Wind</label>
+      <input type="range" id="windSlider" min="0" max="100" value="20">
+    </div>
+    <div class="control">
+      <label>Palette</label>
+      <div class="btn-group" id="paletteGroup">
+        <button class="btn active" data-palette="aurora">Aurora</button>
+        <button class="btn" data-palette="ember">Ember</button>
+        <button class="btn" data-palette="ocean">Ocean</button>
+        <button class="btn" data-palette="sakura">Sakura</button>
+        <button class="btn" data-palette="neon">Neon</button>
+      </div>
+    </div>
+    <div class="control">
+      <label>Actions</label>
+      <div class="btn-group">
+        <button class="btn" id="clearBtn">Clear</button>
+        <button class="btn" id="fireflyBtn">Fireflies</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats">
+    Plants: <span id="plantCount">0</span> &nbsp;·&nbsp;
+    Particles: <span id="particleCount">0</span>
+  </div>
+</div>
+
+<div class="hint">click / drag to plant &nbsp;·&nbsp; space to toggle wind burst</div>
+
+<canvas id="garden"></canvas>
+
+<script>
+const canvas = document.getElementById('garden');
+const ctx = canvas.getContext('2d');
+
+let W, H, DPR;
+function resize() {
+  DPR = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+/* ---- state ---- */
+let plants = [];
+let particles = [];
+let fireflies = [];
+let seedParticles = [];
+let windBurst = 0;
+let palette = 'aurora';
+let frameCount = 0;
+
+const growthSlider = document.getElementById('growthSlider');
+const branchSlider = document.getElementById('branchSlider');
+const windSlider = document.getElementById('windSlider');
+
+const palettes = {
+  aurora: ['#7c3aed', '#3b82f6', '#06b6d4', '#10b981', '#a78bfa', '#67e8f9'],
+  ember:  ['#f97316', '#ef4444', '#fbbf24', '#dc2626', '#f59e0b', '#fca5a5'],
+  ocean:  ['#0369a1', '#0ea5e9', '#06b6d4', '#3b82f6', '#38bdf8', '#7dd3fc'],
+  sakura: ['#f472b6', '#ec4899', '#f9a8d4', '#fbcfe8', '#e879f9', '#fce7f3'],
+  neon:   ['#00ff88', '#ff0080', '#00ccff', '#ffcc00', '#ff4444', '#88ff00'],
+};
+
+function randomFromPalette() {
+  const arr = palettes[palette];
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return { r, g, b };
+}
+
+/* ---- classes ---- */
+
+class SeedParticle {
+  constructor(x, y, color) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 3;
+    this.vy = -Math.random() * 2 - 1;
+    this.life = 1;
+    this.decay = 0.02 + Math.random() * 0.03;
+    this.color = color;
+    this.size = 2 + Math.random() * 2;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vx *= 0.99;
+    this.vy *= 0.99;
+    this.vy += 0.02;
+    this.life -= this.decay;
+  }
+  draw() {
+    ctx.save();
+    ctx.globalAlpha = this.life;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+class Branch {
+  constructor(x, y, angle, depth, maxDepth, color, width) {
+    this.x = x;
+    this.y = y;
+    this.angle = angle;
+    this.depth = depth;
+    this.maxDepth = maxDepth;
+    this.color = color;
+    this.width = width;
+    this.growProgress = 0;
+    this.growSpeed = 0.02 + Math.random() * 0.02;
+    this.length = (15 + Math.random() * 25) * (1 - depth / maxDepth * 0.5);
+    this.finished = false;
+    this.spawned = false;
+    this.children = [];
+    this.swayOffset = Math.random() * Math.PI * 2;
+    this.swaySpeed = 0.01 + Math.random() * 0.01;
+  }
+
+  update(windForce) {
+    if (this.finished) return;
+
+    this.growProgress += this.growSpeed;
+    if (this.growProgress >= 1) {
+      this.growProgress = 1;
+      if (!this.spawned && this.depth < this.maxDepth) {
+        this.spawned = true;
+        this.spawnChildren();
+      } else if (!this.spawned) {
+        this.finished = true;
+        this.spawned = true;
+      }
+    }
+
+    const sway = Math.sin(frameCount * this.swaySpeed + this.swayOffset) * 0.03;
+    this.currentAngle = this.angle + sway + windForce * (this.depth / this.maxDepth) * 0.15;
+
+    this.children.forEach(c => c.update(windForce));
+  }
+
+  spawnChildren() {
+    const numChildren = 1 + Math.floor(Math.random() * Math.min(parseInt(branchSlider.value), this.maxDepth - this.depth));
+    for (let i = 0; i < numChildren; i++) {
+      const angleOffset = (Math.random() - 0.5) * 1.2;
+      const childX = this.x + Math.cos(this.currentAngle) * this.length * this.growProgress;
+      const childY = this.y + Math.sin(this.currentAngle) * this.length * this.growProgress;
+      const child = new Branch(
+        childX, childY,
+        this.currentAngle + angleOffset,
+        this.depth + 1,
+        this.maxDepth,
+        this.color,
+        this.width * 0.72
+      );
+      this.children.push(child);
+    }
+    this.finished = true;
+  }
+
+  draw() {
+    if (this.growProgress <= 0) return;
+
+    const endX = this.x + Math.cos(this.currentAngle || this.angle) * this.length * this.growProgress;
+    const endY = this.y + Math.sin(this.currentAngle || this.angle) * this.length * this.growProgress;
+
+    const alpha = 0.5 + (1 - this.depth / this.maxDepth) * 0.5;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = this.width;
+    ctx.lineCap = 'round';
+
+    if (this.depth >= this.maxDepth - 1) {
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = this.color;
+      ctx.fillStyle = this.color;
+      ctx.beginPath();
+      ctx.arc(endX, endY, this.width * 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+    ctx.restore();
+
+    this.children.forEach(c => c.draw());
+  }
+
+  getEndPoints(pts) {
+    if (this.growProgress >= 1) {
+      const endX = this.x + Math.cos(this.currentAngle || this.angle) * this.length;
+      const endY = this.y + Math.sin(this.currentAngle || this.angle) * this.length;
+      pts.push({ x: endX, y: endY });
+    }
+    this.children.forEach(c => c.getEndPoints(pts));
+  }
+}
+
+class Plant {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.color = randomFromPalette();
+    this.rgb = hexToRgb(this.color);
+    this.maxDepth = parseInt(growthSlider.value);
+    this.root = new Branch(x, y, -Math.PI / 2 + (Math.random() - 0.5) * 0.5, 0, this.maxDepth, this.color, 5 - this.maxDepth * 0.3);
+    this.age = 0;
+    this.done = false;
+  }
+
+  update(windForce) {
+    this.age++;
+    this.root.update(windForce);
+    const leaves = [];
+    this.root.getEndPoints(leaves);
+    this.done = leaves.length > 0;
+  }
+
+  draw() {
+    this.root.draw();
+  }
+
+  getLeaves() {
+    const pts = [];
+    this.root.getEndPoints(pts);
+    return pts;
+  }
+}
+
+class Firefly {
+  constructor() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.size = 1.5 + Math.random() * 2;
+    this.alpha = 0.2 + Math.random() * 0.5;
+    this.alphaSpeed = 0.005 + Math.random() * 0.01;
+    this.alphaPhase = Math.random() * Math.PI * 2;
+    this.vx = (Math.random() - 0.5) * 0.5;
+    this.vy = (Math.random() - 0.5) * 0.5;
+    this.color = randomFromPalette();
+  }
+
+  update() {
+    this.alphaPhase += this.alphaSpeed;
+    this.alpha = 0.2 + Math.abs(Math.sin(this.alphaPhase)) * 0.8;
+    this.x += this.vx + Math.sin(frameCount * 0.01 + this.alphaPhase) * 0.3;
+    this.y += this.vy + Math.cos(frameCount * 0.01 + this.alphaPhase) * 0.3;
+    if (this.x < 0) this.x = W;
+    if (this.x > W) this.x = 0;
+    if (this.y < 0) this.y = H;
+    if (this.y > H) this.y = 0;
+  }
+
+  draw() {
+    ctx.save();
+    ctx.globalAlpha = this.alpha;
+    ctx.fillStyle = this.color;
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+/* ---- interaction ---- */
+let isMouseDown = false;
+let lastPlantTime = 0;
+
+function plantSeed(x, y) {
+  const now = Date.now();
+  if (now - lastPlantTime < 100) return; // throttle
+  lastPlantTime = now;
+  const color = randomFromPalette();
+  plants.push(new Plant(x, y));
+  for (let i = 0; i < 12; i++) {
+    seedParticles.push(new SeedParticle(x, y, color));
+  }
+}
+
+canvas.addEventListener('mousedown', (e) => {
+  isMouseDown = true;
+  plantSeed(e.clientX, e.clientY);
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (isMouseDown) {
+    plantSeed(e.clientX, e.clientY);
+  }
+});
+
+canvas.addEventListener('mouseup', () => isMouseDown = false);
+canvas.addEventListener('mouseleave', () => isMouseDown = false);
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  isMouseDown = true;
+  const t = e.touches[0];
+  plantSeed(t.clientX, t.clientY);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (isMouseDown) {
+    const t = e.touches[0];
+    plantSeed(t.clientX, t.clientY);
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', () => isMouseDown = false);
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    windBurst = 1;
+  }
+});
+
+/* ---- UI ---- */
+
+document.querySelectorAll('#paletteGroup .btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#paletteGroup .btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    palette = btn.dataset.palette;
+  });
+});
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  plants = [];
+  seedParticles = [];
+  particles = [];
+  ctx.clearRect(0, 0, W, H);
+});
+
+let firefliesOn = false;
+document.getElementById('fireflyBtn').addEventListener('click', (e) => {
+  firefliesOn = !firefliesOn;
+  e.target.classList.toggle('active', firefliesOn);
+  if (firefliesOn) {
+    for (let i = 0; i < 30; i++) fireflies.push(new Firefly());
+  } else {
+    fireflies = [];
+  }
+});
+
+/* ---- main loop ---- */
+function drawBackground() {
+  ctx.fillStyle = 'rgba(5, 5, 16, 0.12)';
+  ctx.fillRect(0, 0, W, H);
+}
+
+function animate() {
+  frameCount++;
+
+  const windBase = parseInt(windSlider.value) / 1000;
+  const windForce = windBase + windBurst * 0.15;
+  windBurst *= 0.94;
+
+  drawBackground();
+
+  // seed particles
+  seedParticles.forEach(p => { p.update(); p.draw(); });
+  seedParticles = seedParticles.filter(p => p.life > 0);
+
+  // plants
+  plants.forEach(p => { p.update(windForce); p.draw(); });
+
+  // subtle glow at plant bases
+  plants.forEach(p => {
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 20 + Math.sin(frameCount * 0.02) * 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+
+  // fireflies
+  fireflies.forEach(f => { f.update(); f.draw(); });
+
+  // stats
+  let totalParticles = 0;
+  plants.forEach(p => totalParticles += p.getLeaves().length);
+  totalParticles += seedParticles.length;
+  document.getElementById('plantCount').textContent = plants.length;
+  document.getElementById('particleCount').textContent = totalParticles;
+
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+
+</body>
+</html>
