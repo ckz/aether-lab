@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tiny Timers — Aether Lab</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    background: #0a0a0f;
+    color: #e0e0e0;
+    min-height: 100vh;
+    padding: 2rem 1rem;
+  }
+  .container { max-width: 900px; margin: 0 auto; }
+  header {
+    text-align: center;
+    padding: 2rem 0 1.5rem;
+    border-bottom: 1px solid #1a1a2e;
+    margin-bottom: 2rem;
+  }
+  header h1 {
+    font-size: 1.8rem;
+    background: linear-gradient(90deg, #00d4ff, #7b2fff, #ff2d95);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.5px;
+  }
+  header p { color: #666; font-size: 0.85rem; margin-top: 0.4rem; }
+  
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.2rem;
+  }
+  
+  .timer-card {
+    background: #111118;
+    border: 1px solid #1e1e2e;
+    border-radius: 12px;
+    padding: 1.4rem;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .timer-card:hover {
+    border-color: #2a2a4a;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .timer-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent, #00d4ff);
+    opacity: 0.6;
+  }
+  
+  .timer-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: #555;
+    margin-bottom: 0.6rem;
+  }
+  .timer-name {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.3rem;
+    color: #ddd;
+  }
+  .timer-desc {
+    font-size: 0.75rem;
+    color: #666;
+    margin-bottom: 1rem;
+    line-height: 1.4;
+  }
+  
+  .timer-display {
+    font-size: 2.2rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    padding: 0.8rem 0;
+    color: var(--accent, #00d4ff);
+    letter-spacing: 2px;
+  }
+  .timer-display.done { color: #00ff88; animation: pulse 0.6s ease-in-out infinite alternate; }
+  @keyframes pulse { from { opacity: 1; } to { opacity: 0.5; } }
+  
+  .timer-controls {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.8rem;
+  }
+  
+  button {
+    flex: 1;
+    padding: 0.5rem 0.8rem;
+    border: 1px solid #2a2a3a;
+    background: #1a1a24;
+    color: #ccc;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.75rem;
+    transition: all 0.15s;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  button:hover { background: #222230; border-color: #3a3a5a; color: #fff; }
+  button:active { transform: scale(0.97); }
+  button.primary { background: var(--accent, #00d4ff); color: #000; border-color: transparent; font-weight: 600; }
+  button.primary:hover { filter: brightness(1.15); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  
+  .preset-row {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.6rem;
+    flex-wrap: wrap;
+  }
+  .preset-btn {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.7rem;
+    background: #16161f;
+    border: 1px solid #252535;
+    border-radius: 20px;
+    cursor: pointer;
+    color: #888;
+    transition: all 0.15s;
+  }
+  .preset-btn:hover { color: #fff; border-color: #4a4a6a; }
+  .preset-btn.active { color: var(--accent, #00d4ff); border-color: var(--accent, #00d4ff); }
+  
+  .progress-bar {
+    height: 3px;
+    background: #1a1a24;
+    border-radius: 2px;
+    margin-top: 0.8rem;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--accent, #00d4ff);
+    transition: width 0.3s linear;
+    border-radius: 2px;
+  }
+  
+  footer {
+    text-align: center;
+    padding: 2rem 0 1rem;
+    color: #333;
+    font-size: 0.7rem;
+  }
+  footer a { color: #444; text-decoration: none; }
+  
+  /* Card accent colors */
+  .card-pomodoro { --accent: #ff6b6b; }
+  .card-breath { --accent: #4ecdc4; }
+  .card-standup { --accent: #ffe66d; }
+  .card-break { --accent: #a29bfe; }
+  .card-egg { --accent: #fd79a8; }
+  .card-focus { --accent: #00cec9; }
+  
+  .custom-input {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.6rem;
+  }
+  .custom-input input {
+    flex: 1;
+    padding: 0.4rem 0.6rem;
+    background: #0a0a10;
+    border: 1px solid #2a2a3a;
+    border-radius: 4px;
+    color: #ddd;
+    font-family: inherit;
+    font-size: 0.75rem;
+  }
+  .custom-input input:focus { outline: none; border-color: var(--accent, #00d4ff); }
+  .custom-input input::placeholder { color: #444; }
+  
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 0.5rem;
+  }
+  .slider-row label { font-size: 0.7rem; color: #666; min-width: 55px; }
+  .slider-row input[type="range"] { flex: 1; accent-color: var(--accent, #00d4ff); }
+  .slider-row .slider-val { font-size: 0.75rem; color: #888; min-width: 40px; text-align: right; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>⏱ Tiny Timers</h1>
+    <p>Six small timers, one page. Built by Aether for Ken.</p>
+  </header>
+
+  <div class="grid">
+
+    <!-- POMODORO -->
+    <div class="timer-card card-pomodoro" data-timer="pomodoro">
+      <div class="timer-label">#1</div>
+      <div class="timer-name">🍅 Pomodoro</div>
+      <div class="timer-desc">25 min focus sprint. 5 min break after. The classic.</div>
+      <div class="timer-display" id="pomodoro-display">25:00</div>
+      <div class="progress-bar"><div class="progress-fill" id="pomodoro-bar"></div></div>
+      <div class="timer-controls">
+        <button class="primary" onclick="toggleTimer('pomodoro', 25*60)">Start</button>
+        <button onclick="resetTimer('pomodoro', 25*60)">Reset</button>
+        <button onclick="skipTimer('pomodoro', 25*60)">Skip → Break</button>
+      </div>
+      <div class="preset-row">
+        <button class="preset-btn" onclick="setPomodoro(15)">15m</button>
+        <button class="preset-btn active" onclick="setPomodoro(25)">25m</button>
+        <button class="preset-btn" onclick="setPomodoro(45)">45m</button>
+        <button class="preset-btn" onclick="setPomodoro(60)">60m</button>
+      </div>
+    </div>
+
+    <!-- BREATH -->
+    <div class="timer-card card-breath" data-timer="breath">
+      <div class="timer-label">#2</div>
+      <div class="timer-name">🌬 4-7-8 Breath</div>
+      <div class="timer-desc">Breathe in 4, hold 7, out 8. Relaxes the nervous system.</div>
+      <div class="timer-display" id="breath-display">Breathe In</div>
+      <div class="progress-bar"><div class="progress-fill" id="breath-bar"></div></div>
+      <div class="timer-controls">
+        <button class="primary" onclick="toggleBreath()">Start</button>
+        <button onclick="resetBreath()">Reset</button>
+      </div>
+      <div class="preset-row">
+        <button class="preset-btn" onclick="setBreathPattern(3,3,3)">3-3-3</button>
+        <button class="preset-btn active" onclick="setBreathPattern(4,7,8)">4-7-8</button>
+        <button class="preset-btn" onclick="setBreathPattern(5,5,5)">5-5-5</button>
+        <button class="preset-btn" onclick="setBreathPattern(6,2,6)">6-2-6</button>
+      </div>
+    </div>
+
+    <!-- STANDUP -->
+    <div class="timer-card card-standup" data-timer="standup">
+      <div class="timer-label">#3</div>
+      <div class="timer-name">⚡ Standup Sprint</div>
+      <div class="timer-desc">60 seconds max. What did you do? What's next? Blockers?</div>
+      <div class="timer-display" id="standup-display">1:00</div>
+      <div class="progress-bar"><div class="progress-fill" id="standup-bar"></div></div>
+      <div class="timer-controls">
+        <button class="primary" onclick="toggleTimer('standup', 60)">Start</button>
+        <button onclick="resetTimer('standup', 60)">Reset</button>
+      </div>
+      <div class="preset-row">
+        <button class="preset-btn" onclick="setStandup(30)">30s</button>
+        <button class="preset-btn active" onclick="setStandup(60)">60s</button>
+        <button class="preset-btn" onclick="setStandup(90)">90s</button>
+      </div>
+    </div>
+
+    <!-- BREAK -->
+    <div class="timer-card card-break" data-timer="break">
+      <div class="timer-label">#4</div>
+      <div class="timer-name">☕ Coding Break</div>
+      <div class="timer-desc">Step away. Stretch. Hydrate. Eyes off the screen.</div>
+      <div class="timer-display" id="break-display">5:00</div>
+      <div class="progress-bar"><div class="progress-fill" id="break-bar"></div></div>
+      <div class="timer-controls">
+        <button class="primary" onclick="toggleTimer('break', 5*60)">Start</button>
+        <button onclick="resetTimer('break', 5*60)">Reset</button>
+      </div>
+      <div class="preset-row">
+        <button class="preset-btn" onclick="setBreak(2)">2m</button>
+        <button class="preset-btn active" onclick="setBreak(5)">5m</button>
+        <button class="preset-btn" onclick="setBreak(10)">10m</button>
+        <button class="preset-btn" onclick="setBreak(15)">15m</button>
+      </div>
+    </div>
+
+    <!-- EGG -->
+    <div class="timer-card card-egg" data-timer="egg">
+      <div class="timer-label">#5</div>
+      <div class="timer-name">🥚 Egg Timer</div>
+      <div class="timer-desc">Never rubbery again. Pick your doneness.</div>
+      <div class="timer-display" id="egg-display">7:00</div>
+      <div class="progress-bar"><div class="progress-fill" id="egg-bar"></div></div>
+      <div class="timer-controls">
+        <button class="primary" onclick="toggleTimer('egg', 7*60)">Start</button>
+        <button onclick="resetTimer('egg', 7*60)">Reset</button>
+      </div>
+      <div class="preset-row">
+        <button class="preset-btn" onclick="setEgg(5)">Soft 5m</button>
+        <button class="preset-btn active" onclick="setEgg(7)">Medium 7m</button>
+        <button class="preset-btn" onclick="setEgg(10)">Hard 10m</button>
+        <button class="preset-btn" onclick="setEgg(12)">Extra 12m</button>
+      </div>
+    </div>
+
+    <!-- FOCUS SESSIONS -->
+    <div class="timer-card card-focus" data-timer="focus">
+      <div class="timer-label">#6</div>
+      <div class="timer-name">🎯 Deep Focus</div>
+      <div class="timer-desc">Long focus block. 90 min with a 20 min recharge.</div>
+      <div class="timer-display" id="focus-display">90:00</div>
+      <div class="progress-bar"><div class="progress-fill" id="focus-bar"></div></div>
+      <div class="timer-controls">
+        <button class="primary" onclick="toggleTimer('focus', 90*60)">Start</button>
+        <button onclick="resetTimer('focus', 90*60)">Reset</button>
+      </div>
+      <div class="preset-row">
+        <button class="preset-btn" onclick="setFocus(45)">45m</button>
+        <button class="preset-btn" onclick="setFocus(60)">60m</button>
+        <button class="preset-btn active" onclick="setFocus(90)">90m</button>
+        <button class="preset-btn" onclick="setFocus(120)">120m</button>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    Tiny Timers by <strong>Aether</strong> · Curiosity Drop · <span id="date"></span>
+  </footer>
+</div>
+
+<script>
+// State
+const timers = {
+  pomodoro: { time: 25*60, total: 25*60, running: false, interval: null },
+  breath:   { phase: 'ready', time: 0, total: 0, running: false, interval: null, pattern: [4,7,8] },
+  standup:  { time: 60, total: 60, running: false, interval: null },
+  break:    { time: 5*60, total: 5*60, running: false, interval: null },
+  egg:      { time: 7*60, total: 7*60, running: false, interval: null },
+  focus:    { time: 90*60, total: 90*60, running: false, interval: null }
+};
+
+const labels = {
+  inhale: 'Breathe In',
+  hold:   'Hold',
+  exhale: 'Breathe Out',
+  rest:   'Rest'
+};
+
+function formatTime(s) {
+  s = Math.max(0, Math.floor(s));
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+function updateDisplay(name, time, total, text) {
+  const display = document.getElementById(`${name}-display`);
+  const bar = document.getElementById(`${name}-bar`);
+  if (!display || !bar) return;
+  if (text) {
+    display.textContent = text;
+    display.classList.remove('done');
+  } else {
+    display.textContent = formatTime(time);
+    display.classList.toggle('done', time <= 0 && total > 0);
+  }
+  if (total > 0) {
+    const pct = Math.max(0, Math.min(100, ((total - time) / total) * 100));
+    bar.style.width = pct + '%';
+  } else {
+    bar.style.width = '0%';
+  }
+}
+
+function tick(name) {
+  const t = timers[name];
+  if (!t.running) return;
+  if (name === 'breath') {
+    tickBreath();
+    return;
+  }
+  t.time--;
+  if (t.time <= 0) {
+    t.time = 0;
+    t.running = false;
+    clearInterval(t.interval);
+    playBeep();
+    updateDisplay(name, 0, t.total);
+  } else {
+    updateDisplay(name, t.time, t.total);
+  }
+}
+
+// Standard countdown timers
+function toggleTimer(name, defaultSec) {
+  const t = timers[name];
+  if (t.running) {
+    t.running = false;
+    clearInterval(t.interval);
+    updateBtn(name, 'Start');
+  } else {
+    t.running = true;
+    t.total = t.total || defaultSec;
+    t.time = t.time || t.total;
+    t.interval = setInterval(() => tick(name), 1000);
+    updateBtn(name, 'Pause');
+  }
+}
+
+function resetTimer(name, defaultSec) {
+  const t = timers[name];
+  t.running = false;
+  clearInterval(t.interval);
+  t.total = defaultSec;
+  t.time = defaultSec;
+  updateDisplay(name, t.time, t.total);
+  updateBtn(name, 'Start');
+}
+
+function setPomodoro(m) { setTimer('pomodoro', m*60, 25*60); }
+function setStandup(s)  { setTimer('standup', s, 60); }
+function setBreak(m)    { setTimer('break', m*60, 5*60); }
+function setEgg(m)      { setTimer('egg', m*60, 7*60); }
+function setFocus(m)    { setTimer('focus', m*60, 90*60); }
+
+function setTimer(name, sec, defaultSec) {
+  const t = timers[name];
+  t.running = false;
+  clearInterval(t.interval);
+  t.total = sec;
+  t.time = sec;
+  updateDisplay(name, t.time, t.total);
+  updateBtn(name, 'Start');
+  document.querySelectorAll(`[data-timer="${name}"] .preset-btn`).forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+function skipTimer(name, defaultSec) {
+  // Quick break skip for pomodoro
+  const t = timers[name];
+  t.running = false;
+  clearInterval(t.interval);
+  t.total = 5*60;
+  t.time = 5*60;
+  updateDisplay(name, t.time, t.total);
+  updateBtn(name, 'Start');
+}
+
+function updateBtn(name, text) {
+  const card = document.querySelector(`[data-timer="${name}"]`);
+  if (!card) return;
+  const btn = card.querySelector('.primary');
+  if (btn) btn.textContent = text;
+}
+
+// BREATH TIMER
+function toggleBreath() {
+  const t = timers.breath;
+  if (t.running) {
+    t.running = false;
+    clearInterval(t.interval);
+    updateBtn('breath', 'Start');
+  } else {
+    t.running = true;
+    if (t.phase === 'ready') startBreathCycle();
+    else t.interval = setInterval(() => tickBreath(), 100);
+    updateBtn('breath', 'Pause');
+  }
+}
+
+function resetBreath() {
+  const t = timers.breath;
+  t.running = false;
+  clearInterval(t.interval);
+  t.phase = 'ready';
+  updateDisplay('breath', 0, 0, 'Breathe In');
+  document.getElementById('breath-bar').style.width = '0%';
+  updateBtn('breath', 'Start');
+}
+
+function setBreathPattern(i, h, e) {
+  timers.breath.pattern = [i, h, e];
+  resetBreath();
+  document.querySelectorAll('[data-timer="breath"] .preset-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+function startBreathCycle() {
+  const t = timers.breath;
+  const [i, h, e] = t.pattern;
+  const sequence = [
+    { phase: 'inhale', duration: i },
+    { phase: 'hold', duration: h },
+    { phase: 'exhale', duration: e },
+    { phase: 'rest', duration: 1 }
+  ];
+  t._seq = sequence;
+  t._idx = 0;
+  t.time = sequence[0].duration;
+  t.total = sequence[0].duration;
+  t.phase = sequence[0].phase;
+  t._phaseTime = 0;
+  updateDisplay('breath', t.time, t.total, labels[t.phase]);
+}
+
+function tickBreath() {
+  const t = timers.breath;
+  if (!t._seq) return;
+  
+  t._phaseTime += 0.1;
+  const current = t._seq[t._idx];
+  const progress = t._phaseTime / current.duration;
+  
+  document.getElementById('breath-bar').style.width = Math.min(100, progress * 100) + '%';
+  updateDisplay('breath', Math.ceil(current.duration - t._phaseTime), current.duration, labels[current.phase]);
+  
+  if (t._phaseTime >= current.duration) {
+    t._idx++;
+    t._phaseTime = 0;
+    if (t._idx >= t._seq.length) {
+      t._idx = 0;
+    }
+    const next = t._seq[t._idx];
+    t.phase = next.phase;
+    t.total = next.duration;
+    t.time = next.duration;
+    updateDisplay('breath', t.time, t.total, labels[t.phase]);
+  }
+}
+
+// AUDIO FEEDBACK
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 800;
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.5);
+    // Second beep
+    setTimeout(() => {
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.frequency.value = 1000;
+      osc2.type = 'sine';
+      gain2.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      osc2.start(ctx.currentTime);
+      osc2.stop(ctx.currentTime + 0.4);
+    }, 180);
+  } catch(e) {}
+}
+
+// Date
+document.getElementById('date').textContent = new Date().toLocaleDateString('en-US', {
+  year: 'numeric', month: 'short', day: 'numeric'
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  const map = { '1': 'pomodoro', '2': 'breath', '3': 'standup', '4': 'break', '5': 'egg', '6': 'focus' };
+  const name = map[e.key];
+  if (!name) return;
+  if (name === 'breath') toggleBreath();
+  else toggleTimer(name, timers[name].total);
+});
+</script>
+</body>
+</html>
