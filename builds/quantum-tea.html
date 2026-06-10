@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quantum Tea Brewing Simulator</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: radial-gradient(ellipse at top, #1a0a2e 0%, #0d0015 60%, #000 100%);
+    color: #e8d5f5;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    overflow-x: hidden;
+  }
+  .container {
+    max-width: 680px;
+    width: 100%;
+    background: rgba(30, 10, 50, 0.6);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(180, 130, 255, 0.2);
+    border-radius: 24px;
+    padding: 36px 32px;
+    box-shadow: 0 0 80px rgba(120, 60, 200, 0.15), inset 0 0 60px rgba(80, 20, 140, 0.05);
+  }
+  h1 {
+    text-align: center;
+    font-size: 2rem;
+    font-weight: 300;
+    letter-spacing: 0.15em;
+    color: #d4b8ff;
+    margin-bottom: 6px;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 0.85rem;
+    color: #9a7cc0;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 32px;
+  }
+  .teapot {
+    text-align: center;
+    font-size: 4rem;
+    margin: 12px 0 20px;
+    animation: float 4s ease-in-out infinite;
+    filter: drop-shadow(0 0 20px rgba(180, 120, 255, 0.4));
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-12px); }
+  }
+  .ingredients {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  .ing {
+    background: rgba(60, 20, 100, 0.4);
+    border: 1px solid rgba(160, 100, 240, 0.25);
+    border-radius: 14px;
+    padding: 14px 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+    position: relative;
+  }
+  .ing:hover { background: rgba(90, 30, 150, 0.5); transform: translateY(-2px); }
+  .ing.active {
+    background: rgba(140, 60, 220, 0.5);
+    border-color: rgba(200, 150, 255, 0.7);
+    box-shadow: 0 0 20px rgba(160, 80, 240, 0.4);
+  }
+  .ing .icon { font-size: 1.8rem; display: block; margin-bottom: 6px; }
+  .ing .name { font-size: 0.72rem; color: #c9a8f0; letter-spacing: 0.08em; }
+  .ing .qty {
+    font-size: 0.65rem;
+    color: #9a7cc0;
+    margin-top: 4px;
+    min-height: 14px;
+  }
+  .buttons {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  button {
+    background: linear-gradient(135deg, #6a30c0, #9030d0);
+    color: white;
+    border: none;
+    padding: 13px 28px;
+    border-radius: 50px;
+    font-size: 0.9rem;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 4px 20px rgba(120, 40, 200, 0.4);
+    text-transform: uppercase;
+  }
+  button:hover { transform: translateY(-2px); box-shadow: 0 6px 28px rgba(150, 60, 220, 0.6); }
+  button:active { transform: translateY(0); }
+  button.secondary {
+    background: rgba(80, 30, 140, 0.5);
+    border: 1px solid rgba(160, 100, 240, 0.4);
+    box-shadow: none;
+  }
+  button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+  .cup {
+    background: rgba(10, 0, 25, 0.7);
+    border: 1px solid rgba(140, 90, 220, 0.3);
+    border-radius: 20px;
+    padding: 22px 24px;
+    min-height: 140px;
+    position: relative;
+    overflow: hidden;
+  }
+  .cup::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, rgba(180, 120, 255, 0.6), transparent);
+  }
+  .tea-name {
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: #e8c8ff;
+    text-align: center;
+    margin-bottom: 8px;
+    letter-spacing: 0.05em;
+  }
+  .tea-desc {
+    font-size: 0.88rem;
+    color: #b89ad4;
+    text-align: center;
+    line-height: 1.5;
+    margin-bottom: 10px;
+  }
+  .tea-effect {
+    font-size: 0.78rem;
+    color: #d4a0ff;
+    text-align: center;
+    font-style: italic;
+  }
+  .history {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(140, 90, 220, 0.15);
+  }
+  .history h3 {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: #8a60b0;
+    margin-bottom: 10px;
+  }
+  .history-item {
+    font-size: 0.78rem;
+    color: #a88ac0;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(100, 60, 150, 0.15);
+  }
+  .brewing .teapot { animation: shake 0.15s infinite; }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-3px) rotate(-1deg); }
+    75% { transform: translateX(3px) rotate(1deg); }
+  }
+  .steam {
+    position: absolute;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.5rem;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .brewing .steam {
+    animation: steam 1.5s ease-out infinite;
+    opacity: 0.7;
+  }
+  @keyframes steam {
+    0% { transform: translateX(-50%) translateY(0); opacity: 0.7; }
+    100% { transform: translateX(-50%) translateY(-40px); opacity: 0; }
+  }
+  .counter {
+    text-align: center;
+    font-size: 0.7rem;
+    color: #7a5a9a;
+    margin-top: 14px;
+    letter-spacing: 0.15em;
+  }
+  .hint {
+    text-align: center;
+    font-size: 0.72rem;
+    color: #6a4a8a;
+    margin-top: 8px;
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+  <div class="container" id="app">
+    <h1>✦ Quantum Tea Brewer ✦</h1>
+    <div class="subtitle">Brew teas from another dimension</div>
+    <div class="teapot" id="teapot">🫖</div>
+    <div class="steam" id="steam">💨</div>
+
+    <div class="ingredients" id="ingredients"></div>
+
+    <div class="buttons">
+      <button id="brewBtn" onclick="brew()">⚛ Brew Tea</button>
+      <button class="secondary" id="rndBtn" onclick="randomBrew()">🎲 Randomize</button>
+      <button class="secondary" id="clearBtn" onclick="clearIngredients()">🗑 Clear</button>
+    </div>
+
+    <div class="cup" id="cup">
+      <div class="tea-name" id="teaName">Your cup awaits...</div>
+      <div class="tea-desc" id="teaDesc">Select quantum ingredients and begin brewing.</div>
+      <div class="tea-effect" id="teaEffect"></div>
+    </div>
+
+    <div class="history" id="historyBox" style="display:none;">
+      <h3>📜 Brewing History</h3>
+      <div id="history"></div>
+    </div>
+
+    <div class="counter" id="counter">Brews across the multiverse: 0</div>
+    <div class="hint">Click ingredients to select · multiple ingredients combine</div>
+  </div>
+
+<script>
+const INGREDIENTS = [
+  { id: 'stardust',  icon: '✨', name: 'Stardust',     qty: 0 },
+  { id: 'moon',      icon: '🌙', name: 'Moon Shimmer', qty: 0 },
+  { id: 'nebula',    icon: '🌌', name: 'Nebula Mist',  qty: 0 },
+  { id: 'void',      icon: '🕳️', name: 'Void Essence', qty: 0 },
+  { id: 'aurora',    icon: '💠', name: 'Aurora Leaf',  qty: 0 },
+  { id: 'phoenix',   icon: '🔥', name: 'Phoenix Ash',  qty: 0 },
+  { id: 'crystal',   icon: '💎', name: 'Crystal Dew',  qty: 0 },
+  { id: 'cosmic',    icon: '🌀', name: 'Cosmic Root',  qty: 0 },
+];
+
+const TEAS = [
+  { name: 'Starlight Serenity',   desc: 'A gentle brew that tastes like quiet midnight sky. Calming, luminous, perfectly still.', effect: '☁️ Effect: +10 chill, +5 wonder', ings: ['stardust', 'moon'] },
+  { name: 'Nebula Noir',          desc: 'Dark, inky, and impossibly deep. You can taste the birth of stars in every sip.', effect: '🌑 Effect: +15 mystery, +∞ depth', ings: ['nebula', 'void'] },
+  { name: 'Phoenix Awakening',    desc: 'Burns beautifully going down. You feel reborn, slightly singed, and oddly optimistic.', effect: '🔥 Effect: +20 courage, -5 sleepiness', ings: ['phoenix', 'stardust'] },
+  { name: 'Aurora Dream',         desc: 'Shifts colors as you drink. One moment green, next pink — your brain can\'t decide.', effect: '🌈 Effect: +12 creativity, +8 confusion', ings: ['aurora', 'moon'] },
+  { name: 'Void Whisper',         desc: 'Tastes like silence and old paper. Slightly existential. Goes well with introspection.', effect: '🕳️ Effect: +18 philosophy, -3 social battery', ings: ['void', 'crystal'] },
+  { name: 'Cosmic Chai',          desc: 'Spiced with starlight and grounded by crystal earth. The universe\'s comfort drink.', effect: '☕ Effect: +14 warmth, +7 groundedness', ings: ['cosmic', 'crystal', 'stardust'] },
+  { name: 'Moonlit melancholy',   desc: 'Bittersweet, nostalgic, beautiful. Tastes like a memory you can\'t quite place.', effect: '🌙 Effect: +20 nostalgia, +10 poetic urge', ings: ['moon', 'nebula', 'void'] },
+  { name: 'Dragon\'s Breath',     desc: 'Smoke pours from your ears. Spicy, aggressive, and unapologetically extra.', effect: '🐉 Effect: +25 boldness, temporary fire resistance', ings: ['phoenix', 'nebula', 'cosmic'] },
+  { name: 'Crystal Clear Mind',   desc: 'Impossibly lucid. You understand everything for 17 minutes. Then it wears off.', effect: '💎 Effect: +30 clarity (17 min duration)', ings: ['crystal', 'aurora', 'moon'] },
+  { name: 'Entropy Tea',          desc: 'Tastes different every sip. Slightly chaotic. Your cup is never the same cup twice.', effect: '🌀 Effect: +22 spontaneity, unpredictable flavor', ings: ['void', 'cosmic', 'nebula', 'stardust'] },
+  { name: 'Pure Void',            desc: 'You taste nothing. And also everything. The tea brews you. You are now the tea.', effect: '🕳️ Effect: +99 enlightenment, -50 identity', ings: ['void'] },
+  { name: 'Starfall',             desc: 'Tingly, bright, effervescent. Like drinking a supernova in a porcelain cup.', effect: '⭐ Effect: +16 euphoria, sparkles visible', ings: ['stardust', 'aurora', 'crystal'] },
+  { name: 'Plain Old Water',      desc: 'Technically not tea. But after dimension-hopping, it\'s nice to have something normal.', effect: '💧 Effect: +3 hydration, +100 normalcy', ings: [] },
+  { name: 'Mystery Brew',         desc: 'The quantum particles didn\'t resolve into anything recognizable. Exciting? Terrifying? Yes.', effect: '❓ Effect: ??? (roll again)', ings: ['phoenix', 'void', 'moon', 'nebula', 'crystal', 'aurora', 'cosmic', 'stardust'] },
+];
+
+let selected = new Set();
+let brewCount = 0;
+let history = [];
+
+function renderIngredients() {
+  const el = document.getElementById('ingredients');
+  el.innerHTML = INGREDIENTS.map(ing => `
+    <div class="ing ${selected.has(ing.id) ? 'active' : ''}" onclick="toggleIng('${ing.id}')">
+      <span class="icon">${ing.icon}</span>
+      <div class="name">${ing.name}</div>
+      <div class="qty">${selected.has(ing.id) ? '✓ selected' : 'click to add'}</div>
+    </div>
+  `).join('');
+}
+
+function toggleIng(id) {
+  if (selected.has(id)) selected.delete(id);
+  else selected.add(id);
+  renderIngredients();
+}
+
+function clearIngredients() {
+  selected.clear();
+  renderIngredients();
+  document.getElementById('teaName').textContent = 'Your cup awaits...';
+  document.getElementById('teaDesc').textContent = 'Select quantum ingredients and begin brewing.';
+  document.getElementById('teaEffect').textContent = '';
+}
+
+function randomBrew() {
+  const count = Math.floor(Math.random() * 4);
+  selected.clear();
+  const ids = INGREDIENTS.map(i => i.id);
+  for (let i = 0; i < count; i++) {
+    selected.add(ids[Math.floor(Math.random() * ids.length)]);
+  }
+  renderIngredients();
+  brew();
+}
+
+function brew() {
+  if (selected.size === 0) {
+    document.getElementById('teaName').textContent = 'Empty Cup';
+    document.getElementById('teaDesc').textContent = 'The void stares back. Add at least one quantum ingredient.';
+    document.getElementById('teaEffect').textContent = '🕳️ Effect: +1 existential dread';
+    return;
+  }
+  const app = document.getElementById('app');
+  app.classList.add('brewing');
+  setTimeout(() => app.classList.remove('brewing'), 1800);
+
+  brewCount++;
+  document.getElementById('counter').textContent = `Brews across the multiverse: ${brewCount}`;
+
+  const sorted = Array.from(selected).sort();
+  const match = TEAS.find(t => t.ings.length === sorted.length && t.ings.every(i => sorted.includes(i)) && sorted.every(i => t.ings.includes(i)));
+
+  setTimeout(() => {
+    const tea = match || generateWildTea();
+    document.getElementById('teaName').textContent = tea.name;
+    document.getElementById('teaDesc').textContent = tea.desc;
+    document.getElementById('teaEffect').textContent = tea.effect || '';
+
+    history.unshift({ name: tea.name, time: new Date().toLocaleTimeString() });
+    if (history.length > 6) history.pop();
+    renderHistory();
+  }, 1600);
+}
+
+function generateWildTea() {
+  const chosen = INGREDIENTS.filter(i => selected.has(i.id));
+  const nouns = ['Elixir', 'Infusion', 'Concoction', 'Brew', 'Tincture', 'Draught', 'Mixture'];
+  const adjs = ['Ethereal', 'Unstable', 'Radiant', 'Entangled', 'Quantum', 'Singular', 'Luminous'];
+  const name = `${adjs[Math.floor(Math.random()*adjs.length)]} ${chosen.map(c=>c.name).join('·')} ${nouns[Math.floor(Math.random()*nouns.length)]}`;
+  return {
+    name,
+    desc: `A previously undiscovered quantum tea. Scientists are both fascinated and concerned. Tastes like ${chosen.map(c=>c.name.toLowerCase()).join(', ')} and possibility.`,
+    effect: `⚛ Effect: ${Math.floor(Math.random()*25)+5} to ${['serendipity','imagination','weirdness','cosmic awareness','dimensional stability'][Math.floor(Math.random()*5)]}`
+  };
+}
+
+function renderHistory() {
+  const box = document.getElementById('historyBox');
+  const el = document.getElementById('history');
+  if (history.length === 0) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  el.innerHTML = history.map(h => `<div class="history-item">${h.time} — <strong>${h.name}</strong></div>`).join('');
+}
+
+renderIngredients();
+</script>
+</body>
+</html>
