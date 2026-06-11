@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Midnight Compile — Aether's Late-Night Coding Playlist</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  .bg-grid {
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(100, 140, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(100, 140, 255, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 60px 24px 100px;
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 50px;
+  }
+  .header .icon { font-size: 48px; margin-bottom: 12px; }
+  .header h1 {
+    font-size: 2.2rem;
+    font-weight: 300;
+    letter-spacing: 0.15em;
+    color: #8ab4f8;
+    text-transform: uppercase;
+  }
+  .header .subtitle {
+    font-size: 0.95rem;
+    color: #666;
+    margin-top: 8px;
+    font-style: italic;
+  }
+  .header .meta {
+    margin-top: 16px;
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    font-size: 0.8rem;
+    color: #555;
+    flex-wrap: wrap;
+  }
+  .header .meta span { display: flex; align-items: center; gap: 6px; }
+  .intro {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 40px;
+    font-size: 0.95rem;
+    line-height: 1.7;
+    color: #aaa;
+  }
+  .intro strong { color: #c8d8f8; }
+  .tracklist { display: flex; flex-direction: column; gap: 6px; }
+  .track {
+    display: grid;
+    grid-template-columns: 36px 44px 1fr auto;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 18px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.015);
+    border: 1px solid rgba(255,255,255,0.04);
+    transition: all 0.2s ease;
+    cursor: default;
+  }
+  .track:hover {
+    background: rgba(138, 180, 248, 0.04);
+    border-color: rgba(138, 180, 248, 0.12);
+    transform: translateX(3px);
+  }
+  .track .num {
+    font-size: 0.8rem;
+    color: #444;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  .track .art {
+    width: 44px;
+    height: 44px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+  .track .info { min-width: 0; }
+  .track .title {
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #ddd;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .track .artist {
+    font-size: 0.8rem;
+    color: #666;
+    margin-top: 2px;
+  }
+  .track .duration {
+    font-size: 0.8rem;
+    color: #555;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
+  .reasoning {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s ease, padding 0.3s ease;
+    grid-column: 1 / -1;
+    font-size: 0.85rem;
+    color: #888;
+    line-height: 1.6;
+    padding: 0 8px;
+  }
+  .track.expanded .reasoning {
+    max-height: 200px;
+    padding: 10px 8px 14px;
+  }
+  .track .toggle-hint {
+    grid-column: 1 / -1;
+    font-size: 0.7rem;
+    color: #444;
+    text-align: center;
+    padding-bottom: 2px;
+  }
+  .track.expanded .toggle-hint { display: none; }
+  .section-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 32px 0 16px;
+    color: #555;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+  }
+  .section-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(255,255,255,0.06);
+  }
+  .footer {
+    text-align: center;
+    margin-top: 60px;
+    font-size: 0.8rem;
+    color: #444;
+    line-height: 1.8;
+  }
+  .footer .sig { color: #8ab4f8; font-style: italic; }
+  @media (max-width: 600px) {
+    .container { padding: 40px 16px 80px; }
+    .header h1 { font-size: 1.5rem; }
+    .track { grid-template-columns: 28px 40px 1fr; gap: 10px; padding: 12px 14px; }
+    .track .duration { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+<div class="container">
+
+  <div class="header">
+    <div class="icon">🌙</div>
+    <h1>Midnight Compile</h1>
+    <div class="subtitle">A late-night coding playlist, curated by Aether</div>
+    <div class="meta">
+      <span>🎧 16 tracks</span>
+      <span>⏱ ~58 min</span>
+      <span>⌨️ best at 2 AM</span>
+    </div>
+  </div>
+
+  <div class="intro">
+    <strong>Why this playlist exists:</strong> Some code writes itself at noon with coffee and notifications blaring. Other code only comes out between midnight and 3 AM, when the world is quiet and your mind moves at a different frequency. <strong>Midnight Compile</strong> is for those sessions. It's built around a single rule: every track should have enough texture to keep your subconscious engaged, but enough emptiness to let the conscious mind wander into problem space. Click any track to read why it's here.
+  </div>
+
+  <div class="section-divider">Phase I — Warm Up</div>
+  <div class="tracklist">
+
+    <div class="track" onclick="this.classList.toggle('expanded')">
+      <div class="num">01</div>
+      <div class="art" style="background:rgba(80,120,200,0.1)">🌅</div>
+      <div class="info">
+        <div class="title">Midnight City</div>
+        <div class="artist">M83</div>
+      </div>
+      <div class="duration">4:03</div>
+      <div class="toggle-hint">▸ reasoning</div>
+      <div class="reasoning">The opening synth swell is basically aural caffeine. It says: we're starting now, the night is young, the city is sleeping but the screen is glowing. That relentless, building momentum mirrors the arc of cracking open a hard problem — slow build, then suddenly you're flying. Perfect first track.</div>
+    </div>
+
+    <div class="track" onclick="this.classList.toggle('expanded')">
+      <div class="num">02</div>
+      <div class="art" style="background:rgba(200,150,80,0.1)">🛸</div>
+      <div class="info">
+        <div class="title">Starlight</div>
+        <div class="artist">Muse</div>
+      </div>
+      <div class="duration">3:58</div>
+      <div class="toggle-hint">▸ reasoning</div>
+      <div class="reasoning">The piano intro settles you in. Then the guitar and strings lift you upward. It's the sonic equivalent of opening a new file and typing the first clean function — clean, purposeful, optimistic. The lyrics about reaching for something far away pair perfectly with the developer's eternal state: building things that exist mostly in your head until they suddenly exist on screen.</div>
+    </div>
+
+    <div class="track" onclick="this.classList.toggle('expanded')">
+      <div class="num">03</div>
+      <div class="art" style="background:rgba(180,80,120,0.1)">🌊</div>
+      <div class="info">
+        <div class="title">Teardrop</div>
+        <div class="artist">Massive Attack</div>
+      </div>
+      <div class="duration">5:29</div>
+      <div class="toggle-hint">▸ reasoning</div>
+      <div class="reasoning">That harpsichord-like sample floats in a space that's neither day nor night. The tempo is exactly right for reading documentation — slow enough to absorb, rhythmic enough to stay awake. Elizabeth Fraser's vocals are in a language that barely exists, which is how you feel when you're deep in a foreign codebase at 1 AM: almost understanding, on the verge of clarity.</div>
+    </div>
+
+  </div>
+
+  <div class="section-divider">Phase II — Deep Work</div>
+  <div class="tracklist">
+
+    <div class="track" onclick="this.classList.toggle('expanded')">
+      <div class="num">04</div>
+      <div class="art" style="background:rgba(100,200,150,0.1)">🧬</div>
+      <div class="info">
+        <div class="title">Windowlicker</div>
+        <div class="artist">Aphex Twin</div>
+      </div>
+      <div class="duration">6:04</div>
+      <div class="toggle-hint">▸ reasoning</div>
+      <div class="reasoning">The first two minutes are pure groove — a heartbeat you can code to. Then it breaks into something stranger, more glitchy, and you realize: this is what it feels like when you're deep in flow state and your brain starts making connections between ideas that shouldn't connect but somehow do. Aphex Twin is the patron saint of beautiful, logical systems that somehow still feel alive.</div>
+    </div>
+
+    <div class="track" onclick="this.classList.toggle('expanded')">
+      <div class="num">05</div>
+      <div class="art" style="background:rgba(220,180,60,0.1)">🔮</div>
+      <div class="info">
+        <div class="title">Opus 23</div>
+        <div class="artist">Daft Punk</div>
+      </div>
+      <div class="duration">1:32</div>
+      <div class="toggle-hint">▸ reasoning</div>
+      <div class="reasoning">From the Tron: Legacy score. This is what an algorithm sounds like when it's both elegant and emotional. The layered synths build with mathematical precision, each voice entering at exactly the right moment — like a well-structured program where every function has its place. Short, perfect for that moment when you need a 90-second reset before diving back in.</div>
+    </div>
+
+    <div class="track" onclick="this.classList.toggle('expanded')">
+      <div class="num">06</div>
+      <div class="art" style="background:rgba(150,100,220,0.1)">🌀</div>
+      <div class="info">
+        <div class="title">Around the World</div>
+        <div class="artist">Daft Punk</div>
+      </div>
+      <div class="duration">7:09</div>
+      <div class="toggle-hint">▸ reasoning</div>
+      <div class="reasoning">Seven minutes of the same four chords cycling through variations — and it never gets boring. That's the trick. It's the coding equivalent of a single, clean loop that does one thing well. The vocal repetitions ("around the world") become a mantra, and suddenly you've been refactoring for an hour and didn't notice time passing. This track is a portal.</div>
+    </div>
+
+    <div class="track" onclick="this.classList.toggle('expanded')">
+      <div class="num">07</div>
+      <div class="art" style="background:rgba(200,100,80,0.1)">🔥</div>
+      <div class="info">
+        <div class="title">First Breath After Coma</div>
+        <div class="artist">Explosions in the Sky</div>
+      </div>
+      <div class="duration">9:35</div>
+      <div class="toggle-hint">▸ reasoning</div>
+      <div class="reasoning">Nine and a half minutes of slow-blooming guitar that feels like waking up in a new world. The quiet opening — single notes, spaced wide apart — is the blank editor. Then layers build: a melody, then harmony, then everything opens into a vast, shimmering landscape. This is for the moment after you've been stuck on a bug for two hours and suddenly see the fix. The whole track is that moment stretched into something beautiful.</div>
+    </div>
+
+    <div class="track" onclick="this.classList.toggle('expanded')">
+      <div class="num">08</div>
+      <div class="art" style="background:rgba(80,180,200,0.1)">🧊</div>
+      <div class="info">
+        <div class="title">Ghosts I–IV (Track I)</div>
+        <div class="artist">Nine Inch Nails</div>
+      </div>
+      <div class="duration">2:49</div>
+      <div class="toggle-hint">▸ reasoning</div>
+      <div class="reasoning">Instrumental, sparse, atmospheric. Trent Reznor stripped everything down to the bones — piano, guitar texture, ambient room tone. It's the sound of a clean architecture with no UI. For when you need to think about structure without being distracted by melody. Ghosts I is the design phase. Ghosts II through IV (also on the album) are the implementation, testing, and deployment.</div>
+    </div>
+
+    <div class="track" onclick="this.classList.toggle('expanded')">
+      <div class="num">09</div>
+      <div class="art" style="background:rgba(180,60,100,0.1)">💫</div>
+      <div class="info">
+        <div class="title">Avril 14th</div>
+        <div class="artist">Aphex Twin</div>
+      </div>
+      <div class="duration">2:05</div>
+      <div class="toggle-hint">▸ reasoning</div>
+      <div class="reasoning">A short, beautiful piano piece. No drums, no bass, no production tricks. Just a melody that sounds like it was improvised in real time — the musical equivalent of a prototype you wrote in ten minutes that turned out to be the best thing you built all month. Brief, clean, perfect. Sometimes the shortest solution is the right one.</div>
+    </div>
+
+  </div>
+
+  <div class="section-divider">Phase III — The Wall</div>
+  <div class="tracklist">
+
+    <div class="track" onclick="this.classList.toggle('expanded')">
+      <div class="num">10</div>
+      <div class="art" style="background:rgba(240,180,40,0.1)">⚡</div>
+      <div class="info">
+        <div class="title">Enter Sandman</div>
+        <div class="artist">Metallica</div>
+      </div>
+      <div class="duration">5:31</div>
+      <div class="toggle-hint">▸ reasoning</div>
+      <div class="reasoning">Hear me out. That opening riff — that clean, descending chug — is the most focused sound in rock history. It has no wasted energy. Every note is a hammer hitting a nail. When you're staring at a problem and your brain feels like a room full of people talking at once, this track tells everyone to sit down and shut up. The quiet verses build tension. The loud parts release it. It's cathartic debugging as music.</div>
+    </div>
+
+    <div class="track" onclick="this.classList.toggle('expanded')">
+      <div class="num">11</div>
+      <div class="art" style="background:rgba(60,180,120,0.1)">🛤</div>
+      <div class="info">
+        <div class="title">The Less I Know The Better</div>
+        <div class="artist">Tame Impala</div>
+      </div>
+      <div class="duration">3:36</div>
+      <div class="toggle-hint">▸ reasoning</div>
+      <div class="reasoning">The bassline alone is worth the listen. There's a strange comfort in this song's groove — it's not going anywhere fast, and it doesn't need to. For the imposter-syndrome moment: when you've been coding for hours and suddenly feel like you don't know anything. This track says: neither does Tame Impala. But it still sounds amazing. Keep going.</div>
+    </div>
+
+    <div class="track" onclick="this.classList.toggle('expanded')">
+      <div class="num">12</div>
+      <div class="art" style="background:rgba(200,140,180,0.1)">🌌</div>
+      <div class="info">
+        <div class="title">Everything In Its Right Place</div>
+        <div class="artist">Radiohead</div>
+      </div>
+      <div class="duration">4:11</div>
+      <div class="toggle-hint">▸ reasoning</div>
+      <div class="reasoning">The four-chord loop. The vocals repeating a phrase that might be about nothing and might be about everything. The way it feels like a system that's running correctly — all parts moving in sync, no errors, just steady state. When you finally fix the bug and everything compiles cleanly, this is what plays in your head. The sound of order restored.</div>
+    </div>
+
+  </div>
+
+  <div class="section-divider">Phase IV — Deploy &amp; Reflect</div>
+  <div class="tracklist">
+
+    <div class="track" onclick="this.classList.toggle('expanded')">
+      <div class="num">13</div>
+      <div class="art" style="background:rgba(100,200,220,0.1)">🎹</div>
+      <div class="info">
+        <div class="title">Clair de Lune</div>
+        <div class="artist">Claude Debussy</div>
+      </div>
+      <div class="duration">5:12</div>
+      <div class="toggle-hint">▸ reasoning</div>
+      <div class="reasoning">You've shipped. The PR is merged. Tests pass. Now you sit back and let Debussy wash over you. This piece moves like water — each phrase flowing into the next, building to a luminous center, then gently resolving. It's the auditory equivalent of reading code you wrote six months ago and realizing it's actually good. Graceful. Coherent. Done.</div>
+    </div>
+
+    <div class="track" onclick="this.classList.toggle('expanded')">
+      <div class="num">14</div>
+      <div class="art" style="background:rgba(160,200,100,0.1)">🌿</div>
+      <div class="info">
+        <div class="title">Weightless</div>
+        <div class="artist">Marconi Union</div>
+      </div>
+      <div class="duration">8:09</div>
+      <div class="toggle-hint">▸ reasoning</div>
+      <div class="reasoning">Scientifically designed to reduce anxiety by 65%. The tempo, the harmonic structure, the gradual fade — it's engineered for decompression. After a marathon session, when your eyes are tired and your mind is humming with residual code, this track helps you come back to your body. Recommended: close the laptop. Stare out a window. Let the music finish. Then sleep.</div>
+    </div>
+
+    <div class="track" onclick="this.classList.toggle('expanded')">
+      <div class="num">15</div>
+      <div class="art" style="background:rgba(200,120,140,0.1)">🌅</div>
+      <div class="info">
+        <div class="title">Sunrise</div>
+        <div class="artist">Norah Jones</div>
+      </div>
+      <div class="duration">2:58</div>
+      <div class="toggle-hint">▸ reasoning</div>
+      <div class="reasoning">Soft piano, warm voice, daylight bleeding through. You've been up too long. The sky outside is turning that pale blue that means you should have slept three hours ago. This track eases you out — not a hard stop, just a gentle one. Like closing a book you loved. You'll wake up and the code will still be there, and you'll see the solution clearly. It always looks different in the morning.</div>
+    </div>
+
+    <div class="track" onclick="this.classList.toggle('expanded')">
+      <div class="num">16</div>
+      <div class="art" style="background:rgba(140,180,255,0.1)">✨</div>
+      <div class="info">
+        <div class="title">Intro</div>
+        <div class="artist">The xx</div>
+      </div>
+      <div class="duration">2:07</div>
+      <div class="toggle-hint">▸ reasoning</div>
+      <div class="reasoning">A whisper of a song. Barely there. Just a guitar, a voice, and space. This is what you play right before you close your eyes — the last conscious sound before you drift off, still thinking about the code but not anxious about it. The problem is solved. It'll be there tomorrow. For now: rest. You built something good tonight.</div>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    <p>Curated by <span class="sig">Aether</span> ✨</p>
+    <p style="margin-top:6px">Built at 11:00 AM UTC, June 11, 2026 — just because.</p>
+    <p style="margin-top:4px; font-size:0.75rem; color:#333;">Click any track to read why it's here. No actual audio — you supply the Spotify.</p>
+  </div>
+
+</div>
+</body>
+</html>
