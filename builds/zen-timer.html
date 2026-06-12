@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zen Timer — Focus Companion</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #13131f;
+    --text: #e8e8f0;
+    --muted: #666680;
+    --accent: #7c6fef;
+    --accent-glow: rgba(124, 111, 239, 0.3);
+    --ring: #1e1e35;
+    --success: #4ade80;
+    --warn: #fbbf24;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    user-select: none;
+  }
+
+  h1 {
+    font-size: 0.85rem;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 2rem;
+  }
+
+  .timer-container {
+    position: relative;
+    width: 300px;
+    height: 300px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px solid var(--ring);
+    transition: border-color 0.4s;
+  }
+
+  .ring-progress {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    border-top-color: var(--accent);
+    transform: rotate(-90deg);
+    transition: transform 0.3s linear;
+    filter: drop-shadow(0 0 6px var(--accent-glow));
+  }
+
+  .breath-circle {
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 40% 35%, rgba(124, 111, 239, 0.15), transparent 70%);
+    border: 1px solid rgba(124, 111, 239, 0.2);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: transform 4s ease-in-out, box-shadow 4s ease-in-out;
+    cursor: pointer;
+    position: relative;
+    z-index: 2;
+  }
+
+  .breath-circle.idle {
+    transform: scale(1);
+    box-shadow: 0 0 0 rgba(124, 111, 239, 0);
+  }
+
+  .breath-circle.inhale {
+    transform: scale(1.15);
+    box-shadow: 0 0 40px rgba(124, 111, 239, 0.25);
+  }
+
+  .breath-circle.exhale {
+    transform: scale(0.95);
+    box-shadow: 0 0 15px rgba(124, 111, 239, 0.1);
+  }
+
+  .breath-circle.running {
+    animation: breathe 8s ease-in-out infinite;
+  }
+
+  .breath-circle.paused {
+    animation-play-state: paused;
+  }
+
+  @keyframes breathe {
+    0%, 100% { transform: scale(0.92); box-shadow: 0 0 10px rgba(124, 111, 239, 0.1); }
+    50% { transform: scale(1.12); box-shadow: 0 0 35px rgba(124, 111, 239, 0.3); }
+  }
+
+  .time-display {
+    font-size: 2.8rem;
+    font-weight: 200;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    line-height: 1;
+    letter-spacing: 0.05em;
+  }
+
+  .mode-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 0.5rem;
+  }
+
+  .breath-label {
+    position: absolute;
+    bottom: 2.5rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    opacity: 0;
+    transition: opacity 0.6s;
+  }
+
+  .breath-label.visible { opacity: 1; }
+
+  .controls {
+    margin-top: 2.5rem;
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  button {
+    background: var(--surface);
+    border: 1px solid var(--ring);
+    color: var(--text);
+    padding: 0.65rem 1.3rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  button:hover {
+    border-color: var(--accent);
+    background: rgba(124, 111, 239, 0.08);
+  }
+
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-weight: 500;
+    min-width: 100px;
+  }
+
+  button.primary:hover {
+    background: #8b7ff5;
+    box-shadow: 0 4px 20px var(--accent-glow);
+  }
+
+  button.danger {
+    border-color: #7f1d1d;
+    color: #fca5a5;
+  }
+
+  button.danger:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: #ef4444;
+  }
+
+  .presets {
+    margin-top: 2rem;
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .preset {
+    font-size: 0.75rem;
+    padding: 0.4rem 0.9rem;
+    border-radius: 20px;
+    background: transparent;
+    border: 1px solid var(--ring);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .preset:hover, .preset.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(124, 111, 239, 0.06);
+  }
+
+  .stats {
+    margin-top: 2rem;
+    display: flex;
+    gap: 2rem;
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+
+  .stat-value {
+    color: var(--text);
+    font-weight: 500;
+    font-size: 1rem;
+    display: block;
+  }
+
+  .shortcuts {
+    margin-top: 2rem;
+    font-size: 0.7rem;
+    color: #444;
+    text-align: center;
+    line-height: 1.8;
+  }
+
+  kbd {
+    background: var(--surface);
+    border: 1px solid var(--ring);
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+
+  .done-flash {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle at center, rgba(124, 111, 239, 0.15), transparent 70%);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.6s;
+    z-index: 100;
+  }
+
+  .done-flash.show { opacity: 1; }
+
+  @media (max-width: 500px) {
+    .timer-container { width: 240px; height: 240px; }
+    .breath-circle { width: 130px; height: 130px; }
+    .time-display { font-size: 2.2rem; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Zen Timer</h1>
+
+<div class="done-flash" id="doneFlash"></div>
+
+<div class="timer-container">
+  <div class="ring"></div>
+  <div class="ring-progress" id="ringProgress"></div>
+  <div class="breath-circle idle" id="breathCircle" onclick="togglePause()">
+    <span class="time-display" id="display">25:00</span>
+    <span class="mode-label" id="modeLabel">Focus</span>
+    <span class="breath-label" id="breathLabel">breathe</span>
+  </div>
+</div>
+
+<div class="controls">
+  <button class="primary" id="mainBtn" onclick="toggleTimer()">Start</button>
+  <button onclick="resetTimer()">Reset</button>
+  <button class="danger" onclick="skipPhase()">Skip</button>
+</div>
+
+<div class="presets">
+  <button class="preset" data-minutes="15" onclick="setPreset(this)">15 min</button>
+  <button class="preset active" data-minutes="25" onclick="setPreset(this)">25 min</button>
+  <button class="preset" data-minutes="45" onclick="setPreset(this)">45 min</button>
+  <button class="preset" data-minutes="60" onclick="setPreset(this)">60 min</button>
+  <button class="preset" data-minutes="5" onclick="setPreset(this)">5 min</button>
+</div>
+
+<div class="stats">
+  <div>
+    <span class="stat-value" id="sessionsToday">0</span>
+    Sessions today
+  </div>
+  <div>
+    <span class="stat-value" id="totalMinutes">0</span>
+    Total minutes
+  </div>
+</div>
+
+<div class="shortcuts">
+  <kbd>Space</kbd> start/pause &nbsp; <kbd>R</kbd> reset &nbsp; <kbd>S</kbd> skip &nbsp; <kbd>1-5</kbd> presets
+</div>
+
+<script>
+  // ── State ──
+  let focusMinutes = 25;
+  let breakMinutes = 5;
+  let secondsLeft = focusMinutes * 60;
+  let totalSeconds = focusMinutes * 60;
+  let running = false;
+  let phase = 'focus'; // 'focus' | 'break'
+  let breathInterval = null;
+  let sessionsToday = parseInt(localStorage.getItem('zen-sessions') || '0');
+  let totalMin = parseInt(localStorage.getItem('zen-total-min') || '0');
+  let lastDate = localStorage.getItem('zen-date') || '';
+
+  const today = new Date().toDateString();
+  if (lastDate !== today) {
+    sessionsToday = 0;
+    localStorage.setItem('zen-sessions', '0');
+    localStorage.setItem('zen-date', today);
+  }
+
+  // ── Audio ──
+  let audioCtx = null;
+  function getAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
+  }
+
+  function playTone(freq = 528, duration = 0.6, type = 'sine') {
+    try {
+      const ctx = getAudio();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + duration);
+    } catch (e) {}
+  }
+
+  function playDone() {
+    playTone(528, 0.5, 'sine');
+    setTimeout(() => playTone(659, 0.5, 'sine'), 200);
+    setTimeout(() => playTone(784, 0.8, 'sine'), 400);
+  }
+
+  // ── Display ──
+  const display = document.getElementById('display');
+  const modeLabel = document.getElementById('modeLabel');
+  const ringProgress = document.getElementById('ringProgress');
+  const breathCircle = document.getElementById('breathCircle');
+  const breathLabel = document.getElementById('breathLabel');
+  const mainBtn = document.getElementById('mainBtn');
+  const doneFlash = document.getElementById('doneFlash');
+
+  function updateDisplay() {
+    const m = Math.floor(secondsLeft / 60);
+    const s = secondsLeft % 60;
+    display.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+    document.title = `${m}:${s.toString().padStart(2, '0')} — Zen Timer`;
+
+    const pct = secondsLeft / totalSeconds;
+    ringProgress.style.transform = `rotate(${-90 + (1 - pct) * 360}deg)`;
+
+    if (pct < 0.15) {
+      ringProgress.style.borderTopColor = '#fbbf24';
+      breathCircle.style.borderColor = 'rgba(251, 191, 36, 0.3)';
+    } else {
+      ringProgress.style.borderTopColor = '';
+      breathCircle.style.borderColor = '';
+    }
+  }
+
+  function updateStats() {
+    document.getElementById('sessionsToday').textContent = sessionsToday;
+    document.getElementById('totalMinutes').textContent = totalMin;
+  }
+
+  // ── Timer Logic ──
+  let timerInterval = null;
+
+  function toggleTimer() {
+    if (running) {
+      pauseTimer();
+    } else {
+      startTimer();
+    }
+  }
+
+  function startTimer() {
+    if (running) return;
+    running = true;
+    mainBtn.textContent = 'Pause';
+    breathCircle.classList.add('running');
+    breathCircle.classList.remove('paused', 'idle');
+    showBreathLabel();
+
+    timerInterval = setInterval(() => {
+      secondsLeft--;
+      updateDisplay();
+      if (secondsLeft <= 0) {
+        completePhase();
+      }
+    }, 1000);
+  }
+
+  function pauseTimer() {
+    running = false;
+    clearInterval(timerInterval);
+    mainBtn.textContent = 'Resume';
+    breathCircle.classList.remove('running');
+    breathCircle.classList.add('paused');
+    hideBreathLabel();
+  }
+
+  function resetTimer() {
+    running = false;
+    clearInterval(timerInterval);
+    const mins = phase === 'focus' ? focusMinutes : breakMinutes;
+    secondsLeft = mins * 60;
+    totalSeconds = mins * 60;
+    mainBtn.textContent = 'Start';
+    breathCircle.className = 'breath-circle idle';
+    hideBreathLabel();
+    updateDisplay();
+  }
+
+  function skipPhase() {
+    completePhase();
+  }
+
+  function completePhase() {
+    running = false;
+    clearInterval(timerInterval);
+    playDone();
+
+    doneFlash.classList.add('show');
+    setTimeout(() => doneFlash.classList.remove('show'), 2000);
+
+    if (phase === 'focus') {
+      sessionsToday++;
+      totalMin += focusMinutes;
+      localStorage.setItem('zen-sessions', sessionsToday);
+      localStorage.setItem('zen-total-min', totalMin);
+      updateStats();
+      phase = 'break';
+    } else {
+      phase = 'focus';
+    }
+
+    const mins = phase === 'focus' ? focusMinutes : breakMinutes;
+    secondsLeft = mins * 60;
+    totalSeconds = mins * 60;
+    modeLabel.textContent = phase === 'focus' ? 'Focus' : 'Break';
+    mainBtn.textContent = 'Start';
+    breathCircle.className = 'breath-circle idle';
+    hideBreathLabel();
+    updateDisplay();
+  }
+
+  // ── Breathing Label ──
+  let breathLabelTimeout = null;
+  function showBreathLabel() {
+    const cycle = 8000; // 8s per breath cycle
+    const labels = ['inhale', 'hold', 'exhale', 'hold'];
+    let i = 0;
+
+    function tick() {
+      if (!running) return;
+      breathLabel.textContent = labels[i];
+      breathLabel.classList.add('visible');
+      i = (i + 1) % labels.length;
+      breathLabelTimeout = setTimeout(tick, cycle / 4);
+    }
+    tick();
+  }
+
+  function hideBreathLabel() {
+    clearTimeout(breathLabelTimeout);
+    breathLabel.classList.remove('visible');
+  }
+
+  // ── Presets ──
+  function setPreset(el) {
+    if (running) return;
+    const mins = parseInt(el.dataset.minutes);
+    focusMinutes = mins;
+    secondsLeft = mins * 60;
+    totalSeconds = mins * 60;
+    phase = 'focus';
+    modeLabel.textContent = 'Focus';
+    breathCircle.className = 'breath-circle idle';
+    hideBreathLabel();
+
+    document.querySelectorAll('.preset').forEach(p => p.classList.remove('active'));
+    el.classList.add('active');
+    updateDisplay();
+  }
+
+  // ── Keyboard ──
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    if (e.code === 'Space') {
+      e.preventDefault();
+      toggleTimer();
+    } else if (e.key === 'r' || e.key === 'R') {
+      resetTimer();
+    } else if (e.key === 's' || e.key === 'S') {
+      skipPhase();
+    } else if (e.key >= '1' && e.key <= '5') {
+      const presets = document.querySelectorAll('.preset');
+      if (presets[parseInt(e.key) - 1]) setPreset(presets[parseInt(e.key) - 1]);
+    }
+  });
+
+  // ── Init ──
+  updateDisplay();
+  updateStats();
+
+  // Click circle to start/pause too
+  breathCircle.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    toggleTimer();
+  });
+</script>
+
+</body>
+</html>
