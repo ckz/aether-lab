@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Focus Timer</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  background: #0a0a0f;
+  color: #e0e0e0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  user-select: none;
+}
+.header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+.header h1 {
+  font-size: 1.8em;
+  color: #00ffaa;
+  text-shadow: 0 0 20px rgba(0, 255, 170, 0.5);
+  letter-spacing: 3px;
+}
+.header .mode-label {
+  font-size: 0.9em;
+  color: #888;
+  margin-top: 5px;
+}
+.timer-display {
+  font-size: 6em;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 0 0 30px rgba(255, 255, 255, 0.3);
+  margin: 20px 0;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.5s;
+}
+.timer-display.running { color: #00ffaa; text-shadow: 0 0 40px rgba(0, 255, 170, 0.6); }
+.timer-display.paused { color: #ffaa00; text-shadow: 0 0 40px rgba(255, 170, 0, 0.6); }
+.timer-display.break { color: #00aaff; text-shadow: 0 0 40px rgba(0, 170, 255, 0.6); }
+.progress-ring {
+  position: relative;
+  width: 250px;
+  height: 250px;
+  margin-bottom: 30px;
+}
+.progress-ring svg {
+  transform: rotate(-90deg);
+  width: 100%;
+  height: 100%;
+}
+.progress-ring .bg {
+  fill: none;
+  stroke: #1a1a2e;
+  stroke-width: 8;
+}
+.progress-ring .progress {
+  fill: none;
+  stroke: #00ffaa;
+  stroke-width: 8;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s linear;
+}
+.progress-ring .time-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 2.5em;
+  font-weight: bold;
+  color: #fff;
+}
+.session-counter {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 30px;
+}
+.session-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #1a1a2e;
+  border: 2px solid #333;
+  transition: all 0.3s;
+}
+.session-dot.completed {
+  background: #00ffaa;
+  border-color: #00ffaa;
+  box-shadow: 0 0 10px rgba(0, 255, 170, 0.5);
+}
+.controls {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 30px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.btn {
+  background: #1a1a2e;
+  color: #e0e0e0;
+  border: 1px solid #333;
+  padding: 12px 24px;
+  font-family: inherit;
+  font-size: 0.95em;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+.btn:hover {
+  background: #2a2a3e;
+  border-color: #00ffaa;
+  color: #00ffaa;
+}
+.btn.primary {
+  background: #00ffaa;
+  color: #0a0a0f;
+  border-color: #00ffaa;
+  font-weight: bold;
+}
+.btn.primary:hover {
+  background: #00dd99;
+  box-shadow: 0 0 20px rgba(0, 255, 170, 0.4);
+}
+.btn.danger { border-color: #ff4444; color: #ff4444; }
+.btn.danger:hover { background: #ff4444; color: #fff; }
+.mode-selector {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 20px;
+}
+.mode-btn {
+  background: transparent;
+  border: 1px solid #333;
+  color: #888;
+  padding: 8px 16px;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+.mode-btn.active {
+  border-color: #00ffaa;
+  color: #00ffaa;
+  background: rgba(0, 255, 170, 0.1);
+}
+.stats {
+  background: #0f0f1a;
+  border: 1px solid #1a1a2e;
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 20px;
+  width: 100%;
+  max-width: 500px;
+}
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid #1a1a2e;
+}
+.stat-row:last-child { border-bottom: none; }
+.stat-label { color: #888; font-size: 0.9em; }
+.stat-value { color: #00ffaa; font-weight: bold; }
+.quote {
+  margin-top: 20px;
+  padding: 15px;
+  background: #0f0f1a;
+  border-left: 3px solid #00ffaa;
+  border-radius: 4px;
+  font-style: italic;
+  color: #aaa;
+  max-width: 500px;
+  text-align: center;
+  font-size: 0.95em;
+}
+.footer {
+  margin-top: 30px;
+  color: #444;
+  font-size: 0.8em;
+  text-align: center;
+}
+.toggle-sound {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: #1a1a2e;
+  border: 1px solid #333;
+  color: #888;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.2em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.toggle-sound:hover {
+  border-color: #00ffaa;
+  color: #00ffaa;
+}
+@media (max-width: 600px) {
+  .timer-display { font-size: 4em; }
+  .progress-ring { width: 200px; height: 200px; }
+  .btn { padding: 10px 16px; font-size: 0.85em; }
+}
+</style>
+</head>
+<body>
+<button class="toggle-sound" onclick="toggleSound()" title="Toggle sound">🔔</button>
+
+<div class="header">
+  <h1>◈ FOCUS TIMER ◈</h1>
+  <div class="mode-label" id="modeLabel">— Focus Session —</div>
+</div>
+
+<div class="progress-ring">
+  <svg viewBox="0 0 250 250">
+    <circle class="bg" cx="125" cy="125" r="115"></circle>
+    <circle class="progress" id="progressCircle" cx="125" cy="125" r="115"
+      stroke-dasharray="722.57" stroke-dashoffset="0"></circle>
+  </svg>
+  <div class="time-overlay" id="timeOverlay">25:00</div>
+</div>
+
+<div class="session-counter" id="sessionCounter"></div>
+
+<div class="mode-selector">
+  <button class="mode-btn active" data-mode="focus" onclick="setMode('focus')">🎯 Focus</button>
+  <button class="mode-btn" data-mode="shortBreak" onclick="setMode('shortBreak')">☕ Short Break</button>
+  <button class="mode-btn" data-mode="longBreak" onclick="setMode('longBreak')">🌴 Long Break</button>
+</div>
+
+<div class="controls">
+  <button class="btn primary" id="startBtn" onclick="toggleTimer()">▶ START</button>
+  <button class="btn" onclick="skipSession()">⏭ SKIP</button>
+  <button class="btn" onclick="resetTimer()">↺ RESET</button>
+</div>
+
+<div class="stats">
+  <div class="stat-row">
+    <span class="stat-label">Sessions Completed</span>
+    <span class="stat-value" id="statSessions">0</span>
+  </div>
+  <div class="stat-row">
+    <span class="stat-label">Total Focus Time</span>
+    <span class="stat-value" id="statTotal">0m</span>
+  </div>
+  <div class="stat-row">
+    <span class="stat-label">Current Streak</span>
+    <span class="stat-value" id="statStreak">0 🔥</span>
+  </div>
+  <div class="stat-row">
+    <span class="stat-label">Today's Sessions</span>
+    <span class="stat-value" id="statToday">0</span>
+  </div>
+</div>
+
+<div class="quote" id="quote"></div>
+
+<div class="footer">
+  <span id="datetime"></span>
+</div>
+
+<script>
+const MODES = {
+  focus: { time: 25 * 60, label: '— Focus Session —', color: '#00ffaa' },
+  shortBreak: { time: 5 * 60, label: '— Short Break —', color: '#ffaa00' },
+  longBreak: { time: 15 * 60, label: '— Long Break —', color: '#00aaff' }
+};
+
+let currentMode = 'focus';
+let timeRemaining = MODES.focus.time;
+let isRunning = false;
+let interval = null;
+let sessionCount = 0;
+let sessionsToday = 0;
+let totalFocusMinutes = 0;
+let streak = 0;
+let soundEnabled = true;
+const CIRCUMFERENCE = 2 * Math.PI * 115;
+
+const quotes = [
+  "The secret of getting ahead is getting started. — Mark Twain",
+  "Focus is not about saying yes, it's about saying no. — Steve Jobs",
+  "The way to get started is to quit talking and begin doing. — Walt Disney",
+  "Your time is limited. Don't waste it living someone else's life. — Steve Jobs",
+  "Amateurs sit and wait for inspiration. The rest of us just get up and go to work. — Stephen King",
+  "Simplicity is the ultimate sophistication. — Leonardo da Vinci",
+  "The best way to predict the future is to create it. — Peter Drucker",
+  "Done is better than perfect. — Sheryl Sandberg",
+  "The impediment to action advances action. What stands in the way becomes the way. — Marcus Aurelius",
+  "Small daily improvements are the key to staggering long-term results. — Robin Sharma",
+  "Deep work is the ability to focus without distraction on a cognitively demanding task. — Cal Newport",
+  "The cost of a thing is the amount of life which is required to be exchanged for it. — Thoreau",
+  "What gets measured gets managed. — Peter Drucker",
+  "Energy and persistence conquer all things. — Benjamin Franklin"
+];
+
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  document.querySelector('.toggle-sound').textContent = soundEnabled ? '🔔' : '🔕';
+}
+
+function beep() {
+  if (!soundEnabled) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 800;
+    osc.type = 'sine';
+    gain.gain.value = 0.1;
+    osc.start();
+    setTimeout(() => {
+      osc.frequency.value = 600;
+      gain.gain.value = 0.05;
+    }, 150);
+    setTimeout(() => {
+      osc.stop();
+      ctx.close();
+    }, 300);
+  } catch(e) {}
+}
+
+function updateDisplay() {
+  const m = Math.floor(timeRemaining / 60);
+  const s = timeRemaining % 60;
+  const timeStr = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  
+  document.getElementById('timeOverlay').textContent = timeStr;
+  document.title = isRunning ? `(${timeStr}) Focus Timer` : 'Focus Timer';
+  
+  const progress = document.getElementById('progressCircle');
+  const total = MODES[currentMode].time;
+  const offset = CIRCUMFERENCE * (1 - timeRemaining / total);
+  progress.style.strokeDashoffset = offset;
+  progress.style.stroke = MODES[currentMode].color;
+}
+
+function updateStats() {
+  document.getElementById('statSessions').textContent = sessionCount;
+  document.getElementById('statTotal').textContent = totalFocusMinutes + 'm';
+  document.getElementById('statStreak').textContent = streak + (streak > 0 ? ' 🔥' : '');
+  document.getElementById('statToday').textContent = sessionsToday;
+}
+
+function setMode(mode) {
+  currentMode = mode;
+  timeRemaining = MODES[mode].time;
+  pauseTimer();
+  document.getElementById('modeLabel').textContent = MODES[mode].label;
+  document.querySelectorAll('.mode-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+  updateDisplay();
+}
+
+function toggleTimer() {
+  if (isRunning) {
+    pauseTimer();
+  } else {
+    startTimer();
+  }
+}
+
+function startTimer() {
+  isRunning = true;
+  document.getElementById('startBtn').textContent = '⏸ PAUSE';
+  document.getElementById('timeOverlay').parentElement.classList.add('running');
+  updateDisplay();
+  
+  interval = setInterval(() => {
+    timeRemaining--;
+    updateDisplay();
+    
+    if (timeRemaining <= 0) {
+      completeSession();
+    }
+  }, 1000);
+}
+
+function pauseTimer() {
+  isRunning = false;
+  clearInterval(interval);
+  document.getElementById('startBtn').textContent = '▶ START';
+  document.getElementById('timeOverlay').parentElement.classList.remove('running');
+}
+
+function resetTimer() {
+  pauseTimer();
+  timeRemaining = MODES[currentMode].time;
+  updateDisplay();
+}
+
+function completeSession() {
+  pauseTimer();
+  beep();
+  setTimeout(beep, 200);
+  
+  if (currentMode === 'focus') {
+    sessionCount++;
+    sessionsToday++;
+    totalFocusMinutes += MODES.focus.time / 60;
+    streak++;
+    updateStats();
+  }
+  
+  // Auto-switch mode
+  if (currentMode === 'focus') {
+    if (sessionCount % 4 === 0) {
+      setMode('longBreak');
+    } else {
+      setMode('shortBreak');
+    }
+  } else {
+    setMode('focus');
+  }
+  
+  timeRemaining = MODES[currentMode].time;
+  updateDisplay();
+}
+
+function skipSession() {
+  timeRemaining = 0;
+  completeSession();
+}
+
+function randomQuote() {
+  return quotes[Math.floor(Math.random() * quotes.length)];
+}
+
+function updateDateTime() {
+  const now = new Date();
+  const opts = { 
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
+  };
+  document.getElementById('datetime').textContent = now.toLocaleDateString('en-US', opts);
+}
+
+function renderSessionDots() {
+  const container = document.getElementById('sessionCounter');
+  container.innerHTML = '';
+  for (let i = 0; i < 4; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'session-dot' + (i < (sessionCount % 4 || (sessionCount > 0 && sessionCount % 4 === 0 ? 4 : 0)) ? ' completed' : '');
+    container.appendChild(dot);
+  }
+}
+
+// Init
+updateDisplay();
+updateStats();
+updateDateTime();
+document.getElementById('quote').textContent = `"${randomQuote()}"`;
+setInterval(updateDateTime, 60000);
+
+// Update session dots on mode change
+const origSetMode = setMode;
+setMode = function(mode) {
+  origSetMode(mode);
+  setTimeout(renderSessionDots, 10);
+};
+renderSessionDots();
+
+// Load from localStorage
+try {
+  const saved = JSON.parse(localStorage.getItem('focusTimerStats') || '{}');
+  if (saved.sessionCount) sessionCount = saved.sessionCount;
+  if (saved.sessionsToday) sessionsToday = saved.sessionsToday;
+  if (saved.totalFocusMinutes) totalFocusMinutes = saved.totalFocusMinutes;
+  if (saved.streak) streak = saved.streak;
+  if (saved.lastDate !== new Date().toDateString()) {
+    sessionsToday = 0;
+    streak = 0;
+  }
+  saved.lastDate = new Date().toDateString();
+  localStorage.setItem('focusTimerStats', JSON.stringify(saved));
+  updateStats();
+  renderSessionDots();
+} catch(e) {}
+
+// Save on changes
+setInterval(() => {
+  try {
+    const data = {
+      sessionCount,
+      sessionsToday,
+      totalFocusMinutes,
+      streak,
+      lastDate: new Date().toDateString()
+    };
+    localStorage.setItem('focusTimerStats', JSON.stringify(data));
+  } catch(e) {}
+}, 5000);
+</script>
+</body>
+</html>

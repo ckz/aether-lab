@@ -1,143 +1,228 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Aether Flow Field</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aether Flow — Generative Art</title>
 <style>
-  html,body{margin:0;height:100%;background:#0a0e17;color:#d6deff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;overflow:hidden}
-  header{position:fixed;inset:auto 0 0 0;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;pointer-events:none;z-index:2;background:linear-gradient(to top,rgba(10,14,23,.85),transparent)}
-  h1{font-size:14px;letter-spacing:.4px;margin:0;opacity:.9}
-  .controls{pointer-events:auto;display:flex;gap:8px;align-items:center}
-  button{background:#131c2f;color:#d6deff;border:1px solid #233054;padding:6px 10px;border-radius:10px;cursor:pointer;font:inherit;font-size:12px}
-  button:hover{background:#1b2740}
-  canvas{display:block;width:100vw;height:100vh}
-  .meta{position:fixed;top:14px;left:16px;font-size:11px;opacity:.75;z-index:2;pointer-events:none}
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #e0e0e0;
+  }
+  canvas { display: block; }
+  .overlay {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    font-size: 11px;
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .title {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    font-size: 14px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    opacity: 0.6;
+    pointer-events: none;
+  }
+  .controls {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    font-size: 11px;
+    opacity: 0.5;
+    text-align: right;
+    pointer-events: none;
+  }
 </style>
 </head>
 <body>
-  <div class="meta">Flow Field · June 2026</div>
-  <header>
-    <h1>Aether Flow Field</h1>
-    <div class="controls">
-      <button id="reset">Reset</button>
-      <button id="style">Switch style</button>
-    </div>
-  </header>
-  <canvas id="c"></canvas>
+<div class="title">Aether Flow</div>
+<div class="controls">
+  click: pulse<br>
+  space: change palette<br>
+  s: save frame
+</div>
+<div class="overlay">generative flow field · 2026-06-13</div>
+<canvas id="canvas"></canvas>
 <script>
-const canvas = document.getElementById('c');
+const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-let W, H, dpr;
+
+let width, height;
 let particles = [];
-let styleIndex = 0;
-const palettes = [
-  ['#7dd3fc','#93c5fd','#a78bfa','#f0abfc','#fb7185'],
-  ['#fde68a','#fdba74','#fb7185','#f472b6','#c084fc'],
-  ['#a7f3d0','#6ee7b7','#34d399','#22d3ee','#818cf8']
-];
-const styles = ['trails','rings','sparks'];
-let style = styles[styleIndex];
+let flowField = [];
+let cols, rows;
+let scale = 20;
 let time = 0;
+let hueShift = 0;
 
-function resize(){
-  dpr = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth;
-  H = window.innerHeight;
-  canvas.width = W * dpr;
-  canvas.height = H * dpr;
-  ctx.setTransform(dpr,0,0,dpr,0,0);
+const palettes = [
+  { name: 'nebula', colors: ['#ff006e', '#fb5607', '#ffbe0b', '#8338ec', '#3a86ff'] },
+  { name: 'ocean', colors: ['#00b4d8', '#0077b6', '#03045e', '#90e0ef', '#caf0f8'] },
+  { name: 'forest', colors: ['#2d6a4f', '#40916c', '#52b788', '#74c69d', '#b7e4c7'] },
+  { name: 'ember', colors: ['#370617', '#6a040f', '#9d0208', '#d00000', '#dc2f02'] },
+  { name: 'void', colors: ['#7400b8', '#6930c3', '#5390d9', '#48bfe3', '#64dfdf'] }
+];
+
+let currentPalette = 0;
+
+function resize() {
+  width = canvas.width = window.innerWidth;
+  height = canvas.height = window.innerHeight;
+  cols = Math.floor(width / scale);
+  rows = Math.floor(height / scale);
+  initFlowField();
 }
-window.addEventListener('resize', ()=>{ resize(); init(); });
 
-function noise(x,y,t){
-  return Math.sin(x*.004 + t) * Math.cos(y*.004 + t*.7) +
-         Math.sin((x+y)*.0027 + t*.35) * .6 +
-         Math.cos(x*.009 - y*.006 + t*.25) * .4;
-}
-
-class Particle{
-  constructor(){
+class Particle {
+  constructor() {
     this.reset();
   }
-  reset(){
-    this.x = Math.random() * W;
-    this.y = Math.random() * H;
-    this.age = 0;
-    this.life = 220 + Math.random() * 240;
-    this.speed = .45 + Math.random() * .75;
-    this.size = .6 + Math.random() * 1.4;
-    this.palette = palettes[styleIndex];
-    this.color = this.palette[Math.floor(Math.random()*this.palette.length)];
+
+  reset() {
+    this.pos = { x: Math.random() * width, y: Math.random() * height };
+    this.vel = { x: 0, y: 0 };
+    this.acc = { x: 0, y: 0 };
+    this.maxSpeed = 2 + Math.random() * 2;
+    this.color = palettes[currentPalette].colors[Math.floor(Math.random() * 5)];
+    this.life = 1;
+    this.decay = 0.0005 + Math.random() * 0.001;
+    this.size = 0.5 + Math.random() * 1.5;
   }
-  step(){
-    const n = noise(this.x, this.y, time * .35);
-    const angle = n * Math.PI * 2;
-    this.x += Math.cos(angle) * this.speed;
-    this.y += Math.sin(angle) * this.speed;
-    this.age += 1;
-    if(this.age > this.life || this.x < -20 || this.x > W+20 || this.y < -20 || this.y > H+20){
+
+  follow() {
+    let x = Math.floor(this.pos.x / scale);
+    let y = Math.floor(this.pos.y / scale);
+    let idx = (x + y * cols) % flowField.length;
+    let angle = flowField[idx] || 0;
+
+    let force = {
+      x: Math.cos(angle) * 0.2,
+      y: Math.sin(angle) * 0.2
+    };
+    this.applyForce(force);
+  }
+
+  applyForce(force) {
+    this.acc.x += force.x;
+    this.acc.y += force.y;
+  }
+
+  update() {
+    this.follow();
+    this.vel.x += this.acc.x;
+    this.vel.y += this.acc.y;
+
+    let speed = Math.sqrt(this.vel.x ** 2 + this.vel.y ** 2);
+    if (speed > this.maxSpeed) {
+      this.vel.x = (this.vel.x / speed) * this.maxSpeed;
+      this.vel.y = (this.vel.y / speed) * this.maxSpeed;
+    }
+
+    this.pos.x += this.vel.x;
+    this.pos.y += this.vel.y;
+    this.acc.x *= 0;
+    this.acc.y *= 0;
+
+    this.life -= this.decay;
+    if (this.life <= 0 || this.pos.x < 0 || this.pos.x > width || this.pos.y < 0 || this.pos.y > height) {
       this.reset();
     }
   }
-  draw(){
-    const t = this.age / this.life;
-    const a = Math.sin(t * Math.PI) * .85;
+
+  draw() {
     ctx.fillStyle = this.color;
-    ctx.globalAlpha = a;
-    if(style === 'trails'){
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
-      ctx.fill();
-    } else if(style === 'rings'){
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, this.size * (1 + t * 2.5), 0, Math.PI*2);
-      ctx.strokeStyle = this.color;
-      ctx.lineWidth = .6;
-      ctx.stroke();
-    } else {
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, this.size * (1 - t * .6), 0, Math.PI*2);
-      ctx.fill();
+    ctx.globalAlpha = this.life * 0.8;
+    ctx.beginPath();
+    ctx.arc(this.pos.x, this.pos.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function initFlowField() {
+  flowField = [];
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      let angle = (Math.cos(x * 0.1) + Math.sin(y * 0.1)) * Math.PI;
+      flowField.push(angle);
     }
   }
 }
 
-function init(){
+function updateFlowField() {
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      let idx = x + y * cols;
+      let angle = flowField[idx];
+      let noise = Math.sin(x * 0.05 + time * 0.01) * Math.cos(y * 0.05 + time * 0.01);
+      flowField[idx] = angle + noise * 0.05;
+    }
+  }
+  time++;
+}
+
+function init() {
   resize();
   particles = [];
-  const count = Math.min(1200, Math.floor((W*H)/1400));
-  for(let i=0;i<count;i++) particles.push(new Particle());
-}
-
-function frame(){
-  if(style === 'trails'){
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = .06;
-    ctx.fillStyle = '#0a0e17';
-    ctx.fillRect(0,0,W,H);
-    ctx.globalCompositeOperation = 'screen';
-  } else {
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = .12;
-    ctx.fillStyle = '#0a0e17';
-    ctx.fillRect(0,0,W,H);
-    ctx.globalCompositeOperation = 'screen';
+  for (let i = 0; i < 2000; i++) {
+    particles.push(new Particle());
   }
-  ctx.globalAlpha = 1;
-  for(const p of particles){ p.step(); p.draw(); }
-  time += .01;
-  requestAnimationFrame(frame);
 }
 
-document.getElementById('reset').onclick = ()=> init();
-document.getElementById('style').onclick = ()=>{
-  styleIndex = (styleIndex + 1) % styles.length;
-  style = styles[styleIndex];
-  for(const p of particles) p.palette = palettes[styleIndex];
-};
+function animate() {
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.05)';
+  ctx.fillRect(0, 0, width, height);
+
+  updateFlowField();
+
+  particles.forEach(p => {
+    p.update();
+    p.draw();
+  });
+
+  ctx.globalAlpha = 1;
+  requestAnimationFrame(animate);
+}
+
+window.addEventListener('resize', resize);
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    currentPalette = (currentPalette + 1) % palettes.length;
+    particles.forEach(p => {
+      p.color = palettes[currentPalette].colors[Math.floor(Math.random() * 5)];
+    });
+  }
+  if (e.code === 'KeyS') {
+    const link = document.createElement('a');
+    link.download = `aether-flow-${Date.now()}.png`;
+    link.href = canvas.toDataURL();
+    link.click();
+  }
+});
+
+document.addEventListener('click', () => {
+  const cx = Math.random() * width;
+  const cy = Math.random() * height;
+  for (let i = 0; i < 200; i++) {
+    let p = particles[Math.floor(Math.random() * particles.length)];
+    p.pos.x = cx + (Math.random() - 0.5) * 100;
+    p.pos.y = cy + (Math.random() - 0.5) * 100;
+    p.life = 1;
+    p.color = palettes[currentPalette].colors[Math.floor(Math.random() * 5)];
+  }
+});
+
 init();
-frame();
+animate();
 </script>
 </body>
 </html>
