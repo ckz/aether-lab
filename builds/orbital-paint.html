@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbital Paint — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a14;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #e0e0ff;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 10;
+    background: rgba(10, 10, 20, 0.85);
+    border: 1px solid #334;
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 13px;
+    backdrop-filter: blur(6px);
+    max-width: 280px;
+  }
+  #ui h1 {
+    font-size: 15px;
+    margin-bottom: 8px;
+    color: #aaf;
+    letter-spacing: 1px;
+  }
+  #ui .row { margin: 6px 0; display: flex; align-items: center; gap: 8px; }
+  #ui label { flex: 0 0 auto; opacity: 0.7; font-size: 12px; }
+  #ui button {
+    background: #1a1a3a;
+    border: 1px solid #445;
+    color: #ccf;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+  }
+  #ui button:hover { background: #2a2a5a; border-color: #aaf; }
+  #ui .color-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 1px solid #667;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  #ui .color-dot.active { border-color: #fff; box-shadow: 0 0 6px currentColor; }
+  #stats {
+    position: fixed;
+    bottom: 12px;
+    right: 16px;
+    font-size: 11px;
+    opacity: 0.5;
+    z-index: 10;
+  }
+  #hint {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 12px;
+    opacity: 0.6;
+    z-index: 10;
+    pointer-events: none;
+    transition: opacity 1.5s;
+  }
+</style>
+</head>
+<body>
+<div id="ui">
+  <h1>✦ ORBITAL PAINT</h1>
+  <div class="row"><label>Mode:</label>
+    <button id="modeBtn" onclick="toggleMode()">GRAVITY WELL</button>
+  </div>
+  <div class="row"><label>Color:</label>
+    <div class="color-dot active" style="background:#ff6b9d;color:#ff6b9d" data-c="#ff6b9d"></div>
+    <div class="color-dot" style="background:#c084fc;color:#c084fc" data-c="#c084fc"></div>
+    <div class="color-dot" style="background:#60a5fa;color:#60a5fa" data-c="#60a5fa"></div>
+    <div class="color-dot" style="background:#34d399;color:#34d399" data-c="#34d399"></div>
+    <div class="color-dot" style="background:#fbbf24;color:#fbbf24" data-c="#fbbf24"></div>
+    <div class="color-dot" style="background:#f87171;color:#f87171" data-c="#f87171"></div>
+  </div>
+  <div class="row"><label>Mass:</label>
+    <button onclick="changeMass(-1)">−</button>
+    <span id="massLabel" style="width:40px;text-align:center">1.0</span>
+    <button onclick="changeMass(1)">+</button>
+  </div>
+  <div class="row"><label>Actions:</label>
+    <button onclick="clearWells()">Clear Wells</button>
+    <button onclick="clearOrbs()">Clear Orbs</button>
+    <button onclick="clearAll()">Reset</button>
+  </div>
+  <div class="row" style="opacity:0.6;font-size:11px;margin-top:4px;">
+    Click = place well · Drag = launch orb
+  </div>
+</div>
+<div id="stats">orbs: 0 · wells: 0</div>
+<div id="hint">click & drag to paint gravity</div>
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// State
+let mode = 'well'; // 'well' or 'launch'
+let currentColor = '#ff6b9d';
+let wellMass = 1.0;
+let wells = [];
+let orbs = [];
+let dragging = false;
+let dragStart = null;
+let dragEnd = null;
+let hintTimeout;
+
+// Color dots
+document.querySelectorAll('.color-dot').forEach(dot => {
+  dot.addEventListener('click', () => {
+    document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
+    dot.classList.add('active');
+    currentColor = dot.dataset.c;
+  });
+});
+
+function toggleMode() {
+  mode = mode === 'well' ? 'launch' : 'well';
+  document.getElementById('modeBtn').textContent = mode === 'well' ? 'GRAVITY WELL' : 'LAUNCH ORB';
+}
+
+function changeMass(delta) {
+  wellMass = Math.max(0.2, Math.min(5.0, wellMass + delta * 0.2));
+  document.getElementById('massLabel').textContent = wellMass.toFixed(1);
+}
+
+function clearWells() { wells = []; }
+function clearOrbs() { orbs = []; }
+function clearAll() { wells = []; orbs = []; }
+
+canvas.addEventListener('mousedown', e => {
+  dragging = true;
+  dragStart = { x: e.clientX, y: e.clientY };
+  dragEnd = { ...dragStart };
+  hideHint();
+});
+canvas.addEventListener('mousemove', e => {
+  if (dragging) dragEnd = { x: e.clientX, y: e.clientY };
+});
+canvas.addEventListener('mouseup', e => {
+  dragging = false;
+  if (!dragStart) return;
+  const dx = e.clientX - dragStart.x;
+  const dy = e.clientY - dragStart.y;
+  const dist = Math.hypot(dx, dy);
+  
+  if (mode === 'well' || dist < 5) {
+    // Place gravity well
+    wells.push({
+      x: dragStart.x,
+      y: dragStart.y,
+      mass: wellMass * 800,
+      color: currentColor,
+      pulse: 0
+    });
+  } else {
+    // Launch orb
+    orbs.push({
+      x: dragStart.x,
+      y: dragStart.y,
+      vx: dx * 0.06,
+      vy: dy * 0.06,
+      color: currentColor,
+      trail: [],
+      life: 1.0,
+      size: 2.5 + Math.random() * 2
+    });
+  }
+  dragStart = null;
+  dragEnd = null;
+});
+
+// Touch support
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  dragging = true;
+  dragStart = { x: t.clientX, y: t.clientY };
+  dragEnd = { ...dragStart };
+  hideHint();
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (dragging) {
+    const t = e.touches[0];
+    dragEnd = { x: t.clientX, y: t.clientY };
+  }
+}, { passive: false });
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  if (!dragStart) return;
+  const dx = dragEnd.x - dragStart.x;
+  const dy = dragEnd.y - dragStart.y;
+  const dist = Math.hypot(dx, dy);
+  if (mode === 'well' || dist < 5) {
+    wells.push({
+      x: dragStart.x, y: dragStart.y,
+      mass: wellMass * 800,
+      color: currentColor, pulse: 0
+    });
+  } else {
+    orbs.push({
+      x: dragStart.x, y: dragStart.y,
+      vx: dx * 0.06, vy: dy * 0.06,
+      color: currentColor, trail: [], life: 1.0,
+      size: 2.5 + Math.random() * 2
+    });
+  }
+  dragging = false;
+  dragStart = null;
+  dragEnd = null;
+}, { passive: false });
+
+function hideHint() {
+  const h = document.getElementById('hint');
+  if (h) { h.style.opacity = '0'; clearTimeout(hintTimeout); }
+}
+
+function update() {
+  const G = 0.5;
+  
+  // Update wells pulse
+  wells.forEach(w => {
+    w.pulse += 0.03;
+    // Subtle pull toward center of mass
+  });
+  
+  // Update orbs
+  orbs.forEach(orb => {
+    // Gravity from wells
+    wells.forEach(w => {
+      const dx = w.x - orb.x;
+      const dy = w.y - orb.y;
+      const d = Math.hypot(dx, dy) + 10;
+      const force = (G * w.mass) / (d * d);
+      orb.vx += (dx / d) * force;
+      orb.vy += (dy / d) * force;
+    });
+    
+    // Damping
+    orb.vx *= 0.9995;
+    orb.vy *= 0.9995;
+    
+    // Speed cap
+    const speed = Math.hypot(orb.vx, orb.vy);
+    if (speed > 8) {
+      orb.vx = (orb.vx / speed) * 8;
+      orb.vy = (orb.vy / speed) * 8;
+    }
+    
+    orb.x += orb.vx;
+    orb.y += orb.vy;
+    
+    // Wrap around edges
+    if (orb.x < 0) orb.x = W;
+    if (orb.x > W) orb.x = 0;
+    if (orb.y < 0) orb.y = H;
+    if (orb.y > H) orb.y = 0;
+    
+    // Trail
+    orb.trail.push({ x: orb.x, y: orb.y });
+    if (orb.trail.length > 40) orb.trail.shift();
+  });
+  
+  // Orb-orb repulsion (gentle)
+  for (let i = 0; i < orbs.length; i++) {
+    for (let j = i + 1; j < orbs.length; j++) {
+      const dx = orbs[j].x - orbs[i].x;
+      const dy = orbs[j].y - orbs[i].y;
+      const d = Math.hypot(dx, dy) + 1;
+      if (d < 30) {
+        const force = 0.05 / d;
+        orbs[i].vx -= dx * force;
+        orbs[i].vy -= dy * force;
+        orbs[j].vx += dx * force;
+        orbs[j].vy += dy * force;
+      }
+    }
+  }
+}
+
+function draw() {
+  // Fade instead of full clear — creates trails naturally
+  ctx.fillStyle = 'rgba(10, 10, 20, 0.12)';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Draw wells
+  wells.forEach(w => {
+    const r = 8 + Math.sin(w.pulse) * 2 + w.mass / 200;
+    const grad = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, r * 4);
+    grad.addColorStop(0, w.color);
+    grad.addColorStop(0.3, w.color + '88');
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(w.x, w.y, r * 4, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Core
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(w.x, w.y, 2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  
+  // Draw orbs
+  orbs.forEach(orb => {
+    if (orb.trail.length < 2) return;
+    // Trail
+    ctx.beginPath();
+    ctx.moveTo(orb.trail[0].x, orb.trail[0].y);
+    for (let i = 1; i < orb.trail.length; i++) {
+      ctx.lineTo(orb.trail[i].x, orb.trail[i].y);
+    }
+    ctx.strokeStyle = orb.color + 'aa';
+    ctx.lineWidth = orb.size * 0.7;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    
+    // Head glow
+    const last = orb.trail[orb.trail.length - 1];
+    const g = ctx.createRadialGradient(last.x, last.y, 0, last.x, last.y, orb.size * 3);
+    g.addColorStop(0, orb.color);
+    g.addColorStop(1, 'transparent');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(last.x, last.y, orb.size * 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  
+  // Drag line
+  if (dragging && dragStart && dragEnd) {
+    const dx = dragEnd.x - dragStart.x;
+    const dy = dragEnd.y - dragStart.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 5) {
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = currentColor + '88';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(dragStart.x, dragStart.y);
+      ctx.lineTo(dragEnd.x, dragEnd.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      
+      // Arrow head
+      const angle = Math.atan2(dy, dx);
+      ctx.beginPath();
+      ctx.moveTo(dragEnd.x, dragEnd.y);
+      ctx.lineTo(dragEnd.x - 10 * Math.cos(angle - 0.4), dragEnd.y - 10 * Math.sin(angle - 0.4));
+      ctx.moveTo(dragEnd.x, dragEnd.y);
+      ctx.lineTo(dragEnd.x - 10 * Math.cos(angle + 0.4), dragEnd.y - 10 * Math.sin(angle + 0.4));
+      ctx.stroke();
+    } else if (mode === 'well') {
+      // Preview well
+      const r = 8 + wellMass * 2;
+      ctx.strokeStyle = currentColor + '66';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(dragStart.x, dragStart.y, r * 2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  
+  document.getElementById('stats').textContent =
+    `orbs: ${orbs.length} · wells: ${wells.length}`;
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
