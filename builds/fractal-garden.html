@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fractal Garden — Echo Fields</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0e1a;
+  color: #e0e8f0;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  cursor: crosshair;
+}
+canvas { display: block; }
+#ui {
+  position: fixed;
+  top: 20px; left: 20px;
+  background: rgba(10, 14, 26, 0.85);
+  border: 1px solid rgba(120, 200, 255, 0.3);
+  border-radius: 12px;
+  padding: 18px 22px;
+  backdrop-filter: blur(10px);
+  max-width: 280px;
+  z-index: 10;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+h1 {
+  font-size: 16px;
+  letter-spacing: 3px;
+  color: #7ec8ff;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+.subtitle {
+  font-size: 11px;
+  color: #5a7a9a;
+  margin-bottom: 14px;
+  letter-spacing: 1px;
+}
+.control {
+  margin: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.control label {
+  font-size: 11px;
+  color: #8aa8c0;
+  min-width: 70px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.control input[type="range"] {
+  flex: 1;
+  accent-color: #7ec8ff;
+  height: 4px;
+}
+.control .val {
+  font-size: 11px;
+  color: #7ec8ff;
+  min-width: 30px;
+  text-align: right;
+}
+.btn-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+button {
+  background: rgba(126, 200, 255, 0.1);
+  border: 1px solid rgba(126, 200, 255, 0.4);
+  color: #7ec8ff;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  transition: all 0.2s;
+}
+button:hover {
+  background: rgba(126, 200, 255, 0.25);
+  border-color: #7ec8ff;
+  transform: translateY(-1px);
+}
+button.active {
+  background: rgba(126, 200, 255, 0.3);
+  border-color: #7ec8ff;
+  box-shadow: 0 0 12px rgba(126, 200, 255, 0.3);
+}
+#hint {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: #4a6a8a;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  pointer-events: none;
+  text-align: center;
+}
+.season-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-left: 6px;
+  vertical-align: middle;
+  box-shadow: 0 0 8px currentColor;
+}
+</style>
+</head>
+<body>
+<div id="ui">
+  <h1>✦ Fractal Garden</h1>
+  <div class="subtitle">recursive growth simulator</div>
+  <div class="control">
+    <label>Depth</label>
+    <input type="range" id="depth" min="4" max="12" value="9">
+    <span class="val" id="depthVal">9</span>
+  </div>
+  <div class="control">
+    <label>Angle</label>
+    <input type="range" id="angle" min="10" max="45" value="25">
+    <span class="val" id="angleVal">25°</span>
+  </div>
+  <div class="control">
+    <label>Wind</label>
+    <input type="range" id="wind" min="0" max="100" value="30">
+    <span class="val" id="windVal">30</span>
+  </div>
+  <div class="control">
+    <label>Season</label>
+    <span id="seasonLabel" style="font-size:12px;color:#7ec8ff;">
+      Spring <span class="season-dot" style="background:#7ec8ff;color:#7ec8ff;"></span>
+    </span>
+  </div>
+  <div class="btn-row">
+    <button id="clearBtn">Clear</button>
+    <button id="autoBtn" class="active">Auto-grow</button>
+    <button id="burstBtn">Bloom</button>
+  </div>
+</div>
+<div id="hint">click to plant · hold to grow · double-click for bloom</div>
+<canvas id="garden"></canvas>
+
+<script>
+const canvas = document.getElementById('garden');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ——— State ———
+const trees = [];
+const particles = [];
+let time = 0;
+let autoGrow = true;
+let autoTimer = 0;
+let season = 0; // 0=spring,1=summer,2=autumn,3=winter
+const seasonNames = ['Spring','Summer','Autumn','Winter'];
+const seasonColors = [
+  { leaf: ['#7ec8ff','#a0e0ff','#ffb3d9','#ffd1e8'], bg: ['#0a0e1a','#0d1525'], ground: '#1a2a1a', flower: '#ffb3d9' },
+  { leaf: ['#4caf50','#66bb6a','#81c784','#a5d6a7'], bg: ['#0a120a','#0d1a0d'], ground: '#1a2a15', flower: '#ffeb3b' },
+  { leaf: ['#ff7043','#ff8a65','#ffab91','#ffcc80'], bg: ['#1a0f0a','#1f140d'], ground: '#2a1f15', flower: '#ffcc80' },
+  { leaf: ['#b0bec5','#cfd8dc','#eceff1','#ffffff'], bg: ['#0e141a','#111820'], ground: '#2a2520', flower: '#e0e0e0' }
+];
+
+// ——— Tree Class ———
+class Tree {
+  constructor(x, y, depth, hue) {
+    this.x = x;
+    this.y = y;
+    this.depth = depth;
+    this.hue = hue;
+    this.age = 0;
+    this.maxAge = 800 + Math.random() * 400;
+    this.seedColor = this.randomLeafColor();
+    this.swayPhase = Math.random() * Math.PI * 2;
+    this.swaySpeed = 0.5 + Math.random() * 0.5;
+    this.branches = [];
+    this.generateBranches();
+  }
+
+  randomLeafColor() {
+    const pal = seasonColors[season].leaf;
+    return pal[Math.floor(Math.random() * pal.length)];
+  }
+
+  generateBranches() {
+    this.branches = [];
+    this._grow(0, this.x, this.y, -Math.PI / 2, 70, this.depth, 0);
+  }
+
+  _grow(gen, x, y, angle, length, depth, parentIndex) {
+    if (depth <= 0 || length < 2) return;
+    const sway = Math.sin(time * this.swaySpeed + this.swayPhase + gen * 0.5) * 0.03 * (this.depth - depth);
+    const a = angle + sway;
+    const ex = x + Math.cos(a) * length;
+    const ey = y + Math.sin(a) * length;
+    const idx = this.branches.length;
+    this.branches.push({ x1: x, y1: y, x2: ex, y2: ey, gen, depth, age: 0, length, parentIndex });
+    const angleVar = (parseInt(document.getElementById('angle').value) * Math.PI) / 180;
+    const shrink = 0.7 + Math.random() * 0.05;
+    this._grow(gen + 1, ex, ey, a - angleVar, length * shrink, depth - 1, idx);
+    this._grow(gen + 1, ex, ey, a + angleVar, length * shrink, depth - 1, idx);
+  }
+
+  update(wind) {
+    this.age++;
+    if (this.age > this.maxAge && this.seedColor) {
+      // drop some seeds
+      if (Math.random() < 0.01) {
+        particles.push(new Seed(this.x, this.y, this.seedColor));
+      }
+    }
+    // regenerate occasionally to simulate sway changes
+    if (Math.floor(this.age / 120) !== Math.floor((this.age - 1) / 120)) {
+      this.generateBranches();
+    }
+    this.branches.forEach(b => b.age = this.age);
+  }
+
+  draw() {
+    const progress = Math.min(1, this.age / 40);
+    ctx.lineCap = 'round';
+    this.branches.forEach(b => {
+      const branchProgress = Math.min(1, Math.max(0, (this.age - b.gen * 8) / 30));
+      if (branchProgress <= 0) return;
+      const alpha = Math.min(1, branchProgress) * Math.min(1, (this.maxAge - this.age) / 100);
+      if (alpha <= 0) return;
+      const t = b.gen / this.depth;
+      const thickness = Math.max(0.5, (1 - t) * 6 * progress);
+      const lightness = 30 + t * 40;
+      ctx.strokeStyle = `hsla(30, 15%, ${lightness}%, ${alpha})`;
+      ctx.lineWidth = thickness;
+      ctx.beginPath();
+      ctx.moveTo(b.x1, b.y1);
+      // slight wind displacement
+      const windDisp = Math.sin(time * 0.8 + b.gen * 0.3) * (parseInt(document.getElementById('wind').value) / 100) * t * 4;
+      ctx.lineTo(b.x2 + windDisp, b.y2);
+      ctx.stroke();
+      // leaves at tips
+      if (b.depth <= 2 && branchProgress > 0.5) {
+        const leafSize = (1 - b.depth / 2) * 5 * progress;
+        ctx.fillStyle = this.seedColor || seasonColors[season].leaf[0];
+        ctx.globalAlpha = alpha * (branchProgress - 0.5) * 2;
+        ctx.beginPath();
+        ctx.arc(b.x2 + windDisp, b.y2, leafSize, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    });
+  }
+}
+
+// ——— Seed / Particle ———
+class Seed {
+  constructor(x, y, color) {
+    this.x = x; this.y = y;
+    this.vx = (Math.random() - 0.5) * 1.5;
+    this.vy = -1 - Math.random() * 2;
+    this.life = 1;
+    this.decay = 0.003 + Math.random() * 0.005;
+    this.color = color;
+    this.size = 1.5 + Math.random() * 2;
+    this.wobble = Math.random() * Math.PI * 2;
+  }
+  update() {
+    this.wobble += 0.05;
+    this.x += this.vx + Math.sin(this.wobble) * 0.3;
+    this.y += this.vy;
+    this.vy += 0.02; // gravity
+    this.life -= this.decay;
+    if (this.life <= 0 && Math.random() < 0.3) {
+      // plant new tree if space
+      if (trees.length < 60) {
+        const depth = 5 + Math.floor(Math.random() * 4);
+        trees.push(new Tree(this.x, H - 40 - Math.random() * 60, depth, this.color));
+      }
+    }
+  }
+  draw() {
+    ctx.globalAlpha = this.life;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ——— Ground / Grass ———
+function drawGround() {
+  const grd = ctx.createLinearGradient(0, H - 80, 0, H);
+  grd.addColorStop(0, seasonColors[season].ground);
+  grd.addColorStop(1, seasonColors[season].bg[0]);
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, H - 80, W, 80);
+  // grass blades
+  ctx.strokeStyle = seasonColors[season].leaf[0];
+  ctx.globalAlpha = 0.4;
+  ctx.lineWidth = 1;
+  for (let i = 0; i < W; i += 8) {
+    const h = 5 + Math.sin(i * 0.1 + time * 0.5) * 4 + Math.sin(i * 0.3) * 3;
+    ctx.beginPath();
+    ctx.moveTo(i, H - 80);
+    ctx.lineTo(i + Math.sin(time * 0.3 + i * 0.05) * 3, H - 80 - h);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ——— Background gradient ———
+function drawSky() {
+  const grd = ctx.createLinearGradient(0, 0, 0, H);
+  grd.addColorStop(0, seasonColors[season].bg[0]);
+  grd.addColorStop(1, seasonColors[season].bg[1]);
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, W, H);
+  // stars (except summer maybe)
+  if (season !== 1) {
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    for (let i = 0; i < 80; i++) {
+      const sx = (i * 137.5 + time * 0.01) % W;
+      const sy = (i * 73.3) % (H * 0.6);
+      const twinkle = 0.3 + Math.sin(time * 0.02 + i) * 0.3;
+      ctx.globalAlpha = twinkle;
+      ctx.fillRect(sx, sy, 1.5, 1.5);
+    }
+    ctx.globalAlpha = 1;
+  }
+  // moon
+  ctx.fillStyle = 'rgba(220, 230, 255, 0.9)';
+  ctx.beginPath();
+  ctx.arc(W - 100, 80, 30, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = seasonColors[season].bg[0];
+  ctx.beginPath();
+  ctx.arc(W - 88, 72, 28, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// ——— Input ———
+canvas.addEventListener('mousedown', e => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const depth = parseInt(document.getElementById('depth').value);
+  trees.push(new Tree(x, Math.min(y, H - 40), depth, null));
+});
+canvas.addEventListener('dblclick', e => {
+  // bloom — add several small trees
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  for (let i = 0; i < 5; i++) {
+    const ox = x + (Math.random() - 0.5) * 200;
+    const depth = 5 + Math.floor(Math.random() * 3);
+    trees.push(new Tree(ox, Math.min(y, H - 40), depth, null));
+  }
+});
+
+// ——— Controls ———
+document.getElementById('depth').addEventListener('input', e => {
+  document.getElementById('depthVal').textContent = e.target.value;
+});
+document.getElementById('angle').addEventListener('input', e => {
+  document.getElementById('angleVal').textContent = e.target.value + '°';
+});
+document.getElementById('wind').addEventListener('input', e => {
+  document.getElementById('windVal').textContent = e.target.value;
+});
+document.getElementById('clearBtn').addEventListener('click', () => {
+  trees.length = 0;
+  particles.length = 0;
+});
+document.getElementById('autoBtn').addEventListener('click', e => {
+  autoGrow = !autoGrow;
+  e.target.classList.toggle('active');
+});
+document.getElementById('burstBtn').addEventListener('click', () => {
+  for (let i = 0; i < 8; i++) {
+    const x = Math.random() * W;
+    const depth = 6 + Math.floor(Math.random() * 4);
+    trees.push(new Tree(x, H - 40 - Math.random() * 60, depth, null));
+  }
+});
+
+// ——— Season cycle ———
+let seasonTimer = 0;
+function updateSeason() {
+  seasonTimer++;
+  if (seasonTimer > 1500) { // ~25 seconds each
+    seasonTimer = 0;
+    season = (season + 1) % 4;
+    document.getElementById('seasonLabel').innerHTML =
+      `${seasonNames[season]} <span class="season-dot" style="background:${seasonColors[season].leaf[0]};color:${seasonColors[season].leaf[0]};"></span>`;
+    // update all trees
+    trees.forEach(t => { t.seedColor = t.randomLeafColor(); });
+  }
+}
+
+// ——— Main Loop ———
+function loop() {
+  time++;
+  updateSeason();
+  drawSky();
+
+  // auto-grow
+  if (autoGrow) {
+    autoTimer++;
+    if (autoTimer > 90 && trees.length < 35) {
+      autoTimer = 0;
+      const x = Math.random() * W;
+      const depth = 6 + Math.floor(Math.random() * 4);
+      trees.push(new Tree(x, H - 40 - Math.random() * 40, depth, null));
+    }
+  }
+
+  drawGround();
+
+  // update & draw trees
+  const wind = parseInt(document.getElementById('wind').value);
+  trees.forEach(t => { t.update(wind); t.draw(); });
+
+  // particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update();
+    particles[i].draw();
+    if (particles[i].life <= 0) particles.splice(i, 1);
+  }
+
+  // FPS-like tree counter (debug candy)
+  ctx.fillStyle = 'rgba(126, 200, 255, 0.4)';
+  ctx.font = '10px Courier New';
+  ctx.fillText(`trees: ${trees.length}`, 20, H - 100);
+
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
