@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sacred Geometry Mandala - Generative Art</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a0f;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+}
+canvas {
+  border-radius: 50%;
+  box-shadow: 0 0 60px rgba(100, 200, 255, 0.3), 0 0 120px rgba(150, 100, 255, 0.2);
+}
+.controls {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #aaa;
+  font-size: 12px;
+  text-align: center;
+  background: rgba(10, 10, 15, 0.8);
+  padding: 10px 20px;
+  border-radius: 20px;
+  border: 1px solid #333;
+}
+.controls button {
+  background: #222;
+  color: #aaa;
+  border: 1px solid #555;
+  padding: 6px 12px;
+  margin: 0 5px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+}
+.controls button:hover {
+  background: #333;
+  color: #fff;
+  border-color: #888;
+}
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div class="controls">
+  <button onclick="regenerate()">↻ New Pattern</button>
+  <button onclick="toggleRotation()">⏯ Pause/Play</button>
+  <button onclick="saveImage()">💾 Save</button>
+</div>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const size = Math.min(window.innerWidth, window.innerHeight) * 0.85;
+canvas.width = size;
+canvas.height = size;
+const cx = size / 2, cy = size / 2;
+
+let rotation = 0, rotating = true;
+let seed = Math.random() * 10000;
+let palette, layers, symmetry, petalCount, innerRings;
+
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function generatePalette() {
+  const rng = mulberry32(seed);
+  const hue1 = rng() * 360;
+  const palettes = [
+    [hue1, (hue1 + 40) % 360, (hue1 + 80) % 360, (hue1 + 180) % 360, (hue1 + 220) % 360],
+    [(hue1 + 180) % 360, hue1, (hue1 + 60) % 360, (hue1 + 200) % 360, (hue1 + 300) % 360],
+    [hue1, (hue1 + 120) % 360, (hue1 + 240) % 360, (hue1 + 30) % 360, (hue1 + 330) % 360],
+  ];
+  return palettes[Math.floor(rng() * palettes.length)].map(h => {
+    const sat = 60 + rng() * 40;
+    const light = 45 + rng() * 30;
+    return `hsl(${h}, ${sat}%, ${light}%)`;
+  });
+}
+
+function generate() {
+  const rng = mulberry32(seed);
+  palette = generatePalette();
+  symmetry = 6 + Math.floor(rng() * 10); // 6-15
+  petalCount = symmetry;
+  layers = 8 + Math.floor(rng() * 12); // 8-19
+  innerRings = 3 + Math.floor(rng() * 4); // 3-6
+}
+
+function hslToRgba(hsl, alpha) {
+  // Parse hsl(h, s%, l%)
+  const m = hsl.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/);
+  let h = parseInt(m[1]) / 360, s = parseInt(m[2]) / 100, l = parseInt(m[3]) / 100;
+  let r, g, b;
+  if (s === 0) { r = g = b = l; } else {
+    const hue2rgb = (p, q, t) => {
+      if (t < 0) t += 1; if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+  return `rgba(${Math.round(r*255)},${Math.round(g*255)},${Math.round(b*255)},${alpha})`;
+}
+
+function drawBackground() {
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, size/2);
+  grad.addColorStop(0, '#1a1a2e');
+  grad.addColorStop(0.5, '#0f0f1a');
+  grad.addColorStop(1, '#050508');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+}
+
+function drawCenter() {
+  // Glowing center
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 0.08);
+  grad.addColorStop(0, hslToRgba(palette[3], 0.9));
+  grad.addColorStop(0.5, hslToRgba(palette[3], 0.3));
+  grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, size * 0.08, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Inner dots
+  for (let i = 0; i < 12; i++) {
+    const angle = (i / 12) * Math.PI * 2 + rotation * 0.5;
+    const r = size * 0.03;
+    const x = cx + Math.cos(angle) * size * 0.04;
+    const y = cy + Math.sin(angle) * size * 0.04;
+    ctx.fillStyle = hslToRgba(palette[4], 0.7);
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawMandalaLayer(layerIndex) {
+  const progress = layerIndex / (layers - 1);
+  const radius = size * 0.08 + progress * size * 0.38;
+  const rng = mulberry32(seed + layerIndex * 137.5);
+  const color = palette[layerIndex % palette.length];
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rotation * (layerIndex % 2 === 0 ? 1 : -1) * (0.2 + progress * 0.8));
+
+  // Petals / shapes around ring
+  const petalR = radius * (0.15 + rng() * 0.25);
+  const count = petalCount + Math.floor(rng() * 6 - 3);
+
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2;
+    const px = Math.cos(angle) * radius;
+    const py = Math.sin(angle) * radius;
+    const size2 = petalR * (0.7 + rng() * 0.6);
+
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(angle + Math.PI / 2);
+
+    // Gradient petal
+    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, size2);
+    grad.addColorStop(0, hslToRgba(color, 0.8));
+    grad.addColorStop(0.6, hslToRgba(color, 0.3));
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+
+    // Draw different shapes based on rng
+    const shape = rng();
+    ctx.beginPath();
+    if (shape < 0.33) {
+      // Ellipse
+      ctx.ellipse(0, 0, size2, size2 * 0.5, 0, 0, Math.PI * 2);
+    } else if (shape < 0.66) {
+      // Diamond
+      ctx.moveTo(0, -size2);
+      ctx.lineTo(size2 * 0.6, 0);
+      ctx.lineTo(0, size2);
+      ctx.lineTo(-size2 * 0.6, 0);
+      ctx.closePath();
+    } else {
+      // Star
+      for (let j = 0; j < 5; j++) {
+        const a = (j / 5) * Math.PI * 2;
+        const a2 = ((j + 0.5) / 5) * Math.PI * 2;
+        ctx.lineTo(Math.cos(a) * size2, Math.sin(a) * size2);
+        ctx.lineTo(Math.cos(a2) * size2 * 0.4, Math.sin(a2) * size2 * 0.4);
+      }
+      ctx.closePath();
+    }
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Connecting arcs
+  if (rng() > 0.4) {
+    ctx.strokeStyle = hslToRgba(color, 0.15);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawOuterFrame() {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rotation * 0.1);
+
+  // Outer ring
+  ctx.strokeStyle = hslToRgba(palette[3], 0.3);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 0.44, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Decorative outer dots
+  const dotCount = symmetry * 3;
+  for (let i = 0; i < dotCount; i++) {
+    const angle = (i / dotCount) * Math.PI * 2;
+    const x = Math.cos(angle) * size * 0.44;
+    const y = Math.sin(angle) * size * 0.44;
+    ctx.fillStyle = hslToRgba(palette[i % palette.length], 0.6);
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, size, size);
+  drawBackground();
+  for (let i = 0; i < layers; i++) {
+    drawMandalaLayer(i);
+  }
+  drawCenter();
+  drawOuterFrame();
+}
+
+function animate() {
+  if (rotating) rotation += 0.003;
+  draw();
+  requestAnimationFrame(animate);
+}
+
+function regenerate() {
+  seed = Math.random() * 10000;
+  generate();
+}
+
+function toggleRotation() {
+  rotating = !rotating;
+}
+
+function saveImage() {
+  const link = document.createElement('a');
+  link.download = 'mandala-' + Math.floor(seed) + '.png';
+  link.href = canvas.toDataURL();
+  link.click();
+}
+
+// Init
+generate();
+animate();
+
+window.addEventListener('resize', () => {
+  const newSize = Math.min(window.innerWidth, window.innerHeight) * 0.85;
+  canvas.width = newSize;
+  canvas.height = newSize;
+  // Re-assign globals used by draw functions
+  const s = newSize;
+  const c = s / 2;
+  // Use globalThis to avoid shadowing (we'll just update the closure vars via window hack)
+  window._size = s; window._cx = c; window._cy = c;
+});
+</script>
+</body>
+</html>
