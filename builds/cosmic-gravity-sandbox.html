@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosmic Gravity Sandbox</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #000;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+  color: #ccc;
+  user-select: none;
+}
+
+canvas {
+  display: block;
+  cursor: crosshair;
+}
+
+.ui {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.75);
+  padding: 18px 22px;
+  border-radius: 12px;
+  border: 1px solid rgba(100, 140, 255, 0.3);
+  backdrop-filter: blur(10px);
+  max-width: 280px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.ui h1 {
+  font-size: 14px;
+  letter-spacing: 3px;
+  color: #7ab;
+  margin-bottom: 14px;
+  text-transform: uppercase;
+  font-weight: 400;
+}
+
+.ui .stat {
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 6px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.ui .stat span {
+  color: #6af;
+  font-weight: bold;
+}
+
+.ui .divider {
+  border: none;
+  border-top: 1px solid rgba(100, 140, 255, 0.15);
+  margin: 12px 0;
+}
+
+.btn-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.btn {
+  background: rgba(100, 140, 255, 0.1);
+  border: 1px solid rgba(100, 140, 255, 0.3);
+  color: #7ab;
+  padding: 7px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 1px;
+  transition: all 0.2s;
+}
+
+.btn:hover {
+  background: rgba(100, 140, 255, 0.25);
+  border-color: rgba(100, 180, 255, 0.6);
+  color: #adf;
+  box-shadow: 0 0 12px rgba(100, 150, 255, 0.2);
+}
+
+.btn.active {
+  background: rgba(100, 180, 255, 0.3);
+  border-color: #6af;
+  color: #fff;
+  box-shadow: 0 0 16px rgba(100, 180, 255, 0.3);
+}
+
+.help {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  font-size: 11px;
+  color: rgba(150, 180, 220, 0.6);
+  letter-spacing: 1px;
+  line-height: 1.8;
+  z-index: 10;
+}
+
+.velocity-arrow {
+  position: fixed;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.star-selector {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.star-opt {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.star-opt:hover {
+  transform: scale(1.2);
+}
+
+.star-opt.active {
+  border-color: #fff;
+  box-shadow: 0 0 12px currentColor;
+}
+
+.star-label {
+  font-size: 10px;
+  color: #888;
+  letter-spacing: 1px;
+}
+
+#hint {
+  position: fixed;
+  pointer-events: none;
+  color: rgba(255,255,255,0.7);
+  font-size: 13px;
+  letter-spacing: 2px;
+  z-index: 10;
+  text-align: center;
+  transition: opacity 0.8s;
+}
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div class="ui">
+  <h1>✦ Cosmic Sandbox</h1>
+  <div class="stat">Comets: <span id="count">0</span></div>
+  <div class="stat">Orbits: <span id="orbits">0</span></div>
+  <div class="stat">Alive: <span id="alive">0</span></div>
+
+  <hr class="divider">
+
+  <div class="star-label">★ STAR TYPE</div>
+  <div class="star-selector">
+    <div class="star-opt active" data-mass="5000" data-color="#ffcc66" data-glow="rgba(255,200,100,0.8)" style="background:#ffcc66; color:#ffcc66" title="Yellow Dwarf"></div>
+    <div class="star-opt" data-mass="7500" data-color="#ff9977" data-glow="rgba(255,150,120,0.8)" style="background:#ff9977; color:#ff9977" title="Red Giant"></div>
+    <div class="star-opt" data-mass="3000" data-color="#99ccff" data-glow="rgba(150,200,255,0.8)" style="background:#99ccff; color:#99ccff" title="Blue Star"></div>
+    <div class="star-opt" data-mass="10000" data-color="#cc99ff" data-glow="rgba(200,150,255,0.8)" style="background:#cc99ff; color:#cc99ff" title="Neutron Star"></div>
+  </div>
+
+  <hr class="divider">
+
+  <div class="btn-row">
+    <button class="btn" id="pauseBtn">⏸ PAUSE</button>
+    <button class="btn" id="clearBtn">✕ CLEAR</button>
+  </div>
+  <div class="btn-row">
+    <button class="btn" id="burstBtn">✦ BURST</button>
+    <button class="btn" id="orbitBtn">◎ ORBITER</button>
+  </div>
+  <div class="btn-row">
+    <button class="btn" id="helpBtn">? HELP</button>
+  </div>
+</div>
+
+<div class="help">
+  Click & drag to fling comets · Release to launch<br>
+  Longer drag = faster · Try orbit mode<br>
+  Space = pause · C = clear
+</div>
+
+<div id="hint" style="top:50%;left:50%;transform:translate(-50%,-50%)">
+  Click & drag to launch a comet
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// State
+let star = {
+  x: 0, y: 0,
+  mass: 5000,
+  radius: 20,
+  color: '#ffcc66',
+  glow: 'rgba(255,200,100,0.8)',
+  pulse: 0
+};
+star.x = W / 2;
+star.y = H / 2;
+
+let comets = [];
+let stars = [];
+let particles = [];
+let orbitCount = 0;
+let paused = false;
+let dragging = null;
+let mouseX = 0, mouseY = 0;
+let showHelp = false;
+let frameCount = 0;
+
+// Generate background stars
+function initStars() {
+  stars = [];
+  for (let i = 0; i < 300; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      size: Math.random() * 1.5 + 0.3,
+      twinkle: Math.random() * Math.PI * 2,
+      speed: Math.random() * 0.02 + 0.005
+    });
+  }
+}
+initStars();
+
+// Comet class
+class Comet {
+  constructor(x, y, vx, vy, color, size) {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.color = color || this.randomColor();
+    this.trail = [];
+    this.maxTrail = 40 + Math.floor(Math.random() * 40);
+    this.size = size || 2 + Math.random() * 2;
+    this.alive = true;
+    this.age = 0;
+    this.maxAge = 2000 + Math.random() * 3000;
+    this.orbitCount = 0;
+    this.prevAngle = null;
+    this.prevDist = null;
+    this.trailPoints = [];
+    this.heat = 0;
+  }
+
+  randomColor() {
+    const hues = [200, 220, 260, 300, 340, 30, 50, 160];
+    const hue = hues[Math.floor(Math.random() * hues.length)];
+    return `hsl(${hue}, 80%, 65%)`;
+  }
+
+  update() {
+    if (!this.alive) return;
+
+    const dx = star.x - this.x;
+    const dy = star.y - this.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const minDist = star.radius + this.size + 5;
+
+    // Gravity
+    const force = star.mass / (dist * dist);
+    const ax = (dx / dist) * force;
+    const ay = (dy / dist) * force;
+
+    this.vx += ax;
+    this.vy += ay;
+
+    // Speed cap
+    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    if (speed > 15) {
+      this.vx = (this.vx / speed) * 15;
+      this.vy = (this.vy / speed) * 15;
+    }
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Heat based on proximity
+    this.heat = Math.max(0, 1 - dist / 300);
+
+    // Trail
+    this.trailPoints.unshift({ x: this.x, y: this.y, heat: this.heat });
+    if (this.trailPoints.length > this.maxTrail) {
+      this.trailPoints.pop();
+    }
+
+    // Orbit detection
+    const angle = Math.atan2(dy, dx);
+    if (this.prevAngle !== null && this.prevDist !== null && dist < this.prevDist && dist < 200) {
+      if (Math.abs(angle - this.prevAngle) > 2.5 || Math.abs(angle - this.prevAngle) < 0.1) {
+        this.orbitCount++;
+        if (this.orbitCount === 1) {
+          orbitCount++;
+          spawnOrbitParticles(this);
+        }
+      }
+    }
+    this.prevAngle = angle;
+    this.prevDist = dist;
+
+    // Collision with star
+    if (dist < minDist) {
+      this.alive = false;
+      spawnExplosion(this.x, this.y, this.color);
+      return;
+    }
+
+    // Out of bounds
+    if (this.x < -500 || this.x > W + 500 || this.y < -500 || this.y > H + 500) {
+      this.alive = false;
+    }
+
+    this.age++;
+    if (this.age > this.maxAge) {
+      this.alive = false;
+    }
+
+    // Emit particles when hot
+    if (this.heat > 0.3 && Math.random() < this.heat * 0.4) {
+      particles.push({
+        x: this.x + (Math.random() - 0.5) * 4,
+        y: this.y + (Math.random() - 0.5) * 4,
+        vx: (Math.random() - 0.5) * 2,
+        vy: (Math.random() - 0.5) * 2,
+        life: 1,
+        decay: 0.02 + Math.random() * 0.04,
+        size: 1 + Math.random() * 2,
+        color: this.color
+      });
+    }
+  }
+
+  draw(ctx) {
+    if (!this.alive && this.trailPoints.length === 0) return;
+
+    // Draw trail
+    if (this.trailPoints.length > 1) {
+      for (let i = 0; i < this.trailPoints.length - 1; i++) {
+        const p = this.trailPoints[i];
+        const alpha = (1 - i / this.trailPoints.length) * 0.8;
+        const width = this.size * (1 - i / this.trailPoints.length) * 2;
+
+        ctx.beginPath();
+        ctx.strokeStyle = this.color.replace('hsl', 'hsla').replace(')', `, ${alpha})`);
+        ctx.lineWidth = width;
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(this.trailPoints[i + 1].x, this.trailPoints[i + 1].y);
+        ctx.stroke();
+
+        // Glow on hot trail
+        if (p.heat > 0.5 && i < 10) {
+          ctx.beginPath();
+          ctx.strokeStyle = `rgba(255, 220, 150, ${alpha * p.heat * 0.5})`;
+          ctx.lineWidth = width * 3;
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(this.trailPoints[i + 1].x, this.trailPoints[i + 1].y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    if (!this.alive) return;
+
+    // Comet head
+    ctx.beginPath();
+    ctx.fillStyle = '#fff';
+    ctx.shadowBlur = 12 + this.heat * 15;
+    ctx.shadowColor = this.color;
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+function spawnExplosion(x, y, color) {
+  for (let i = 0; i < 40; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 5 + 1;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      decay: 0.015 + Math.random() * 0.025,
+      size: 1 + Math.random() * 3,
+      color: Math.random() > 0.5 ? color : '#fff'
+    });
+  }
+}
+
+function spawnOrbitParticles(comet) {
+  for (let i = 0; i < 25; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = star.radius + Math.random() * 30;
+    particles.push({
+      x: star.x + Math.cos(angle) * dist,
+      y: star.y + Math.sin(angle) * dist,
+      vx: Math.cos(angle + Math.PI / 2) * (Math.random() * 2),
+      vy: Math.sin(angle + Math.PI / 2) * (Math.random() * 2),
+      life: 1,
+      decay: 0.01 + Math.random() * 0.02,
+      size: 1 + Math.random() * 2.5,
+      color: comet.color
+    });
+  }
+}
+
+function spawnBurst() {
+  const count = 24;
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2;
+    const dist = 100 + Math.random() * 50;
+    const speed = 1.5 + Math.random() * 2;
+    comets.push(new Comet(
+      star.x + Math.cos(angle) * dist,
+      star.y + Math.sin(angle) * dist,
+      Math.cos(angle) * speed + (Math.random() - 0.5) * 0.5,
+      Math.sin(angle) * speed + (Math.random() - 0.5) * 0.5
+    ));
+  }
+}
+
+function spawnOrbiter() {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = 140 + Math.random() * 100;
+  const perpSpeed = Math.sqrt(star.mass / dist) * (0.85 + Math.random() * 0.3);
+  const perpAngle = angle + Math.PI / 2;
+  comets.push(new Comet(
+    star.x + Math.cos(angle) * dist,
+    star.y + Math.sin(angle) * dist,
+    Math.cos(perpAngle) * perpSpeed,
+    Math.sin(perpAngle) * perpSpeed
+  ));
+}
+
+// Input
+let dragStart = null;
+let dragCurrent = null;
+
+canvas.addEventListener('mousedown', (e) => {
+  dragging = { x: e.clientX, y: e.clientY };
+  dragStart = { x: e.clientX, y: e.clientY };
+  dragCurrent = { x: e.clientX, y: e.clientY };
+  document.getElementById('hint').style.opacity = '0';
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  if (dragging) {
+    dragCurrent = { x: e.clientX, y: e.clientY };
+  }
+});
+
+canvas.addEventListener('mouseup', (e) => {
+  if (dragStart) {
+    const vx = (dragStart.x - e.clientX) * 0.08;
+    const vy = (dragStart.y - e.clientY) * 0.08;
+    comets.push(new Comet(e.clientX, e.clientY, vx, vy));
+    document.getElementById('count').textContent = comets.length;
+  }
+  dragging = null;
+  dragStart = null;
+  dragCurrent = null;
+});
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  dragging = { x: t.clientX, y: t.clientY };
+  dragStart = { x: t.clientX, y: t.clientY };
+  dragCurrent = { x: t.clientX, y: t.clientY };
+  document.getElementById('hint').style.opacity = '0';
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouseX = t.clientX;
+  mouseY = t.clientY;
+  if (dragging) dragCurrent = { x: t.clientX, y: t.clientY };
+}, { passive: false });
+
+canvas.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  if (dragStart && dragCurrent) {
+    const vx = (dragStart.x - dragCurrent.x) * 0.08;
+    const vy = (dragStart.y - dragCurrent.y) * 0.08;
+    comets.push(new Comet(dragCurrent.x, dragCurrent.y, vx, vy));
+    document.getElementById('count').textContent = comets.length;
+  }
+  dragging = null;
+  dragStart = null;
+  dragCurrent = null;
+});
+
+// Buttons
+document.getElementById('pauseBtn').addEventListener('click', () => {
+  paused = !paused;
+  document.getElementById('pauseBtn').textContent = paused ? '▶ PLAY' : '⏸ PAUSE';
+  document.getElementById('pauseBtn').classList.toggle('active', paused);
+});
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  comets = [];
+  particles = [];
+  orbitCount = 0;
+  document.getElementById('count').textContent = '0';
+  document.getElementById('orbits').textContent = '0';
+  document.getElementById('hint').style.opacity = '1';
+});
+
+document.getElementById('burstBtn').addEventListener('click', spawnBurst);
+document.getElementById('orbitBtn').addEventListener('click', () => {
+  for (let i = 0; i < 5; i++) {
+    setTimeout(() => spawnOrbiter(), i * 100);
+  }
+});
+
+document.getElementById('helpBtn').addEventListener('click', () => {
+  showHelp = !showHelp;
+  document.querySelector('.help').style.opacity = showHelp ? '0.3' : '1';
+  document.getElementById('helpBtn').classList.toggle('active', showHelp);
+});
+
+document.querySelectorAll('.star-opt').forEach(opt => {
+  opt.addEventListener('click', () => {
+    document.querySelectorAll('.star-opt').forEach(o => o.classList.remove('active'));
+    opt.classList.add('active');
+    star.mass = parseFloat(opt.dataset.mass);
+    star.color = opt.dataset.color;
+    star.glow = opt.dataset.glow;
+    star.radius = star.mass > 7000 ? 28 : star.mass > 3000 ? 22 : 18;
+  });
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    document.getElementById('pauseBtn').click();
+  }
+  if (e.code === 'KeyC') {
+    document.getElementById('clearBtn').click();
+  }
+  if (e.code === 'KeyB') {
+    spawnBurst();
+  }
+  if (e.code === 'KeyO') {
+    for (let i = 0; i < 5; i++) {
+      setTimeout(() => spawnOrbiter(), i * 100);
+    }
+  }
+});
+
+// Draw
+function drawStar() {
+  star.pulse += 0.02;
+
+  // Outer corona
+  const grad = ctx.createRadialGradient(star.x, star.y, 0, star.x, star.y, star.radius * 6);
+  grad.addColorStop(0, star.glow);
+  grad.addColorStop(0.3, star.glow.replace('0.8', '0.3'));
+  grad.addColorStop(0.6, 'rgba(100,140,255,0.05)');
+  grad.addColorStop(1, 'transparent');
+
+  ctx.beginPath();
+  ctx.fillStyle = grad;
+  ctx.arc(star.x, star.y, star.radius * 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Corona rays
+  ctx.save();
+  ctx.translate(star.x, star.y);
+  ctx.rotate(star.pulse);
+  const rayCount = 12;
+  for (let i = 0; i < rayCount; i++) {
+    const angle = (i / rayCount) * Math.PI * 2;
+    const len = star.radius * (2.5 + Math.sin(star.pulse * 3 + i) * 0.8);
+    ctx.beginPath();
+    ctx.strokeStyle = star.glow.replace('0.8', '0.15');
+    ctx.lineWidth = 1.5;
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(angle) * len, Math.sin(angle) * len);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Core
+  const coreGrad = ctx.createRadialGradient(star.x, star.y, 0, star.x, star.y, star.radius);
+  coreGrad.addColorStop(0, '#fff');
+  coreGrad.addColorStop(0.4, star.color);
+  coreGrad.addColorStop(1, 'rgba(0,0,0,0)');
+
+  ctx.beginPath();
+  ctx.fillStyle = coreGrad;
+  ctx.shadowBlur = 30;
+  ctx.shadowColor = star.glow;
+  ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+}
+
+function drawDragLine() {
+  if (!dragging || !dragStart || !dragCurrent) return;
+
+  const dx = dragStart.x - dragCurrent.x;
+  const dy = dragStart.y - dragCurrent.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  // Launch origin
+  ctx.beginPath();
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.arc(dragCurrent.x, dragCurrent.y, 5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Direction line
+  ctx.beginPath();
+  ctx.strokeStyle = `rgba(150,200,255,${Math.min(1, dist / 100)})`;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.moveTo(dragCurrent.x, dragCurrent.y);
+  ctx.lineTo(dragStart.x, dragStart.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Arrow head
+  const angle = Math.atan2(dy, dx);
+  const arrowLen = 10;
+  ctx.beginPath();
+  ctx.fillStyle = 'rgba(150,200,255,0.8)';
+  ctx.moveTo(dragStart.x, dragStart.y);
+  ctx.lineTo(
+    dragStart.x - Math.cos(angle - 0.4) * arrowLen,
+    dragStart.y - Math.sin(angle - 0.4) * arrowLen
+  );
+  ctx.lineTo(
+    dragStart.x - Math.cos(angle + 0.4) * arrowLen,
+    dragStart.y - Math.sin(angle + 0.4) * arrowLen
+  );
+  ctx.closePath();
+  ctx.fill();
+
+  // Speed indicator
+  if (dist > 10) {
+    ctx.fillStyle = 'rgba(150,200,255,0.7)';
+    ctx.font = '11px Courier New';
+    ctx.fillText(`v=${(dist * 0.08).toFixed(1)}`, dragStart.x + 10, dragStart.y - 10);
+  }
+}
+
+function draw() {
+  // Background
+  ctx.fillStyle = 'rgba(0, 0, 5, 0.15)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  stars.forEach(s => {
+    s.twinkle += s.speed;
+    const alpha = 0.4 + Math.sin(s.twinkle) * 0.4;
+    ctx.beginPath();
+    ctx.fillStyle = `rgba(200,210,255,${alpha})`;
+    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Particles
+  particles = particles.filter(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= p.decay;
+    if (p.life <= 0) return false;
+
+    ctx.beginPath();
+    ctx.fillStyle = p.color.replace(')', `, ${p.life})`).replace('hsl', 'hsla');
+    ctx.globalAlpha = p.life;
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    return true;
+  });
+
+  // Star
+  drawStar();
+
+  // Comets
+  comets.forEach(c => c.draw(ctx));
+
+  // Drag line
+  drawDragLine();
+
+  // HUD glow near mouse when dragging
+  if (dragging) {
+    const grad = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 80);
+    grad.addColorStop(0, 'rgba(100,150,255,0.08)');
+    grad.addColorStop(1, 'transparent');
+    ctx.beginPath();
+    ctx.fillStyle = grad;
+    ctx.arc(mouseX, mouseY, 80, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function update() {
+  if (paused) return;
+
+  comets = comets.filter(c => {
+    c.update();
+    return c.alive || c.trailPoints.length > 0;
+  });
+
+  if (!c.alive && c.trailPoints.length === 0) return false;
+  return true;
+}
+
+function loop() {
+  frameCount++;
+  draw();
+
+  if (!paused) {
+    // Update in substeps for stability
+    const substeps = 2;
+    for (let s = 0; s < substeps; s++) {
+      const toRemove = [];
+      comets.forEach((c, i) => {
+        c.update();
+        if (!c.alive && c.trailPoints.length < 2) {
+          toRemove.push(i);
+        }
+      });
+      // Remove dead comets (in reverse)
+      for (let i = toRemove.length - 1; i >= 0; i--) {
+        comets.splice(toRemove[i], 1);
+      }
+    }
+
+    particles = particles.filter(p => {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= p.decay;
+      return p.life > 0;
+    });
+
+    // Update UI periodically
+    if (frameCount % 10 === 0) {
+      document.getElementById('count').textContent = comets.length;
+      document.getElementById('orbits').textContent = orbitCount;
+      document.getElementById('alive').textContent = comets.filter(c => c.alive).length;
+    }
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// Initial intro comets
+setTimeout(() => {
+  for (let i = 0; i < 6; i++) {
+    setTimeout(() => spawnOrbiter(), i * 200);
+  }
+}, 500);
+
+loop();
+</script>
+</body>
+</html>
