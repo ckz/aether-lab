@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Golden Echoes — Voyager's Message</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #00000a;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+  color: #c8b87a;
+  cursor: crosshair;
+}
+#c { display: block; position: fixed; top: 0; left: 0; }
+#ui {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  z-index: 10;
+}
+#title {
+  font-size: 14px;
+  letter-spacing: 6px;
+  text-transform: uppercase;
+  color: #c8b87a;
+  opacity: 0.7;
+  margin-bottom: 8px;
+}
+#hint {
+  font-size: 11px;
+  letter-spacing: 3px;
+  color: #4a6a8a;
+  opacity: 0.6;
+}
+#stats {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #3a5a7a;
+  opacity: 0.5;
+  text-align: right;
+  line-height: 1.8;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">Golden Echoes</div>
+  <div id="hint">click to broadcast · space to pause</div>
+</div>
+<div id="stats">
+  <div>MISSION: INTERSTELLAR</div>
+  <div>RECORD: LAUNCHED 1977</div>
+  <div id="dist">DISTANCE: ∞</div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H, cx, cy;
+let paused = false;
+let mouse = { x: 0, y: 0 };
+let broadcastWave = 0;
+let time = 0;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+
+canvas.addEventListener('click', () => {
+  broadcastWave = 1;
+  // Spawn burst particles
+  for (let i = 0; i < 60; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 0.5 + Math.random() * 3;
+    particles.push({
+      x: cx,
+      y: cy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      decay: 0.003 + Math.random() * 0.008,
+      size: 1 + Math.random() * 2,
+      hue: 35 + Math.random() * 15, // golden range
+      type: Math.random() < 0.3 ? 'data' : 'stardust'
+    });
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); paused = !paused; }
+});
+
+// Stars
+const stars = [];
+for (let i = 0; i < 400; i++) {
+  stars.push({
+    x: Math.random() * 2000 - 1000,
+    y: Math.random() * 2000 - 1000,
+    z: Math.random() * 1000,
+    size: 0.3 + Math.random() * 1.5,
+    twinkleSpeed: 0.001 + Math.random() * 0.003,
+    twinkleOffset: Math.random() * Math.PI * 2
+  });
+}
+
+// Data particles orbiting the record
+const dataTypes = [
+  { label: 'GREETING', color: '#c8b87a', count: 55 },
+  { label: 'MUSIC', color: '#7ac8e8', count: 27 },
+  { label: 'SOUND', color: '#e8b87a', count: 35 },
+  { label: 'IMAGE', color: '#b8e87a', count: 115 }
+];
+
+const orbiters = [];
+dataTypes.forEach(type => {
+  for (let i = 0; i < type.count; i++) {
+    orbiters.push({
+      angle: Math.random() * Math.PI * 2,
+      radius: 80 + Math.random() * 180,
+      speed: 0.0003 + Math.random() * 0.0008,
+      size: 0.8 + Math.random() * 2,
+      color: type.color,
+      yOffset: (Math.random() - 0.5) * 60,
+      pulse: Math.random() * Math.PI * 2
+    });
+  }
+});
+
+const particles = [];
+
+// Greeting lines that appear during broadcast
+const greetings = [
+  "peace", "hello", "greetings", "from", "planet", "earth",
+  "children", "of", "the", "stars", "welcome", "cosmos"
+];
+
+function drawStar(s, scale) {
+  const sx = cx + (s.x / s.z) * scale;
+  const sy = cy + (s.y / s.z) * scale;
+  const twinkle = 0.4 + 0.6 * Math.sin(time * s.twinkleSpeed + s.twinkleOffset);
+  const alpha = twinkle * Math.min(1, (scale * 3) / s.z);
+  ctx.fillStyle = `rgba(200, 210, 255, ${alpha * 0.6})`;
+  ctx.beginPath();
+  ctx.arc(sx, sy, s.size * alpha, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawRecord() {
+  const recordRadius = 50;
+  const spin = time * 0.0003;
+  
+  // Record shadow / glow
+  const glow = ctx.createRadialGradient(cx, cy, recordRadius * 0.8, cx, cy, recordRadius * 2.5);
+  glow.addColorStop(0, 'rgba(200, 170, 80, 0.15)');
+  glow.addColorStop(0.5, 'rgba(200, 150, 60, 0.05)');
+  glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(cx, cy, recordRadius * 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Main disc
+  const discGrad = ctx.createRadialGradient(cx - 10, cy - 10, 0, cx, cy, recordRadius);
+  discGrad.addColorStop(0, '#f4e4a6');
+  discGrad.addColorStop(0.3, '#d4b860');
+  discGrad.addColorStop(0.7, '#a88830');
+  discGrad.addColorStop(1, '#705820');
+  
+  ctx.fillStyle = discGrad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, recordRadius, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Grooves (concentric rings)
+  ctx.strokeStyle = 'rgba(80, 50, 20, 0.3)';
+  ctx.lineWidth = 0.5;
+  for (let r = 12; r < recordRadius - 3; r += 2.5) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Label area
+  ctx.fillStyle = 'rgba(20, 15, 10, 0.6)';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 18, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Center hole
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Spinning highlight
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(spin);
+  ctx.strokeStyle = 'rgba(255, 240, 180, 0.25)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(0, 0, recordRadius - 2, 0.3, 1.2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, recordRadius - 2, 3.5, 4.4);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawOrbiter(o) {
+  const angle = o.angle + time * o.speed;
+  const x = cx + Math.cos(angle) * o.radius;
+  const y = cy + Math.sin(angle) * o.radius * 0.4 + o.yOffset; // tilted orbit
+  
+  const pulse = 0.5 + 0.5 * Math.sin(time * 0.002 + o.pulse);
+  const alpha = 0.3 + pulse * 0.5;
+  
+  // Trail
+  ctx.strokeStyle = o.color.replace(')', `, ${alpha * 0.15})`).replace('rgb', 'rgba');
+  if (ctx.strokeStyle.startsWith('#')) {
+    ctx.strokeStyle = o.color;
+  }
+  ctx.lineWidth = 0.5;
+  const trailLen = 0.4;
+  for (let t = 0; t < trailLen; t += 0.05) {
+    const ta = angle - t;
+    const tx = cx + Math.cos(ta) * o.radius;
+    const ty = cy + Math.sin(ta) * o.radius * 0.4 + o.yOffset;
+    ctx.globalAlpha = alpha * (1 - t / trailLen) * 0.3;
+    ctx.beginPath();
+    ctx.arc(tx, ty, o.size * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Particle
+  ctx.fillStyle = o.color;
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.arc(x, y, o.size, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+function drawParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= p.decay;
+    
+    if (p.life <= 0) {
+      particles.splice(i, 1);
+      continue;
+    }
+
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.type === 'data' 
+      ? `hsl(${p.hue}, 70%, 65%)`
+      : `rgba(200, 210, 255, ${p.life * 0.7})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Occasional text for data particles
+    if (p.type === 'data' && p.life > 0.7 && Math.random() < 0.1) {
+      ctx.globalAlpha = p.life * 0.8;
+      ctx.font = '8px Courier New';
+      ctx.fillStyle = '#c8b87a';
+      ctx.fillText(greetings[Math.floor(Math.random() * greetings.length)], p.x + 5, p.y);
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+// Ambient floating data words
+const floatWords = [];
+const vocab = [
+  '55 greetings', '27 musical works', '90 minutes of music',
+  '116 images encoded', 'nature sounds', 'human voices',
+  'whale song', 'brainwaves', 'heartbeat', 'morse code',
+  'pulsar map', 'hydrogen diagram', 'earth sounds',
+  'wind', 'thunder', 'volcano', 'kiss', 'laugh', 'child'
+];
+for (let i = 0; i < 15; i++) {
+  floatWords.push({
+    word: vocab[Math.floor(Math.random() * vocab.length)],
+    x: Math.random() * W,
+    y: Math.random() * H,
+    vx: (Math.random() - 0.5) * 0.2,
+    vy: (Math.random() - 0.5) * 0.15 - 0.1,
+    alpha: 0.08 + Math.random() * 0.12,
+    size: 10 + Math.random() * 4
+  });
+}
+
+function drawFloatWords() {
+  floatWords.forEach(w => {
+    w.x += w.vx;
+    w.y += w.vy;
+    if (w.x < -100) w.x = W + 100;
+    if (w.x > W + 100) w.x = -100;
+    if (w.y < -50) w.y = H + 50;
+    if (w.y > H + 50) w.y = -50;
+    
+    ctx.globalAlpha = w.alpha;
+    ctx.font = `${w.size}px Courier New`;
+    ctx.fillStyle = '#6a8aaa';
+    ctx.fillText(w.word, w.x, w.y);
+    ctx.globalAlpha = 1;
+  });
+}
+
+// Pulsar marker (like on the cover)
+function drawPulsarMap() {
+  const px = 100, py = H - 80;
+  ctx.globalAlpha = 0.3;
+  ctx.strokeStyle = '#4a6a8a';
+  ctx.lineWidth = 0.5;
+  
+  // 14 lines from center
+  for (let i = 0; i < 14; i++) {
+    const angle = (i / 14) * Math.PI * 2 + time * 0.0002;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(px + Math.cos(angle) * 25, py + Math.sin(angle) * 25);
+    ctx.stroke();
+  }
+  
+  // Center point
+  ctx.fillStyle = '#c8b87a';
+  ctx.beginPath();
+  ctx.arc(px, py, 2, 0, Math.PI * 2);
+  ctx.fill();
+  
+  ctx.globalAlpha = 1;
+  
+  ctx.font = '9px Courier New';
+  ctx.fillStyle = '#3a5a7a';
+  ctx.fillText('PULSAR MAP', px - 28, py + 40);
+}
+
+let lastTime = 0;
+function animate(now) {
+  if (!paused) {
+    const dt = Math.min(50, now - lastTime);
+    time += dt;
+  }
+  lastTime = now;
+
+  // Fade background
+  ctx.fillStyle = 'rgba(0, 0, 10, 0.25)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars (with parallax toward mouse)
+  const px = (mouse.x - cx) * 0.02;
+  const py = (mouse.y - cy) * 0.02;
+  stars.forEach(s => {
+    drawStar(s, W * 0.6);
+  });
+
+  // Floating words
+  drawFloatWords();
+
+  // Orbiters
+  orbiters.forEach(o => drawOrbiter(o));
+
+  // Broadcast wave ring
+  if (broadcastWave > 0) {
+    broadcastWave += 0.008;
+    if (broadcastWave > 1.5) broadcastWave = 0;
+    
+    const r = broadcastWave * 400;
+    ctx.globalAlpha = Math.max(0, 1 - broadcastWave / 1.5) * 0.4;
+    ctx.strokeStyle = '#c8b87a';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Second ring
+    ctx.globalAlpha = Math.max(0, 1 - (broadcastWave + 0.2) / 1.5) * 0.25;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.85, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    ctx.globalAlpha = 1;
+  }
+
+  // Particles
+  drawParticles();
+
+  // Record on top
+  drawRecord();
+
+  // Pulsar map
+  drawPulsarMap();
+
+  // Distance counter
+  const dist = document.getElementById('dist');
+  if (dist) {
+    const au = (24.5 + time * 0.00003).toFixed(2);
+    dist.textContent = `DISTANCE: ${au} AU`;
+  }
+
+  requestAnimationFrame(animate);
+}
+
+// Initial clear
+ctx.fillStyle = '#00000a';
+ctx.fillRect(0, 0, W, H);
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
