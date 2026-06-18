@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ripple Tank</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #050510;
+    color: #e0e0e0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  header {
+    text-align: center;
+    padding: 2rem 1.5rem 1rem;
+    width: 100%;
+    max-width: 900px;
+  }
+
+  header h1 {
+    font-size: 2rem;
+    font-weight: 300;
+    letter-spacing: 0.1em;
+    color: #fff;
+  }
+
+  header p {
+    font-size: 0.9rem;
+    color: #777;
+    margin-top: 0.5rem;
+  }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: center;
+    padding: 1rem 1.5rem;
+    max-width: 900px;
+  }
+
+  .control-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #0d0d1a;
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    border: 1px solid #1a1a2e;
+  }
+
+  .control-group label {
+    font-size: 0.75rem;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+
+  .control-group input[type="range"] {
+    width: 80px;
+    accent-color: #6366f1;
+  }
+
+  .control-group select,
+  .control-group button {
+    background: #1a1a2e;
+    color: #ddd;
+    border: 1px solid #2a2a4e;
+    padding: 0.35rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  .control-group button:hover {
+    background: #2a2a4e;
+    border-color: #6366f1;
+  }
+
+  .control-group button.active {
+    background: #6366f1;
+    border-color: #6366f1;
+    color: #fff;
+  }
+
+  canvas {
+    border-radius: 12px;
+    cursor: crosshair;
+    box-shadow: 0 0 60px rgba(99, 102, 241, 0.1);
+    max-width: 95vw;
+  }
+
+  .info {
+    padding: 1rem 1.5rem 2rem;
+    text-align: center;
+    font-size: 0.8rem;
+    color: #555;
+    max-width: 600px;
+    line-height: 1.6;
+  }
+
+  .info kbd {
+    background: #1a1a2e;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    border: 1px solid #2a2a4e;
+    font-size: 0.75rem;
+    color: #aaa;
+    font-family: inherit;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🌊 Ripple Tank</h1>
+  <p>Wave interference simulator. Click or drag to create ripples. Watch them reflect, interfere, and dance.</p>
+</header>
+
+<div class="controls">
+  <div class="control-group">
+    <label>Damping</label>
+    <input type="range" id="damping" min="0.9" max="0.999" step="0.001" value="0.985">
+    <span id="dampingVal" style="font-size:0.7rem;color:#888;width:35px;">0.985</span>
+  </div>
+
+  <div class="control-group">
+    <label>Speed</label>
+    <input type="range" id="speed" min="1" max="5" step="1" value="2">
+  </div>
+
+  <div class="control-group">
+    <label>Mode</label>
+    <button id="modeRipple" class="active">Ripple</button>
+    <button id="modeRain">Rain</button>
+    <button id="modeBarrier">Barrier</button>
+  </div>
+
+  <div class="control-group">
+    <label>Color</label>
+    <select id="colorScheme">
+      <option value="ocean">Ocean</option>
+      <option value="neon">Neon</option>
+      <option value="fire">Fire</option>
+      <option value="mono">Mono</option>
+      <option value="aurora">Aurora</option>
+    </select>
+  </div>
+
+  <div class="control-group">
+    <button id="clearBtn">Clear</button>
+    <button id="pauseBtn">Pause</button>
+  </div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<div class="info">
+  <kbd>Click</kbd> / <kbd>Drag</kbd> to create ripples &nbsp;·&nbsp; 
+  <kbd>Space</kbd> pause &nbsp;·&nbsp; 
+  <kbd>C</kbd> clear &nbsp;·&nbsp;
+  <kbd>R</kbd> rain mode &nbsp;·&nbsp;
+  <kbd>B</kbd> barrier mode
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+const W = 700;
+const H = 500;
+canvas.width = W;
+canvas.height = H;
+
+let damping = 0.985;
+let speed = 2;
+let mode = 'ripple';
+let paused = false;
+let colorScheme = 'ocean';
+
+// Two buffers for wave simulation
+const size = W * H;
+let buf1 = new Float32Array(size);
+let buf2 = new Float32Array(size);
+
+// Barriers: 1 = wall
+let barriers = new Uint8Array(size);
+
+// Rain drops
+let rainDrops = [];
+
+const colorSchemes = {
+  ocean: (v) => {
+    const t = Math.min(1, Math.abs(v) / 255);
+    const r = Math.floor(10 + t * 30);
+    const g = Math.floor(20 + t * 180);
+    const b = Math.floor(60 + t * 195);
+    return [r, g, b];
+  },
+  neon: (v) => {
+    const t = Math.min(1, Math.abs(v) / 255);
+    const hue = 180 + t * 120;
+    const rgb = hslToRgb(hue / 360, 0.9, 0.3 + t * 0.5);
+    return rgb;
+  },
+  fire: (v) => {
+    const t = Math.min(1, Math.abs(v) / 255);
+    const r = Math.floor(20 + t * 235);
+    const g = Math.floor(10 + t * 150);
+    const b = Math.floor(5 + t * 30);
+    return [r, g, b];
+  },
+  mono: (v) => {
+    const t = Math.min(1, Math.abs(v) / 255);
+    const c = Math.floor(15 + t * 240);
+    return [c, c, c];
+  },
+  aurora: (v) => {
+    const t = Math.min(1, Math.abs(v) / 255);
+    const hue = (120 + t * 180 + performance.now() * 0.01) % 360;
+    const rgb = hslToRgb(hue / 360, 0.8, 0.2 + t * 0.55);
+    return rgb;
+  }
+};
+
+function hslToRgb(h, s, l) {
+  let r, g, b;
+  if (s === 0) {
+    r = g = b = l;
+  } else {
+    const hue2rgb = (p, q, t) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
+
+function idx(x, y) {
+  return y * W + x;
+}
+
+function propagate() {
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const i = idx(x, y);
+      if (barriers[i]) {
+        buf2[i] = 0;
+        continue;
+      }
+      const sum = (
+        buf1[i - 1] + buf1[i + 1] +
+        buf1[i - W] + buf1[i + W]
+      ) / 2 - buf2[i];
+      buf2[i] = sum * damping;
+    }
+  }
+  // Swap buffers
+  const tmp = buf1;
+  buf1 = buf2;
+  buf2 = tmp;
+}
+
+function render() {
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+  const colorFn = colorSchemes[colorScheme];
+
+  for (let i = 0; i < size; i++) {
+    const v = buf1[i];
+    const [r, g, b] = colorFn(v);
+    const pi = i * 4;
+    
+    if (barriers[i]) {
+      data[pi] = 40;
+      data[pi + 1] = 40;
+      data[pi + 2] = 60;
+      data[pi + 3] = 255;
+    } else {
+      data[pi] = r;
+      data[pi + 1] = g;
+      data[pi + 2] = b;
+      data[pi + 3] = 255;
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+}
+
+function step() {
+  if (!paused) {
+    // Rain
+    if (mode === 'rain') {
+      for (let i = 0; i < 3; i++) {
+        const x = Math.floor(Math.random() * W);
+        const y = Math.floor(Math.random() * H);
+        const i2 = idx(x, y);
+        buf1[i2] += 200 + Math.random() * 55;
+      }
+    }
+
+    for (let s = 0; s < speed; s++) {
+      propagate();
+    }
+  }
+  render();
+  requestAnimationFrame(step);
+}
+
+function dropAt(x, y, radius = 3, strength = 500) {
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      const px = Math.floor(x) + dx;
+      const py = Math.floor(y) + dy;
+      if (px < 1 || px >= W - 1 || py < 1 || py >= H - 1) continue;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist <= radius) {
+        const falloff = 1 - dist / radius;
+        buf1[idx(px, py)] += strength * falloff;
+      }
+    }
+  }
+}
+
+function toggleBarrier(x, y) {
+  const px = Math.floor(x);
+  const py = Math.floor(y);
+  if (px < 1 || px >= W - 1 || py < 1 || py >= H - 1) return;
+  const i = idx(px, py);
+  barriers[i] = barriers[i] ? 0 : 1;
+  // Draw a small wall segment
+  const size = 4;
+  for (let dy = -size; dy <= size; dy++) {
+    for (let dx = -size; dx <= size; dx++) {
+      const bx = px + dx;
+      const by = py + dy;
+      if (bx < 1 || bx >= W - 1 || by < 1 || by >= H - 1) continue;
+      barriers[idx(bx, by)] = 1;
+    }
+  }
+}
+
+// Mouse
+let mouseDown = false;
+let lastMX = 0, lastMY = 0;
+
+canvas.addEventListener('mousedown', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const x = (e.clientX - rect.left) * scaleX;
+  const y = (e.clientY - rect.top) * scaleY;
+  
+  mouseDown = true;
+  lastMX = x;
+  lastMY = y;
+
+  if (mode === 'barrier') {
+    toggleBarrier(x, y);
+  } else {
+    dropAt(x, y, 4, 500);
+  }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const x = (e.clientX - rect.left) * scaleX;
+  const y = (e.clientY - rect.top) * scaleY;
+
+  if (mouseDown) {
+    if (mode === 'barrier') {
+      toggleBarrier(x, y);
+    } else {
+      const dx = x - lastMX;
+      const dy = y - lastMY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const steps = Math.max(1, Math.floor(dist / 8));
+      for (let s = 0; s < steps; s++) {
+        const t = s / steps;
+        dropAt(lastMX + dx * t, lastMY + dy * t, 3, 300);
+      }
+    }
+  }
+  lastMX = x;
+  lastMY = y;
+});
+
+canvas.addEventListener('mouseup', () => mouseDown = false);
+canvas.addEventListener('mouseleave', () => mouseDown = false);
+
+// Touch
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const touch = e.touches[0];
+  const x = (touch.clientX - rect.left) * scaleX;
+  const y = (touch.clientY - rect.top) * scaleY;
+  mouseDown = true;
+  lastMX = x;
+  lastMY = y;
+  if (mode === 'barrier') {
+    toggleBarrier(x, y);
+  } else {
+    dropAt(x, y, 4, 500);
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  if (!mouseDown) return;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const touch = e.touches[0];
+  const x = (touch.clientX - rect.left) * scaleX;
+  const y = (touch.clientY - rect.top) * scaleY;
+  const dx = x - lastMX;
+  const dy = y - lastMY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const steps = Math.max(1, Math.floor(dist / 8));
+  for (let s = 0; s < steps; s++) {
+    const t = s / steps;
+    dropAt(lastMX + dx * t, lastMY + dy * t, 3, 300);
+  }
+  lastMX = x;
+  lastMY = y;
+}, { passive: false });
+
+canvas.addEventListener('touchend', () => mouseDown = false);
+
+// Controls
+const dampingSlider = document.getElementById('damping');
+const dampingVal = document.getElementById('dampingVal');
+dampingSlider.addEventListener('input', () => {
+  damping = parseFloat(dampingSlider.value);
+  dampingVal.textContent = damping.toFixed(3);
+});
+
+const speedSlider = document.getElementById('speed');
+speedSlider.addEventListener('input', () => {
+  speed = parseInt(speedSlider.value);
+});
+
+const colorSelect = document.getElementById('colorScheme');
+colorSelect.addEventListener('change', () => {
+  colorScheme = colorSelect.value;
+});
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('#modeRipple, #modeRain, #modeBarrier').forEach(b => b.classList.remove('active'));
+  const btnMap = { ripple: 'modeRipple', rain: 'modeRain', barrier: 'modeBarrier' };
+  document.getElementById(btnMap[m]).classList.add('active');
+}
+
+document.getElementById('modeRipple').addEventListener('click', () => setMode('ripple'));
+document.getElementById('modeRain').addEventListener('click', () => setMode('rain'));
+document.getElementById('modeBarrier').addEventListener('click', () => setMode('barrier'));
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  buf1.fill(0);
+  buf2.fill(0);
+  barriers.fill(0);
+});
+
+const pauseBtn = document.getElementById('pauseBtn');
+pauseBtn.addEventListener('click', () => {
+  paused = !paused;
+  pauseBtn.textContent = paused ? 'Play' : 'Pause';
+  pauseBtn.classList.toggle('active', paused);
+});
+
+// Keyboard
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    paused = !paused;
+    pauseBtn.textContent = paused ? 'Play' : 'Pause';
+    pauseBtn.classList.toggle('active', paused);
+  } else if (e.code === 'KeyC') {
+    buf1.fill(0);
+    buf2.fill(0);
+    barriers.fill(0);
+  } else if (e.code === 'KeyR') {
+    setMode('rain');
+  } else if (e.code === 'KeyB') {
+    setMode('barrier');
+  }
+});
+
+// Start
+step();
+</script>
+
+</body>
+</html>
