@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosmic Garden - Aether's Generative Art</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+  
+  canvas {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+  }
+  
+  .ui {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    background: rgba(10, 10, 15, 0.85);
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #333;
+    max-width: 300px;
+    backdrop-filter: blur(10px);
+    font-size: 12px;
+  }
+  
+  .ui h1 {
+    font-size: 14px;
+    margin-bottom: 12px;
+    color: #fff;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  
+  .ui .stat {
+    margin: 6px 0;
+    color: #888;
+  }
+  
+  .ui .stat span {
+    color: #0ff;
+    font-weight: bold;
+  }
+  
+  .ui .hint {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #333;
+    color: #666;
+    font-size: 11px;
+    line-height: 1.6;
+  }
+  
+  .ui button {
+    margin-top: 10px;
+    background: #1a1a2e;
+    color: #0ff;
+    border: 1px solid #0ff;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    border-radius: 4px;
+    transition: all 0.3s;
+  }
+  
+  .ui button:hover {
+    background: #0ff;
+    color: #0a0a0f;
+  }
+</style>
+</head>
+<body>
+<canvas id="garden"></canvas>
+<div class="ui">
+  <h1>◈ Cosmic Garden ◈</h1>
+  <div class="stat">Particles: <span id="count">0</span></div>
+  <div class="stat">Generations: <span id="gens">0</span></div>
+  <div class="stat">Time: <span id="time">0</span>s</div>
+  <button onclick="clearGarden()">Clear Garden</button>
+  <button onclick="plantSeed()">Plant Seed</button>
+  <div class="hint">
+    Move mouse to guide growth<br>
+    Click anywhere to plant<br>
+    Watch the cosmos bloom ✨
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('garden');
+const ctx = canvas.getContext('2d');
+const countEl = document.getElementById('count');
+const gensEl = document.getElementById('gens');
+const timeEl = document.getElementById('time');
+
+let W, H;
+let particles = [];
+let seeds = [];
+let mouse = { x: W/2, y: H/2 };
+let startTime = Date.now();
+
+const palettes = [
+  ['#ff006e', '#fb5607', '#ffbe0b', '#8338ec', '#3a86ff'],
+  ['#f72585', '#7209b7', '#3a0ca3', '#4361ee', '#4cc9f0'],
+  ['#06d6a0', '#118ab2', '#073b4c', '#ffd166', '#ef476f'],
+  ['#e63946', '#f4a261', '#2a9d8f', '#264653', '#e9c46a'],
+  ['#7400b8', '#6930c3', '#5390d9', '#48bfe3', '#64dfdf']
+];
+
+let currentPalette = 0;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+class Particle {
+  constructor(x, y, color, generation = 0, parent = null) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 2;
+    this.vy = (Math.random() - 0.5) * 2;
+    this.color = color;
+    this.generation = generation;
+    this.life = 1;
+    this.decay = 0.001 + Math.random() * 0.002;
+    this.size = Math.max(1, 4 - generation * 0.3);
+    this.canBranch = generation < 8;
+    this.branchTimer = 0;
+    this.parent = parent;
+    this.angle = parent ? Math.atan2(y - parent.y, x - parent.x) : Math.random() * Math.PI * 2;
+  }
+  
+  update() {
+    const dx = mouse.x - this.x;
+    const dy = mouse.y - this.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    
+    if (dist < 200 && dist > 0) {
+      const force = (200 - dist) / 200 * 0.02;
+      this.vx += (dx / dist) * force;
+      this.vy += (dy / dist) * force;
+    }
+    
+    if (this.parent) {
+      const pdx = this.parent.x - this.x;
+      const pdy = this.parent.y - this.y;
+      const pdist = Math.sqrt(pdx*pdx + pdy*pdy);
+      if (pdist > 30 && pdist < 200) {
+        const pull = 0.01;
+        this.vx += (pdx / pdist) * pull;
+        this.vy += (pdy / pdist) * pull;
+      }
+    }
+    
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+    
+    this.x += this.vx;
+    this.y += this.vy;
+    
+    this.life -= this.decay;
+    
+    this.branchTimer++;
+    
+    if (this.canBranch && this.branchTimer > 20 && Math.random() < 0.02 && this.life > 0.5) {
+      this.branch();
+    }
+    
+    if (this.life <= 0 && Math.random() < 0.001 && this.canBranch) {
+      this.respawn();
+    }
+  }
+  
+  branch() {
+    const angleOffset = (Math.random() - 0.5) * 1.5;
+    const speed = 1 + Math.random();
+    const newVx = Math.cos(this.angle + angleOffset) * speed + this.vx * 0.5;
+    const newVy = Math.sin(this.angle + angleOffset) * speed + this.vy * 0.5;
+    
+    const child = new Particle(
+      this.x, this.y,
+      this.color,
+      this.generation + 1,
+      this
+    );
+    child.vx = newVx;
+    child.vy = newVy;
+    particles.push(child);
+    this.branchTimer = 0;
+    if (this.generation > 0) this.canBranch = false;
+  }
+  
+  respawn() {
+    if (seeds.length > 0) {
+      const seed = seeds[Math.floor(Math.random() * seeds.length)];
+      this.x = seed.x;
+      this.y = seed.y;
+      this.vx = (Math.random() - 0.5) * 3;
+      this.vy = (Math.random() - 0.5) * 3;
+      this.life = 1;
+      this.generation = 0;
+      this.canBranch = true;
+      this.parent = null;
+    }
+  }
+  
+  draw() {
+    ctx.save();
+    ctx.globalAlpha = this.life * 0.8;
+    ctx.fillStyle = this.color;
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+class Seed {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.pulse = 0;
+  }
+  
+  update() {
+    this.pulse += 0.05;
+  }
+  
+  draw() {
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    const size = 3 + Math.sin(this.pulse) * 1;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, size, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, size * 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function plantSeed() {
+  const x = Math.random() * W;
+  const y = H * 0.6 + Math.random() * H * 0.4;
+  seeds.push(new Seed(x, y));
+  
+  const palette = palettes[currentPalette];
+  const color = palette[Math.floor(Math.random() * palette.length)];
+  
+  for (let i = 0; i < 15; i++) {
+    particles.push(new Particle(x, y, color));
+  }
+}
+
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+
+canvas.addEventListener('click', e => {
+  const x = e.clientX;
+  const y = e.clientY;
+  seeds.push(new Seed(x, y));
+  
+  const palette = palettes[currentPalette];
+  const color = palette[Math.floor(Math.random() * palette.length)];
+  
+  for (let i = 0; i < 25; i++) {
+    particles.push(new Particle(x, y, color));
+  }
+});
+
+function clearGarden() {
+  particles = [];
+  seeds = [];
+}
+
+function init() {
+  for (let i = 0; i < 5; i++) {
+    plantSeed();
+  }
+}
+
+function animate() {
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.05)';
+  ctx.fillRect(0, 0, W, H);
+  
+  seeds.forEach(seed => {
+    seed.update();
+    seed.draw();
+  });
+  
+  particles = particles.filter(p => p.life > 0);
+  
+  particles.forEach(p => {
+    p.update();
+    p.draw();
+  });
+  
+  countEl.textContent = particles.length;
+  gensEl.textContent = Math.max(...particles.map(p => p.generation), 0);
+  
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  timeEl.textContent = elapsed;
+  
+  if (elapsed > 30 && elapsed % 30 === 0) {
+    currentPalette = (currentPalette + 1) % palettes.length;
+  }
+  
+  if (Math.random() < 0.01 && particles.length < 500) {
+    plantSeed();
+  }
+  
+  requestAnimationFrame(animate);
+}
+
+init();
+animate();
+</script>
+</body>
+</html>
