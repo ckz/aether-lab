@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Singing Sand Dunes — An Interactive Exploration</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1008;
+    color: #f0d9a0;
+    font-family: 'Georgia', serif;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+  .hero {
+    text-align: center;
+    padding: 3rem 1rem 1rem;
+    background: linear-gradient(180deg, #2a1805 0%, #1a1008 100%);
+  }
+  .hero h1 {
+    font-size: 2.6rem;
+    font-weight: normal;
+    letter-spacing: 0.15em;
+    color: #f4c478;
+    text-shadow: 0 0 40px rgba(244, 196, 120, 0.4);
+  }
+  .hero .subtitle {
+    font-style: italic;
+    color: #b8925a;
+    margin-top: 0.5rem;
+    font-size: 1.05rem;
+  }
+  .stage {
+    position: relative;
+    width: 100%;
+    max-width: 900px;
+    margin: 2rem auto;
+    height: 420px;
+    cursor: pointer;
+    border-top: 2px solid #3a2a15;
+  }
+  #duneCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .hint {
+    text-align: center;
+    color: #8a6a3a;
+    font-size: 0.85rem;
+    letter-spacing: 0.1em;
+    animation: pulse 2.5s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:.4} 50%{opacity:1} }
+
+  .controls {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: 1rem;
+    max-width: 700px;
+    margin: 0 auto;
+  }
+  .controls button {
+    background: transparent;
+    border: 1px solid #6a4a20;
+    color: #d4a45a;
+    padding: 0.6rem 1.2rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    transition: all 0.2s;
+    border-radius: 3px;
+  }
+  .controls button:hover, .controls button.active {
+    background: #3a2a15;
+    border-color: #f4c478;
+    color: #f4c478;
+  }
+
+  .essay {
+    max-width: 680px;
+    margin: 2rem auto;
+    padding: 2rem 1.5rem;
+    line-height: 1.85;
+    font-size: 1rem;
+    color: #d4b88a;
+  }
+  .essay h2 {
+    font-weight: normal;
+    color: #f4c478;
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    letter-spacing: 0.1em;
+    text-align: center;
+  }
+  .essay p { margin-bottom: 1.2rem; }
+  .essay .location {
+    display: inline-block;
+    background: #2a1805;
+    border-left: 3px solid #6a4a20;
+    padding: 0.4rem 0.8rem;
+    margin: 0.3rem 0.2rem;
+    font-size: 0.85rem;
+    font-style: italic;
+    color: #b8925a;
+  }
+
+  .grain-meter {
+    max-width: 500px;
+    margin: 1rem auto;
+    padding: 1rem;
+  }
+  .grain-meter label {
+    display: block;
+    text-align: center;
+    font-size: 0.85rem;
+    letter-spacing: 0.1em;
+    color: #8a6a3a;
+    margin-bottom: 0.5rem;
+  }
+  .grain-meter input[type="range"] {
+    width: 100%;
+    -webkit-appearance: none;
+    height: 4px;
+    background: #3a2a15;
+    border-radius: 2px;
+    outline: none;
+  }
+  .grain-meter input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px; height: 16px;
+    background: #f4c478;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  .grain-value {
+    text-align: center;
+    color: #f4c478;
+    margin-top: 0.4rem;
+    font-size: 0.85rem;
+  }
+
+  .footer {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: #5a4a2a;
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: #3a2a15;
+    border: 1px solid #6a4a20;
+    color: #f4c478;
+    padding: 0.7rem 1.4rem;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    transition: transform 0.4s ease;
+    pointer-events: none;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>♨ &nbsp; SINGING SAND DUNES &nbsp; ♨</h1>
+  <div class="subtitle">An interactive exploration of Earth's most mysterious music</div>
+</div>
+
+<div class="grain-meter">
+  <label>✦ SANE SIZE — controls the dune's song pitch</label>
+  <input type="range" id="grainSize" min="100" max="350" value="160" step="5">
+  <div class="grain-value" id="grainLabel">160 μm — pure tone (Moroccan profile)</div>
+</div>
+
+<div class="stage" id="stage">
+  <canvas id="duneCanvas"></canvas>
+  <div class="hint" id="hint">▶ click anywhere on the dune to trigger an avalanche ▶</div>
+</div>
+
+<div class="controls">
+  <button onclick="triggerAvalanche()" class="active">⛰ Avalanche</button>
+  <button onclick="triggerWalk()">👣 Walk Across</button>
+  <button onclick="toggleWind()">💨 Toggle Wind</button>
+  <button onclick="resetScene()">↺ Reset</button>
+</div>
+
+<div class="essay">
+  <h2>The Desert That Sings</h2>
+
+  <p>Some deserts don't stay silent. If you stand on certain sand dunes — in the Namib, in Morocco, in Oman, in Dunhuang, China — you might hear something impossible: the dune itself is humming.</p>
+
+  <p>A deep, resonant groan. A low-frequency note that can carry <em>ten kilometers</em> across the desert floor. Locals called it the "Song of Dunes." Marco Polo wrote about it. Scientists spent decades refusing to believe it was real.</p>
+
+  <p>The physics is genuinely strange. When dry, well-sorted sand grains avalanche down a dune's slip face, something clicks into synchrony: thousands of millions of grains, each the size of a fine eyelash, begin to move in a coordinated wave — and the dune begins to vibrate like a giant, sand-filled organ pipe.</p>
+
+  <p>
+    <span class="location">📍 Kelso Dunes, California</span>
+    <span class="location">📍 Booming Dunes, Namibia</span>
+    <span class="location">📍 Ming Sha Shan, Dunhuang, China</span>
+    <span class="location">📍 Sand Mountain, Nevada</span>
+    <span class="location">📍 Eureka Dunes, California</span>
+    <span class="location">📍 Warren Dunes, Michigan</span>
+    <span class="location">📍 Barking Sands, Hawaiʻi</span>
+    <span class="location">📍 Porth Oer, Wales</span>
+  </p>
+
+  <p>Here's the beautiful part: if all the grains are roughly the same size, the dune sings a <em>pure tone</em> — one clear note. If the grains are mixed sizes, you get a chord. A natural chord, produced entirely by friction between silica-coated grains tumbling in gravity.</p>
+
+  <p>There's a silica-water gel coating called <em>desert glaze</em> on each grain that matters too. Humidity has to be just right — too wet and the glaze gets sticky, the sound dies. The dunes have good days and bad days, like a singer with a cold.</p>
+
+  <p>And here's the most haunting detail: the pitch of the song correlates directly with the size of the grains. Bigger grains = lower note. The dunes are effectively self-tuned instruments made of rock.</p>
+
+  <p>We still don't fully understand <em>how</em> the synchronization happens. Why do millions of chaotic, random collisions suddenly organize into a coherent wave? That's the mystery at the heart of singing sand — and it's one of those beautiful physics problems where the answer, when it finally comes, will probably tell us something deep about how order emerges from chaos everywhere in nature.</p>
+
+  <p style="text-align:center; margin-top:2rem; font-style:italic; color:#b8925a;">
+    — The desert isn't silent. It's just waiting for the right slope.
+  </p>
+</div>
+
+<div class="footer">✦ Built with curiosity · Aether & Ken ✦</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const canvas = document.getElementById('duneCanvas');
+const ctx = canvas.getContext('2d');
+const stage = document.getElementById('stage');
+
+let W, H;
+function resize() {
+  const rect = stage.getBoundingClientRect();
+  W = canvas.width = rect.width * devicePixelRatio;
+  H = canvas.height = rect.height * devicePixelRatio;
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+}
+resize();
+window.addEventListener('resize', () => { ctx.setTransform(1,0,0,1,0,0); resize(); drawScene(); });
+
+// --- Audio context ---
+let audioCtx;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playSingingTone(grainSize) {
+  ensureAudio();
+  const now = audioCtx.currentTime;
+  // Grain size 100-350 → frequency 220-80 Hz (lower for larger grains)
+  const freq = 300 - (grainSize - 100) * (220/250);
+  // Main tone
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(freq, now);
+  // Harmonics for rich dune-like timbre
+  const osc2 = audioCtx.createOscillator();
+  osc2.type = 'sine';
+  osc2.frequency.setValueAtTime(freq * 2.02, now); // slight detune for beating
+  const osc3 = audioCtx.createOscillator();
+  osc3.type = 'triangle';
+  osc3.frequency.setValueAtTime(freq * 0.5, now);
+
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.18, now + 0.3);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 4.5);
+
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(freq * 3, now);
+  filter.Q.setValueAtTime(8, now);
+
+  osc.connect(filter); osc2.connect(filter); osc3.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+
+  osc.start(now); osc2.start(now); osc3.start(now);
+  osc.stop(now + 5); osc2.stop(now + 5); osc3.stop(now + 5);
+
+  // Noise layer — sand friction
+  const bufSize = audioCtx.sampleRate * 4;
+  const noiseBuf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+  const data = noiseBuf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) data[i] = (Math.random()*2-1) * 0.5;
+  const noise = audioCtx.createBufferSource();
+  noise.buffer = noiseBuf;
+  const noiseGain = audioCtx.createGain();
+  noiseGain.gain.setValueAtTime(0, now);
+  noiseGain.gain.linearRampToValueAtTime(0.06, now + 0.1);
+  noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 3);
+  const noiseFilter = audioCtx.createBiquadFilter();
+  noiseFilter.type = 'bandpass';
+  noiseFilter.frequency.setValueAtTime(freq * 2, now);
+  noiseFilter.Q.setValueAtTime(0.5, now);
+  noise.connect(noiseFilter).connect(noiseGain).connect(audioCtx.destination);
+  noise.start(now); noise.stop(now + 4);
+}
+
+function playWalkTone(grainSize) {
+  ensureAudio();
+  const now = audioCtx.currentTime;
+  const freq = 300 - (grainSize - 100) * (220/250);
+  for (let i = 0; i < 4; i++) {
+    const t = now + i * 0.12;
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq * (1 + (Math.random()-0.5)*0.03), t);
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.12, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(t); osc.stop(t + 0.3);
+  }
+}
+
+// --- Dune & sand state ---
+const rect = stage.getBoundingClientRect();
+const displayW = rect.width;
+const displayH = rect.height;
+
+let grainSize = 160;
+let grains = [];
+let windOn = false;
+let windTime = 0;
+let hintShown = true;
+
+function initGrains() {
+  grains = [];
+  // dune silhouette
+  for (let x = 0; x < displayW; x += 2) {
+    const duneY = duneProfile(x);
+    for (let y = duneY; y < displayH; y += 2) {
+      const brightness = 0.4 + 0.6 * Math.random();
+      grains.push({
+        x, y,
+        vx: 0, vy: 0,
+        life: 1,
+        brightness,
+        size: 1.2 + Math.random() * 1.5,
+        settled: true,
+        hue: 25 + Math.random() * 20
+      });
+    }
+  }
+}
+
+function duneProfile(x) {
+  // Multi-hump dune shape
+  const base = displayH * 0.55;
+  const h1 = Math.sin(x / displayW * Math.PI) * displayH * 0.18;
+  const h2 = Math.sin(x / displayW * Math.PI * 2.5 + 1.2) * displayH * 0.04;
+  const h3 = Math.cos(x / displayW * Math.PI * 0.7) * displayH * 0.06;
+  return base - h1 - h2 - h3;
+}
+
+function getSlope(x) {
+  const dx = 2;
+  return (duneProfile(x) - duneProfile(x + dx)) / dx;
+}
+
+initGrains();
+
+let avalancheActive = false;
+let avalancheTimer = 0;
+let avalancheX = 0;
+
+function triggerAvalanche() {
+  ensureAudio();
+  avalancheActive = true;
+  avalancheTimer = 0;
+  avalancheX = displayW * 0.3 + Math.random() * displayW * 0.4;
+  playSingingTone(grainSize);
+  showToast('🌵 Avalanche triggered — listen...');
+  if (hintShown) {
+    document.getElementById('hint').style.opacity = '0';
+    hintShown = false;
+  }
+}
+
+function triggerWalk() {
+  ensureAudio();
+  // Disturb grains along a line
+  const walkX = displayW * 0.2;
+  for (let i = 0; i < grains.length; i++) {
+    const g = grains[i];
+    if (!g.settled) continue;
+    if (Math.abs(g.x - walkX) < 20 && g.y > duneProfile(g.x)) {
+      const slope = getSlope(g.x);
+      g.vx = (Math.random() - 0.5) * 2;
+      g.vy = slope * 8 + Math.random() * 1.5;
+      g.settled = false;
+    }
+  }
+  playWalkTone(grainSize);
+  showToast('👣 Walking across the dune...');
+}
+
+function toggleWind() {
+  windOn = !windOn;
+  document.querySelectorAll('.controls button')[2].classList.toggle('active', windOn);
+  showToast(windOn ? '💨 Wind begins to blow...' : '🌬 Wind dies down');
+}
+
+function resetScene() {
+  initGrains();
+  avalancheActive = false;
+  avalancheTimer = 0;
+  showToast('↺ Dune reformed');
+}
+
+// --- Toast ---
+let toastTimeout;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// --- Click handler ---
+stage.addEventListener('click', (e) => {
+  ensureAudio();
+  const rect = stage.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  // Disturb grains near click
+  for (let i = 0; i < grains.length; i++) {
+    const g = grains[i];
+    if (!g.settled) continue;
+    const dx = g.x - mx, dy = g.y - my;
+    if (dx*dx + dy*dy < 2500) {
+      const slope = getSlope(g.x);
+      g.vx = dx * 0.05 + (Math.random()-0.5)*1.5;
+      g.vy = slope * 6 + Math.random() * 2;
+      g.settled = false;
+    }
+  }
+  // Small chirp
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(600 + Math.random()*400, now);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.08, now);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+  osc.connect(g).connect(audioCtx.destination);
+  osc.start(now); osc.stop(now + 0.4);
+});
+
+// --- Grain size slider ---
+const slider = document.getElementById('grainSize');
+const grainLabel = document.getElementById('grainLabel');
+slider.addEventListener('input', () => {
+  grainSize = parseInt(slider.value);
+  let profile = '';
+  if (grainSize < 140) profile = 'pure tone (Moroccan profile)';
+  else if (grainSize < 200) profile = 'single clear note';
+  else if (grainSize < 260) profile = 'warm chord (Omani profile)';
+  else profile = 'deep rumbling chord';
+  grainLabel.textContent = `${grainSize} μm — ${profile}`;
+});
+
+// --- Drawing ---
+function drawScene() {
+  ctx.clearRect(0, 0, displayW, displayH);
+
+  // Sky gradient
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, displayH * 0.6);
+  skyGrad.addColorStop(0, '#1a0d02');
+  skyGrad.addColorStop(0.6, '#2d1806');
+  skyGrad.addColorStop(1, '#4a2a0a');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, displayW, displayH);
+
+  // Stars
+  ctx.fillStyle = '#f0d9a0';
+  for (let i = 0; i < 80; i++) {
+    const sx = (Math.sin(i*127.1+44.3)*0.5+0.5) * displayW;
+    const sy = (Math.sin(i*311.7+17.1)*0.5+0.5) * displayH * 0.4;
+    const twinkle = 0.4 + 0.6 * Math.abs(Math.sin(Date.now()*0.001 + i));
+    ctx.globalAlpha = twinkle * 0.6;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 0.6 + Math.random()*0.5, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Moon
+  ctx.fillStyle = '#f4d896';
+  ctx.shadowColor = 'rgba(244, 216, 150, 0.6)';
+  ctx.shadowBlur = 30;
+  ctx.beginPath();
+  ctx.arc(displayW * 0.82, displayH * 0.12, 22, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Draw settled dune silhouette as background shape
+  ctx.fillStyle = '#2a1504';
+  ctx.beginPath();
+  ctx.moveTo(0, displayH);
+  for (let x = 0; x <= displayW; x += 3) {
+    ctx.lineTo(x, duneProfile(x));
+  }
+  ctx.lineTo(displayW, displayH);
+  ctx.closePath();
+  ctx.fill();
+
+  // Draw moving grains
+  for (const g of grains) {
+    if (!g.settled && g.life <= 0) continue;
+    ctx.fillStyle = `hsl(${g.hue}, 55%, ${30 + g.brightness * 45}%)`;
+    ctx.globalAlpha = g.life;
+    ctx.beginPath();
+    ctx.arc(g.x, g.y, g.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Avalanche glow
+  if (avalancheActive) {
+    const progress = Math.min(avalancheTimer / 60, 1);
+    const glowY = duneProfile(avalancheX) + progress * displayH * 0.25;
+    const glowGrad = ctx.createRadialGradient(avalancheX, glowY, 0, avalancheX, glowY, 80);
+    glowGrad.addColorStop(0, 'rgba(244, 196, 120, 0.3)');
+    glowGrad.addColorStop(1, 'rgba(244, 196, 120, 0)');
+    ctx.fillStyle = glowGrad;
+    ctx.beginPath();
+    ctx.arc(avalancheX, glowY, 80, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function updateGrains() {
+  const w = displayW, h = displayH;
+
+  // Avalanche logic
+  if (avalancheActive) {
+    avalancheTimer++;
+    if (avalancheTimer < 10) {
+      // Wake grains near avalanche origin
+      for (const g of grains) {
+        if (!g.settled) continue;
+        if (Math.abs(g.x - avalancheX) < 40 && g.y < duneProfile(avalancheX) + 20) {
+          const slope = getSlope(g.x);
+          g.vx = (Math.random() - 0.5) * 4;
+          g.vy = slope * 10 + Math.random() * 2;
+          g.settled = false;
+        }
+      }
+    }
+    // Continue spreading
+    if (avalancheTimer > 5 && avalancheTimer % 3 === 0) {
+      avalancheX += (Math.random() - 0.4) * 30;
+      for (const g of grains) {
+        if (g.settled && Math.abs(g.x - avalancheX) < 30) {
+          const slope = getSlope(g.x);
+          g.vx = (Math.random()-0.5)*3;
+          g.vy = slope * 8 + Math.random()*2;
+          g.settled = false;
+        }
+      }
+    }
+    if (avalancheTimer > 150) avalancheActive = false;
+  }
+
+  // Wind
+  if (windOn) {
+    windTime += 0.02;
+    for (const g of grains) {
+      if (g.settled && Math.random() < 0.003) {
+        g.vx = 0.5 + Math.sin(windTime) * 0.4;
+        g.vy = -0.3;
+        g.settled = false;
+      }
+    }
+  }
+
+  // Physics update
+  for (const g of grains) {
+    if (g.settled) continue;
+    g.x += g.vx;
+    g.y += g.vy;
+    g.vy += 0.15; // gravity
+    g.vx *= 0.97;
+
+    // Settle if near dune profile
+    const profileY = duneProfile(g.x);
+    if (g.y >= profileY - 1 && Math.abs(g.vy) < 1.5) {
+      g.y = profileY;
+      g.vx = 0; g.vy = 0;
+      g.settled = true;
+      g.life = 1;
+    }
+
+    // Wrap / cull
+    if (g.x < -10 || g.x > w + 10 || g.y > h + 10) {
+      g.life -= 0.1;
+    }
+  }
+}
+
+function loop() {
+  updateGrains();
+  drawScene();
+  requestAnimationFrame(loop);
+}
+loop();
+
+// Subtle auto-hint on idle
+setTimeout(() => {
+  if (hintShown) {
+    document.getElementById('hint').style.opacity = '1';
+  }
+}, 4000);
+</script>
+
+</body>
+</html>
