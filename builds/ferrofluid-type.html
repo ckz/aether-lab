@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ferrofluid Typography</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: monospace;
+    color: #333;
+    height: 100vh;
+    width: 100vw;
+  }
+  canvas { display: block; cursor: none; }
+
+  #ui {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 12px;
+    z-index: 10;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    color: #444;
+  }
+
+  #ui button {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid #1a1a2e;
+    color: #888;
+    padding: 6px 14px;
+    font-family: monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-radius: 2px;
+  }
+  #ui button:hover {
+    border-color: #00d4ff;
+    color: #00d4ff;
+    background: rgba(0,212,255,0.05);
+  }
+  #ui button.active {
+    border-color: #ff00aa;
+    color: #ff00aa;
+    background: rgba(255,0,170,0.05);
+  }
+
+  #hint {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #333;
+    font-family: monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    pointer-events: none;
+    transition: opacity 0.5s;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hint">click · move · explore</div>
+<div id="ui">
+  <button onclick="setText('FLUID')" class="active">FLUID</button>
+  <button onclick="setText('IRON')">IRON</button>
+  <button onclick="setText('MAGIC')">MAGIC</button>
+  <button onclick="setText('2026')">2026</button>
+  <button onclick="setText('∞')">∞</button>
+  <button onclick="togglePulse()">PULSE</button>
+  <button onclick="cyclePalette()">PALETTE</button>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+let particles = [];
+let textImageData = null;
+let currentText = 'FLUID';
+let mouse = { x: -1000, y: -1000 };
+let pulseMode = false;
+let pulseTime = 0;
+let paletteIdx = 0;
+
+const palettes = [
+  { name: 'cyber-magenta',  base: [180, 0, 255],   sheen: [0, 255, 255] },
+  { name: 'iron-silver',    base: [160, 160, 180],   sheen: [220, 220, 255] },
+  { name: 'gulf-blue',      base: [0, 80, 200],      sheen: [100, 220, 255] },
+  { name: 'neon-teal',      base: [0, 200, 180],     sheen: [0, 255, 200] },
+  { name: 'heat-shield',    base: [255, 80, 0],      sheen: [255, 220, 50] },
+];
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  buildTextParticles();
+}
+
+function buildTextParticles() {
+  const fontSize = Math.min(W / 5, H * 0.45);
+  const off = document.createElement('canvas');
+  off.width = W; off.height = H;
+  const octx = off.getContext('2d');
+  octx.fillStyle = '#000';
+  octx.fillRect(0, 0, W, H);
+  octx.fillStyle = '#fff';
+  octx.font = `900 ${fontSize}px "Courier New", monospace`;
+  octx.textAlign = 'center';
+  octx.textBaseline = 'middle';
+  octx.fillText(currentText, W / 2, H / 2);
+
+  textImageData = octx.getImageData(0, 0, W, H).data;
+  particles = [];
+
+  const gap = 4;
+  for (let y = 0; y < H; y += gap) {
+    for (let x = 0; x < W; x += gap) {
+      const i = (y * W + x) * 4;
+      if (textImageData[i + 3] > 128) {
+        particles.push({
+          ox: x, oy: y,
+          x: x, y: y,
+          vx: 0, vy: 0,
+          size: gap * (0.8 + Math.random() * 0.4),
+          spikePhase: Math.random() * Math.PI * 2,
+          spikeSpeed: 0.02 + Math.random() * 0.04,
+          hueOff: Math.random() * 0.3,
+        });
+      }
+    }
+  }
+}
+
+function setText(t) {
+  currentText = t;
+  document.querySelectorAll('#ui button').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  buildTextParticles();
+}
+
+function togglePulse() {
+  pulseMode = !pulseMode;
+  event.target.classList.toggle('active', pulseMode);
+}
+
+function cyclePalette() {
+  paletteIdx = (paletteIdx + 1) % palettes.length;
+}
+
+const pal = () => palettes[paletteIdx];
+
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+canvas.addEventListener('mouseleave', () => {
+  mouse.x = -1000; mouse.y = -1000;
+});
+canvas.addEventListener('click', e => {
+  const dx = e.clientX - W/2;
+  const dy = e.clientY - H/2;
+  particles.forEach(p => {
+    const d = Math.hypot(p.x - e.clientX, p.y - e.clientY);
+    if (d < 180) {
+      const force = (1 - d / 180) * 25;
+      p.vx += (p.x - e.clientX) / d * force;
+      p.vy += (p.y - e.clientY) / d * force;
+    }
+  });
+});
+
+window.addEventListener('resize', resize);
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function drawSpike(p, ctx, baseX, baseY, angle, len, phase, color) {
+  const tipX = baseX + Math.cos(angle) * len;
+  const tipY = baseY + Math.sin(angle) * len;
+  const grad = ctx.createLinearGradient(baseX, baseY, tipX, tipY);
+  grad.addColorStop(0, color);
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = p.size * 0.3;
+  ctx.beginPath();
+  ctx.moveTo(baseX, baseY);
+  ctx.lineTo(tipX, tipY);
+  ctx.stroke();
+}
+
+function drawFerrofluidParticle(p, t) {
+  const dx = mouse.x - p.x;
+  const dy = mouse.y - p.y;
+  const dist = Math.hypot(dx, dy);
+  const maxDist = 200;
+
+  // Spring back to origin
+  const springK = 0.04;
+  const damping = 0.88;
+
+  p.vx += (p.ox - p.x) * springK;
+  p.vy += (p.oy - p.y) * springK;
+
+  // Magnetic mouse pull
+  if (dist < maxDist && dist > 0) {
+    const force = (1 - dist / maxDist) * 1.2;
+    p.vx += (dx / dist) * force;
+    p.vy += (dy / dist) * force;
+  }
+
+  // Pulse burst
+  if (pulseMode) {
+    const pdx = p.x - W/2;
+    const pdy = p.y - H/2;
+    const pd = Math.hypot(pdx, pdy);
+    const pulseR = ((t + pulseTime) % 3) / 3 * Math.max(W, H);
+    const ringDist = Math.abs(pd - pulseR);
+    if (ringDist < 60) {
+      const pushForce = (1 - ringDist / 60) * 3;
+      p.vx += (pdx / pd) * pushForce;
+      p.vy += (pdy / pd) * pushForce;
+    }
+  }
+
+  p.vx *= damping;
+  p.vy *= damping;
+  p.x += p.vx;
+  p.y += p.vy;
+  p.spikePhase += p.spikeSpeed;
+
+  const c = pal();
+  const displacement = Math.hypot(p.x - p.ox, p.y - p.oy);
+  const sheenAmount = Math.min(displacement / 30, 1);
+
+  // Sheen color shifts with displacement
+  const r = Math.round(lerp(c.base[0], c.sheen[0], sheenAmount) + p.hueOff * 40);
+  const g = Math.round(lerp(c.base[1], c.sheen[1], sheenAmount) + p.hueOff * 30);
+  const b = Math.round(lerp(c.base[2], c.sheen[2], sheenAmount) + p.hueOff * 40);
+  const alpha = 0.85 + sheenAmount * 0.15;
+
+  const color = `rgb(${Math.min(255,r)},${Math.min(255,g)},${Math.min(255,b)})`;
+  const glowColor = `rgba(${c.sheen[0]},${c.sheen[1]},${c.sheen[2]},${0.3 + sheenAmount * 0.4})`;
+
+  // Core drop (ferrofluid blob)
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, p.size * 0.6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Spikes pointing toward mouse (ferrofluid spikes effect)
+  const numSpikes = 4;
+  const spikeLen = dist < maxDist
+    ? p.size * 0.8 * (1 - dist / maxDist) * 3
+    : p.size * 0.2;
+
+  for (let s = 0; s < numSpikes; s++) {
+    const angle = p.spikePhase + (s / numSpikes) * Math.PI * 2;
+    drawSpike(p, ctx, p.x, p.y, angle, spikeLen + Math.sin(p.spikePhase * 3) * 2, p.spikePhase, color);
+  }
+
+  // Sheen highlight
+  if (sheenAmount > 0.2) {
+    ctx.fillStyle = glowColor;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Near-mouse glow
+  if (dist < 80) {
+    ctx.fillStyle = `rgba(${c.sheen[0]},${c.sheen[1]},${c.sheen[2]},${(1 - dist/80) * 0.4})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+let time = 0;
+
+function frame() {
+  time += 0.016;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle background noise
+  if (Math.random() < 0.03) {
+    const nx = Math.random() * W;
+    const ny = Math.random() * H;
+    ctx.fillStyle = 'rgba(20,20,30,0.4)';
+    ctx.fillRect(nx, ny, 2, 2);
+  }
+
+  // Cursor glow ring
+  if (mouse.x > 0 && mouse.y > 0) {
+    const c = pal();
+    const cursorGrad = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 80);
+    cursorGrad.addColorStop(0, `rgba(${c.sheen[0]},${c.sheen[1]},${c.sheen[2]},0.08)`);
+    cursorGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = cursorGrad;
+    ctx.beginPath();
+    ctx.arc(mouse.x, mouse.y, 80, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Crosshair
+    ctx.strokeStyle = `rgba(${c.sheen[0]},${c.sheen[1]},${c.sheen[2]},0.15)`;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(mouse.x - 12, mouse.y); ctx.lineTo(mouse.x + 12, mouse.y);
+    ctx.moveTo(mouse.x, mouse.y - 12); ctx.lineTo(mouse.x, mouse.y + 12);
+    ctx.stroke();
+  }
+
+  particles.forEach(p => drawFerrofluidParticle(p, time));
+
+  // Fade hint after 5s
+  if (time > 5) {
+    document.getElementById('hint').style.opacity = 0;
+  }
+
+  requestAnimationFrame(frame);
+}
+
+resize();
+frame();
+</script>
+</body>
+</html>
