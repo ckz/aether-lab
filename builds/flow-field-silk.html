@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flow Field Silk — Generative Visualization</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    color: #e0e0e0;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: rgba(10, 10, 20, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 20px;
+    width: 260px;
+    z-index: 10;
+    font-size: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+  #ui h2 {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    padding-bottom: 10px;
+  }
+  .control {
+    margin-bottom: 12px;
+  }
+  .control label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+    color: #999;
+    font-size: 11px;
+    letter-spacing: 0.03em;
+  }
+  .control label span { color: #ccc; font-weight: 500; }
+  .control input[type=range] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255,255,255,0.1);
+    outline: none;
+  }
+  .control input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    box-shadow: 0 0 8px rgba(255,255,255,0.3);
+  }
+  .btn-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+  }
+  .btn {
+    flex: 1;
+    min-width: 60px;
+    padding: 7px 10px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 6px;
+    color: #ccc;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: inherit;
+    letter-spacing: 0.02em;
+    transition: all 0.15s;
+  }
+  .btn:hover {
+    background: rgba(255,255,255,0.14);
+    color: #fff;
+    border-color: rgba(255,255,255,0.25);
+  }
+  .btn.active {
+    background: rgba(255,255,255,0.18);
+    color: #fff;
+    border-color: rgba(255,255,255,0.35);
+  }
+  .palette-row {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+  }
+  .palette-dot {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .palette-dot:hover, .palette-dot.active {
+    border-color: #fff;
+    transform: scale(1.15);
+  }
+  #stats {
+    position: fixed;
+    bottom: 16px;
+    left: 20px;
+    font-size: 10px;
+    color: rgba(255,255,255,0.25);
+    letter-spacing: 0.04em;
+    z-index: 10;
+  }
+  #hint {
+    position: fixed;
+    bottom: 16px;
+    right: 20px;
+    font-size: 10px;
+    color: rgba(255,255,255,0.2);
+    letter-spacing: 0.04em;
+    z-index: 10;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="ui">
+  <h2>Flow Field Silk</h2>
+
+  <div class="control">
+    <label>Particles <span id="v-particles">3000</span></label>
+    <input type="range" id="r-particles" min="500" max="8000" step="500" value="3000">
+  </div>
+  <div class="control">
+    <label>Noise Scale <span id="v-scale">0.003</span></label>
+    <input type="range" id="r-scale" min="1" max="8" step="0.5" value="3">
+  </div>
+  <div class="control">
+    <label>Speed <span id="v-speed">1.0</span></label>
+    <input type="range" id="r-speed" min="0.2" max="3" step="0.1" value="1">
+  </div>
+  <div class="control">
+    <label>Trail Fade <span id="v-fade">0.03</span></label>
+    <input type="range" id="r-fade" min="0.005" max="0.15" step="0.005" value="0.03">
+  </div>
+  <div class="control">
+    <label>Line Width <span id="v-line">1.2</span></label>
+    <input type="range" id="r-line" min="0.3" max="4" step="0.1" value="1.2">
+  </div>
+
+  <div class="control">
+    <label>Palette</label>
+    <div class="palette-row" id="palettes"></div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn" id="btn-reset">Reset</button>
+    <button class="btn" id="btn-pause">Pause</button>
+    <button class="btn" id="btn-save">Save</button>
+  </div>
+</div>
+
+<div id="stats">particles: <span id="stat-count">3000</span> | fps: <span id="stat-fps">—</span></div>
+<div id="hint">move mouse to attract · click to burst · scroll to zoom</div>
+
+<script>
+// ── Simplex-like noise ──────────────────────────────────────────
+const Noise = (() => {
+  const perm = new Uint8Array(512);
+  const grad = [[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]];
+  for (let i = 0; i < 256; i++) perm[i] = i;
+  for (let i = 255; i > 0; i--) {
+    const j = Math.random() * (i + 1) | 0;
+    [perm[i], perm[j]] = [perm[j], perm[i]];
+  }
+  for (let i = 0; i < 256; i++) perm[i + 256] = perm[i];
+
+  function dot(gi, x, y) {
+    const g = grad[gi % 8];
+    return g[0] * x + g[1] * y;
+  }
+  function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+  function lerp(a, b, t) { return a + t * (b - a); }
+
+  return function noise2D(x, y) {
+    const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+    x -= Math.floor(x); y -= Math.floor(y);
+    const u = fade(x), v = fade(y);
+    const a = perm[X] + Y, b = perm[X + 1] + Y;
+    return lerp(
+      lerp(dot(perm[a], x, y), dot(perm[b], x - 1, y), u),
+      lerp(dot(perm[a + 1], x, y - 1), dot(perm[b + 1], x - 1, y - 1), u),
+      v
+    );
+  };
+})();
+
+// ── Palette system ───────────────────────────────────────────────
+const palettes = {
+  aurora:  ['#00f5d4', '#00bbf9', '#9b5de5', '#f15bb5', '#fee440'],
+  ember:   ['#ff006e', '#fb5607', '#ffbe0b', '#8338ec', '#3a86ff'],
+  ocean:   ['#0077b6', '#00b4d8', '#90e0ef', '#caf0f8', '#48cae4'],
+  neon:    ['#39ff14', '#ff073a', '#00f0ff', '#ff00ff', '#ffff00'],
+  mono:    ['#e0e0e0', '#b0b0b0', '#888', '#aaa', '#ccc'],
+  desert:  ['#d4a373', '#e9c46a', '#f4a261', '#e76f51', '#264653'],
+};
+
+// ── State ────────────────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+let particles = [];
+let mouse = { x: -9999, y: -9999, down: false };
+let time = 0;
+let paused = false;
+let frameCount = 0;
+let lastFpsTime = performance.now();
+let currentPalette = 'aurora';
+
+const config = {
+  count: 3000,
+  noiseScale: 0.003,
+  speed: 1.0,
+  fade: 0.03,
+  lineWidth: 1.2,
+};
+
+// ── Particle ─────────────────────────────────────────────────────
+class Particle {
+  constructor() { this.reset(true); }
+  reset(initial = false) {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.prevX = this.x;
+    this.prevY = this.y;
+    this.life = initial ? Math.random() * 300 : 200 + Math.random() * 200;
+    this.maxLife = this.life;
+    this.colorIdx = Math.random() * 5 | 0;
+    this.speedMult = 0.7 + Math.random() * 0.6;
+  }
+  step() {
+    this.prevX = this.x;
+    this.prevY = this.y;
+
+    const angle = Noise(
+      this.x * config.noiseScale,
+      this.y * config.noiseScale + time * 0.0003
+    ) * Math.PI * 4;
+
+    let vx = Math.cos(angle) * config.speed * this.speedMult;
+    let vy = Math.sin(angle) * config.speed * this.speedMult;
+
+    // Mouse interaction
+    const dx = mouse.x - this.x;
+    const dy = mouse.y - this.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 180) {
+      const force = (1 - dist / 180) * 1.5;
+      vx += (dx / dist) * force * (mouse.down ? -3 : 1.2);
+      vy += (dy / dist) * force * (mouse.down ? -3 : 1.2);
+    }
+
+    this.x += vx;
+    this.y += vy;
+    this.life--;
+
+    if (this.life <= 0 || this.x < -20 || this.x > W + 20 || this.y < -20 || this.y > H + 20) {
+      this.reset();
+    }
+  }
+}
+
+// ── Init ─────────────────────────────────────────────────────────
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, W, H);
+}
+
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < config.count; i++) particles.push(new Particle());
+}
+
+// ── Render loop ──────────────────────────────────────────────────
+function render() {
+  if (!paused) {
+    // Fade trail
+    ctx.fillStyle = `rgba(10, 10, 15, ${config.fade})`;
+    ctx.fillRect(0, 0, W, H);
+
+    const palette = palettes[currentPalette];
+
+    for (const p of particles) {
+      p.step();
+
+      const alpha = Math.min(1, p.life / 30) * 0.7;
+      const color = palette[p.colorIdx % palette.length];
+
+      ctx.beginPath();
+      ctx.moveTo(p.prevX, p.prevY);
+      ctx.lineTo(p.x, p.y);
+      ctx.strokeStyle = color + Math.round(alpha * 255).toString(16).padStart(2, '0');
+      ctx.lineWidth = config.lineWidth;
+      ctx.stroke();
+    }
+
+    time++;
+    frameCount++;
+  }
+
+  // FPS counter
+  const now = performance.now();
+  if (now - lastFpsTime > 500) {
+    const fps = Math.round(frameCount / ((now - lastFpsTime) / 1000));
+    document.getElementById('stat-fps').textContent = fps;
+    document.getElementById('stat-count').textContent = particles.length;
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+
+  requestAnimationFrame(render);
+}
+
+// ── Controls ─────────────────────────────────────────────────────
+function setupControls() {
+  const bind = (id, key, fmt = v => v) => {
+    const slider = document.getElementById('r-' + id);
+    const display = document.getElementById('v-' + id);
+    slider.addEventListener('input', () => {
+      const val = parseFloat(slider.value);
+      config[key] = val;
+      display.textContent = fmt(val);
+      if (key === 'count') {
+        while (particles.length < val) particles.push(new Particle());
+        if (particles.length > val) particles.length = val;
+      }
+    });
+  };
+
+  bind('particles', 'count');
+  bind('scale', 'noiseScale', v => v / 1000);
+  bind('speed', 'speed');
+  bind('fade', 'fade');
+  bind('line', 'lineWidth');
+
+  // Palette selector
+  const palRow = document.getElementById('palettes');
+  Object.keys(palettes).forEach((name, i) => {
+    const dot = document.createElement('div');
+    dot.className = 'palette-dot' + (name === currentPalette ? ' active' : '');
+    dot.style.background = `linear-gradient(135deg, ${palettes[name][0]}, ${palettes[name][2]})`;
+    dot.title = name;
+    dot.addEventListener('click', () => {
+      currentPalette = name;
+      palRow.querySelectorAll('.palette-dot').forEach(d => d.classList.remove('active'));
+      dot.classList.add('active');
+    });
+    palRow.appendChild(dot);
+  });
+
+  document.getElementById('btn-reset').addEventListener('click', () => {
+    ctx.fillStyle = '#0a0a0f';
+    ctx.fillRect(0, 0, W, H);
+    initParticles();
+  });
+
+  document.getElementById('btn-pause').addEventListener('click', function() {
+    paused = !paused;
+    this.textContent = paused ? 'Resume' : 'Pause';
+    this.classList.toggle('active', paused);
+  });
+
+  document.getElementById('btn-save').addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = `flow-field-silk-${Date.now()}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
+}
+
+// ── Events ───────────────────────────────────────────────────────
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY;
+});
+canvas.addEventListener('mousedown', () => mouse.down = true);
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mouseleave', () => { mouse.x = -9999; mouse.y = -9999; });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+}, { passive: false });
+canvas.addEventListener('touchstart', e => {
+  mouse.down = true;
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+});
+canvas.addEventListener('touchend', () => { mouse.down = false; mouse.x = -9999; });
+
+window.addEventListener('resize', () => { resize(); initParticles(); });
+
+// ── Boot ─────────────────────────────────────────────────────────
+resize();
+initParticles();
+setupControls();
+render();
+</script>
+</body>
+</html>
