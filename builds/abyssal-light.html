@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Abyssal Light — Aether Lab</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #000;
+  overflow: hidden;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #0af;
+}
+canvas { display: block; cursor: none; }
+#hud {
+  position: fixed;
+  top: 1.5rem;
+  left: 1.5rem;
+  z-index: 10;
+  pointer-events: none;
+}
+#hud h1 {
+  font-size: 1.2rem;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  color: #0af;
+  text-shadow: 0 0 20px #0af, 0 0 40px #06c;
+  margin-bottom: 0.3rem;
+}
+#hud p {
+  font-size: 0.7rem;
+  color: #08c;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+#depth {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 1.5rem;
+  font-size: 0.65rem;
+  color: #06a;
+  letter-spacing: 0.1em;
+  z-index: 10;
+}
+#creature-count {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  font-size: 0.65rem;
+  color: #06a;
+  letter-spacing: 0.1em;
+  z-index: 10;
+}
+</style>
+</head>
+<body>
+<div id="hud">
+  <h1>ABYSSAL LIGHT</h1>
+  <p>click to pulse · move to attract</p>
+</div>
+<div id="depth">depth: 2,400m</div>
+<div id="creature-count">creatures: 0</div>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H, DPR;
+let mouse = { x: -1000, y: -1000, active: false };
+let particles = [];
+let creatures = [];
+let pulses = [];
+let time = 0;
+
+const PALETTE = {
+  bg: '#000510',
+  deep: '#001030',
+  glow: ['#00ffff', '#00aaff', '#0066ff', '#00ffaa', '#ff00ff', '#88ffff'],
+  creature: ['#0af', '#0fc', '#a0f', '#f0a', '#0fa', '#0ff']
+};
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.scale(DPR, DPR);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Particle class (plankton)
+class Particle {
+  constructor() {
+    this.reset();
+  }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.size = Math.random() * 2 + 0.5;
+    this.baseSize = this.size;
+    this.vx = (Math.random() - 0.5) * 0.3;
+    this.vy = (Math.random() - 0.5) * 0.3;
+    this.color = PALETTE.glow[Math.floor(Math.random() * PALETTE.glow.length)];
+    this.phase = Math.random() * Math.PI * 2;
+    this.pulseSpeed = 0.02 + Math.random() * 0.03;
+    this.brightness = 0.3 + Math.random() * 0.7;
+    this.depth = Math.random(); // parallax layer
+  }
+  update() {
+    this.phase += this.pulseSpeed;
+    this.size = this.baseSize * (0.7 + 0.3 * Math.sin(this.phase));
+    
+    // Gentle drift
+    this.x += this.vx + Math.sin(time * 0.001 + this.y * 0.001) * 0.1;
+    this.y += this.vy + Math.cos(time * 0.001 + this.x * 0.001) * 0.05;
+    
+    // Mouse attraction
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 150) {
+        const force = (150 - dist) / 150 * 0.3;
+        this.vx += (dx / dist) * force * 0.05;
+        this.vy += (dy / dist) * force * 0.05;
+        this.size = this.baseSize * (1 + (150 - dist) / 150);
+      }
+    }
+    
+    // Damping
+    this.vx *= 0.99;
+    this.vy *= 0.99;
+    
+    // Wrap
+    if (this.x < -20) this.x = W + 20;
+    if (this.x > W + 20) this.x = -20;
+    if (this.y < -20) this.y = H + 20;
+    if (this.y > H + 20) this.y = -20;
+  }
+  draw(ctx) {
+    const glow = this.size * 8;
+    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, glow);
+    grad.addColorStop(0, this.color);
+    grad.addColorStop(0.3, this.hexToRgba(this.color, 0.3 * this.brightness));
+    grad.addColorStop(1, this.hexToRgba(this.color, 0));
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, glow, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Bright core
+    ctx.fillStyle = this.color;
+    ctx.globalAlpha = this.brightness;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+}
+
+// Creature class (jellyfish-like)
+class Creature {
+  constructor() {
+    this.reset();
+  }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.size = 15 + Math.random() * 30;
+    this.vx = (Math.random() - 0.5) * 0.5;
+    this.vy = -0.2 - Math.random() * 0.5; // drift upward
+    this.color = PALETTE.creature[Math.floor(Math.random() * PALETTE.creature.length)];
+    this.phase = Math.random() * Math.PI * 2;
+    this.pulseSpeed = 0.01 + Math.random() * 0.02;
+    this.tentacles = 4 + Math.floor(Math.random() * 4);
+    this.tentacleLength = this.size * (1 + Math.random() * 2);
+    this.brightness = 0.4 + Math.random() * 0.4;
+    this.wanderAngle = Math.random() * Math.PI * 2;
+    this.wanderSpeed = 0.005 + Math.random() * 0.01;
+  }
+  update() {
+    this.phase += this.pulseSpeed;
+    
+    // Gentle wandering
+    this.wanderAngle += (Math.random() - 0.5) * 0.1;
+    this.vx += Math.cos(this.wanderAngle) * 0.01;
+    this.vy += Math.sin(this.wanderAngle) * 0.01 - 0.005; // slight upward bias
+    
+    // Mouse interaction
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 200) {
+        const force = (200 - dist) / 200;
+        this.vx += (dx / dist) * force * 0.2;
+        this.vy += (dy / dist) * force * 0.2;
+      }
+    }
+    
+    // Damping
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+    
+    this.x += this.vx;
+    this.y += this.vy;
+    
+    // Wrap
+    if (this.x < -100) this.x = W + 100;
+    if (this.x > W + 100) this.x = -100;
+    if (this.y < -200) this.y = H + 200;
+    if (this.y > H + 200) this.y = -200;
+  }
+  draw(ctx) {
+    const pulse = 0.7 + 0.3 * Math.sin(this.phase);
+    const s = this.size * pulse;
+    
+    // Bell/head glow
+    const glow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, s * 3);
+    glow.addColorStop(0, this.hexToRgba(this.color, 0.6 * this.brightness));
+    glow.addColorStop(0.5, this.hexToRgba(this.color, 0.1 * this.brightness));
+    glow.addColorStop(1, this.hexToRgba(this.color, 0));
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, s * 3, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Bell outline
+    ctx.strokeStyle = this.hexToRgba(this.color, 0.4 * this.brightness);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(this.x, this.y, s * 0.6, s * 0.8, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Tentacles
+    for (let i = 0; i < this.tentacles; i++) {
+      const angle = (i / this.tentacles) * Math.PI - Math.PI / 2;
+      const startX = this.x + Math.cos(angle) * s * 0.5;
+      const startY = this.y + Math.sin(angle) * s * 0.7;
+      
+      ctx.strokeStyle = this.hexToRgba(this.color, 0.3 * this.brightness);
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      
+      const waveAmp = 5 + Math.sin(this.phase + i) * 3;
+      const segments = 6;
+      for (let j = 1; j <= segments; j++) {
+        const t = j / segments;
+        const tx = startX + Math.cos(angle + Math.sin(time * 0.002 + i) * 0.5) * this.tentacleLength * t;
+        const ty = startY + Math.sin(angle + Math.cos(time * 0.002 + i) * 0.3) * this.tentacleLength * t * 0.5 + this.tentacleLength * t;
+        ctx.lineTo(tx, ty);
+      }
+      ctx.stroke();
+    }
+  }
+  hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+}
+
+// Pulse class (light ripple from click)
+class Pulse {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 0;
+    this.maxRadius = 200 + Math.random() * 100;
+    this.speed = 2;
+    this.life = 1;
+    this.color = PALETTE.glow[Math.floor(Math.random() * PALETTE.glow.length)];
+  }
+  update() {
+    this.radius += this.speed;
+    this.life = 1 - (this.radius / this.maxRadius);
+    return this.life > 0;
+  }
+  draw(ctx) {
+    ctx.strokeStyle = this.hexToRgba(this.color, this.life * 0.5);
+    ctx.lineWidth = 2 * this.life;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Inner glow
+    const grad = ctx.createRadialGradient(this.x, this.y, this.radius * 0.8, this.x, this.y, this.radius);
+    grad.addColorStop(0, this.hexToRgba(this.color, 0));
+    grad.addColorStop(1, this.hexToRgba(this.color, this.life * 0.1));
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+}
+
+// Initialize
+for (let i = 0; i < 200; i++) {
+  particles.push(new Particle());
+}
+for (let i = 0; i < 8; i++) {
+  creatures.push(new Creature());
+}
+
+// Events
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => {
+  mouse.active = false;
+});
+canvas.addEventListener('click', e => {
+  pulses.push(new Pulse(e.clientX, e.clientY));
+  // Spawn burst of particles
+  for (let i = 0; i < 15; i++) {
+    const p = new Particle();
+    p.x = e.clientX;
+    p.y = e.clientY;
+    p.vx = (Math.random() - 0.5) * 3;
+    p.vy = (Math.random() - 0.5) * 3;
+    p.brightness = 1;
+    p.size = 2 + Math.random() * 2;
+    particles.push(p);
+    // Keep particle count manageable
+    if (particles.length > 300) particles.shift();
+  }
+});
+
+// Touch support
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const touch = e.touches[0];
+  mouse.x = touch.clientX;
+  mouse.y = touch.clientY;
+  mouse.active = true;
+  pulses.push(new Pulse(touch.clientX, touch.clientY));
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const touch = e.touches[0];
+  mouse.x = touch.clientX;
+  mouse.y = touch.clientY;
+});
+canvas.addEventListener('touchend', () => {
+  mouse.active = false;
+});
+
+// Animate
+function animate() {
+  time++;
+  
+  // Fade effect for trails
+  ctx.fillStyle = 'rgba(0, 5, 16, 0.15)';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Update & draw particles
+  particles.forEach(p => {
+    p.update();
+    p.draw(ctx);
+  });
+  
+  // Update & draw creatures
+  creatures.forEach(c => {
+    c.update();
+    c.draw(ctx);
+  });
+  
+  // Update & draw pulses
+  pulses = pulses.filter(p => {
+    const alive = p.update();
+    if (alive) p.draw(ctx);
+    return alive;
+  });
+  
+  // Occasional ambient pulse
+  if (Math.random() < 0.002) {
+    pulses.push(new Pulse(Math.random() * W, Math.random() * H));
+  }
+  
+  // Update creature count
+  document.getElementById('creature-count').textContent = `creatures: ${creatures.length}`;
+  
+  // Slowly shift depth display
+  const depth = 2400 + Math.sin(time * 0.0005) * 200;
+  document.getElementById('depth').textContent = `depth: ${Math.floor(depth)}m`;
+  
+  requestAnimationFrame(animate);
+}
+animate();
+
+console.log('%c🌊 Abyssal Light loaded', 'color: #0af; font-size: 14px;');
+</script>
+</body>
+</html>
