@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Mycelium — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #050508;
+    color: #e0e0e0;
+    overflow: hidden;
+    height: 100vh;
+    cursor: crosshair;
+  }
+
+  #controls {
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    z-index: 10;
+    background: rgba(10, 10, 20, 0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid #1a1a2e;
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    min-width: 240px;
+    transition: opacity 0.3s;
+  }
+
+  #controls h3 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #a78bfa;
+    margin-bottom: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .control-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+    font-size: 0.75rem;
+    color: #888;
+  }
+
+  .control-row label {
+    flex: 1;
+  }
+
+  .control-row input[type="range"] {
+    width: 110px;
+    accent-color: #a78bfa;
+  }
+
+  .control-row select {
+    background: #1a1a2e;
+    color: #ccc;
+    border: 1px solid #2a2a3e;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 0.7rem;
+    cursor: pointer;
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  button {
+    background: #1a1a2e;
+    color: #ccc;
+    border: 1px solid #2a2a3e;
+    border-radius: 6px;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  button:hover {
+    background: #2a2a4e;
+    border-color: #a78bfa;
+    color: #fff;
+  }
+
+  button.active {
+    background: #4c2d82;
+    border-color: #a78bfa;
+    color: #fff;
+  }
+
+  .stats {
+    margin-top: 0.6rem;
+    font-size: 0.65rem;
+    color: #555;
+    line-height: 1.5;
+  }
+
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+  }
+
+  .hint {
+    position: fixed;
+    bottom: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.7rem;
+    color: #444;
+    z-index: 10;
+    pointer-events: none;
+    letter-spacing: 0.05em;
+    transition: opacity 2s;
+  }
+</style>
+</head>
+<body>
+
+<div id="controls">
+  <h3>⚡ Mycelium Controls</h3>
+  
+  <div class="control-row">
+    <label>Palette</label>
+    <select id="palette">
+      <option value="biolum">🌿 Biolum</option>
+      <option value="neon">🔮 Neon</option>
+      <option value="ember">🔥 Ember</option>
+      <option value="arctic">❄️ Arctic</option>
+      <option value="void">🌑 Void</option>
+      <option value="toxic">☢️ Toxic</option>
+    </select>
+  </div>
+
+  <div class="control-row">
+    <label>Growth</label>
+    <input type="range" id="growthRate" min="1" max="20" value="8">
+  </div>
+
+  <div class="control-row">
+    <label>Branching</label>
+    <input type="range" id="branchProb" min="1" max="30" value="12">
+  </div>
+
+  <div class="control-row">
+    <label>Pulse</label>
+    <input type="range" id="pulseSpeed" min="1" max="30" value="10">
+  </div>
+
+  <div class="control-row">
+    <label>Density</label>
+    <input type="range" id="density" min="1" max="8" value="3">
+  </div>
+
+  <div class="btn-row">
+    <button id="btnBurst" title="Burst from cursor">💥 Burst</button>
+    <button id="btnClear" title="Clear network">🧹 Clear</button>
+    <button id="btnPause" title="Pause growth">⏸ Pause</button>
+    <button id="btnHide" title="Hide controls">👁 Hide</button>
+  </div>
+
+  <div class="stats" id="stats">
+    Nodes: 0 | Branches: 0 | FPS: 60
+  </div>
+</div>
+
+<div class="hint" id="hint">Click anywhere to plant a mycelium seed · Move to attract growth · Hold to pulse</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Palette System ───
+const PALETTES = {
+  biolum:  { bg: '#030508', colors: ['#00ff88','#00cc66','#88ffcc','#00ffaa','#44ff99','#00dd77','#aaffdd','#00ff66','#55ffbb','#00eebb'], glow: '#00ff88', name: 'Bioluminescent' },
+  neon:    { bg: '#0a0012', colors: ['#ff00ff','#cc00ff','#ff33ff','#ff00cc','#dd00ff','#ff66ff','#cc33ff','#ff00aa','#ee00ff','#ff33cc'], glow: '#ff00ff', name: 'Neon' },
+  ember:   { bg: '#080302', colors: ['#ff4400','#ff6600','#ff8800','#ffaa00','#ffcc00','#ff2200','#ff5500','#ffbb00','#ff3300','#ff9900'], glow: '#ff6600', name: 'Ember' },
+  arctic:  { bg: '#020510', colors: ['#00ccff','#0088ff','#66ddff','#00aaff','#44ccff','#0088dd','#99eeff','#00bbff','#33ccff','#00ddff'], glow: '#00ccff', name: 'Arctic' },
+  void:    { bg: '#020202', colors: ['#8844ff','#aa66ff','#6622cc','#cc88ff','#4400aa','#9966ff','#5533dd','#bb77ff','#3311bb','#dd99ff'], glow: '#8844ff', name: 'Void' },
+  toxic:   { bg: '#020802', colors: ['#aaff00','#88ff00','#ccff33','#66ff00','#ddff55','#44ee00','#bbff22','#77ff11','#eeff66','#99ff44'], glow: '#aaff00', name: 'Toxic' }
+};
+
+let currentPalette = 'biolum';
+let palette = PALETTES[currentPalette];
+
+// ─── State ───
+let nodes = [];
+let branchCount = 0;
+let mouse = { x: W/2, y: H/2, down: false, active: false };
+let paused = false;
+let frameCount = 0;
+let lastFpsTime = performance.now();
+let fps = 60;
+
+// ─── Node Class ───
+class Node {
+  constructor(x, y, parent = null, depth = 0) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 0.5;
+    this.vy = (Math.random() - 0.5) * 0.5;
+    this.parent = parent;
+    this.depth = depth;
+    this.age = 0;
+    this.maxAge = 300 + Math.random() * 600;
+    this.thickness = Math.max(0.5, 4 - depth * 0.5);
+    this.colorIdx = Math.floor(Math.random() * palette.colors.length);
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    this.children = [];
+    this.energy = 1;
+    this.growing = true;
+  }
+
+  get color() {
+    return palette.colors[this.colorIdx % palette.colors.length];
+  }
+
+  update(growthRate, pulseSpeed) {
+    if (!this.growing) return;
+
+    this.age++;
+    this.pulsePhase += 0.02 * pulseSpeed / 10;
+
+    // Slow down with age
+    const ageFade = 1 - (this.age / this.maxAge);
+    this.energy = Math.max(0, ageFade);
+
+    // Gentle drift
+    this.vx += (Math.random() - 0.5) * 0.05;
+    this.vy += (Math.random() - 0.5) * 0.05;
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+
+    // Mouse attraction
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.hypot(dx, dy) + 1;
+      const force = Math.min(0.3, 20 / dist);
+      this.vx += (dx / dist) * force;
+      this.vy += (dy / dist) * force;
+    }
+
+    // Hold to pulse outward
+    if (mouse.down && mouse.active) {
+      const dx = this.x - mouse.x;
+      const dy = this.y - mouse.y;
+      const dist = Math.hypot(dx, dy) + 1;
+      if (dist < 200) {
+        const force = (200 - dist) / 200 * 0.8;
+        this.vx += (dx / dist) * force;
+        this.vy += (dy / dist) * force;
+      }
+    }
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Boundary bounce with soft push
+    const margin = 20;
+    if (this.x < margin) this.vx += 0.1;
+    if (this.x > W - margin) this.vx -= 0.1;
+    if (this.y < margin) this.vy += 0.1;
+    if (this.y > H - margin) this.vy -= 0.1;
+
+    // Stop growing if old or out of energy
+    if (this.age > this.maxAge || this.energy <= 0) {
+      this.growing = false;
+    }
+  }
+
+  canBranch(branchProb) {
+    if (!this.growing) return false;
+    if (this.depth > 12) return false;
+    if (this.children.length >= 3) return false;
+    return Math.random() < branchProb / 500;
+  }
+
+  branch() {
+    if (!this.growing) return null;
+
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 8 + Math.random() * 15;
+    const nx = this.x + Math.cos(angle) * dist;
+    const ny = this.y + Math.sin(angle) * dist;
+
+    // Don't branch too close to edges
+    if (nx < 10 || nx > W - 10 || ny < 10 || ny > H - 10) return null;
+
+    const child = new Node(nx, ny, this, this.depth + 1);
+    child.vx = this.vx * 0.5 + (Math.random() - 0.5) * 0.5;
+    child.vy = this.vy * 0.5 + (Math.random() - 0.5) * 0.5;
+    this.children.push(child);
+    branchCount++;
+    return child;
+  }
+
+  draw(ctx, pulseSpeed) {
+    const pulse = 0.7 + 0.3 * Math.sin(this.pulsePhase);
+    const alpha = this.energy * pulse;
+    if (alpha < 0.01) return;
+
+    const glowSize = this.thickness * (2 + pulse);
+
+    // Glow
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, glowSize, 0, Math.PI * 2);
+    ctx.fillStyle = this.color + Math.floor(alpha * 40).toString(16).padStart(2, '0');
+    ctx.fill();
+
+    // Core
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.thickness * 0.6, 0, Math.PI * 2);
+    ctx.fillStyle = this.color + Math.floor(alpha * 180).toString(16).padStart(2, '0');
+    ctx.fill();
+
+    // Connection to parent
+    if (this.parent) {
+      const pa = Math.min(this.parent.energy, this.energy) * 0.6;
+      ctx.beginPath();
+      ctx.moveTo(this.parent.x, this.parent.y);
+      ctx.lineTo(this.x, this.y);
+      ctx.strokeStyle = this.color + Math.floor(pa * 80).toString(16).padStart(2, '0');
+      ctx.lineWidth = this.thickness * 0.4;
+      ctx.stroke();
+    }
+  }
+}
+
+// ─── Spawn Functions ───
+function plantSeed(x, y, density) {
+  const count = density + Math.floor(Math.random() * 2);
+  for (let i = 0; i < count; i++) {
+    const ox = x + (Math.random() - 0.5) * 30;
+    const oy = y + (Math.random() - 0.5) * 30;
+    nodes.push(new Node(ox, oy, null, 0));
+  }
+}
+
+function burst(x, y) {
+  const count = 8 + Math.floor(Math.random() * 8);
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2;
+    const dist = 10 + Math.random() * 40;
+    const node = new Node(
+      x + Math.cos(angle) * dist,
+      y + Math.sin(angle) * dist,
+      null,
+      0
+    );
+    node.vx = Math.cos(angle) * (1 + Math.random() * 2);
+    node.vy = Math.sin(angle) * (1 + Math.random() * 2);
+    nodes.push(node);
+  }
+}
+
+// ─── Main Loop ───
+function update() {
+  if (!paused) {
+    const growthRate = parseFloat(document.getElementById('growthRate').value);
+    const branchProb = parseFloat(document.getElementById('branchProb').value);
+    const pulseSpeed = parseFloat(document.getElementById('pulseSpeed').value);
+    const density = parseFloat(document.getElementById('density').value);
+
+    // Update nodes
+    for (const node of nodes) {
+      node.update(growthRate, pulseSpeed);
+    }
+
+    // Branching
+    const newNodes = [];
+    for (const node of nodes) {
+      if (node.canBranch(branchProb)) {
+        const child = node.branch();
+        if (child) newNodes.push(child);
+      }
+    }
+    nodes.push(...newNodes);
+
+    // Cap total nodes
+    if (nodes.length > 2000) {
+      nodes = nodes.filter(n => n.age < n.maxAge * 0.7).slice(-1500);
+    }
+  }
+
+  // Stats
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime > 1000) {
+    fps = Math.round(frameCount / ((now - lastFpsTime) / 1000));
+    frameCount = 0;
+    lastFpsTime = now;
+    document.getElementById('stats').textContent = 
+      `Nodes: ${nodes.length} | Branches: ${branchCount} | FPS: ${fps}`;
+  }
+}
+
+function draw() {
+  const pulseSpeed = parseFloat(document.getElementById('pulseSpeed').value);
+
+  // Fade background for trails
+  ctx.fillStyle = palette.bg + '12';
+  ctx.fillRect(0, 0, W, H);
+
+  // Draw all nodes
+  for (const node of nodes) {
+    node.draw(ctx, pulseSpeed);
+  }
+
+  // Cursor glow when active
+  if (mouse.active) {
+    const grad = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 80);
+    grad.addColorStop(0, palette.glow + '30');
+    grad.addColorStop(1, palette.glow + '00');
+    ctx.fillStyle = grad;
+    ctx.fillRect(mouse.x - 80, mouse.y - 80, 160, 160);
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ─── Events ───
+canvas.addEventListener('mousedown', (e) => {
+  mouse.down = true;
+  mouse.active = true;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  plantSeed(e.clientX, e.clientY, parseFloat(document.getElementById('density').value));
+});
+
+canvas.addEventListener('mouseup', () => {
+  mouse.down = false;
+  mouse.active = false;
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  if (mouse.down) {
+    // Grows new tips while dragging
+    if (frameCount % 3 === 0) {
+      plantSeed(e.clientX, e.clientY, 1);
+    }
+  }
+});
+
+canvas.addEventListener('mouseleave', () => {
+  mouse.active = false;
+  mouse.down = false;
+});
+
+// Touch support
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  mouse.down = true;
+  mouse.active = true;
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  plantSeed(t.clientX, t.clientY, parseFloat(document.getElementById('density').value));
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  if (frameCount % 3 === 0) {
+    plantSeed(t.clientX, t.clientY, 1);
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', () => {
+  mouse.down = false;
+  mouse.active = false;
+});
+
+// Keyboard
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    burst(mouse.x, mouse.y);
+  }
+  if (e.key === 'h' || e.key === 'H') {
+    toggleControls();
+  }
+  if (e.key === 'p' || e.key === 'P') {
+    paused = !paused;
+    document.getElementById('btnPause').textContent = paused ? '▶ Play' : '⏸ Pause';
+  }
+  if (e.key === 'c' || e.key === 'C') {
+    nodes = [];
+    branchCount = 0;
+    ctx.fillStyle = palette.bg;
+    ctx.fillRect(0, 0, W, H);
+  }
+});
+
+// Buttons
+document.getElementById('btnBurst').addEventListener('click', (e) => {
+  e.stopPropagation();
+  burst(mouse.x, mouse.y);
+});
+
+document.getElementById('btnClear').addEventListener('click', (e) => {
+  e.stopPropagation();
+  nodes = [];
+  branchCount = 0;
+  ctx.fillStyle = palette.bg;
+  ctx.fillRect(0, 0, W, H);
+});
+
+document.getElementById('btnPause').addEventListener('click', (e) => {
+  e.stopPropagation();
+  paused = !paused;
+  document.getElementById('btnPause').textContent = paused ? '▶ Play' : '⏸ Pause';
+});
+
+document.getElementById('btnHide').addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleControls();
+});
+
+function toggleControls() {
+  const ctrl = document.getElementById('controls');
+  ctrl.style.display = ctrl.style.display === 'none' ? 'block' : 'none';
+}
+
+// Palette change
+document.getElementById('palette').addEventListener('change', (e) => {
+  currentPalette = e.target.value;
+  palette = PALETTES[currentPalette];
+  document.body.style.background = palette.bg;
+});
+
+// ─── Init ───
+// Start with a few seeds
+setTimeout(() => {
+  for (let i = 0; i < 4; i++) {
+    plantSeed(
+      W * 0.2 + Math.random() * W * 0.6,
+      H * 0.2 + Math.random() * H * 0.6,
+      2
+    );
+  }
+}, 100);
+
+// Fade hint after 6s
+setTimeout(() => {
+  document.getElementById('hint').style.opacity = '0';
+}, 6000);
+
+// Start
+loop();
+</script>
+
+</body>
+</html>
