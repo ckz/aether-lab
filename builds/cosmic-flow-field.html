@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosmic Flow Field</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #a0a0c0;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+  }
+  .ui {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    background: rgba(10, 10, 20, 0.7);
+    padding: 15px 20px;
+    border-radius: 10px;
+    border: 1px solid rgba(100, 100, 200, 0.3);
+    backdrop-filter: blur(10px);
+    font-size: 13px;
+    line-height: 1.8;
+  }
+  .ui h1 {
+    font-size: 16px;
+    margin-bottom: 8px;
+    color: #c0c0f0;
+    letter-spacing: 2px;
+  }
+  .ui .stat {
+    color: #8080b0;
+  }
+  .ui .val {
+    color: #e0c0ff;
+  }
+  .ui .hint {
+    margin-top: 10px;
+    font-size: 11px;
+    color: #606090;
+    border-top: 1px solid rgba(100,100,200,0.2);
+    padding-top: 8px;
+  }
+  .controls {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    z-index: 10;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    background: rgba(20, 20, 40, 0.8);
+    border: 1px solid rgba(120, 120, 200, 0.4);
+    color: #b0b0e0;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    letter-spacing: 1px;
+    transition: all 0.3s;
+  }
+  .btn:hover {
+    background: rgba(60, 60, 120, 0.8);
+    border-color: rgba(160, 160, 255, 0.7);
+    color: #fff;
+  }
+  .btn.active {
+    background: rgba(80, 60, 160, 0.6);
+    border-color: rgba(180, 160, 255, 0.8);
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div class="ui">
+  <h1>✦ COSMIC FLOW FIELD ✦</h1>
+  <div class="stat">Particles: <span class="val" id="pCount">0</span></div>
+  <div class="stat">FPS: <span class="val" id="fps">0</span></div>
+  <div class="stat">Time: <span class="val" id="time">0.00</span></div>
+  <div class="stat">Mode: <span class="val" id="mode">nebula</span></div>
+  <div class="hint">Move mouse to attract particles<br>Click to burst | Scroll to change palette</div>
+</div>
+<div class="controls">
+  <button class="btn active" onclick="setMode('nebula')">Nebula</button>
+  <button class="btn" onclick="setMode('aurora')">Aurora</button>
+  <button class="btn" onclick="setMode('solar')">Solar</button>
+  <button class="btn" onclick="setMode('deep')">Deep</button>
+  <button class="btn" onclick="burst()">✦ Burst</button>
+  <button class="btn" onclick="resetField()">↻ Reset</button>
+</div>
+
+<script>
+// --- Simplex-like noise (simplified) ---
+class SimplexNoise {
+  constructor(seed = Math.random()) {
+    this.p = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) this.p[i] = i;
+    for (let i = 255; i > 0; i--) {
+      seed = (seed * 16807) % 2147483647;
+      const j = seed % (i + 1);
+      [this.p[i], this.p[j]] = [this.p[j], this.p[i]];
+    }
+    this.perm = new Uint8Array(512);
+    for (let i = 0; i < 512; i++) this.perm[i] = this.p[i & 255];
+  }
+  noise2D(x, y) {
+    const xi = Math.floor(x) & 255, yi = Math.floor(y) & 255;
+    const xf = x - Math.floor(x), yf = y - Math.floor(y);
+    const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    const aa = this.perm[this.perm[xi] + yi];
+    const ab = this.perm[this.perm[xi] + yi + 1];
+    const ba = this.perm[this.perm[xi + 1] + yi];
+    const bb = this.perm[this.perm[xi + 1] + yi + 1];
+    const grad = (h, x, y) => {
+      const g = h & 3;
+      return ((g & 1) ? -x : x) + ((g & 2) ? -y : y);
+    };
+    const x1 = aa + u * (ba - aa), x2 = ab + u * (bb - ab);
+    const y1 = x1 + v * (x2 - x1);
+    return y1;
+  }
+  noise3D(x, y, z) {
+    return this.noise2D(x + z * 31.7, y + z * 47.3);
+  }
+}
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const simplex = new SimplexNoise(42);
+
+let W, H;
+let mouse = { x: -1000, y: -1000, active: false };
+let particles = [];
+let time = 0;
+let palette = 0;
+let currentMode = 'nebula';
+
+const palettes = {
+  nebula: [[180, 120, 255], [100, 60, 220], [220, 140, 255], [60, 80, 200], [255, 160, 220]],
+  aurora: [[80, 255, 180], [40, 200, 160], [120, 255, 200], [20, 180, 140], [160, 255, 220]],
+  solar: [[255, 200, 60], [255, 140, 40], [255, 220, 100], [240, 100, 30], [255, 180, 80]],
+  deep: [[60, 120, 255], [40, 80, 200], [100, 160, 255], [20, 60, 180], [140, 200, 255]]
+};
+
+const PARTICLE_COUNT = 3000;
+let lastTime = performance.now();
+let frameCount = 0;
+let fpsDisplay = 0;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+window.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+window.addEventListener('mouseleave', () => mouse.active = false);
+window.addEventListener('click', burst);
+window.addEventListener('wheel', e => {
+  palette = (palette + Math.sign(e.deltaY) + palettes.length) % palettes.length;
+});
+
+class Particle {
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.vx = 0;
+    this.vy = 0;
+    this.life = Math.random() * 300 + 100;
+    this.maxLife = this.life;
+    this.colorIdx = Math.floor(Math.random() * 5);
+    this.size = Math.random() * 1.5 + 0.5;
+    this.speed = Math.random() * 0.8 + 0.4;
+  }
+  update() {
+    const scale = 0.002;
+    const n = simplex.noise3D(this.x * scale, this.y * scale, time * 0.3);
+    const angle = n * Math.PI * 4;
+    this.vx += Math.cos(angle) * 0.15 * this.speed;
+    this.vy += Math.sin(angle) * 0.15 * this.speed;
+    if (mouse.active) {
+      const dx = mouse.x - this.x, dy = mouse.y - this.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 200 && d > 1) {
+        const force = 0.8 / d;
+        this.vx += (dx / d) * force;
+        this.vy += (dy / d) * force;
+      }
+    }
+    this.vx *= 0.96;
+    this.vy *= 0.96;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life--;
+    if (this.life <= 0 || this.x < -50 || this.x > W + 50 || this.y < -50 || this.y > H + 50) {
+      this.reset();
+    }
+  }
+  draw() {
+    const alpha = Math.min(1, this.life / this.maxLife) * 0.7;
+    const colors = palettes[currentMode];
+    const c = colors[this.colorIdx];
+    ctx.fillStyle = `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    if (Math.abs(this.vx) + Math.abs(this.vy) > 1.5) {
+      const tailLen = Math.min(8, (Math.abs(this.vx) + Math.abs(this.vy)) * 1.5);
+      ctx.strokeStyle = `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${alpha * 0.4})`;
+      ctx.lineWidth = this.size * 0.6;
+      ctx.beginPath();
+      ctx.moveTo(this.x, this.y);
+      ctx.lineTo(this.x - this.vx * tailLen * 0.5, this.y - this.vy * tailLen * 0.5);
+      ctx.stroke();
+    }
+  }
+}
+
+for (let i = 0; i < PARTICLE_COUNT; i++) particles.push(new Particle());
+
+function burst() {
+  for (let i = 0; i < 300; i++) {
+    if (particles[i]) {
+      particles[i].x = mouse.active ? mouse.x : W / 2;
+      particles[i].y = mouse.active ? mouse.y : H / 2;
+      const a = Math.random() * Math.PI * 2;
+      const s = Math.random() * 6 + 2;
+      particles[i].vx = Math.cos(a) * s;
+      particles[i].vy = Math.sin(a) * s;
+      particles[i].life = 60 + Math.random() * 60;
+      particles[i].maxLife = particles[i].life;
+    }
+  }
+}
+
+function resetField() {
+  for (const p of particles) p.reset();
+  time = 0;
+}
+
+function setMode(m) {
+  currentMode = m;
+  document.getElementById('mode').textContent = m;
+  document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+function loop(now) {
+  time += 0.005;
+  frameCount++;
+  if (now - lastTime >= 1000) {
+    fpsDisplay = frameCount;
+    frameCount = 0;
+    lastTime = now;
+  }
+  ctx.fillStyle = 'rgba(8, 8, 16, 0.12)';
+  ctx.fillRect(0, 0, W, H);
+  for (const p of particles) { p.update(); p.draw(); }
+  document.getElementById('pCount').textContent = PARTICLE_COUNT;
+  document.getElementById('fps').textContent = fpsDisplay;
+  document.getElementById('time').textContent = time.toFixed(2);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
