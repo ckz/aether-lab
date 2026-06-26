@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Typewriter ✨</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    font-family: 'Courier New', monospace;
+    background: #0a0a0f;
+    color: #fff;
+    overflow: hidden;
+    height: 100vh;
+    cursor: crosshair;
+  }
+
+  #canvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1;
+  }
+
+  .ui {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    text-align: center;
+  }
+
+  .controls {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #fff;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8rem;
+    transition: all 0.2s;
+    backdrop-filter: blur(10px);
+  }
+
+  .btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.3);
+    transform: translateY(-2px);
+  }
+
+  .btn.active {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: #fff;
+  }
+
+  .hint {
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+  }
+
+  .scanlines {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 5;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.1) 0px,
+      rgba(0, 0, 0, 0.1) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    opacity: 0.3;
+  }
+
+  .vignette {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 4;
+    background: radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.4) 100%);
+  }
+
+  .title {
+    position: fixed;
+    top: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  .title h1 {
+    font-size: 1.5rem;
+    font-weight: 300;
+    letter-spacing: 0.3em;
+    color: rgba(255, 255, 255, 0.6);
+    text-transform: uppercase;
+  }
+
+  .title p {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.3);
+    margin-top: 0.5rem;
+    letter-spacing: 0.1em;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+<div class="scanlines"></div>
+<div class="vignette"></div>
+
+<div class="title">
+  <h1>Neon Typewriter</h1>
+  <p>type to create • click to burst • space to clear</p>
+</div>
+
+<div class="ui">
+  <div class="controls">
+    <button class="btn active" data-palette="cyber">Cyber</button>
+    <button class="btn" data-palette="synthwave">Synthwave</button>
+    <button class="btn" data-palette="matrix">Matrix</button>
+    <button class="btn" data-palette="sunset">Sunset</button>
+    <button class="btn" data-palette="ice">Ice</button>
+    <button class="btn" data-palette="gold">Gold</button>
+  </div>
+  <div class="hint">press any key to type • click for burst • space to clear</div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const palettes = {
+  cyber: ['#ff00ff', '#00ffff', '#ff0080', '#8000ff', '#00ff80', '#ff8000'],
+  synthwave: ['#ff6b9d', '#c44dff', '#6b5bff', '#ff4d6d', '#ff9ecd', '#d17bff'],
+  matrix: ['#00ff41', '#00cc33', '#33ff66', '#66ff99', '#00ff00', '#00ffaa'],
+  sunset: ['#ff6b6b', '#ffa07a', '#ff6347', '#ff4500', '#ff8c00', '#ffd700'],
+  ice: ['#00d4ff', '#0099ff', '#66e0ff', '#99f0ff', '#00bfff', '#87ceeb'],
+  gold: ['#ffd700', '#ffec8b', '#daa520', '#f0e68c', '#b8860b', '#ffe4b5']
+};
+
+let currentPalette = 'cyber';
+let particles = [];
+let letters = [];
+let mouse = { x: W/2, y: H/2 };
+
+class Particle {
+  constructor(x, y, color, vx, vy, size, life) {
+    this.x = x;
+    this.y = y;
+    this.color = color;
+    this.vx = vx || (Math.random() - 0.5) * 2;
+    this.vy = vy || (Math.random() - 0.5) * 2;
+    this.size = size || Math.random() * 3 + 1;
+    this.life = life || 1;
+    this.decay = Math.random() * 0.01 + 0.005;
+    this.gravity = 0.02;
+  }
+
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += this.gravity;
+    this.vx *= 0.99;
+    this.life -= this.decay;
+    this.size *= 0.995;
+  }
+
+  draw() {
+    ctx.save();
+    ctx.globalAlpha = this.life;
+    ctx.fillStyle = this.color;
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+class FloatingLetter {
+  constructor(char, x, y, color) {
+    this.char = char;
+    this.x = x;
+    this.y = y;
+    this.color = color;
+    this.vx = (Math.random() - 0.5) * 0.5;
+    this.vy = -Math.random() * 0.5 - 0.2;
+    this.life = 1;
+    this.decay = 0.001;
+    this.size = Math.random() * 20 + 30;
+    this.rotation = (Math.random() - 0.5) * 0.2;
+    this.rotationSpeed = (Math.random() - 0.5) * 0.01;
+  }
+
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += 0.01; // gentle float up
+    this.vx *= 0.99;
+    this.life -= this.decay;
+    this.rotation += this.rotationSpeed;
+  }
+
+  draw() {
+    ctx.save();
+    ctx.globalAlpha = this.life;
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation);
+    ctx.font = `${this.size}px Courier New`;
+    ctx.fillStyle = this.color;
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 20;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(this.char, 0, 0);
+    ctx.restore();
+  }
+}
+
+function getRandomColor() {
+  const colors = palettes[currentPalette];
+  return colors[Math.floor(Math.random() * colors.length)];
+}
+
+function createBurst(x, y, count = 30) {
+  const color = getRandomColor();
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 / count) * i;
+    const speed = Math.random() * 4 + 2;
+    particles.push(new Particle(
+      x, y, color,
+      Math.cos(angle) * speed,
+      Math.sin(angle) * speed,
+      Math.random() * 4 + 2,
+      1
+    ));
+  }
+}
+
+function typeLetter(char, x, y) {
+  const color = getRandomColor();
+  letters.push(new FloatingLetter(char, x, y, color));
+  
+  // spawn particles
+  for (let i = 0; i < 8; i++) {
+    particles.push(new Particle(
+      x + (Math.random() - 0.5) * 20,
+      y + (Math.random() - 0.5) * 20,
+      color,
+      (Math.random() - 0.5) * 3,
+      (Math.random() - 0.5) * 3,
+      Math.random() * 2 + 1,
+      0.8
+    ));
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === ' ') {
+    e.preventDefault();
+    particles = [];
+    letters = [];
+    return;
+  }
+  
+  if (e.key.length === 1) {
+    const x = Math.random() * (W - 200) + 100;
+    const y = Math.random() * (H - 200) + 100;
+    typeLetter(e.key, x, y);
+  }
+});
+
+canvas.addEventListener('mousedown', (e) => {
+  createBurst(e.clientX, e.clientY, 50);
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  
+  if (Math.random() > 0.7) {
+    particles.push(new Particle(
+      e.clientX + (Math.random() - 0.5) * 10,
+      e.clientY + (Math.random() - 0.5) * 10,
+      getRandomColor(),
+      (Math.random() - 0.5) * 2,
+      (Math.random() - 0.5) * 2,
+      Math.random() * 2 + 1,
+      0.5
+    ));
+  }
+});
+
+document.querySelectorAll('.btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentPalette = btn.dataset.palette;
+  });
+});
+
+function animate() {
+  // fade effect
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.05)';
+  ctx.fillRect(0, 0, W, H);
+  
+  // update and draw particles
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => {
+    p.update();
+    p.draw();
+  });
+  
+  // update and draw letters
+  letters = letters.filter(l => l.life > 0);
+  letters.forEach(l => {
+    l.update();
+    l.draw();
+  });
+  
+  // ambient particles
+  if (Math.random() > 0.95) {
+    particles.push(new Particle(
+      Math.random() * W,
+      H + 10,
+      getRandomColor(),
+      (Math.random() - 0.5) * 0.5,
+      -Math.random() * 1 - 0.5,
+      Math.random() * 2 + 1,
+      1
+    ));
+  }
+  
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+
+</body>
+</html>
