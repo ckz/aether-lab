@@ -5,101 +5,81 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Stellar Drift — Generative Cosmos</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #000011;
-    overflow: hidden;
-    font-family: 'Courier New', monospace;
-    cursor: crosshair;
-  }
-  canvas { display: block; }
-  #hud {
-    position: fixed;
-    top: 20px;
-    left: 20px;
-    color: rgba(180, 210, 255, 0.7);
-    font-size: 11px;
-    letter-spacing: 2px;
-    pointer-events: none;
-    z-index: 10;
-  }
-  #hud div { margin-bottom: 4px; }
-  #controls {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    display: flex;
-    gap: 8px;
-    z-index: 10;
-  }
-  #controls button {
-    background: rgba(20, 30, 60, 0.6);
-    border: 1px solid rgba(100, 140, 200, 0.3);
-    color: rgba(180, 210, 255, 0.8);
-    padding: 6px 12px;
-    font-family: 'Courier New', monospace;
-    font-size: 10px;
-    letter-spacing: 1px;
-    cursor: pointer;
-    transition: all 0.3s;
-  }
-  #controls button:hover {
-    background: rgba(40, 60, 100, 0.6);
-    border-color: rgba(150, 180, 220, 0.5);
-  }
-  #signature {
-    position: fixed;
-    bottom: 20px;
-    left: 20px;
-    color: rgba(100, 140, 200, 0.3);
-    font-size: 9px;
-    letter-spacing: 3px;
-    pointer-events: none;
-  }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #0a0a0f;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+  color: #aab;
+}
+
+canvas {
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+
+.overlay {
+  position: fixed;
+  z-index: 10;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+}
+
+.title {
+  font-size: 14px;
+  letter-spacing: 6px;
+  text-transform: uppercase;
+  color: rgba(170, 187, 204, 0.6);
+  margin-bottom: 8px;
+}
+
+.hint {
+  font-size: 11px;
+  color: rgba(170, 187, 204, 0.3);
+  letter-spacing: 2px;
+}
+
+.stats {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 10;
+  font-size: 10px;
+  color: rgba(170, 187, 204, 0.25);
+  text-align: right;
+  line-height: 1.8;
+  font-family: 'Courier New', monospace;
+}
 </style>
 </head>
 <body>
-<div id="hud">
-  <div id="particle-count">PARTICLES: 0</div>
-  <div id="fps">FPS: 0</div>
-  <div id="mode">MODE: DRIFT</div>
+
+<canvas id="cosmos"></canvas>
+
+<div class="stats" id="stats">
+  STARS: 0<br>
+  NEBULAE: 0<br>
+  CONNECTIONS: 0<br>
+  GENERATION: 0
 </div>
-<div id="controls">
-  <button onclick="setMode('drift')">DRIFT</button>
-  <button onclick="setMode('orbit')">ORBIT</button>
-  <button onclick="setMode('vortex')">VORTEX</button>
-  <button onclick="setMode('explode')">BANG</button>
-  <button onclick="reset()">RESET</button>
+
+<div class="overlay">
+  <div class="title">Stellar Drift</div>
+  <div class="hint">move mouse to warp gravity</div>
 </div>
-<div id="signature">AETHER // CURIOSITY DROP // 2026.06.25</div>
-<canvas id="c"></canvas>
+
 <script>
-const canvas = document.getElementById('c');
+const canvas = document.getElementById('cosmos');
 const ctx = canvas.getContext('2d');
 
 let W, H;
-let particles = [];
-let mouse = { x: null, y: null, active: false };
-let mode = 'drift';
-let time = 0;
-let lastTime = performance.now();
-let frameCount = 0;
-let fps = 0;
-
-const CONFIG = {
-  particleCount: 300,
-  connectionDist: 120,
-  mouseInfluence: 180,
-  baseSpeed: 0.4,
-  colors: [
-    [100, 180, 255],  // ice blue
-    [180, 140, 255],  // violet
-    [255, 140, 200],  // rose
-    [140, 255, 220],  // mint
-    [255, 200, 100],  // gold
-  ]
-};
-
 function resize() {
   W = canvas.width = window.innerWidth;
   H = canvas.height = window.innerHeight;
@@ -107,194 +87,195 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-canvas.addEventListener('mousemove', e => {
+const mouse = { x: W / 2, y: H / 2, active: false };
+document.addEventListener('mousemove', e => {
   mouse.x = e.clientX;
   mouse.y = e.clientY;
   mouse.active = true;
 });
-canvas.addEventListener('mouseleave', () => { mouse.active = false; });
-canvas.addEventListener('click', e => {
-  // Spawn burst on click
-  for (let i = 0; i < 20; i++) {
-    particles.push(new Particle(e.clientX, e.clientY, true));
-  }
-});
+document.addEventListener('mouseleave', () => { mouse.active = false; });
 
-class Particle {
-  constructor(x, y, burst = false) {
-    this.x = x ?? Math.random() * W;
-    this.y = y ?? Math.random() * H;
-    this.vx = (Math.random() - 0.5) * (burst ? 6 : 1.5);
-    this.vy = (Math.random() - 0.5) * (burst ? 6 : 1.5);
-    this.size = Math.random() * 2 + 0.5;
-    this.color = CONFIG.colors[Math.floor(Math.random() * CONFIG.colors.length)];
-    this.life = 1;
-    this.decay = burst ? 0.005 + Math.random() * 0.01 : 0;
-    this.phase = Math.random() * Math.PI * 2;
-    this.pulseSpeed = 0.02 + Math.random() * 0.03;
+// Nebula palettes — subtle color regions
+const PALETTES = [
+  { h: 220, s: 40, l: 60 },  // deep blue
+  { h: 280, s: 30, l: 55 },  // purple
+  { h: 340, s: 35, l: 55 },  // rose
+  { h: 180, s: 30, l: 50 },  // teal
+  { h: 30,  s: 40, l: 55 },  // amber
+  { h: 260, s: 25, l: 50 },  // indigo
+];
+
+class Star {
+  constructor() {
+    this.reset();
   }
 
-  update() {
-    const cx = W / 2, cy = H / 2;
-    const dx = this.x - cx, dy = this.y - cy;
-    const dist = Math.hypot(dx, dy) || 1;
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.z = Math.random();  // depth 0-1
+    this.size = 0.3 + this.z * 2.2;
+    this.baseSize = this.size;
+    this.vx = (Math.random() - 0.5) * 0.15;
+    this.vy = (Math.random() - 0.5) * 0.15;
+    this.pulse = Math.random() * Math.PI * 2;
+    this.pulseSpeed = 0.005 + Math.random() * 0.02;
+    this.brightness = 0.3 + this.z * 0.7;
+    const pal = PALETTES[Math.floor(Math.random() * PALETTES.length)];
+    this.hue = pal.h + (Math.random() - 0.5) * 20;
+    this.sat = pal.s;
+    this.lit = pal.l;
+  }
 
-    switch (mode) {
-      case 'drift':
-        this.vx += (Math.random() - 0.5) * 0.05;
-        this.vy += (Math.random() - 0.5) * 0.05;
-        break;
-      case 'orbit':
-        const angle = Math.atan2(dy, dx) + Math.PI / 2;
-        const orbitForce = 0.02;
-        this.vx += Math.cos(angle) * orbitForce - dx / dist * 0.01;
-        this.vy += Math.sin(angle) * orbitForce - dy / dist * 0.01;
-        break;
-      case 'vortex':
-        const vAngle = Math.atan2(dy, dx);
-        const vortexForce = 0.04;
-        this.vx += Math.cos(vAngle + Math.PI / 2) * vortexForce - dx / dist * 0.005;
-        this.vy += Math.sin(vAngle + Math.PI / 2) * vortexForce - dy / dist * 0.005;
-        break;
-      case 'explode':
-        const eForce = 0.03;
-        this.vx += (dx / dist) * eForce;
-        this.vy += (dy / dist) * eForce;
-        break;
-    }
+  update(gen) {
+    this.pulse += this.pulseSpeed;
+    this.size = this.baseSize + Math.sin(this.pulse) * 0.3;
 
-    // Mouse attraction
+    // Mouse gravity
     if (mouse.active) {
-      const mdx = mouse.x - this.x;
-      const mdy = mouse.y - this.y;
-      const mdist = Math.hypot(mdx, mdy) || 1;
-      if (mdist < CONFIG.mouseInfluence) {
-        const force = (CONFIG.mouseInfluence - mdist) / CONFIG.mouseInfluence * 0.03;
-        this.vx += (mdx / mdist) * force;
-        this.vy += (mdy / mdist) * force;
-      }
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 0.01;
+      const force = Math.min(50 / (dist * dist), 0.02);
+      this.vx += (dx / dist) * force;
+      this.vy += (dy / dist) * force;
     }
+
+    // Gentle drift with generation-based turbulence
+    this.vx += Math.sin(gen * 0.001 + this.y * 0.001) * 0.0005;
+    this.vy += Math.cos(gen * 0.001 + this.x * 0.001) * 0.0005;
 
     // Damping
-    this.vx *= 0.99;
-    this.vy *= 0.99;
-
-    // Speed limit
-    const speed = Math.hypot(this.vx, this.vy);
-    if (speed > 4) {
-      this.vx = (this.vx / speed) * 4;
-      this.vy = (this.vy / speed) * 4;
-    }
+    this.vx *= 0.999;
+    this.vy *= 0.999;
 
     this.x += this.vx;
     this.y += this.vy;
 
-    // Wrap around
+    // Wrap
     if (this.x < -20) this.x = W + 20;
     if (this.x > W + 20) this.x = -20;
     if (this.y < -20) this.y = H + 20;
     if (this.y > H + 20) this.y = -20;
-
-    this.life -= this.decay;
-    this.phase += this.pulseSpeed;
   }
 
   draw() {
-    const pulse = 0.6 + 0.4 * Math.sin(this.phase);
-    const alpha = this.life * pulse;
-    const [r, g, b] = this.color;
-    const size = this.size * (0.8 + 0.2 * pulse);
-
-    // Glow
-    const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, size * 4);
-    gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${alpha})`);
-    gradient.addColorStop(0.4, `rgba(${r}, ${g}, ${b}, ${alpha * 0.3})`);
-    gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
-    ctx.fillStyle = gradient;
+    const alpha = this.brightness * (0.6 + Math.sin(this.pulse) * 0.4);
     ctx.beginPath();
-    ctx.arc(this.x, this.y, size * 4, 0, Math.PI * 2);
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${this.hue}, ${this.sat}%, ${this.lit}%, ${alpha})`;
     ctx.fill();
 
-    // Core
-    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, size, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
-function init() {
-  particles = [];
-  for (let i = 0; i < CONFIG.particleCount; i++) {
-    particles.push(new Particle());
-  }
-}
-
-function drawConnections() {
-  for (let i = 0; i < particles.length; i++) {
-    for (let j = i + 1; j < particles.length; j++) {
-      const dx = particles[i].x - particles[j].x;
-      const dy = particles[i].y - particles[j].y;
-      const dist = Math.hypot(dx, dy);
-
-      if (dist < CONFIG.connectionDist) {
-        const alpha = (1 - dist / CONFIG.connectionDist) * 0.15;
-        const ci = particles[i].color;
-        ctx.strokeStyle = `rgba(${ci[0]}, ${ci[1]}, ${ci[2]}, ${alpha})`;
-        ctx.lineWidth = 0.5;
-        ctx.beginPath();
-        ctx.moveTo(particles[i].x, particles[i].y);
-        ctx.lineTo(particles[j].x, particles[j].y);
-        ctx.stroke();
-      }
+    // Glow for bright stars
+    if (this.z > 0.7) {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size * 3, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${this.hue}, ${this.sat}%, ${this.lit}%, ${alpha * 0.1})`;
+      ctx.fill();
     }
   }
 }
 
-function animate() {
-  time++;
-  frameCount++;
-
-  // FPS counter
-  const now = performance.now();
-  if (now - lastTime >= 1000) {
-    fps = frameCount;
-    frameCount = 0;
-    lastTime = now;
-    document.getElementById('fps').textContent = `FPS: ${fps}`;
-    document.getElementById('particle-count').textContent = `PARTICLES: ${particles.length}`;
+class Nebula {
+  constructor() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.radius = 80 + Math.random() * 200;
+    this.vx = (Math.random() - 0.5) * 0.08;
+    this.vy = (Math.random() - 0.5) * 0.08;
+    const pal = PALETTES[Math.floor(Math.random() * PALETTES.length)];
+    this.hue = pal.h;
+    this.alpha = 0.015 + Math.random() * 0.03;
+    this.phase = Math.random() * Math.PI * 2;
   }
 
-  // Trail effect
-  ctx.fillStyle = 'rgba(0, 0, 17, 0.15)';
+  update() {
+    this.phase += 0.002;
+    this.x += this.vx;
+    this.y += this.vy;
+    if (this.x < -this.radius) this.x = W + this.radius;
+    if (this.x > W + this.radius) this.x = -this.radius;
+    if (this.y < -this.radius) this.y = H + this.radius;
+    if (this.y > H + this.radius) this.y = -this.radius;
+  }
+
+  draw() {
+    const grad = ctx.createRadialGradient(
+      this.x, this.y, 0,
+      this.x, this.y, this.radius
+    );
+    const a = this.alpha * (0.5 + Math.sin(this.phase) * 0.5);
+    grad.addColorStop(0, `hsla(${this.hue}, 50%, 40%, ${a})`);
+    grad.addColorStop(1, `hsla(${this.hue}, 50%, 40%, 0)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(this.x - this.radius, this.y - this.radius, this.radius * 2, this.radius * 2);
+  }
+}
+
+// Initialize
+const NUM_STARS = 280;
+const NUM_NEBULAE = 6;
+let stars = [];
+let nebulae = [];
+let connections = 0;
+
+function init() {
+  stars = [];
+  nebulae = [];
+  for (let i = 0; i < NUM_STARS; i++) stars.push(new Star());
+  for (let i = 0; i < NUM_NEBULAE; i++) nebulae.push(new Nebula());
+}
+init();
+
+const CONNECTION_DIST = 100;
+const statsEl = document.getElementById('stats');
+
+function frame(gen) {
+  // Fade trail
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.15)';
   ctx.fillRect(0, 0, W, H);
 
-  // Update & draw
-  particles = particles.filter(p => p.life > 0);
-  if (particles.length < CONFIG.particleCount * 1.5) {
-    particles.push(new Particle());
+  connections = 0;
+
+  // Draw nebulae (subtle background)
+  nebulae.forEach(n => { n.update(); n.draw(); });
+
+  // Update stars
+  stars.forEach(s => s.update(gen));
+
+  // Connections
+  for (let i = 0; i < stars.length; i++) {
+    for (let j = i + 1; j < stars.length; j++) {
+      const dx = stars[i].x - stars[j].x;
+      const dy = stars[i].y - stars[j].y;
+      const dist = dx * dx + dy * dy;
+      if (dist < CONNECTION_DIST * CONNECTION_DIST) {
+        const alpha = (1 - Math.sqrt(dist) / CONNECTION_DIST) * 0.12;
+        const hue = (stars[i].hue + stars[j].hue) / 2;
+        ctx.beginPath();
+        ctx.moveTo(stars[i].x, stars[i].y);
+        ctx.lineTo(stars[j].x, stars[j].y);
+        ctx.strokeStyle = `hsla(${hue}, 30%, 60%, ${alpha})`;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+        connections++;
+      }
+    }
   }
 
-  drawConnections();
-  particles.forEach(p => {
-    p.update();
-    p.draw();
-  });
+  // Draw stars
+  stars.forEach(s => s.draw());
 
-  requestAnimationFrame(animate);
+  // Stats (throttled)
+  if (gen % 30 === 0) {
+    statsEl.innerHTML = `STARS: ${stars.length}<br>NEBULAE: ${nebulae.length}<br>CONNECTIONS: ${connections}<br>GENERATION: ${gen}`;
+  }
+
+  requestAnimationFrame(() => frame(gen + 1));
 }
 
-function setMode(newMode) {
-  mode = newMode;
-  document.getElementById('mode').textContent = `MODE: ${mode.toUpperCase()}`;
-}
-
-function reset() {
-  init();
-}
-
-init();
-animate();
+frame(0);
 </script>
+
 </body>
 </html>
