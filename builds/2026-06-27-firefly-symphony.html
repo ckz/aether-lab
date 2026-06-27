@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Firefly Symphony ✨</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    overflow: hidden;
+    background: radial-gradient(ellipse at center, #0a1628 0%, #020510 100%);
+    font-family: 'Georgia', serif;
+    cursor: crosshair;
+    user-select: none;
+  }
+  
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+  }
+  
+  .ui {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 13px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 10;
+    text-align: center;
+  }
+  
+  .title {
+    position: fixed;
+    top: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 24px;
+    font-weight: 300;
+    letter-spacing: 4px;
+    pointer-events: none;
+    z-index: 10;
+    text-shadow: 0 0 20px rgba(255, 200, 100, 0.5);
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div class="title">Firefly Symphony</div>
+<div class="ui">click to attract · hold to glow · move to dance</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let width, height;
+let mouse = { x: width/2, y: height/2, down: false, radius: 150 };
+let fireflies = [];
+let ripples = [];
+let time = 0;
+
+class Firefly {
+  constructor() {
+    this.x = Math.random() * width;
+    this.y = Math.random() * height;
+    this.vx = (Math.random() - 0.5) * 0.3;
+    this.vy = (Math.random() - 0.5) * 0.3;
+    this.radius = 1.5 + Math.random() * 1.5;
+    this.baseRadius = this.radius;
+    this.hue = 40 + Math.random() * 30; // warm golden range
+    this.pulseSpeed = 0.01 + Math.random() * 0.02;
+    this.pulseOffset = Math.random() * Math.PI * 2;
+    this.wanderAngle = Math.random() * Math.PI * 2;
+    this.wanderSpeed = 0.01 + Math.random() * 0.02;
+    this.glowIntensity = 0;
+    this.targetGlow = 0;
+  }
+  
+  update() {
+    // Organic wandering
+    this.wanderAngle += (Math.random() - 0.5) * 0.3;
+    this.vx += Math.cos(this.wanderAngle) * 0.02;
+    this.vy += Math.sin(this.wanderAngle) * 0.02;
+    
+    // Mouse interaction
+    const dx = mouse.x - this.x;
+    const dy = mouse.y - this.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    
+    if (dist < mouse.radius) {
+      const force = (mouse.radius - dist) / mouse.radius;
+      if (mouse.down) {
+        // Attract strongly when holding
+        this.vx += (dx / dist) * force * 0.5;
+        this.vy += (dy / dist) * force * 0.5;
+        this.targetGlow = 1;
+      } else {
+        // Gentle repulsion when just moving
+        this.vx -= (dx / dist) * force * 0.15;
+        this.vy -= (dy / dist) * force * 0.15;
+        this.targetGlow = force * 0.5;
+      }
+    } else {
+      this.targetGlow = 0;
+    }
+    
+    // Damping
+    this.vx *= 0.99;
+    this.vy *= 0.99;
+    
+    // Speed limit
+    const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
+    if (speed > 2) {
+      this.vx = (this.vx / speed) * 2;
+      this.vy = (this.vy / speed) * 2;
+    }
+    
+    this.x += this.vx;
+    this.y += this.vy;
+    
+    // Wrap around
+    if (this.x < -50) this.x = width + 50;
+    if (this.x > width + 50) this.x = -50;
+    if (this.y < -50) this.y = height + 50;
+    if (this.y > height + 50) this.y = -50;
+    
+    // Pulse
+    const pulse = Math.sin(time * this.pulseSpeed + this.pulseOffset);
+    this.glowIntensity += (this.targetGlow - this.glowIntensity) * 0.05;
+    this.radius = this.baseRadius * (1 + pulse * 0.3 + this.glowIntensity * 2);
+  }
+  
+  draw() {
+    const pulse = Math.sin(time * this.pulseSpeed + this.pulseOffset);
+    const alpha = 0.4 + pulse * 0.2 + this.glowIntensity * 0.4;
+    const glow = this.radius * (3 + this.glowIntensity * 8);
+    
+    // Outer glow
+    const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, glow);
+    gradient.addColorStop(0, `hsla(${this.hue}, 100%, 70%, ${alpha})`);
+    gradient.addColorStop(0.4, `hsla(${this.hue}, 100%, 50%, ${alpha * 0.5})`);
+    gradient.addColorStop(1, `hsla(${this.hue}, 100%, 50%, 0)`);
+    
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, glow, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Core
+    ctx.fillStyle = `hsla(${this.hue - 5}, 100%, 90%, ${alpha + 0.3})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+class Ripple {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 0;
+    this.maxRadius = 200;
+    this.alpha = 0.6;
+    this.speed = 3;
+  }
+  
+  update() {
+    this.radius += this.speed;
+    this.alpha *= 0.97;
+    return this.alpha > 0.01;
+  }
+  
+  draw() {
+    ctx.strokeStyle = `rgba(255, 220, 150, ${this.alpha})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+class AmbientParticle {
+  constructor() {
+    this.reset();
+  }
+  
+  reset() {
+    this.x = Math.random() * width;
+    this.y = Math.random() * height;
+    this.vx = (Math.random() - 0.5) * 0.1;
+    this.vy = (Math.random() - 0.5) * 0.1;
+    this.size = Math.random() * 1.5;
+    this.alpha = Math.random() * 0.3;
+  }
+  
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    
+    if (this.x < 0 || this.x > width || this.y < 0 || this.y > height) {
+      this.reset();
+    }
+  }
+  
+  draw() {
+    ctx.fillStyle = `rgba(200, 220, 255, ${this.alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function resize() {
+  width = canvas.width = window.innerWidth;
+  height = canvas.height = window.innerHeight;
+}
+
+function init() {
+  resize();
+  
+  // Create fireflies
+  const count = Math.min(150, Math.floor((width * height) / 8000));
+  fireflies = [];
+  for (let i = 0; i < count; i++) {
+    fireflies.push(new Firefly());
+  }
+  
+  // Ambient particles
+  window.ambientParticles = [];
+  for (let i = 0; i < 50; i++) {
+    window.ambientParticles.push(new AmbientParticle());
+  }
+}
+
+function drawConnections() {
+  // Draw subtle connections between nearby fireflies
+  for (let i = 0; i < fireflies.length; i++) {
+    for (let j = i + 1; j < fireflies.length; j++) {
+      const dx = fireflies[i].x - fireflies[j].x;
+      const dy = fireflies[i].y - fireflies[j].y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      
+      if (dist < 80) {
+        const alpha = (1 - dist / 80) * 0.15;
+        const avgHue = (fireflies[i].hue + fireflies[j].hue) / 2;
+        ctx.strokeStyle = `hsla(${avgHue}, 80%, 60%, ${alpha})`;
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(fireflies[i].x, fireflies[i].y);
+        ctx.lineTo(fireflies[j].x, fireflies[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+function animate() {
+  time++;
+  
+  // Trail effect
+  ctx.fillStyle = 'rgba(2, 5, 16, 0.15)';
+  ctx.fillRect(0, 0, width, height);
+  
+  // Ambient particles
+  if (window.ambientParticles) {
+    window.ambientParticles.forEach(p => {
+      p.update();
+      p.draw();
+    });
+  }
+  
+  // Connections
+  drawConnections();
+  
+  // Fireflies
+  fireflies.forEach(f => {
+    f.update();
+    f.draw();
+  });
+  
+  // Ripples
+  ripples = ripples.filter(r => {
+    r.draw();
+    return r.update();
+  });
+  
+  requestAnimationFrame(animate);
+}
+
+// Events
+canvas.addEventListener('mousedown', e => {
+  mouse.down = true;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  ripples.push(new Ripple(e.clientX, e.clientY));
+});
+
+canvas.addEventListener('mouseup', () => {
+  mouse.down = false;
+});
+
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+
+canvas.addEventListener('click', e => {
+  ripples.push(new Ripple(e.clientX, e.clientY));
+  // Spawn burst of new fireflies on click
+  for (let i = 0; i < 5; i++) {
+    const f = new Firefly();
+    f.x = e.clientX + (Math.random() - 0.5) * 40;
+    f.y = e.clientY + (Math.random() - 0.5) * 40;
+    f.vx = (Math.random() - 0.5) * 2;
+    f.vy = (Math.random() - 0.5) * 2;
+    f.targetGlow = 1;
+    fireflies.push(f);
+  }
+  // Keep count manageable
+  while (fireflies.length > 200) {
+    fireflies.shift();
+  }
+});
+
+window.addEventListener('resize', () => {
+  resize();
+});
+
+init();
+animate();
+</script>
+</body>
+</html>
