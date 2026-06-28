@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Magnetic Field — Iron Filings</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #0a0a0f;
+    color: #e0e0e0;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  #canvas {
+    display: block;
+    cursor: crosshair;
+  }
+
+  .controls {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    background: rgba(10, 10, 15, 0.85);
+    backdrop-filter: blur(10px);
+    padding: 1.25rem;
+    border-radius: 12px;
+    border: 1px solid #1e1e2e;
+    z-index: 10;
+    min-width: 220px;
+  }
+
+  .controls h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 0.75rem;
+    letter-spacing: 0.05em;
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  button {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    background: #1e1e2e;
+    color: #e0e0e0;
+    border: 1px solid #2a2a3e;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.15s;
+  }
+
+  button:hover {
+    background: #2a2a3e;
+    border-color: #4a4a6e;
+  }
+
+  button.active {
+    background: #3a3a6e;
+    border-color: #6a6aae;
+    color: #fff;
+  }
+
+  .slider-group {
+    margin-bottom: 0.75rem;
+  }
+
+  .slider-group label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: #888;
+    margin-bottom: 0.3rem;
+  }
+
+  .slider-group label span {
+    color: #aaa;
+  }
+
+  input[type="range"] {
+    width: 100%;
+    height: 4px;
+    background: #1e1e2e;
+    border-radius: 2px;
+    outline: none;
+    -webkit-appearance: none;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    background: #6a6aae;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  .hint {
+    font-size: 0.7rem;
+    color: #666;
+    line-height: 1.4;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid #1e1e2e;
+  }
+
+  .stats {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    font-size: 0.7rem;
+    color: #555;
+    background: rgba(10, 10, 15, 0.7);
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+  }
+
+  .magnet-count {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    font-size: 0.75rem;
+    color: #888;
+    background: rgba(10, 10, 15, 0.7);
+    padding: 0.4rem 0.75rem;
+    border-radius: 6px;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div class="controls">
+  <h2>🧲 Magnetic Field</h2>
+  
+  <div class="btn-row">
+    <button id="north" class="active">N</button>
+    <button id="south">S</button>
+    <button id="erase">⌫</button>
+  </div>
+  
+  <div class="btn-row">
+    <button id="clear">Clear All</button>
+  </div>
+
+  <div class="slider-group">
+    <label>Strength <span id="strVal">100</span></label>
+    <input type="range" id="strength" min="20" max="300" value="100">
+  </div>
+
+  <div class="slider-group">
+    <label>Filings Density <span id="denVal">8000</span></label>
+    <input type="range" id="density" min="2000" max="15000" value="8000" step="500">
+  </div>
+
+  <div class="slider-group">
+    <label>Trail Fade <span id="fadeVal">0.08</span></label>
+    <input type="range" id="fade" min="0.02" max="0.3" value="0.08" step="0.01">
+  </div>
+
+  <div class="hint">
+    Click to place magnets. Right-click to remove.<br>
+    Drag strength slider before placing.
+  </div>
+</div>
+
+<div class="magnet-count" id="magnetCount">Magnets: 0</div>
+<div class="stats" id="stats">Filings: 0 | FPS: 0</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// State
+let magnets = [];
+let mode = 'north'; // 'north' | 'south' | 'erase'
+let strength = 100;
+let filingCount = 8000;
+let fadeRate = 0.08;
+let mouseDown = false;
+
+// Filings
+let filings = [];
+
+function initFilings() {
+  filings = [];
+  for (let i = 0; i < filingCount; i++) {
+    filings.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      vx: 0,
+      vy: 0
+    });
+  }
+}
+initFilings();
+
+// Magnetic field at point (x, y)
+function fieldAt(x, y) {
+  let fx = 0, fy = 0;
+  for (const m of magnets) {
+    const dx = x - m.x;
+    const dy = y - m.y;
+    const distSq = dx * dx + dy * dy + 100; // softening
+    const dist = Math.sqrt(distSq);
+    const force = (m.strength * (m.polarity === 'north' ? 1 : -1)) / distSq;
+    fx += force * dx / dist;
+    fy += force * dy / dist;
+  }
+  return { fx, fy };
+}
+
+// Color based on field strength
+function fieldColor(strength) {
+  const s = Math.min(Math.abs(strength) / 500, 1);
+  // Blue-white for north, red-orange for south
+  const hue = strength > 0 ? 200 + s * 40 : 0 + s * 30;
+  const light = 40 + s * 40;
+  const alpha = 0.3 + s * 0.5;
+  return `hsla(${hue}, 80%, ${light}%, ${alpha})`;
+}
+
+function update() {
+  // Fade background
+  ctx.fillStyle = `rgba(10, 10, 15, ${fadeRate})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // Update and draw filings
+  for (const f of filings) {
+    const { fx, fy } = fieldAt(f.x, f.y);
+    
+    // Apply force with some inertia
+    f.vx += fx * 0.3;
+    f.vy += fy * 0.3;
+    
+    // Damping
+    f.vx *= 0.85;
+    f.vy *= 0.85;
+    
+    // Clamp velocity
+    const speed = Math.sqrt(f.vx * f.vx + f.vy * f.vy);
+    const maxSpeed = 4;
+    if (speed > maxSpeed) {
+      f.vx = (f.vx / speed) * maxSpeed;
+      f.vy = (f.vy / speed) * maxSpeed;
+    }
+    
+    f.x += f.vx;
+    f.y += f.vy;
+    
+    // Wrap around edges
+    if (f.x < 0) f.x += W;
+    if (f.x > W) f.x -= W;
+    if (f.y < 0) f.y += H;
+    if (f.y > H) f.y -= H;
+    
+    // Draw filing as tiny line segment in direction of field
+    const fieldStr = Math.sqrt(fx * fx + fy * fy);
+    if (fieldStr > 0.1) {
+      const len = Math.min(fieldStr * 2, 6);
+      const nx = fx / fieldStr;
+      const ny = fy / fieldStr;
+      
+      ctx.strokeStyle = fieldColor(fx);
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(f.x - nx * len, f.y - ny * len);
+      ctx.lineTo(f.x + nx * len, f.y + ny * len);
+      ctx.stroke();
+    }
+  }
+
+  // Draw magnets
+  for (const m of magnets) {
+    const glow = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, 30);
+    if (m.polarity === 'north') {
+      glow.addColorStop(0, 'rgba(100, 150, 255, 0.8)');
+      glow.addColorStop(0.5, 'rgba(50, 100, 255, 0.3)');
+      glow.addColorStop(1, 'rgba(30, 60, 200, 0)');
+    } else {
+      glow.addColorStop(0, 'rgba(255, 120, 80, 0.8)');
+      glow.addColorStop(0.5, 'rgba(255, 60, 30, 0.3)');
+      glow.addColorStop(1, 'rgba(200, 30, 10, 0)');
+    }
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, 30, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Core
+    ctx.fillStyle = m.polarity === 'north' ? '#4a7aff' : '#ff4a2a';
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, 8, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Label
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(m.polarity === 'north' ? 'N' : 'S', m.x, m.y + 3);
+  }
+}
+
+function loop() {
+  update();
+  requestAnimationFrame(loop);
+}
+
+// Interaction
+canvas.addEventListener('mousedown', (e) => {
+  mouseDown = true;
+  handleClick(e.clientX, e.clientY);
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (mouseDown && mode !== 'erase') {
+    // Allow dragging to place multiple
+    handleClick(e.clientX, e.clientY, true);
+  }
+});
+
+canvas.addEventListener('mouseup', () => {
+  mouseDown = false;
+});
+
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  // Remove nearest magnet
+  let nearest = null;
+  let nearestDist = 30;
+  for (const m of magnets) {
+    const d = Math.hypot(m.x - e.clientX, m.y - e.clientY);
+    if (d < nearestDist) {
+      nearestDist = d;
+      nearest = m;
+    }
+  }
+  if (nearest) {
+    magnets = magnets.filter(m => m !== nearest);
+  }
+});
+
+function handleClick(x, y, drag = false) {
+  if (mode === 'erase') {
+    let nearest = null;
+    let nearestDist = 30;
+    for (const m of magnets) {
+      const d = Math.hypot(m.x - x, m.y - y);
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearest = m;
+      }
+    }
+    if (nearest) {
+      magnets = magnets.filter(m => m !== nearest);
+    }
+    return;
+  }
+  
+  // Don't add duplicates too close when dragging
+  if (drag) {
+    const tooClose = magnets.some(m => Math.hypot(m.x - x, m.y - y) < 25);
+    if (tooClose) return;
+  }
+  
+  magnets.push({
+    x, y,
+    polarity: mode,
+    strength: strength * (mode === 'north' ? 1 : -1)
+  });
+  
+  updateMagnetCount();
+}
+
+// Controls
+const btnNorth = document.getElementById('north');
+const btnSouth = document.getElementById('south');
+const btnErase = document.getElementById('erase');
+
+function setMode(m) {
+  mode = m;
+  [btnNorth, btnSouth, btnErase].forEach(b => b.classList.remove('active'));
+  if (m === 'north') btnNorth.classList.add('active');
+  if (m === 'south') btnSouth.classList.add('active');
+  if (m === 'erase') btnErase.classList.add('active');
+}
+
+btnNorth.addEventListener('click', () => setMode('north'));
+btnSouth.addEventListener('click', () => setMode('south'));
+btnErase.addEventListener('click', () => setMode('erase'));
+
+document.getElementById('clear').addEventListener('click', () => {
+  magnets = [];
+  updateMagnetCount();
+});
+
+const strSlider = document.getElementById('strength');
+const strVal = document.getElementById('strVal');
+strSlider.addEventListener('input', () => {
+  strength = parseInt(strSlider.value);
+  strVal.textContent = strength;
+});
+
+const denSlider = document.getElementById('density');
+const denVal = document.getElementById('denVal');
+denSlider.addEventListener('input', () => {
+  filingCount = parseInt(denSlider.value);
+  denVal.textContent = filingCount;
+  initFilings();
+});
+
+const fadeSlider = document.getElementById('fade');
+const fadeVal = document.getElementById('fadeVal');
+fadeSlider.addEventListener('input', () => {
+  fadeRate = parseFloat(fadeSlider.value);
+  fadeVal.textContent = fadeRate.toFixed(2);
+});
+
+function updateMagnetCount() {
+  document.getElementById('magnetCount').textContent = `Magnets: ${magnets.length}`;
+}
+
+// FPS counter
+let frames = 0;
+let lastFpsTime = performance.now();
+function updateStats() {
+  frames++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) {
+    const fps = Math.round(frames * 1000 / (now - lastFpsTime));
+    document.getElementById('stats').textContent = `Filings: ${filings.length} | FPS: ${fps}`;
+    frames = 0;
+    lastFpsTime = now;
+  }
+  requestAnimationFrame(updateStats);
+}
+
+// Start with two demo magnets
+magnets.push(
+  { x: W * 0.3, y: H * 0.5, polarity: 'north', strength: 100 },
+  { x: W * 0.7, y: H * 0.5, polarity: 'south', strength: -100 }
+);
+updateMagnetCount();
+
+// Run both loops
+loop();
+updateStats();
+</script>
+
+</body>
+</html>
