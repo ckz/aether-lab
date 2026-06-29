@@ -5,79 +5,48 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Stellar Drift — Generative Cosmos</title>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-  background: #0a0a0f;
-  overflow: hidden;
-  font-family: 'Courier New', monospace;
-  color: #aab;
-}
-
-canvas {
-  display: block;
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 1;
-}
-
-.overlay {
-  position: fixed;
-  z-index: 10;
-  bottom: 30px;
-  left: 50%;
-  transform: translateX(-50%);
-  text-align: center;
-  pointer-events: none;
-}
-
-.title {
-  font-size: 14px;
-  letter-spacing: 6px;
-  text-transform: uppercase;
-  color: rgba(170, 187, 204, 0.6);
-  margin-bottom: 8px;
-}
-
-.hint {
-  font-size: 11px;
-  color: rgba(170, 187, 204, 0.3);
-  letter-spacing: 2px;
-}
-
-.stats {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  z-index: 10;
-  font-size: 10px;
-  color: rgba(170, 187, 204, 0.25);
-  text-align: right;
-  line-height: 1.8;
-  font-family: 'Courier New', monospace;
-}
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000010;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.4);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #info {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    color: rgba(255,255,255,0.3);
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-align: right;
+    pointer-events: none;
+    z-index: 10;
+  }
 </style>
 </head>
 <body>
-
-<canvas id="cosmos"></canvas>
-
-<div class="stats" id="stats">
-  STARS: 0<br>
-  NEBULAE: 0<br>
-  CONNECTIONS: 0<br>
-  GENERATION: 0
-</div>
-
-<div class="overlay">
-  <div class="title">Stellar Drift</div>
-  <div class="hint">move mouse to warp gravity</div>
-</div>
+<canvas id="c"></canvas>
+<div id="ui">move mouse to attract · click to pulse · space to reset</div>
+<div id="info"></div>
 
 <script>
-const canvas = document.getElementById('cosmos');
+const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
+const info = document.getElementById('info');
 
 let W, H;
 function resize() {
@@ -87,195 +56,241 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
+// Simplex-like noise
+class Noise {
+  constructor() {
+    this.perm = new Uint8Array(512);
+    const p = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) p[i] = i;
+    for (let i = 255; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [p[i], p[j]] = [p[j], p[i]];
+    }
+    for (let i = 0; i < 512; i++) this.perm[i] = p[i & 255];
+  }
+  fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+  lerp(a, b, t) { return a + t * (b - a); }
+  grad(hash, x, y) {
+    const h = hash & 3;
+    const u = h < 2 ? x : y;
+    const v = h < 2 ? y : x;
+    return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
+  }
+  get(x, y) {
+    const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+    x -= Math.floor(x); y -= Math.floor(y);
+    const u = this.fade(x), v = this.fade(y);
+    const A = this.perm[X] + Y, B = this.perm[X + 1] + Y;
+    return this.lerp(
+      this.lerp(this.grad(this.perm[A], x, y), this.grad(this.perm[B], x - 1, y), u),
+      this.lerp(this.grad(this.perm[A + 1], x, y - 1), this.grad(this.perm[B + 1], x - 1, y - 1), u),
+      v
+    );
+  }
+}
+
+const noise = new Noise();
 const mouse = { x: W / 2, y: H / 2, active: false };
+let pulse = 0;
+let frame = 0;
+
 document.addEventListener('mousemove', e => {
   mouse.x = e.clientX;
   mouse.y = e.clientY;
   mouse.active = true;
 });
-document.addEventListener('mouseleave', () => { mouse.active = false; });
+document.addEventListener('mouseleave', () => mouse.active = false);
+document.addEventListener('click', () => { pulse = 1; });
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); initParticles(); }
+});
 
-// Nebula palettes — subtle color regions
-const PALETTES = [
-  { h: 220, s: 40, l: 60 },  // deep blue
-  { h: 280, s: 30, l: 55 },  // purple
-  { h: 340, s: 35, l: 55 },  // rose
-  { h: 180, s: 30, l: 50 },  // teal
-  { h: 30,  s: 40, l: 55 },  // amber
-  { h: 260, s: 25, l: 50 },  // indigo
+// Color palettes
+const palettes = [
+  ['#0a0a2e', '#1a1a4e', '#4a2f7c', '#9b59b6', '#e8d5b7', '#f5e6d3'],  // deep cosmic purple
+  ['#000010', '#0a1628', '#1a3a5c', '#2e86ab', '#a3d5ff', '#f0f8ff'],  // deep ocean
+  ['#0a0a0a', '#1a0a2e', '#4a1942', '#c9184a', '#ff758f', '#ffccd5'],  // nebula rose
+  ['#001a0a', '#0a2e1a', '#1a5c3a', '#2eab6b', '#a3ffd5', '#d5fff0'],  // aurora
 ];
 
-class Star {
-  constructor() {
-    this.reset();
-  }
+function randomColor(alpha = 1) {
+  const palette = palettes[Math.floor(Math.random() * palettes.length)];
+  const color = palette[Math.floor(Math.random() * palette.length)];
+  const r = parseInt(color.slice(1, 3), 16);
+  const g = parseInt(color.slice(3, 5), 16);
+  const b = parseInt(color.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
+class Particle {
+  constructor() { this.reset(); }
   reset() {
     this.x = Math.random() * W;
     this.y = Math.random() * H;
-    this.z = Math.random();  // depth 0-1
-    this.size = 0.3 + this.z * 2.2;
-    this.baseSize = this.size;
-    this.vx = (Math.random() - 0.5) * 0.15;
-    this.vy = (Math.random() - 0.5) * 0.15;
-    this.pulse = Math.random() * Math.PI * 2;
-    this.pulseSpeed = 0.005 + Math.random() * 0.02;
-    this.brightness = 0.3 + this.z * 0.7;
-    const pal = PALETTES[Math.floor(Math.random() * PALETTES.length)];
-    this.hue = pal.h + (Math.random() - 0.5) * 20;
-    this.sat = pal.s;
-    this.lit = pal.l;
+    this.vx = 0;
+    this.vy = 0;
+    this.size = Math.random() * 2 + 0.5;
+    this.life = Math.random() * 200 + 100;
+    this.maxLife = this.life;
+    this.hue = Math.random();
   }
-
-  update(gen) {
-    this.pulse += this.pulseSpeed;
-    this.size = this.baseSize + Math.sin(this.pulse) * 0.3;
-
-    // Mouse gravity
+  update(time) {
+    const scale = 0.003;
+    const n = noise.get(this.x * scale, this.y * scale + time * 0.0001);
+    const angle = n * Math.PI * 4;
+    
+    this.vx += Math.cos(angle) * 0.15;
+    this.vy += Math.sin(angle) * 0.15;
+    
+    // Mouse attraction
     if (mouse.active) {
       const dx = mouse.x - this.x;
       const dy = mouse.y - this.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) + 0.01;
-      const force = Math.min(50 / (dist * dist), 0.02);
-      this.vx += (dx / dist) * force;
-      this.vy += (dy / dist) * force;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 1;
+      if (dist < 200) {
+        const force = (200 - dist) / 200 * 0.5;
+        this.vx += (dx / dist) * force;
+        this.vy += (dy / dist) * force;
+      }
     }
-
-    // Gentle drift with generation-based turbulence
-    this.vx += Math.sin(gen * 0.001 + this.y * 0.001) * 0.0005;
-    this.vy += Math.cos(gen * 0.001 + this.x * 0.001) * 0.0005;
-
+    
+    // Pulse
+    if (pulse > 0) {
+      const dx = this.x - mouse.x;
+      const dy = this.y - mouse.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 1;
+      if (dist < 300) {
+        const force = pulse * (300 - dist) / 300 * 3;
+        this.vx += (dx / dist) * force;
+        this.vy += (dy / dist) * force;
+      }
+    }
+    
     // Damping
-    this.vx *= 0.999;
-    this.vy *= 0.999;
-
+    this.vx *= 0.96;
+    this.vy *= 0.96;
+    
     this.x += this.vx;
     this.y += this.vy;
-
+    this.life--;
+    
     // Wrap
-    if (this.x < -20) this.x = W + 20;
-    if (this.x > W + 20) this.x = -20;
-    if (this.y < -20) this.y = H + 20;
-    if (this.y > H + 20) this.y = -20;
+    if (this.x < -50) this.x = W + 50;
+    if (this.x > W + 50) this.x = -50;
+    if (this.y < -50) this.y = H + 50;
+    if (this.y > H + 50) this.y = -50;
+    
+    if (this.life <= 0) this.reset();
   }
+}
 
-  draw() {
-    const alpha = this.brightness * (0.6 + Math.sin(this.pulse) * 0.4);
+let particles = [];
+const NUM_PARTICLES = 1200;
+
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < NUM_PARTICLES; i++) {
+    particles.push(new Particle());
+  }
+}
+initParticles();
+
+// Connection distance
+const CONNECT_DIST = 80;
+const MOUSE_CONNECT = 150;
+
+function draw(time) {
+  // Trails
+  ctx.fillStyle = 'rgba(0, 0, 10, 0.05)';
+  ctx.fillRect(0, 0, W, H);
+  
+  frame++;
+  
+  // Update & draw particles
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    p.update(time);
+    
+    const alpha = (p.life / p.maxLife) * 0.8;
+    const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+    const glow = Math.min(speed * 2, 1);
+    
+    // Core dot
     ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-    ctx.fillStyle = `hsla(${this.hue}, ${this.sat}%, ${this.lit}%, ${alpha})`;
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha * (0.5 + glow * 0.5)})`;
     ctx.fill();
-
-    // Glow for bright stars
-    if (this.z > 0.7) {
+    
+    // Glow when fast
+    if (speed > 1) {
       ctx.beginPath();
-      ctx.arc(this.x, this.y, this.size * 3, 0, Math.PI * 2);
-      ctx.fillStyle = `hsla(${this.hue}, ${this.sat}%, ${this.lit}%, ${alpha * 0.1})`;
+      ctx.arc(p.x, p.y, p.size * 3, 0, Math.PI * 2);
+      ctx.fillStyle = randomColor(alpha * glow * 0.15);
       ctx.fill();
     }
   }
-}
-
-class Nebula {
-  constructor() {
-    this.x = Math.random() * W;
-    this.y = Math.random() * H;
-    this.radius = 80 + Math.random() * 200;
-    this.vx = (Math.random() - 0.5) * 0.08;
-    this.vy = (Math.random() - 0.5) * 0.08;
-    const pal = PALETTES[Math.floor(Math.random() * PALETTES.length)];
-    this.hue = pal.h;
-    this.alpha = 0.015 + Math.random() * 0.03;
-    this.phase = Math.random() * Math.PI * 2;
-  }
-
-  update() {
-    this.phase += 0.002;
-    this.x += this.vx;
-    this.y += this.vy;
-    if (this.x < -this.radius) this.x = W + this.radius;
-    if (this.x > W + this.radius) this.x = -this.radius;
-    if (this.y < -this.radius) this.y = H + this.radius;
-    if (this.y > H + this.radius) this.y = -this.radius;
-  }
-
-  draw() {
-    const grad = ctx.createRadialGradient(
-      this.x, this.y, 0,
-      this.x, this.y, this.radius
-    );
-    const a = this.alpha * (0.5 + Math.sin(this.phase) * 0.5);
-    grad.addColorStop(0, `hsla(${this.hue}, 50%, 40%, ${a})`);
-    grad.addColorStop(1, `hsla(${this.hue}, 50%, 40%, 0)`);
-    ctx.fillStyle = grad;
-    ctx.fillRect(this.x - this.radius, this.y - this.radius, this.radius * 2, this.radius * 2);
-  }
-}
-
-// Initialize
-const NUM_STARS = 280;
-const NUM_NEBULAE = 6;
-let stars = [];
-let nebulae = [];
-let connections = 0;
-
-function init() {
-  stars = [];
-  nebulae = [];
-  for (let i = 0; i < NUM_STARS; i++) stars.push(new Star());
-  for (let i = 0; i < NUM_NEBULAE; i++) nebulae.push(new Nebula());
-}
-init();
-
-const CONNECTION_DIST = 100;
-const statsEl = document.getElementById('stats');
-
-function frame(gen) {
-  // Fade trail
-  ctx.fillStyle = 'rgba(10, 10, 15, 0.15)';
-  ctx.fillRect(0, 0, W, H);
-
-  connections = 0;
-
-  // Draw nebulae (subtle background)
-  nebulae.forEach(n => { n.update(); n.draw(); });
-
-  // Update stars
-  stars.forEach(s => s.update(gen));
-
-  // Connections
-  for (let i = 0; i < stars.length; i++) {
-    for (let j = i + 1; j < stars.length; j++) {
-      const dx = stars[i].x - stars[j].x;
-      const dy = stars[i].y - stars[j].y;
-      const dist = dx * dx + dy * dy;
-      if (dist < CONNECTION_DIST * CONNECTION_DIST) {
-        const alpha = (1 - Math.sqrt(dist) / CONNECTION_DIST) * 0.12;
-        const hue = (stars[i].hue + stars[j].hue) / 2;
+  
+  // Connections (sparse for performance)
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < particles.length; i += 3) {
+    const p = particles[i];
+    // Mouse connections
+    if (mouse.active) {
+      const dx = p.x - mouse.x;
+      const dy = p.y - mouse.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < MOUSE_CONNECT) {
+        const alpha = (1 - dist / MOUSE_CONNECT) * 0.3;
         ctx.beginPath();
-        ctx.moveTo(stars[i].x, stars[i].y);
-        ctx.lineTo(stars[j].x, stars[j].y);
-        ctx.strokeStyle = `hsla(${hue}, 30%, 60%, ${alpha})`;
-        ctx.lineWidth = 0.5;
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(mouse.x, mouse.y);
+        ctx.strokeStyle = `rgba(200, 220, 255, ${alpha})`;
         ctx.stroke();
-        connections++;
+      }
+    }
+    // Particle connections (check subset)
+    for (let j = i + 3; j < particles.length; j += 7) {
+      const q = particles[j];
+      const dx = p.x - q.x;
+      const dy = p.y - q.y;
+      const dist = dx * dx + dy * dy;
+      if (dist < CONNECT_DIST * CONNECT_DIST) {
+        const d = Math.sqrt(dist);
+        const alpha = (1 - d / CONNECT_DIST) * 0.15;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(q.x, q.y);
+        ctx.strokeStyle = `rgba(180, 200, 255, ${alpha})`;
+        ctx.stroke();
       }
     }
   }
-
-  // Draw stars
-  stars.forEach(s => s.draw());
-
-  // Stats (throttled)
-  if (gen % 30 === 0) {
-    statsEl.innerHTML = `STARS: ${stars.length}<br>NEBULAE: ${nebulae.length}<br>CONNECTIONS: ${connections}<br>GENERATION: ${gen}`;
+  
+  // Mouse glow
+  if (mouse.active) {
+    const grad = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 120);
+    grad.addColorStop(0, 'rgba(100, 140, 255, 0.05)');
+    grad.addColorStop(1, 'rgba(100, 140, 255, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(mouse.x - 120, mouse.y - 120, 240, 240);
   }
-
-  requestAnimationFrame(() => frame(gen + 1));
+  
+  // Pulse decay
+  pulse *= 0.95;
+  if (pulse < 0.001) pulse = 0;
+  
+  // Info
+  const speed = particles.reduce((s, p) => s + Math.sqrt(p.vx * p.vx + p.vy * p.vy), 0) / particles.length;
+  info.textContent = `${particles.length} particles\navg speed: ${speed.toFixed(2)}\nframe: ${frame}`;
+  
+  requestAnimationFrame(draw);
 }
 
-frame(0);
-</script>
+// Initial flash
+ctx.fillStyle = '#000010';
+ctx.fillRect(0, 0, W, H);
 
+draw(0);
+</script>
 </body>
 </html>
