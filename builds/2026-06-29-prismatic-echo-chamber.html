@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prismatic Echo Chamber</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050508;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.35);
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 10;
+    text-align: center;
+  }
+  #info {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    color: rgba(255,255,255,0.4);
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-align: right;
+    z-index: 10;
+    line-height: 1.8;
+  }
+  .accent { color: #ff6b9d; }
+  .accent2 { color: #4ecdc4; }
+  .accent3 { color: #ffe66d; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="info">
+  <div>ECHOES: <span id="echoCount" class="accent">0</span></div>
+  <div>PARTICLES: <span id="particleCount" class="accent2">0</span></div>
+  <div>MODE: <span id="mode" class="accent3">PRISM</span></div>
+</div>
+<div id="ui">Click to create echoes · Hold for ripples · Space to shift mode</div>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let width, height;
+function resize() {
+  width = canvas.width = window.innerWidth;
+  height = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const echoes = [];
+const particles = [];
+let hueOffset = 0;
+let mode = 0;
+const modes = ['PRISM', 'WAVE', 'VOID', 'EMBER'];
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    mode = (mode + 1) % modes.length;
+    document.getElementById('mode').textContent = modes[mode];
+  }
+});
+
+class Echo {
+  constructor(x, y, intensity) {
+    this.x = x;
+    this.y = y;
+    this.radius = 0;
+    this.maxRadius = 150 + Math.random() * 200;
+    this.speed = 2 + Math.random() * 3;
+    this.life = 1;
+    this.hue = (hueOffset + Math.random() * 60) % 360;
+    this.intensity = intensity;
+    this.rings = Math.floor(3 + Math.random() * 4);
+    this.ringOffset = 0;
+  }
+  update() {
+    this.radius += this.speed;
+    this.life = 1 - (this.radius / this.maxRadius);
+    this.ringOffset += 0.05;
+    return this.life > 0;
+  }
+  draw() {
+    for (let i = 0; i < this.rings; i++) {
+      const r = this.radius - i * 15;
+      if (r < 0) continue;
+      const alpha = this.life * (1 - i / this.rings) * 0.6;
+      const hue = (this.hue + i * 20 + this.ringOffset * 30) % 360;
+      
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+      ctx.strokeStyle = `hsla(${hue}, 100%, 65%, ${alpha})`;
+      ctx.lineWidth = 2 - i * 0.3;
+      ctx.stroke();
+      
+      if (mode === 1) {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, r * 1.5, 0, Math.PI * 2);
+        ctx.strokeStyle = `hsla(${(hue + 180) % 360}, 80%, 50%, ${alpha * 0.3})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    }
+  }
+  spawnParticles() {
+    if (Math.random() > 0.3 * this.intensity) return;
+    const count = Math.floor(2 + this.life * 3);
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = this.radius * (0.8 + Math.random() * 0.4);
+      particles.push(new Particle(
+        this.x + Math.cos(angle) * dist,
+        this.y + Math.sin(angle) * dist,
+        this.hue
+      ));
+    }
+  }
+}
+
+class Particle {
+  constructor(x, y, hue) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 2;
+    this.vy = (Math.random() - 0.5) * 2 - 0.5;
+    this.life = 1;
+    this.decay = 0.005 + Math.random() * 0.01;
+    this.hue = hue;
+    this.size = 1 + Math.random() * 2;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += 0.02;
+    this.life -= this.decay;
+    this.hue += 0.5;
+    return this.life > 0;
+  }
+  draw() {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    const lightness = mode === 3 ? 70 : 60;
+    ctx.fillStyle = `hsla(${this.hue}, 100%, ${lightness}%, ${this.life * 0.8})`;
+    ctx.fill();
+  }
+}
+
+canvas.addEventListener('mousedown', e => {
+  const intensity = 1;
+  echoes.push(new Echo(e.clientX, e.clientY, intensity));
+});
+
+let mouseX = 0, mouseY = 0, mouseDown = false;
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+});
+canvas.addEventListener('mousedown', () => mouseDown = true);
+canvas.addEventListener('mouseup', () => mouseDown = false);
+
+setInterval(() => {
+  if (mouseDown) {
+    echoes.push(new Echo(mouseX, mouseY, 0.5));
+  }
+}, 80);
+
+function drawBackground() {
+  ctx.fillStyle = 'rgba(5, 5, 8, 0.15)';
+  ctx.fillRect(0, 0, width, height);
+  
+  if (mode === 2) {
+    ctx.fillStyle = 'rgba(5, 5, 8, 0.3)';
+    ctx.fillRect(0, 0, width, height);
+  }
+  
+  if (mode === 3) {
+    ctx.fillStyle = 'rgba(8, 3, 3, 0.12)';
+    ctx.fillRect(0, 0, width, height);
+  }
+}
+
+function animate() {
+  drawBackground();
+  
+  for (let i = echoes.length - 1; i >= 0; i--) {
+    echoes[i].spawnParticles();
+    if (!echoes[i].update()) {
+      echoes.splice(i, 1);
+    } else {
+      echoes[i].draw();
+    }
+  }
+  
+  for (let i = particles.length - 1; i >= 0; i--) {
+    if (!particles[i].update()) {
+      particles.splice(i, 1);
+    } else {
+      particles[i].draw();
+    }
+  }
+  
+  if (particles.length > 500) particles.splice(0, particles.length - 500);
+  
+  hueOffset += 0.2;
+  
+  document.getElementById('echoCount').textContent = echoes.length;
+  document.getElementById('particleCount').textContent = particles.length;
+  
+  requestAnimationFrame(animate);
+}
+animate();
+
+console.log('%c✨ Prismatic Echo Chamber %c— %cClick to create', 
+  'color: #ff6b9d; font-size: 16px;', 
+  'color: #888;', 
+  'color: #4ecdc4;');
+console.log('%cHold for ripples · Space to shift modes', 'color: #888; font-style: italic;');
+</script>
+</body>
+</html>
