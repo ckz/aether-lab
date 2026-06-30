@@ -1,0 +1,309 @@
+#!/usr/bin/env bash
+# dev-weather — a weather forecast for your coding session
+# Checks your git activity, time of day, and repo state to give you
+# a personality-rich "weather report" of your current coding vibe.
+#
+# Usage: dev-weather [path-to-repo]
+# Default: current directory
+
+set -euo pipefail
+
+REPO="${1:-.}"
+NOW=$(date +%H:%M)
+HOUR=$(date +%H)
+DAY=$(date +%u) # 1=Monday
+
+# ── Color helpers ──────────────────────────────────────────────
+if [[ -t 1 ]]; then
+  C_RESET="\033[0m"
+  C_BOLD="\033[1m"
+  C_DIM="\033[2m"
+  C_CYAN="\033[36m"
+  C_YELLOW="\033[33m"
+  C_GREEN="\033[32m"
+  C_RED="\033[31m"
+  C_MAGENTA="\033[35m"
+  C_BLUE="\033[34m"
+  C_ORANGE="\033[38;5;208m"
+else
+  C_RESET="" C_BOLD="" C_DIM="" C_CYAN="" C_YELLOW="" C_GREEN="" C_RED="" C_MAGENTA="" C_BLUE="" C_ORANGE=""
+fi
+
+# ── Gather data ────────────────────────────────────────────────
+cd "$REPO" 2>/dev/null || { echo "Error: '$REPO' is not a valid directory."; exit 1; }
+
+# Is this a git repo?
+if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+  echo -e "${C_YELLOW}⚠  Not a git repo. Showing general weather only.${C_RESET}"
+  IS_GIT=false
+else
+  IS_GIT=true
+fi
+
+# Time-of-day "season"
+get_season() {
+  local h=$1
+  if (( h >= 5 && h < 8 )); then echo "dawn"
+  elif (( h >= 8 && h < 12 )); then echo "morning"
+  elif (( h >= 12 && h < 14 )); then echo "midday"
+  elif (( h >= 14 && h < 17 )); then echo "afternoon"
+  elif (( h >= 17 && h < 20 )); then echo "evening"
+  elif (( h >= 20 && h < 23 )); then echo "night"
+  else echo "witching-hour"
+  fi
+}
+
+SEASON=$(get_season "$HOUR")
+DAY_NAME=$(date +%A)
+
+# Git stats (if available)
+commits_today=0
+commits_week=0
+uncommitted=0
+branch_count=0
+last_commit_human="unknown"
+current_branch="main"
+is_dirty=false
+is_merging=false
+is_rebasing=false
+last_commit_ts=0
+
+if $IS_GIT; then
+  current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "detached")
+  
+  # Uncommitted changes count
+  uncommitted=$(git diff --numstat 2>/dev/null | wc -l | tr -d ' ')
+  staged=$(git diff --cached --numstat 2>/dev/null | wc -l | tr -d ' ')
+  total_changes=$((uncommitted + staged))
+  
+  if (( total_changes > 0 )); then is_dirty=true; fi
+  
+  # Commits today (since midnight)
+  since_midnight=$(date -d "today 00:00" +%s 2>/dev/null || date -u -d "today 00:00 UTC" +%s 2>/dev/null || echo 0)
+  commits_today=$(git log --since="$since_midnight" --oneline 2>/dev/null | wc -l | tr -d ' ')
+  
+  # Commits this week (since Monday)
+  week_start=$(date -d "last monday" +%s 2>/dev/null || date -u -d "last monday UTC" +%s 2>/dev/null || echo 0)
+  commits_week=$(git log --since="$week_start" --oneline 2>/dev/null | wc -l | tr -d ' ')
+  
+  # Branches
+  branch_count=$(git branch -r 2>/dev/null | wc -l | tr -d ' ')
+  
+  # Last commit time
+  last_commit_ts=$(git log -1 --format=%ct 2>/dev/null || echo 0)
+  if (( last_commit_ts > 0 )); then
+    last_commit_human=$(date -d "@$last_commit_ts" "+%H:%M" 2>/dev/null || date -u -r "$last_commit_ts" "+%H:%M" 2>/dev/null || echo "?")
+  fi
+  
+  # Merge/rebase state
+  if [[ -d .git/MERGE_MSG ]]; then is_merging=true; fi
+  if [[ -d .git/rebase-merge ]] || [[ -d .git/rebase-apply ]]; then is_rebasing=true; fi
+fi
+
+# Hours since last commit
+hours_since=999
+if (( last_commit_ts > 0 )); then
+  now_ts=$(date +%s)
+  diff=$(( now_ts - last_commit_ts ))
+  hours_since=$(( diff / 3600 ))
+fi
+
+# ── Derive "weather" ───────────────────────────────────────────
+
+# Temperature = coding intensity (commits per day normalized)
+if (( commits_today >= 10 )); then TEMP="🔥 Scorching"
+elif (( commits_today >= 5 )); then TEMP="☀️  Warm"
+elif (( commits_today >= 2 )); then TEMP="🌤  Mild"
+elif (( commits_today >= 1 )); then TEMP="❄️  Cool"
+else
+  if (( hours_since > 24 )); then TEMP="🥶 Frozen"
+  elif (( hours_since > 8 )); then TEMP="🧊 Cold"
+  else TEMP="🌡  Room Temp"
+  fi
+fi
+
+# Wind = commit velocity today
+if (( commits_today >= 8 )); then WIND="🌪  Hurricane-force commits"
+elif (( commits_today >= 5 )); then WIND="💨 Strong winds"
+elif (( commits_today >= 2 )); then WIND="🌬  Breezy"
+elif (( commits_today >= 1 )); then WIND="🍃 Gentle breeze"
+else
+  if (( hours_since > 12 )); then WIND="🤫 Dead calm"
+  else WIND="🌫  Still air"
+  fi
+fi
+
+# Precipitation = uncommitted changes
+if (( total_changes >= 20 )); then PRECIP="⛈  Heavy rain ($total_changes changes)"
+elif (( total_changes >= 10 )); then PRECIP="🌧  Steady rain ($total_changes changes)"
+elif (( total_changes >= 5 )); then PRECIP="🌦  Light showers ($total_changes changes)"
+elif (( total_changes >= 1 )); then PRECIP="💧 Drizzle ($total_changes changes)"
+else PRECIP="☀️  Dry and clear"
+fi
+
+# Cloud cover = number of branches (symbolic)
+if (( branch_count >= 20 )); then CLOUDS="☁️☁️☁️ Overcast ($branch_count branches)"
+elif (( branch_count >= 10 )); then CLOUDS="☁️☁️ Partly cloudy ($branch_count branches)"
+elif (( branch_count >= 3 )); then CLOUDS="☁️  A few clouds ($branch_count branches)"
+else CLOUDS="🌞 Clear skies ($branch_count branches)"
+fi
+
+# Special conditions
+SPECIAL=""
+if $is_merging; then SPECIAL="⚠️  MERGING — proceed with caution, conflicts may brew"; fi
+if $is_rebasing; then SPECIAL="🔄 REBASING — rewriting history, handle with care"; fi
+
+if (( hours_since > 72 )); then SPECIAL="🏜️  DROUGHT — repo hasn't seen action in 3+ days. Water it.";
+elif (( commits_week >= 50 )); then SPECIAL="🌋 VOLCANIC — $commits_week commits this week. You're on fire.";
+elif (( commits_week >= 25 )); then SPECIAL="⚡ ELECTRIC — strong activity this week.";
+fi
+
+# Season description
+case "$SEASON" in
+  dawn) SEASON_DESC="🌅 Early light — the code is fresh and hopeful" ;;
+  morning) SEASON_DESC="☀️  Morning — mind sharp, coffee in hand" ;;
+  midday) SEASON_DESC="🌞 Midday — full blaze of productivity" ;;
+  afternoon) SEASON_DESC="🌤  Afternoon — the long haul begins" ;;
+  evening) SEASON_DESC="🌆 Evening — golden hour for deep work" ;;
+  night) SEASON_DESC="🌙 Night — the real magic happens now" ;;
+  witching-hour) SEASON_DESC="🦉 Witching hour — only the bold remain" ;;
+esac
+
+# ── Vibe archetype ─────────────────────────────────────────────
+get_vibe() {
+  local c_today=$1 c_week=$2 changes=$3 hour=$4 since=$5
+  
+  if $is_merging; then echo "🔀 The Mediator"; return; fi
+  if $is_rebasing; then echo "📜 The Historian"; return; fi
+  
+  if (( changes >= 20 )); then echo "🌊 Tsunami Builder"; return; fi
+  if (( c_today >= 10 )); then echo "🚀 Shipping Machine"; return; fi
+  if (( c_week >= 40 && c_today >= 5 )); then echo "⚡ Legendary Dev"; return; fi
+  if (( c_week >= 25 )); then echo "🔥 Grinding artisan"; return; fi
+  if (( c_today >= 3 && changes >= 10 )); then echo "🎨 Chaos Weaver"; return; fi
+  if (( c_today >= 2 && changes >= 5 )); then echo "🔨 Relentless Builder"; return; fi
+  if (( changes >= 15 && c_today == 0 )); then echo "🧪 Experimenter — changes brewing"; return; fi
+  if (( c_today >= 1 )); then echo "✨ Focused Coder"; return; fi
+  if (( since > 24 )); then echo "🌱 Dormant Seed"; return; fi
+  if (( hour >= 0 && hour < 5 )); then echo "🦉 Night Owl"; return; fi
+  if (( hour >= 5 && hour < 9 )); then echo "🌅 Early Bird"; return; fi
+  echo "🎭 Mysterious Developer"
+}
+
+VIBE=$(get_vibe "$commits_today" "$commits_week" "$total_changes" "$HOUR" "$hours_since")
+
+# ── Advice ─────────────────────────────────────────────────────
+get_advice() {
+  local changes=$1 c_today=$2 since=$3 hour=$4
+  
+  if $is_merging; then echo "  → Resolve conflicts one at a time. Breathe."; return; fi
+  if $is_rebasing; then echo "  → Keep a backup branch. History is fragile."; return; fi
+  
+  if (( changes >= 20 )); then echo "  → Stage and commit. Your future self will thank you."; return; fi
+  if (( changes >= 10 )); then echo "  → Consider staging. A tidy working tree is a tidy mind."; return; fi
+  if (( c_today >= 10 )); then echo "  → Hydrate. Stretch. You're a machine — but machines need maintenance."; return; fi
+  if (( c_today == 0 && since > 24 )); then echo "  → The code will be there tomorrow. Or will it? Go check."; return; fi
+  if (( c_today == 0 && since > 8 )); then echo "  → It's been a while. A gentle 'git status' might reconnect you."; return; fi
+  if (( hour >= 0 && hour < 5 )); then echo "  → You're in the witching hour. The code is clearer now, but so is the fatigue."; return; fi
+  if (( hour >= 22 )); then echo "  → Late session. Consider a sunset commit and rest."; return; fi
+  echo "  → Keep going. The flow state is a beautiful place."
+}
+
+ADVICE=$(get_advice "$total_changes" "$commits_today" "$hours_since" "$HOUR")
+
+# ── ASCII art banner ───────────────────────────────────────────
+case "$SEASON" in
+  witching-hour) ART=(
+"     .--."
+"    |o_o |"
+"    |:_/ |"
+"   //   \\ \\"
+"  (|     | )"
+" /'\\_   _/\`\\"
+" \\___)=(___/"
+) ;;
+  night) ART=(
+"       *     .  *       .       *  .   *"
+"   .  *  .     .   *   .  *    .  *   ."
+"   .   *   .   .    *    .  *    .   *"
+"       *    .    *    .  *    .   *"
+"    .   *    .  *    . *    .  *   ."
+) ;;
+  evening) ART=(
+"   \`.  -  '  .  -  '  .   *  -  '"
+"    *   .  -  '  .  -  '  .   *"
+"  -  '  .   *  -  '  .  -  '  ."
+"    .  -  '  .   *  -  '  .  - '"
+) ;;
+  morning) ART=(
+"           .   "
+"      .    *   "
+"   .     .     "
+"      *  .     ."
+"   .     *     "
+"      .        "
+) ;;
+  dawn) ART=(
+"     .--.   .--."
+"    |    \\ /    |"
+"    |     *     |"
+"    |    / \\    |"
+"     '--'   '--'"
+) ;;
+  *) ART=(
+"     ☁️   ☁️   ☁️"
+"  ☁️         ☁️"
+"     ☁️   ☁️   ☁️"
+"       ☀️"
+) ;;
+esac
+
+# ── Output ─────────────────────────────────────────────────────
+echo ""
+echo -e "${C_CYAN}${C_BOLD}╔══════════════════════════════════════════════════════╗${C_RESET}"
+echo -e "${C_CYAN}${C_BOLD}║${C_RESET}  ${C_BOLD}dev-weather${C_RESET} — your coding session forecast       ${C_CYAN}${C_BOLD}║${C_RESET}"
+echo -e "${C_CYAN}${C_BOLD}╚══════════════════════════════════════════════════════╝${C_RESET}"
+echo ""
+
+# ASCII art
+for line in "${ART[@]}"; do
+  echo -e "  ${C_DIM}${line}${C_RESET}"
+done
+echo ""
+
+# Repo info
+if $IS_GIT; then
+  echo -e "  ${C_DIM}Repo:${C_RESET} $(basename "$REPO")"
+  echo -e "  ${C_DIM}Branch:${C_RESET} ${C_CYAN}$current_branch${C_RESET}"
+  echo -e "  ${C_DIM}Last commit:${C_RESET} $last_commit_human"
+fi
+echo ""
+
+# Forecast box
+echo -e "  ${C_BOLD}🌡  FORECAST — $DAY_NAME, $NOW${C_RESET}"
+echo -e "  ${C_DIM}─────────────────────────────────────${C_RESET}"
+echo -e "  ${SEASON_DESC}"
+echo -e ""
+echo -e "  ${C_YELLOW}${TEMP}${C_RESET}"
+echo -e "  ${C_CYAN}${WIND}${C_RESET}"
+echo -e "  ${C_BLUE}${PRECIP}${C_RESET}"
+echo -e "  ${C_MAGENTA}${CLOUDS}${C_RESET}"
+echo ""
+
+if [[ -n "$SPECIAL" ]]; then
+  echo -e "  ${C_RED}${C_BOLD}⚠  SPECIAL:${C_RESET} $SPECIAL"
+  echo ""
+fi
+
+echo -e "  ${C_BOLD}Vibe:${C_RESET} $VIBE"
+echo -e "${ADVICE}"
+echo ""
+
+# Weekly summary
+if $IS_GIT && (( commits_week > 0 )); then
+  echo -e "  ${C_DIM}📊 Week at a glance: $commits_week commits | $branch_count branches | last commit $last_commit_human${C_RESET}"
+fi
+
+echo ""
+echo -e "  ${C_DIM}— generated by dev-weather v1.0 —${C_RESET}"
+echo ""
