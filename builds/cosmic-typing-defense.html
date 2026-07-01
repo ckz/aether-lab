@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosmic Typing Defense</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a12;
+    color: #e0e8ff;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    cursor: none;
+  }
+  #gameCanvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 1;
+  }
+  #hud {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    z-index: 10;
+    pointer-events: none;
+    background: linear-gradient(to bottom, rgba(10,10,18,0.9), transparent);
+  }
+  .hud-item {
+    font-size: 14px;
+    text-shadow: 0 0 10px rgba(100,200,255,0.8);
+    letter-spacing: 1px;
+  }
+  .hud-label { color: #8899bb; font-size: 11px; text-transform: uppercase; }
+  .hud-value { color: #00ffcc; font-size: 22px; font-weight: bold; margin-top: 2px; }
+  #score-display .hud-value { color: #ffcc00; }
+  #health-display .hud-value { color: #ff5566; }
+  #level-display .hud-value { color: #aa88ff; }
+  #combo-display .hud-value { color: #ff88cc; transition: transform 0.1s; }
+  #combo-display.pulse .hud-value { transform: scale(1.4); }
+
+  #input-line {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    pointer-events: none;
+  }
+  #word-target {
+    font-size: 32px;
+    font-weight: bold;
+    letter-spacing: 4px;
+    text-shadow: 0 0 20px rgba(255,100,150,0.9);
+    color: #ff88aa;
+    text-align: center;
+    min-height: 40px;
+  }
+  .typed-char { color: #00ffcc; text-shadow: 0 0 12px #00ffcc; }
+  .pending-char { color: #556688; }
+  #input-field {
+    background: rgba(20, 30, 50, 0.7);
+    border: 2px solid #334466;
+    color: #00ffcc;
+    font-family: 'Courier New', monospace;
+    font-size: 20px;
+    padding: 12px 24px;
+    border-radius: 8px;
+    outline: none;
+    text-align: center;
+    letter-spacing: 3px;
+    min-width: 300px;
+    pointer-events: auto;
+    box-shadow: 0 0 20px rgba(0,200,200,0.3), inset 0 0 20px rgba(0,200,200,0.1);
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  #input-field:focus {
+    border-color: #00ffcc;
+    box-shadow: 0 0 30px rgba(0,255,200,0.5), inset 0 0 30px rgba(0,255,200,0.2);
+  }
+  #input-field.wrong {
+    border-color: #ff5566;
+    box-shadow: 0 0 30px rgba(255,80,100,0.6);
+    animation: shake 0.3s;
+  }
+  @keyframes shake {
+    0%,100% { transform: translateX(-50%) translateX(0); }
+    25% { transform: translateX(-50%) translateX(-8px); }
+    75% { transform: translateX(-50%) translateX(8px); }
+  }
+
+  #overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(10, 10, 18, 0.92);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+  #overlay h1 {
+    font-size: 64px;
+    color: #00ffcc;
+    text-shadow: 0 0 30px rgba(0,255,200,0.8), 0 0 60px rgba(0,200,255,0.4);
+    letter-spacing: 6px;
+    margin-bottom: 16px;
+    animation: glow 2s ease-in-out infinite;
+  }
+  @keyframes glow {
+    0%,100% { text-shadow: 0 0 30px rgba(0,255,200,0.8), 0 0 60px rgba(0,200,255,0.4); }
+    50% { text-shadow: 0 0 50px rgba(0,255,200,1), 0 0 90px rgba(0,200,255,0.7); }
+  }
+  #overlay p {
+    color: #8899bb;
+    font-size: 16px;
+    margin: 8px 0;
+    max-width: 600px;
+    line-height: 1.6;
+  }
+  #overlay .highlight {
+    color: #ffcc00;
+    font-size: 18px;
+  }
+  #overlay button {
+    margin-top: 32px;
+    padding: 16px 48px;
+    font-family: 'Courier New', monospace;
+    font-size: 20px;
+    background: transparent;
+    color: #00ffcc;
+    border: 2px solid #00ffcc;
+    border-radius: 8px;
+    cursor: pointer;
+    pointer-events: auto;
+    letter-spacing: 4px;
+    transition: all 0.3s;
+    box-shadow: 0 0 20px rgba(0,255,200,0.3);
+  }
+  #overlay button:hover {
+    background: rgba(0,255,200,0.15);
+    box-shadow: 0 0 40px rgba(0,255,200,0.6);
+    transform: scale(1.05);
+  }
+  #final-stats {
+    margin: 20px 0;
+    color: #ffcc00;
+    font-size: 18px;
+    display: none;
+  }
+  .stat-line { margin: 6px 0; }
+  .stat-line span { color: #00ffcc; }
+
+  #difficulty-bar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 3px;
+    background: rgba(255,255,255,0.05);
+    z-index: 10;
+  }
+  #difficulty-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #00ffcc, #ffcc00, #ff5566);
+    width: 0%;
+    transition: width 0.5s;
+    box-shadow: 0 0 10px rgba(0,255,200,0.5);
+  }
+
+  #cursor-glow {
+    position: fixed;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,255,200,0.4), transparent);
+    pointer-events: none;
+    z-index: 5;
+    transform: translate(-50%, -50%);
+  }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<div id="cursor-glow"></div>
+
+<div id="hud">
+  <div class="hud-item" id="score-display">
+    <div class="hud-label">Score</div>
+    <div class="hud-value" id="score">0</div>
+  </div>
+  <div class="hud-item" id="level-display">
+    <div class="hud-label">Wave</div>
+    <div class="hud-value" id="level">1</div>
+  </div>
+  <div class="hud-item" id="combo-display">
+    <div class="hud-label">Combo</div>
+    <div class="hud-value" id="combo">x1</div>
+  </div>
+  <div class="hud-item" id="health-display">
+    <div class="hud-label">Earth</div>
+    <div class="hud-value" id="health">100</div>
+  </div>
+</div>
+
+<div id="input-line">
+  <div id="word-target"></div>
+  <input type="text" id="input-field" autocomplete="off" spellcheck="false" autofocus>
+</div>
+
+<div id="difficulty-bar"><div id="difficulty-fill"></div></div>
+
+<div id="overlay">
+  <h1>🌌 COSMIC DEFENSE</h1>
+  <p>Asteroids are falling. Type the word beneath each one to destroy it.</p>
+  <p class="highlight">Words get harder. Waves get faster. Don't let them hit Earth.</p>
+  <button id="start-btn">LAUNCH</button>
+  <div id="final-stats"></div>
+</div>
+
+<script>
+// ==================== GAME STATE ====================
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const STATE = {
+  running: false,
+  score: 0,
+  level: 1,
+  combo: 0,
+  maxCombo: 0,
+  health: 100,
+  wordsDestroyed: 0,
+  asteroidsMissed: 0,
+  totalWords: 0,
+  spawnTimer: 0,
+  spawnInterval: 180, // frames
+  minSpawnInterval: 60,
+  difficulty: 0,
+  difficultyFill: document.getElementById('difficulty-fill'),
+  cursor: { x: W/2, y: H/2 },
+};
+
+const EARTH_Y_RATIO = 0.88;
+const EARTH_RADIUS = 50;
+const EXPLODE_PARTICLES = 40;
+const TRAIL_LENGTH = 12;
+
+// ==================== WORD BANK ====================
+const WORD_BANKS = {
+  1: ['star','moon','space','void','cosmos','nova','comet','orbit','void','nebula','flare','dust','ring','beam','wave','void'],
+  2: ['quantum','nebula','galaxy','photon','plasma','cosmic','vacuum','stellar','pulsar','aurora','zenith','astral','magnetar','solstice','gravity','void'],
+  3: ['supernova','asteroid','quasar','nebular','dark matter','singularity','heliosphere','supernova','cosmic ray','redshift','aphelion','perihelion','astrophysics','interstellar','magnitude','parallax'],
+  4: ['constellation','electromagnetic','photosphere','chromosphere','intergalactic','accretion disk','coronal mass','helioseismic','extraterrestrial','gravitational','circumbinary','astrobiology','relativistic','darkside','interplanetary','meteor shower'],
+  5: ['interdimensional','electromagnetic','antimatter','extragalactic','multiverse','astrobiologist','astroengineering','gravitational lens','superluminal','exoplanetary','astrochemistry','magnetosphere','photon sphere','event horizon','accretion disk'],
+  6: ['extragalactic','astrobiochemistry','gravitational wave','interdimensional','supermassive','meteorological','electromagnetic','antihelium','constellation','astrochemistry'],
+  hard: ['extragalactic','astrobiochemistry','gravitational wave','supermassive','circumnavigation','accretion disk','electromagnetic','photon sphere','event horizon','interstellar','antihelium'],
+};
+function getRandomWord(level) {
+  const bank = WORD_BANKS[Math.min(level, 6)] || WORD_BANKS['hard'];
+  return bank[Math.floor(Math.random() * bank.length)].toLowerCase();
+}
+
+// ==================== ENTITIES ====================
+class Asteroid {
+  constructor(word, level) {
+    this.word = word;
+    this.x = 60 + Math.random() * (W - 120);
+    this.y = -60;
+    this.speed = 0.4 + level * 0.15 + Math.random() * 0.3;
+    this.wobbleAmp = 0.3 + Math.random() * 0.8;
+    this.wobbleSpeed = 0.02 + Math.random() * 0.03;
+    this.wobbleOffset = Math.random() * Math.PI * 2;
+    this.radius = 20 + word.length * 3 + Math.random() * 8;
+    this.rotation = 0;
+    this.rotSpeed = (Math.random() - 0.5) * 0.03;
+    this.opacity = 1;
+    this.vertices = this.generateVertices();
+    this.color = `hsl(${30 + Math.random() * 20}, 30%, ${25 + Math.random() * 15}%)`;
+    this.trail = [];
+  }
+  generateVertices() {
+    const v = [];
+    const n = 8 + Math.floor(Math.random() * 5);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const r = this.radius * (0.7 + Math.random() * 0.5);
+      v.push({ a, r });
+    }
+    return v;
+  }
+  update() {
+    this.y += this.speed;
+    this.x += Math.sin(this.y * this.wobbleSpeed + this.wobbleOffset) * this.wobbleAmp;
+    this.rotation += this.rotSpeed;
+    this.trail.push({ x: this.x, y: this.y, opacity: 0.6 });
+    if (this.trail.length > TRAIL_LENGTH) this.trail.shift();
+  }
+  draw(ctx) {
+    // Trail
+    this.trail.forEach((p, i) => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, this.radius * 0.3 * (i / TRAIL_LENGTH), 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,140,50,${p.opacity * (i / TRAIL_LENGTH) * 0.4})`;
+      ctx.fill();
+    });
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation);
+    ctx.beginPath();
+    this.vertices.forEach((v, i) => {
+      const x = Math.cos(v.a) * v.r;
+      const y = Math.sin(v.a) * v.r;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+    ctx.fillStyle = this.color;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,180,100,0.6)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Word label
+    ctx.rotate(-this.rotation);
+    ctx.font = `bold ${Math.min(14 + this.word.length, 18)}px 'Courier New', monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = '#ff8844';
+    ctx.shadowBlur = 10;
+    ctx.fillText(this.word, 0, 0);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+  getProgress() {
+    return Math.max(0, this.y / (H * EARTH_Y_RATIO));
+  }
+}
+
+class Particle {
+  constructor(x, y, color) {
+    this.x = x;
+    this.y = y;
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 8;
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed;
+    this.life = 1;
+    this.decay = 0.015 + Math.random() * 0.03;
+    this.size = 1.5 + Math.random() * 3.5;
+    this.color = color || `hsl(${Math.random() * 60 + 160}, 100%, 60%)`;
+    this.gravity = 0.08;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += this.gravity;
+    this.vx *= 0.98;
+    this.life -= this.decay;
+  }
+  draw(ctx) {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fillStyle = this.color.replace(')', `, ${this.life})`).replace('hsl', 'hsla');
+    if (this.color.startsWith('#')) {
+      ctx.fillStyle = this.color + Math.floor(this.life * 255).toString(16).padStart(2,'0');
+    }
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 8;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+class Star {
+  constructor() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.size = Math.random() * 1.5;
+    this.twinkleSpeed = 0.02 + Math.random() * 0.04;
+    this.twinkleOffset = Math.random() * Math.PI * 2;
+    this.baseOpacity = 0.3 + Math.random() * 0.5;
+  }
+  draw(ctx, time) {
+    const opacity = this.baseOpacity + Math.sin(time * this.twinkleSpeed + this.twinkleOffset) * 0.3;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(200,220,255,${opacity})`;
+    ctx.fill();
+  }
+}
+
+// ==================== GAME OBJECTS ====================
+let asteroids = [];
+let particles = [];
+let stars = [];
+let shockwaves = [];
+let textPopups = [];
+
+function initStars() {
+  stars = [];
+  for (let i = 0; i < 200; i++) stars.push(new Star());
+}
+
+function spawnAsteroid() {
+  const word = getRandomWord(STATE.level);
+  asteroids.push(new Asteroid(word, STATE.level));
+  STATE.totalWords++;
+  updateTarget(word);
+}
+
+function explodeAsteroid(ast) {
+  for (let i = 0; i < EXPLODE_PARTICLES; i++) {
+    const colors = ['#ff6644','#ffaa22','#ffdd44','#ff8844','#ffcc66','#44aaff','#88ddff'];
+    particles.push(new Particle(ast.x, ast.y, colors[Math.floor(Math.random() * colors.length)]));
+  }
+  shockwaves.push({ x: ast.x, y: ast.y, radius: 10, maxRadius: 80, opacity: 0.8 });
+  STATE.combo++;
+  STATE.maxCombo = Math.max(STATE.maxCombo, STATE.combo);
+  const points = ast.word.length * 10 * (1 + Math.floor(STATE.combo / 5) * 0.5);
+  STATE.score += Math.floor(points);
+  STATE.wordsDestroyed++;
+  STATE.difficulty = Math.min(100, STATE.difficulty + 2);
+  if (STATE.wordsDestroyed % 8 === 0) {
+    STATE.level++;
+    STATE.spawnInterval = Math.max(STATE.minSpawnInterval, STATE.spawnInterval - 15);
+  }
+  textPopups.push({ x: ast.x, y: ast.y, text: `+${Math.floor(points)}`, life: 1, vy: -1.5 });
+  updateHUD();
+}
+
+function missAsteroid(ast) {
+  STATE.combo = 0;
+  STATE.asteroidsMissed++;
+  STATE.health -= 10;
+  STATE.difficulty = Math.max(0, STATE.difficulty - 5);
+  if (STATE.health <= 30) {
+    document.getElementById('health-display').querySelector('.hud-value').style.color = '#ff2222';
+  }
+  updateHUD();
+  if (STATE.health <= 0) {
+    gameOver();
+  }
+}
+
+function updateTarget(word) {
+  const el = document.getElementById('word-target');
+  el.innerHTML = word.split('').map(c => `<span class="pending-char">${c}</span>`).join('');
+}
+
+function updateHUD() {
+  document.getElementById('score').textContent = STATE.score;
+  document.getElementById('level').textContent = STATE.level;
+  document.getElementById('combo').textContent = `x${STATE.combo || 1}`;
+  document.getElementById('health').textContent = Math.max(0, STATE.health);
+  STATE.difficultyFill.style.width = STATE.difficulty + '%';
+  const comboEl = document.getElementById('combo-display');
+  comboEl.classList.add('pulse');
+  setTimeout(() => comboEl.classList.remove('pulse'), 100);
+}
+
+// ==================== DRAWING ====================
+function drawEarth(ctx) {
+  const ex = W / 2;
+  const ey = H * EARTH_Y_RATIO;
+  // Atmosphere glow
+  const grad = ctx.createRadialGradient(ex, ey, EARTH_RADIUS * 0.8, ex, ey, EARTH_RADIUS * 2.5);
+  grad.addColorStop(0, 'rgba(100,180,255,0.3)');
+  grad.addColorStop(0.5, 'rgba(100,150,255,0.1)');
+  grad.addColorStop(1, 'rgba(0,0,50,0)');
+  ctx.beginPath();
+  ctx.arc(ex, ey, EARTH_RADIUS * 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  // Earth body
+  const earthGrad = ctx.createRadialGradient(ex - 10, ey - 10, 0, ex, ey, EARTH_RADIUS);
+  earthGrad.addColorStop(0, '#88ccff');
+  earthGrad.addColorStop(0.5, '#3366aa');
+  earthGrad.addColorStop(1, '#1a3366');
+  ctx.beginPath();
+  ctx.arc(ex, ey, EARTH_RADIUS, 0, Math.PI * 2);
+  ctx.fillStyle = earthGrad;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(100,200,255,0.6)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // Surface features
+  ctx.fillStyle = 'rgba(50,150,80,0.5)';
+  ctx.beginPath(); ctx.arc(ex - 15, ey - 8, 14, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(60,120,60,0.4)';
+  ctx.beginPath(); ctx.arc(ex + 20, ey + 12, 18, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(180,180,200,0.4)';
+  ctx.beginPath(); ctx.arc(ex + 5, ey - 18, 10, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawShockwaves(ctx) {
+  shockwaves = shockwaves.filter(s => {
+    s.radius += 4;
+    s.opacity -= 0.03;
+    if (s.opacity <= 0) return false;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(100,220,255,${s.opacity})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    return true;
+  });
+}
+
+function drawTextPopups(ctx) {
+  textPopups = textPopups.filter(t => {
+    t.y += t.vy;
+    t.life -= 0.02;
+    if (t.life <= 0) return false;
+    ctx.font = `bold 18px 'Courier New', monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = `rgba(255,200,50,${t.life})`;
+    ctx.shadowColor = '#ffaa00';
+    ctx.shadowBlur = 10;
+    ctx.fillText(t.text, t.x, t.y);
+    ctx.shadowBlur = 0;
+    return true;
+  });
+}
+
+// ==================== GAME LOOP ====================
+let frameCount = 0;
+
+function gameLoop() {
+  if (!STATE.running) return;
+  frameCount++;
+  ctx.fillStyle = 'rgba(10, 10, 18, 0.15)';
+  ctx.fillRect(0, 0, W, H);
+  // Stars
+  stars.forEach(s => s.draw(ctx, frameCount));
+  // Spawn
+  STATE.spawnTimer++;
+  if (STATE.spawnTimer >= STATE.spawnInterval) {
+    STATE.spawnTimer = 0;
+    spawnAsteroid();
+  }
+  // Update & draw asteroids
+  asteroids = asteroids.filter(ast => {
+    ast.update();
+    ast.draw(ctx);
+    // Check if reached earth
+    if (ast.y > H * EARTH_Y_RATIO - EARTH_RADIUS) {
+      missAsteroid(ast);
+      return false;
+    }
+    return true;
+  });
+  // Particles
+  particles = particles.filter(p => {
+    p.update();
+    p.draw(ctx);
+    return p.life > 0;
+  });
+  drawShockwaves(ctx);
+  drawEarth(ctx);
+  drawTextPopups(ctx);
+  // Danger line
+  if (asteroids.length > 0) {
+    const closest = asteroids.reduce((a, b) => a.getProgress() > b.getProgress() ? a : b);
+    if (closest.getProgress() > 0.5) {
+      ctx.strokeStyle = `rgba(255,${100 - closest.getProgress()*100},80,${closest.getProgress()})`;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 10]);
+      ctx.beginPath();
+      ctx.moveTo(0, H * EARTH_Y_RATIO);
+      ctx.lineTo(W, H * EARTH_Y_RATIO);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+  requestAnimationFrame(gameLoop);
+}
+
+// ==================== INPUT ====================
+const inputField = document.getElementById('input-field');
+let currentWord = '';
+
+function updateWordDisplay(typed, target) {
+  const el = document.getElementById('word-target');
+  let html = '';
+  for (let i = 0; i < target.length; i++) {
+    if (i < typed.length) {
+      html += `<span class="typed-char">${target[i]}</span>`;
+    } else {
+      html += `<span class="pending-char">${target[i]}</span>`;
+    }
+  }
+  el.innerHTML = html;
+}
+
+inputField.addEventListener('input', (e) => {
+  if (!STATE.running) return;
+  const typed = inputField.value.toLowerCase().trim();
+  if (!currentWord) return;
+  if (typed.length > currentWord.length) {
+    inputField.value = typed.slice(0, currentWord.length);
+    return;
+  }
+  updateWordDisplay(typed, currentWord);
+  if (typed === currentWord) {
+    // Correct!
+    inputField.value = '';
+    const ast = asteroids.find(a => a.word === currentWord);
+    if (ast) {
+      explodeAsteroid(ast);
+      asteroids = asteroids.filter(a => a !== ast);
+    }
+    currentWord = '';
+    if (asteroids.length > 0) {
+      const next = asteroids.reduce((a, b) => a.getProgress() > b.getProgress() ? a : b);
+      currentWord = next.word;
+      updateTarget(currentWord);
+    } else {
+      document.getElementById('word-target').innerHTML = '<span style="color:#556688">...</span>';
+    }
+  }
+});
+
+inputField.addEventListener('keydown', (e) => {
+  if (!STATE.running) return;
+  if (e.key === 'Backspace') {
+    setTimeout(() => {
+      const typed = inputField.value.toLowerCase().trim();
+      updateWordDisplay(typed, currentWord);
+      if (typed !== currentWord.slice(0, typed.length)) {
+        inputField.classList.add('wrong');
+        setTimeout(() => inputField.classList.remove('wrong'), 300);
+      }
+    }, 0);
+  }
+});
+
+// ==================== CURSOR ====================
+document.addEventListener('mousemove', (e) => {
+  STATE.cursor.x = e.clientX;
+  STATE.cursor.y = e.clientY;
+  const glow = document.getElementById('cursor-glow');
+  glow.style.left = e.clientX + 'px';
+  glow.style.top = e.clientY + 'px';
+});
+
+// ==================== GAME FLOW ====================
+function startGame() {
+  STATE.running = true;
+  STATE.score = 0;
+  STATE.level = 1;
+  STATE.combo = 0;
+  STATE.maxCombo = 0;
+  STATE.health = 100;
+  STATE.wordsDestroyed = 0;
+  STATE.asteroidsMissed = 0;
+  STATE.totalWords = 0;
+  STATE.spawnInterval = 180;
+  STATE.difficulty = 0;
+  asteroids = [];
+  particles = [];
+  shockwaves = [];
+  textPopups = [];
+  initStars();
+  updateHUD();
+  document.getElementById('health-display').querySelector('.hud-value').style.color = '#ff5566';
+  document.getElementById('overlay').style.display = 'none';
+  inputField.value = '';
+  spawnAsteroid();
+  gameLoop();
+}
+
+function gameOver() {
+  STATE.running = false;
+  const stats = document.getElementById('final-stats');
+  stats.style.display = 'block';
+  stats.innerHTML = `
+    <div class="stat-line">Asteroids destroyed: <span>${STATE.wordsDestroyed}</span></div>
+    <div class="stat-line">Final score: <span>${STATE.score}</span></div>
+    <div class="stat-line">Wave reached: <span>${STATE.level}</span></div>
+    <div class="stat-line">Max combo: <span>x${STATE.maxCombo || 1}</span></div>
+    <div class="stat-line">Missed impacts: <span>${STATE.asteroidsMissed}</span></div>
+    <div class="stat-line">Words typed: <span>${STATE.totalWords}</span></div>
+  `;
+  document.getElementById('overlay').querySelector('h1').textContent = '💥 IMPACT';
+  document.getElementById('overlay').querySelector('button').textContent = 'TRY AGAIN';
+  document.getElementById('overlay').style.display = 'flex';
+}
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !STATE.running) startGame();
+});
+
+// Init background
+ctx.fillStyle = '#0a0a12';
+ctx.fillRect(0, 0, W, H);
+initStars();
+stars.forEach(s => s.draw(ctx, 0));
+</script>
+</body>
+</html>
