@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Luminous Circuits — Generative Art</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #05050a;
+    color: #e0e0e0;
+    overflow: hidden;
+    height: 100vh;
+    position: relative;
+  }
+  canvas {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+  }
+  .ui {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    background: rgba(10, 10, 20, 0.85);
+    border: 1px solid #1a1a2e;
+    border-radius: 12px;
+    padding: 20px;
+    backdrop-filter: blur(10px);
+    min-width: 220px;
+  }
+  .ui h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 4px;
+    letter-spacing: 0.05em;
+  }
+  .ui .subtitle {
+    font-size: 0.7rem;
+    color: #666;
+    margin-bottom: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .ui label {
+    display: block;
+    font-size: 0.75rem;
+    color: #aaa;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .ui select, .ui button {
+    width: 100%;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+    background: #0f0f1a;
+    border: 1px solid #1e1e2e;
+    color: #e0e0e0;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .ui button:hover {
+    background: #1a1a2e;
+    border-color: #3a3a5c;
+  }
+  .stats {
+    font-size: 0.7rem;
+    color: #555;
+    margin-top: 8px;
+    line-height: 1.6;
+  }
+  .hint {
+    font-size: 0.7rem;
+    color: #444;
+    margin-top: 12px;
+    line-height: 1.5;
+    border-top: 1px solid #1a1a2e;
+    padding-top: 10px;
+  }
+  .palette-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div class="ui">
+  <h2>Luminous Circuits</h2>
+  <div class="subtitle">Generative Circuit Art</div>
+  
+  <label>Palette</label>
+  <select id="palette">
+    <option value="pcb">🟢 PCB Green</option>
+    <option value="cyberpunk">🟣 Cyberpunk</option>
+    <option value="ocean">🔵 Ocean</option>
+    <option value="solar">🟡 Solar</option>
+    <option value="ink">⚫ Ink Wash</option>
+    <option value="neon">🩷 Neon</option>
+  </select>
+
+  <label>Density</label>
+  <select id="density">
+    <option value="sparse">Sparse</option>
+    <option value="medium" selected>Medium</option>
+    <option value="dense">Dense</option>
+  </select>
+
+  <label>Speed</label>
+  <select id="speed">
+    <option value="slow">Slow</option>
+    <option value="medium" selected>Medium</option>
+    <option value="fast">Fast</option>
+  </select>
+
+  <button id="grow">🌱 Grow New Circuit</button>
+  <button id="pulse">⚡ Pulse All</button>
+  <button id="clear">🗑 Clear Board</button>
+
+  <div class="stats" id="stats">
+    Nodes: 0 · Traces: 0
+  </div>
+
+  <div class="hint">
+    Click to plant a chip ·<br>
+    Move to attract traces ·<br>
+    Space to pulse · R to reset
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const PALETTES = {
+  pcb: {
+    bg: '#0a0f0a',
+    node: '#00ff88',
+    trace: '#00cc66',
+    glow: 'rgba(0, 255, 136, 0.4)',
+    pulse: '#88ffcc',
+    pad: '#003322'
+  },
+  cyberpunk: {
+    bg: '#0a0510',
+    node: '#ff00ff',
+    trace: '#cc00cc',
+    glow: 'rgba(255, 0, 255, 0.5)',
+    pulse: '#ff88ff',
+    pad: '#220033'
+  },
+  ocean: {
+    bg: '#020a10',
+    node: '#00ddff',
+    trace: '#0099cc',
+    glow: 'rgba(0, 221, 255, 0.4)',
+    pulse: '#88eeff',
+    pad: '#002233'
+  },
+  solar: {
+    bg: '#0f0a02',
+    node: '#ffaa00',
+    trace: '#cc8800',
+    glow: 'rgba(255, 170, 0, 0.4)',
+    pulse: '#ffdd88',
+    pad: '#332200'
+  },
+  ink: {
+    bg: '#080808',
+    node: '#ffffff',
+    trace: '#888888',
+    glow: 'rgba(255, 255, 255, 0.3)',
+    pulse: '#cccccc',
+    pad: '#1a1a1a'
+  },
+  neon: {
+    bg: '#0a0208',
+    node: '#ff3399',
+    trace: '#cc2266',
+    glow: 'rgba(255, 51, 153, 0.5)',
+    pulse: '#ff88bb',
+    pad: '#330011'
+  }
+};
+
+let currentPalette = 'pcb';
+let density = 'medium';
+let speed = 'medium';
+
+const DENSITY_MAP = { sparse: 0.3, medium: 0.6, dense: 1.0 };
+const SPEED_MAP = { slow: 0.4, medium: 1.0, fast: 2.0 };
+
+class Node {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 3 + Math.random() * 8;
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    this.pulseSpeed = 0.02 + Math.random() * 0.03;
+    this.pulseAmount = 0;
+    this.connections = [];
+    this.born = Date.now();
+    this.lifespan = 8000 + Math.random() * 12000;
+    this.type = Math.random() > 0.7 ? 'chip' : 'junction';
+    if (this.type === 'chip') {
+      this.radius = 8 + Math.random() * 12;
+    }
+  }
+
+  update(dt) {
+    this.pulsePhase += this.pulseSpeed * SPEED_MAP[speed];
+    this.pulseAmount *= 0.92;
+    if (this.pulseAmount < 0.01) this.pulseAmount = 0;
+  }
+
+  draw() {
+    const p = PALETTES[currentPalette];
+    const pulse = Math.sin(this.pulsePhase) * 0.3 + 0.7;
+    const r = this.radius + this.pulseAmount * 8;
+
+    if (this.pulseAmount > 0.1) {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, r * 3, 0, Math.PI * 2);
+      ctx.fillStyle = p.glow;
+      ctx.fill();
+    }
+
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+    
+    if (this.type === 'chip') {
+      ctx.fillStyle = p.node;
+      ctx.fill();
+      ctx.strokeStyle = p.pulse;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
+      // Chip body
+      ctx.fillStyle = p.pad;
+      ctx.fillRect(this.x - r * 0.8, this.y - r * 0.8, r * 1.6, r * 1.6);
+      ctx.strokeStyle = p.node;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(this.x - r * 0.8, this.y - r * 0.8, r * 1.6, r * 1.6);
+    } else {
+      ctx.fillStyle = p.node;
+      ctx.globalAlpha = pulse;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  pulse() {
+    this.pulseAmount = 1;
+  }
+}
+
+class Trace {
+  constructor(from, to) {
+    this.from = from;
+    this.to = to;
+    this.progress = 0;
+    this.speed = 0.015 + Math.random() * 0.02;
+    this.born = Date.now();
+    this.pulseOffset = Math.random() * Math.PI * 2;
+  }
+
+  update() {
+    this.progress += this.speed * SPEED_MAP[speed];
+    if (this.progress > 1) this.progress = 1;
+  }
+
+  draw() {
+    const p = PALETTES[currentPalette];
+    const progress = this.progress;
+    const alpha = Math.min(1, progress * 2) * Math.min(1, (1 - progress) * 2 + 0.3);
+
+    const x = this.from.x + (this.to.x - this.from.x) * progress;
+    const y = this.from.y + (this.to.y - this.from.y) * progress;
+
+    // Trace line
+    ctx.beginPath();
+    ctx.moveTo(this.from.x, this.from.y);
+    ctx.lineTo(x, y);
+    ctx.strokeStyle = p.trace;
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Traveling dot
+    if (progress < 1 && progress > 0) {
+      ctx.beginPath();
+      ctx.arc(x, y, 2, 0, Math.PI * 2);
+      ctx.fillStyle = p.pulse;
+      ctx.fill();
+    }
+  }
+}
+
+let nodes = [];
+let traces = [];
+let mouse = { x: W / 2, y: H / 2 };
+let lastSpawn = 0;
+let frame = 0;
+
+function spawnCircuit(centerX, centerY, count = 8) {
+  const root = new Node(centerX || Math.random() * W, centerY || Math.random() * H);
+  root.type = 'chip';
+  root.radius = 12 + Math.random() * 6;
+  nodes.push(root);
+  
+  const spawnCount = Math.floor(count * DENSITY_MAP[density]);
+  
+  for (let i = 0; i < spawnCount; i++) {
+    setTimeout(() => {
+      if (nodes.length < 80) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 60 + Math.random() * 200;
+        const nx = Math.max(40, Math.min(W - 40, root.x + Math.cos(angle) * dist));
+        const ny = Math.max(40, Math.min(H - 40, root.y + Math.sin(angle) * dist));
+        const node = new Node(nx, ny);
+        nodes.push(node);
+        traces.push(new Trace(root, node));
+        
+        // Sometimes branch further
+        if (Math.random() > 0.5 && nodes.length < 60) {
+          setTimeout(() => {
+            const a2 = Math.random() * Math.PI * 2;
+            const d2 = 40 + Math.random() * 120;
+            const nx2 = Math.max(40, Math.min(W - 40, nx + Math.cos(a2) * d2));
+            const ny2 = Math.max(40, Math.min(H - 40, ny + Math.sin(a2) * d2));
+            const n2 = new Node(nx2, ny2);
+            nodes.push(n2);
+            traces.push(new Trace(node, n2));
+          }, 200 + Math.random() * 400);
+        }
+      }
+    }, i * 80 + Math.random() * 200);
+  }
+}
+
+function connectNearby() {
+  const maxDist = 150;
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const dx = nodes[i].x - nodes[j].x;
+      const dy = nodes[i].y - nodes[j].y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < maxDist && Math.random() > 0.6) {
+        traces.push(new Trace(nodes[i], nodes[j]));
+        nodes[i].connections.push(nodes[j]);
+        nodes[j].connections.push(nodes[i]);
+      }
+    }
+  }
+}
+
+function pulseChain(startNode) {
+  if (!startNode) startNode = nodes[Math.floor(Math.random() * nodes.length)];
+  startNode.pulse();
+  const queue = [startNode];
+  const visited = new Set([startNode]);
+  
+  setTimeout(() => {
+    let depth = 0;
+    const interval = setInterval(() => {
+      if (depth > 4 || queue.length === 0) {
+        clearInterval(interval);
+        return;
+      }
+      const current = queue.shift();
+      current.connections.forEach(neighbor => {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          queue.push(neighbor);
+          neighbor.pulse();
+        }
+      });
+      depth++;
+    }, 100);
+  }, 100);
+}
+
+function update() {
+  const p = PALETTES[currentPalette];
+  
+  // Fade background
+  ctx.fillStyle = p.bg;
+  ctx.globalAlpha = 0.15;
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 1;
+
+  // Auto-grow
+  frame++;
+  if (frame % 180 === 0 && nodes.length < 50) {
+    spawnCircuit(null, null, 3);
+  }
+
+  // Mouse glow
+  const gradient = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 200);
+  gradient.addColorStop(0, p.glow);
+  gradient.addColorStop(1, 'transparent');
+  ctx.globalAlpha = 0.15;
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 1;
+
+  // Update & draw traces
+  traces.forEach(t => {
+    t.update();
+    t.draw();
+  });
+
+  // Remove dead traces
+  traces = traces.filter(t => t.progress < 1 || Math.random() > 0.001);
+
+  // Update & draw nodes
+  nodes.forEach(n => {
+    n.update();
+    n.draw();
+  });
+
+  // Cleanup dead nodes
+  const now = Date.now();
+  nodes = nodes.filter(n => now - n.born < n.lifespan || n.type === 'chip');
+  // Reconnect when nodes die
+  if (nodes.length > 0 && Math.random() > 0.95) {
+    connectNearby();
+  }
+
+  updateStats();
+}
+
+function updateStats() {
+  document.getElementById('stats').textContent = 
+    `Nodes: ${nodes.length} · Traces: ${traces.length}`;
+}
+
+function loop() {
+  update();
+  requestAnimationFrame(loop);
+}
+
+// Events
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+
+canvas.addEventListener('click', e => {
+  const node = new Node(e.clientX, e.clientY);
+  node.type = 'chip';
+  node.radius = 10 + Math.random() * 6;
+  nodes.push(node);
+  pulseChain(node);
+  // Spawn 2-4 nearby nodes
+  for (let i = 0; i < 3; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 50 + Math.random() * 100;
+    const nx = Math.max(40, Math.min(W - 40, e.clientX + Math.cos(angle) * dist));
+    const ny = Math.max(40, Math.min(H - 40, e.clientY + Math.sin(angle) * dist));
+    const n = new Node(nx, ny);
+    nodes.push(n);
+    setTimeout(() => traces.push(new Trace(node, n)), i * 100);
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    pulseChain();
+  }
+  if (e.key === 'r' || e.key === 'R') {
+    clearBoard();
+  }
+});
+
+document.getElementById('palette').addEventListener('change', e => {
+  currentPalette = e.target.value;
+});
+
+document.getElementById('density').addEventListener('change', e => {
+  density = e.target.value;
+});
+
+document.getElementById('speed').addEventListener('change', e => {
+  speed = e.target.value;
+});
+
+document.getElementById('grow').addEventListener('click', () => {
+  spawnCircuit(null, null, 6);
+});
+
+document.getElementById('pulse').addEventListener('click', () => {
+  pulseChain();
+});
+
+document.getElementById('clear').addEventListener('click', clearBoard);
+
+function clearBoard() {
+  nodes = [];
+  traces = [];
+  ctx.fillStyle = PALETTES[currentPalette].bg;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// Start
+ctx.fillStyle = PALETTES[currentPalette].bg;
+ctx.fillRect(0, 0, W, H);
+spawnCircuit(W / 2, H / 2, 8);
+setTimeout(() => connectNearby(), 1000);
+loop();
+</script>
+
+</body>
+</html>
