@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aether's Gravity Orchestra</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #aabbdd;
+    cursor: crosshair;
+  }
+  canvas {
+    display: block;
+  }
+  .info {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    z-index: 10;
+    pointer-events: none;
+    text-shadow: 0 0 20px rgba(100,150,255,0.5);
+  }
+  .info h1 {
+    font-size: 1.4em;
+    letter-spacing: 8px;
+    text-transform: uppercase;
+    color: #ddeeff;
+    margin-bottom: 6px;
+  }
+  .info p {
+    font-size: 0.75em;
+    letter-spacing: 3px;
+    opacity: 0.6;
+  }
+  .stats {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    font-size: 0.65em;
+    letter-spacing: 2px;
+    opacity: 0.35;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .controls {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+  }
+  .controls button {
+    background: rgba(30,40,80,0.5);
+    border: 1px solid rgba(100,150,255,0.3);
+    color: #8899cc;
+    padding: 6px 14px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.7em;
+    letter-spacing: 2px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.3s;
+  }
+  .controls button:hover {
+    background: rgba(40,60,120,0.6);
+    border-color: rgba(100,150,255,0.7);
+    color: #ddeeff;
+  }
+  .controls button.active {
+    background: rgba(60,80,160,0.5);
+    border-color: rgba(140,180,255,0.8);
+    color: #ffffff;
+    box-shadow: 0 0 15px rgba(80,120,255,0.3);
+  }
+</style>
+</head>
+<body>
+
+<div class="info">
+  <h1>✦ Gravity Orchestra ✦</h1>
+  <p>Click to attract · Hold to repel · Scroll to change gravity</p>
+</div>
+
+<div class="stats">
+  <div id="stats"></div>
+</div>
+
+<div class="controls">
+  <button class="mode-btn active" data-mode="0">Cosmic</button>
+  <button class="mode-btn" data-mode="1">Neon</button>
+  <button class="mode-btn" data-mode="2">Aurora</button>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Mouse
+const mouse = { x: W/2, y: H/2, active: false, repel: false, force: 0 };
+
+canvas.addEventListener('mousedown', (e) => {
+  mouse.active = true;
+  mouse.repel = false;
+  mouse.force = 1;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+canvas.addEventListener('mouseup', () => { mouse.active = false; mouse.force = 0; });
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  mouse.active = true;
+  mouse.repel = false;
+  mouse.force = 1;
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+}, { passive: false });
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+}, { passive: false });
+canvas.addEventListener('touchend', () => { mouse.active = false; mouse.force = 0; });
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  config.gravity += e.deltaY * -0.001;
+  config.gravity = Math.max(-2, Math.min(2, config.gravity));
+}, { passive: false });
+
+// Right click to repel
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  mouse.active = true;
+  mouse.repel = true;
+  mouse.force = 1;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+
+// Color palettes
+const palettes = [
+  { // Cosmic
+    bg: [8, 8, 18],
+    colors: [[80,120,255], [140,80,255], [60,180,220], [180,120,255], [100,60,200]],
+    trail: 0.03,
+    glow: 1.5
+  },
+  { // Neon
+    bg: [5, 5, 12],
+    colors: [[0,255,150], [255,0,150], [150,0,255], [255,255,0], [0,200,255]],
+    trail: 0.05,
+    glow: 2.0
+  },
+  { // Aurora
+    bg: [5, 12, 18],
+    colors: [[0,220,180], [120,255,200], [0,180,220], [180,255,220], [80,200,160]],
+    trail: 0.02,
+    glow: 1.8
+  }
+];
+
+let config = {
+  palette: 0,
+  gravity: 0,
+  particleCount: 200,
+  maxSpeed: 3,
+  friction: 0.995
+};
+
+// Particles
+class Particle {
+  constructor() {
+    this.reset();
+  }
+  
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.vx = (Math.random() - 0.5) * 2;
+    this.vy = (Math.random() - 0.5) * 2;
+    this.life = 0.5 + Math.random() * 0.5;
+    this.size = 1 + Math.random() * 2.5;
+    this.colorIdx = Math.floor(Math.random() * 5);
+    this.phase = Math.random() * Math.PI * 2;
+    this.orbitRadius = 50 + Math.random() * 150;
+    this.orbitSpeed = (Math.random() - 0.5) * 0.02;
+  }
+  
+  update(time) {
+    const palette = palettes[config.palette];
+    
+    // Ambient orbital motion
+    this.phase += this.orbitSpeed;
+    const ax = W/2 + Math.cos(this.phase) * this.orbitRadius * 0.3;
+    const ay = H/2 + Math.sin(this.phase * 0.7) * this.orbitRadius * 0.3;
+    
+    this.vx += (ax - this.x) * 0.00005;
+    this.vy += (ay - this.y) * 0.00005;
+    
+    // Mouse interaction
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx*dx + dy*dy) + 1;
+      const force = mouse.force * 800 / (dist * dist);
+      const angle = Math.atan2(dy, dx);
+      
+      if (mouse.repel) {
+        this.vx -= Math.cos(angle) * force;
+        this.vy -= Math.sin(angle) * force;
+      } else {
+        this.vx += Math.cos(angle) * force;
+        this.vy += Math.sin(angle) * force;
+      }
+    }
+    
+    // Gravity
+    this.vy += config.gravity * 0.1;
+    
+    // Perlin-like noise using sin
+    const noiseX = Math.sin(this.x * 0.005 + time * 0.0005) * 0.3;
+    const noiseY = Math.cos(this.y * 0.005 + time * 0.0003) * 0.3;
+    this.vx += noiseX;
+    this.vy += noiseY;
+    
+    // Friction
+    this.vx *= config.friction;
+    this.vy *= config.friction;
+    
+    // Speed limit
+    const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
+    if (speed > config.maxSpeed) {
+      this.vx = (this.vx / speed) * config.maxSpeed;
+      this.vy = (this.vy / speed) * config.maxSpeed;
+    }
+    
+    this.x += this.vx;
+    this.y += this.vy;
+    
+    // Wrap
+    if (this.x < -50) this.x = W + 50;
+    if (this.x > W + 50) this.x = -50;
+    if (this.y < -50) this.y = H + 50;
+    if (this.y > H + 50) this.y = -50;
+    
+    // Life decay / respawn
+    if (speed < 0.1 && !mouse.active) {
+      this.life -= 0.002;
+    }
+    if (this.life <= 0) {
+      this.reset();
+    }
+  }
+  
+  draw(ctx) {
+    const palette = palettes[config.palette];
+    const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
+    const alpha = this.life * Math.min(1, speed * 0.5 + 0.3);
+    const c = palette.colors[this.colorIdx];
+    
+    // Glow
+    const gradient = ctx.createRadialGradient(
+      this.x, this.y, 0,
+      this.x, this.y, this.size * 4
+    );
+    gradient.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},${alpha * 0.8})`);
+    gradient.addColorStop(0.4, `rgba(${c[0]},${c[1]},${c[2]},${alpha * 0.3})`);
+    gradient.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`);
+    
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * 4, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    
+    // Core
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${Math.min(255,c[0]+80)},${Math.min(255,c[1]+80)},${Math.min(255,c[2]+80)},${alpha})`;
+    ctx.fill();
+  }
+}
+
+// Initialize particles
+let particles = [];
+for (let i = 0; i < config.particleCount; i++) {
+  particles.push(new Particle());
+}
+
+// Connection lines
+function drawConnections() {
+  const maxDist = 100;
+  const palette = palettes[config.palette];
+  
+  for (let i = 0; i < particles.length; i++) {
+    for (let j = i + 1; j < particles.length; j++) {
+      const dx = particles[i].x - particles[j].x;
+      const dy = particles[i].y - particles[j].y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      
+      if (dist < maxDist) {
+        const alpha = (1 - dist/maxDist) * 0.15;
+        const c = palette.colors[particles[i].colorIdx];
+        ctx.beginPath();
+        ctx.moveTo(particles[i].x, particles[i].y);
+        ctx.lineTo(particles[j].x, particles[j].y);
+        ctx.strokeStyle = `rgba(${c[0]},${c[1]},${c[2]},${alpha})`;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+// Mouse aura
+function drawMouseAura() {
+  if (!mouse.active) return;
+  const palette = palettes[config.palette];
+  const c = mouse.repel ? palette.colors[2] : palette.colors[0];
+  const radius = 80 + Math.sin(Date.now() * 0.005) * 20;
+  
+  const gradient = ctx.createRadialGradient(
+    mouse.x, mouse.y, 0,
+    mouse.x, mouse.y, radius
+  );
+  gradient.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},0.15)`);
+  gradient.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`);
+  
+  ctx.beginPath();
+  ctx.arc(mouse.x, mouse.y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = gradient;
+  ctx.fill();
+}
+
+// Controls
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    config.palette = parseInt(btn.dataset.mode);
+  });
+});
+
+// FPS counter
+let frameCount = 0;
+let lastFpsUpdate = Date.now();
+let fps = 60;
+
+// Main loop
+let lastTime = 0;
+function animate(time) {
+  const dt = time - lastTime;
+  lastTime = time;
+  
+  // Fade trail
+  const palette = palettes[config.palette];
+  const bg = palette.bg;
+  ctx.fillStyle = `rgba(${bg[0]},${bg[1]},${bg[2]},${palette.trail})`;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Mouse aura
+  drawMouseAura();
+  
+  // Connections (only check subset for performance)
+  if (particles.length <= 200) {
+    drawConnections();
+  }
+  
+  // Update & draw particles
+  ctx.globalCompositeOperation = 'lighter';
+  particles.forEach(p => {
+    p.update(time);
+    p.draw(ctx);
+  });
+  ctx.globalCompositeOperation = 'source-over';
+  
+  // Stats
+  frameCount++;
+  if (time - lastFpsUpdate > 500) {
+    fps = Math.round(frameCount / ((time - lastFpsUpdate) / 1000));
+    frameCount = 0;
+    lastFpsUpdate = time;
+  }
+  document.getElementById('stats').textContent = 
+    `PARTICLES: ${particles.length} | FPS: ${fps} | GRAVITY: ${config.gravity.toFixed(2)}`;
+  
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
+</script>
+
+</body>
+</html>
