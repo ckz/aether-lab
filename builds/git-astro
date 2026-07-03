@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# git-astro — Developer horoscope from your git activity
+# Reads your recent commits and generates a cosmic coding reading.
+# Usage: ./git-astro [path-to-repo]  (defaults to current directory)
+
+set -uo pipefail
+
+REPO="${1:-.}"
+cd "$REPO" 2>/dev/null || { echo "Error: '$REPO' is not a valid directory."; exit 1; }
+
+# --- Gather git data ---
+LOG=$(git log --since="30 days ago" --all --pretty=format:"%H|%ai|%s" --no-merges 2>/dev/null || echo "")
+if [[ -z "$LOG" ]]; then
+  echo "🔮 The cosmos sees no commits in the last 30 days."
+  echo "   Your git history is a blank slate. The void stares back."
+  exit 0
+fi
+
+COMMIT_COUNT=$(echo "$LOG" | wc -l)
+NIGHT_COMMITS=$(echo "$LOG" | awk -F'|' '{print $2}' | awk -F'[: ]+' '{print $2}' | grep -cE '^(0[0-5]|2[2-3])' || true)
+WEEKEND_COMMITS=$(echo "$LOG" | awk -F'|' '{print $2}' | awk '{print $1}' | grep -cE '^(Sat|Sun)' || true)
+AVG_MSG_LEN=$(echo "$LOG" | awk -F'|' '{print $3}' | awk '{sum+=length($0); n++} END {if(n>0) printf "%.0f", sum/n; else print 0}')
+
+# --- Zodiac logic based on commit patterns ---
+if (( COMMIT_COUNT > 50 && NIGHT_COMMITS > 20 )); then
+  SIGN="🦉 Night Owlgnis"
+  LUCKY_LANG="Rust (it appreciates your insomnia)"
+  FORTUNE="The stars align for deep-work sessions between midnight and 4 AM. Your circadian rhythm is a feature, not a bug."
+elif (( COMMIT_COUNT > 50 && WEEKEND_COMMITS > 10 )); then
+  SIGN="🏗️ Weekend Architect"
+  LUCKY_LANG="Haskell (pure functions, pure weekends)"
+  FORTUNE="Your compiler is your confidant. Saturday merges are a love language the stars recognize."
+elif (( NIGHT_COMMITS > 15 )); then
+  SIGN="🌙 Lunar Coder"
+  LUCKY_LANG="Python (reads like poetry at 2 AM)"
+  FORTUNE="The moon governs your keystrokes. Your best code is written when the world sleeps."
+elif (( WEEKEND_COMMITS > 8 )); then
+  SIGN="☀️ Sabbatarian Dev"
+  LUCKY_LANG="Go (because even weekends should be concurrent)"
+  FORTUNE="Work-life balance is a myth; your balance is work-work and rest-work. The cosmos honor this dedication."
+elif (( AVG_MSG_LEN > 60 )); then
+  SIGN="📜 Verbose Visionary"
+  LUCKY_LANG="Markdown (your native tongue)"
+  FORTUNE="Your commit messages are poetry in a world of 'fix stuff.' Write on, storyteller."
+elif (( COMMIT_COUNT > 30 )); then
+  SIGN="⚡ Velocity Spirit"
+  LUCKY_LANG="TypeScript (type-safe and fast)"
+  FORTUNE="You ship faster than light. Your PRs are constellations others navigate by."
+elif (( COMMIT_COUNT < 5 )); then
+  SIGN="🌱 Seedling Sage"
+  LUCKY_LANG="Assembly (start at the roots)"
+  FORTUNE="Quiet growth is still growth. The cosmos do not rush — neither should you."
+else
+  SIGN="🌀 Balanced Byte"
+  LUCKY_LANG="JavaScript (it adapts, like you)"
+  FORTUNE="You are the median of all developers. Neither extreme nor idle. The stars see harmony in your patterns."
+fi
+
+# --- Compatibility ---
+case "$SIGN" in
+  *"Night Owl"*|*"Lunar"*) COMPAT="💫 Highly compatible with CI/CD pipelines and coffee IV drips." ;;
+  *"Weekend"*|*"Sabbatarian"*) COMPAT="💫 Best paired with teammates who also skip brunch to refactor." ;;
+  *"Verbose"*) COMPAT="💫 Attracts maintainers who actually read commit messages." ;;
+  *"Velocity"*) COMPAT="💫 Flows well with hotfix Mondays and deploy Fridays." ;;
+  *"Seedling"*) COMPAT="💫 Thrives under mentorship from senior constellation guides." ;;
+  *) COMPAT="💫 Harmonizes with all project management methodologies." ;;
+esac
+
+# --- Lucky number ---
+LUCKY_NUM=$(( (COMMIT_COUNT + NIGHT_COMMITS + WEEKEND_COMMITS) % 99 + 1 ))
+
+# --- Daily warning ---
+WARNINGS=(
+  "Beware of merge conflicts at noon."
+  "A stray semicolon may test your patience today."
+  "Your IDE's autocomplete may develop a mischievous personality."
+  "Watch for production logs that whisper secrets."
+  "The rubber duck may demand answers you don't have yet."
+  "Refactoring temptation is high — resist only if tests pass."
+  "A \`git push --force\` dream may visit tonight. Have mercy."
+  "Stack Overflow may be down for maintenance during your crisis."
+)
+WARNING=${WARNINGS[$(( RANDOM % ${#WARNINGS[@]} )) ]}
+
+# --- Output ---
+cat <<EOF
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  🔮  GIT ASTRO — Developer Horoscope
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Sign:       $SIGN
+  Lucky Lang: $LUCKY_LANG
+  Lucky Num:  $LUCKY_NUM
+
+  📊 Stats
+     Commits (30d):     $COMMIT_COUNT
+     Night owl commits: $NIGHT_COMMITS
+     Weekend commits:   $WEEKEND_COMMITS
+     Avg msg length:    $AVG_MSG_LEN chars
+
+  🗣️  Fortune:  $FORTUNE
+  $COMPAT
+  ⚠️  Warning: $WARNING
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  "The best code is written under the influence of the cosmos."
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EOF
