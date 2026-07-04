@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Liquid Prism — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+  canvas { display: block; position: fixed; top: 0; left: 0; }
+  .ui {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 10px;
+    z-index: 10;
+    opacity: 0.5;
+    transition: opacity 0.3s;
+  }
+  .ui:hover { opacity: 1; }
+  .ui button {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #ccc;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    transition: all 0.2s;
+  }
+  .ui button:hover {
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+    border-color: rgba(255,255,255,0.3);
+  }
+  .title {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.3);
+    font-size: 0.7rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    z-index: 10;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div class="title">Liquid Prism</div>
+<div class="ui">
+  <button onclick="setMode('prism')">Prism</button>
+  <button onclick="setMode('aurora')">Aurora</button>
+  <button onclick="setMode('oil')">Oil</button>
+  <button onclick="setMode('neon')">Neon</button>
+  <button onclick="resetField()">Reset</button>
+  <button onclick="saveFrame()">Save</button>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth * devicePixelRatio;
+  H = canvas.height = window.innerHeight * devicePixelRatio;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Simplex-like noise ---
+const perm = new Uint8Array(512);
+for (let i = 0; i < 256; i++) perm[i] = i;
+for (let i = 255; i > 0; i--) {
+  const j = Math.floor(Math.random() * (i + 1));
+  [perm[i], perm[j]] = [perm[j], perm[i]];
+}
+for (let i = 0; i < 256; i++) perm[i + 256] = perm[i];
+
+function noise2D(x, y) {
+  const xi = Math.floor(x) & 255, yi = Math.floor(y) & 255;
+  const xf = x - Math.floor(x), yf = y - Math.floor(y);
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const aa = perm[perm[xi] + yi], ab = perm[perm[xi] + yi + 1];
+  const ba = perm[perm[xi + 1] + yi], bb = perm[perm[xi + 1] + yi + 1];
+  const grad = (h, x, y) => { const g = h & 3; return ((g & 1) ? -x : x) + ((g & 2) ? -y : y); };
+  const x1 = lerp(grad(aa, xf, yf), grad(ba, xf - 1, yf), u);
+  const x2 = lerp(grad(ab, xf, yf - 1), grad(bb, xf - 1, yf - 1), u);
+  return lerp(x1, x2, v) * 0.5 + 0.5;
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function fbm(x, y, octaves = 4) {
+  let val = 0, amp = 0.5, freq = 1;
+  for (let i = 0; i < octaves; i++) {
+    val += amp * noise2D(x * freq, y * freq);
+    amp *= 0.5;
+    freq *= 2.1;
+  }
+  return val;
+}
+
+// --- State ---
+let mouseX = W * 0.5, mouseY = H * 0.5;
+let targetMouseX = mouseX, targetMouseY = mouseY;
+let mode = 'prism';
+let time = 0;
+let palette = [];
+
+const palettes = {
+  prism: [
+    [255, 50, 100], [50, 150, 255], [150, 50, 255],
+    [255, 200, 50], [50, 255, 200], [255, 100, 50]
+  ],
+  aurora: [
+    [0, 255, 150], [0, 200, 255], [100, 100, 255],
+    [150, 255, 100], [0, 255, 255], [50, 150, 200]
+  ],
+  oil: [
+    [200, 50, 20], [20, 80, 200], [220, 180, 30],
+    [150, 0, 150], [0, 150, 100], [255, 100, 0]
+  ],
+  neon: [
+    [255, 0, 128], [0, 255, 255], [255, 255, 0],
+    [128, 0, 255], [0, 255, 100], [255, 100, 0]
+  ]
+};
+
+function setMode(m) {
+  mode = m;
+  palette = palettes[m];
+}
+
+function resetField() {
+  time = 0;
+  mouseX = W * 0.5;
+  mouseY = H * 0.5;
+}
+
+function saveFrame() {
+  const link = document.createElement('a');
+  link.download = 'liquid-prism.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+setMode('prism');
+
+canvas.addEventListener('mousemove', e => {
+  targetMouseX = e.clientX * devicePixelRatio;
+  targetMouseY = e.clientY * devicePixelRatio;
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  targetMouseX = e.touches[0].clientX * devicePixelRatio;
+  targetMouseY = e.touches[0].clientY * devicePixelRatio;
+}, { passive: false });
+
+// --- Render ---
+function hslToRgb(h, s, l) {
+  h = ((h % 360) + 360) % 360;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let r, g, b;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+}
+
+function getColor(t, colorIdx, alpha = 1) {
+  const [r, g, b] = palette[colorIdx % palette.length];
+  const hShift = fbm(t * 0.5 + colorIdx * 1.7, time * 0.15, 3) * 60 - 30;
+  const h = (colorIdx * 60 + t * 20 + hShift) % 360;
+  const s = 0.7 + fbm(t * 0.3 + 100, time * 0.1, 2) * 0.3;
+  const l = 0.4 + fbm(t * 0.4 + 200, time * 0.08, 2) * 0.35;
+  const [nr, ng, nb] = hslToRgb(h, s, l);
+  return `rgba(${nr},${ng},${nb},${alpha})`;
+}
+
+function render() {
+  time += 0.005;
+  mouseX = lerp(mouseX, targetMouseX, 0.05);
+  mouseY = lerp(mouseY, targetMouseY, 0.05);
+
+  // Clear with fade
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
+  ctx.fillRect(0, 0, W, H);
+
+  const mx = mouseX / W, my = mouseY / H;
+  const scale = 0.003;
+
+  // Draw flowing color bands
+  const numBands = 40;
+  const bandHeight = H / numBands;
+
+  for (let b = 0; b < numBands; b++) {
+    const bandY = b * bandHeight;
+    const colorIdx = b % palette.length;
+    
+    ctx.beginPath();
+    ctx.moveTo(0, bandY);
+
+    const segments = 60;
+    for (let i = 0; i <= segments; i++) {
+      const x = (i / segments) * W;
+      const nx = x * scale;
+      const ny = b * scale * 0.5;
+      
+      // Multi-layered noise for organic movement
+      const n1 = fbm(nx + time * 0.8, ny + time * 0.3, 4);
+      const n2 = fbm(nx * 2 + time * 0.5, ny * 2 - time * 0.4, 3);
+      const n3 = noise2D(nx * 0.5 + time * 0.2, ny * 0.5);
+      
+      // Mouse influence
+      const dx = (x - mouseX) / W;
+      const dy = (bandY - mouseY) / H;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const mouseInfluence = Math.exp(-dist * 3) * 0.5;
+      
+      const offset = (n1 - 0.5) * bandHeight * 1.2 
+                   + (n2 - 0.5) * bandHeight * 0.6
+                   + mouseInfluence * Math.sin(time * 3 + x * 0.01) * bandHeight * 2;
+      
+      if (i === 0) ctx.moveTo(x, bandY + offset);
+      else ctx.lineTo(x, bandY + offset);
+    }
+
+    // Color based on position and noise
+    const t = b / numBands + time * 0.1;
+    const alpha = 0.15 + 0.1 * Math.sin(b * 0.5 + time);
+    ctx.strokeStyle = getColor(t, colorIdx, alpha);
+    ctx.lineWidth = bandHeight * 1.5;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+  }
+
+  // Prism refraction effect — vertical light streaks
+  if (mode === 'prism' || mode === 'neon') {
+    ctx.globalCompositeOperation = 'lighter';
+    const numStreaks = 8;
+    for (let s = 0; s < numStreaks; s++) {
+      const streakX = W * (0.1 + 0.8 * ((s + 0.5) / numStreaks + Math.sin(time + s) * 0.05));
+      const streakWidth = 20 + 30 * Math.sin(time * 0.5 + s * 1.5);
+      
+      const grad = ctx.createLinearGradient(streakX - streakWidth, 0, streakX + streakWidth, 0);
+      const cIdx = s % palette.length;
+      const [r, g, b] = palette[cIdx];
+      grad.addColorStop(0, `rgba(${r},${g},${b},0)`);
+      grad.addColorStop(0.5, `rgba(${r},${g},${b},0.03)`);
+      grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      
+      ctx.fillStyle = grad;
+      ctx.fillRect(streakX - streakWidth, 0, streakWidth * 2, H);
+    }
+  }
+
+  // Oil shimmer — circular interference patterns
+  if (mode === 'oil') {
+    ctx.globalCompositeOperation = 'lighter';
+    const numCircles = 5;
+    for (let c = 0; c < numCircles; c++) {
+      const cx = W * (0.2 + 0.6 * ((c + 0.5) / numCircles + Math.sin(time * 0.3 + c * 2) * 0.2));
+      const cy = H * (0.3 + 0.4 * ((c + 0.7) / numCircles + Math.cos(time * 0.4 + c * 1.5) * 0.2));
+      const radius = 100 + 100 * Math.sin(time * 0.5 + c);
+      
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+      const [r, g, b] = palette[c % palette.length];
+      grad.addColorStop(0, `rgba(${r},${g},${b},0.02)`);
+      grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  // Aurora — horizontal wave bands
+  if (mode === 'aurora') {
+    ctx.globalCompositeOperation = 'lighter';
+    const numWaves = 12;
+    for (let w = 0; w < numWaves; w++) {
+      ctx.beginPath();
+      const baseY = H * (0.2 + 0.6 * (w / numWaves));
+      
+      for (let x = 0; x <= W; x += 5) {
+        const nx = x * scale * 0.5;
+        const y = baseY 
+          + Math.sin(nx * 3 + time * 2 + w * 0.5) * H * 0.08
+          + fbm(nx + time, w * 0.3, 3) * H * 0.1
+          + Math.sin(nx * 7 + time * 1.5) * H * 0.03;
+        
+        const dist = Math.abs(x - mouseX) / W;
+        const mouseWave = Math.exp(-dist * 4) * Math.sin(time * 5) * H * 0.05;
+        
+        if (x === 0) ctx.moveTo(x, y + mouseWave);
+        else ctx.lineTo(x, y + mouseWave);
+      }
+      
+      const alpha = 0.02 + 0.015 * Math.sin(time + w);
+      ctx.strokeStyle = getColor(time + w * 0.2, w, alpha);
+      ctx.lineWidth = 30 + 20 * Math.sin(time * 0.5 + w);
+      ctx.stroke();
+    }
+  }
+
+  // Mouse glow
+  ctx.globalCompositeOperation = 'lighter';
+  const glowGrad = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 200 * devicePixelRatio);
+  const glowColor = palette[Math.floor(time * 10) % palette.length];
+  glowGrad.addColorStop(0, `rgba(${glowColor[0]},${glowColor[1]},${glowColor[2]},0.01)`);
+  glowGrad.addColorStop(1, `rgba(${glowColor[0]},${glowColor[1]},${glowColor[2]},0)`);
+  ctx.fillStyle = glowGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Vignette
+  ctx.globalCompositeOperation = 'source-over';
+  const vignette = ctx.createRadialGradient(W/2, H/2, W * 0.2, W/2, H/2, W * 0.8);
+  vignette.addColorStop(0, 'rgba(0,0,0,0)');
+  vignette.addColorStop(1, 'rgba(0,0,0,0.4)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, W, H);
+
+  requestAnimationFrame(render);
+}
+
+render();
+</script>
+</body>
+</html>
