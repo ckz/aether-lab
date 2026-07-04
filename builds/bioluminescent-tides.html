@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bioluminescent Tides — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #020810;
+    color: #c0d8f0;
+    overflow: hidden;
+    height: 100vh;
+    cursor: crosshair;
+  }
+
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+  }
+
+  .ui {
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .controls {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    max-width: 500px;
+  }
+
+  .btn {
+    background: rgba(10, 30, 60, 0.7);
+    border: 1px solid rgba(100, 180, 255, 0.3);
+    color: #a0d0ff;
+    padding: 0.5rem 0.9rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    backdrop-filter: blur(10px);
+    transition: all 0.2s;
+    letter-spacing: 0.05em;
+  }
+
+  .btn:hover {
+    background: rgba(30, 70, 140, 0.8);
+    border-color: rgba(100, 180, 255, 0.7);
+    transform: translateY(-1px);
+  }
+
+  .btn.active {
+    background: rgba(40, 100, 200, 0.8);
+    border-color: rgba(150, 220, 255, 0.9);
+    box-shadow: 0 0 15px rgba(80, 160, 255, 0.4);
+  }
+
+  .info {
+    background: rgba(10, 30, 60, 0.6);
+    border: 1px solid rgba(100, 180, 255, 0.2);
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    backdrop-filter: blur(10px);
+    font-size: 0.75rem;
+    color: #7ab0e0;
+    line-height: 1.5;
+    max-width: 400px;
+  }
+
+  .info strong {
+    color: #a0d8ff;
+    font-weight: 600;
+  }
+
+  .hint {
+    position: fixed;
+    bottom: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    background: rgba(10, 30, 60, 0.5);
+    border: 1px solid rgba(100, 180, 255, 0.2);
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    backdrop-filter: blur(10px);
+    font-size: 0.75rem;
+    color: #6090b0;
+    letter-spacing: 0.05em;
+    pointer-events: none;
+    transition: opacity 2s;
+  }
+
+  .moon-indicator {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 10;
+    font-size: 2rem;
+    filter: drop-shadow(0 0 10px rgba(200, 220, 255, 0.5));
+    transition: all 1s;
+  }
+
+  .tide-meter {
+    position: fixed;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+    width: 4px;
+    height: 200px;
+    background: rgba(100, 180, 255, 0.1);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .tide-fill {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    background: linear-gradient(to top, rgba(80, 160, 255, 0.6), rgba(120, 200, 255, 0.3));
+    border-radius: 2px;
+    transition: height 0.5s;
+    box-shadow: 0 0 10px rgba(80, 160, 255, 0.4);
+  }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div class="ui">
+  <div class="controls">
+    <button class="btn active" data-palette="cyan">Cyan Tides</button>
+    <button class="btn" data-palette="emerald">Emerald</button>
+    <button class="btn" data-palette="violet">Violet</button>
+    <button class="btn" data-palette="gold">Gold</button>
+    <button class="btn" data-palette="rose">Rose</button>
+    <button class="btn" data-palette="white">Moonlight</button>
+  </div>
+  <div class="info">
+    <strong>Bioluminescent Tides</strong><br>
+    Click to stir the water. Watch the tide rise and fall.<br>
+    <span id="stats"></span>
+  </div>
+</div>
+
+<div class="moon-indicator" id="moon">🌑</div>
+<div class="tide-meter"><div class="tide-fill" id="tideFill"></div></div>
+<div class="hint" id="hint">click anywhere to disturb the water</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- State ---
+let palette = 'cyan';
+let time = 0;
+let tidePhase = 0;
+let tideLevel = 0.5;
+let moonPhase = 0;
+
+const palettes = {
+  cyan:   { deep: '#020a18', mid: '#041830', foam: '#0a3060', glow: [0, 200, 255], accent: [100, 240, 255] },
+  emerald:{ deep: '#020f08', mid: '#043018', foam: '#0a5028', glow: [0, 255, 150], accent: [120, 255, 200] },
+  violet: { deep: '#0a0218', mid: '#200440', foam: '#401080', glow: [180, 100, 255], accent: [220, 180, 255] },
+  gold:   { deep: '#180f02', mid: '#403010', foam: '#806020', glow: [255, 200, 50], accent: [255, 230, 150] },
+  rose:   { deep: '#180510', mid: '#401020', foam: '#801840', glow: [255, 80, 150], accent: [255, 180, 220] },
+  white:  { deep: '#080a10', mid: '#101825', foam: '#202840', glow: [200, 220, 255], accent: [240, 245, 255] }
+};
+
+// --- Shoreline ---
+function shoreHeight(x, seed) {
+  // Multi-octave noise for organic coastline
+  let h = 0;
+  let amp = 1;
+  let freq = 0.003;
+  for (let i = 0; i < 5; i++) {
+    h += Math.sin(x * freq + seed + i * 1.7) * amp;
+    h += Math.sin(x * freq * 2.3 + seed * 0.7 + i) * amp * 0.5;
+    amp *= 0.5;
+    freq *= 2.1;
+  }
+  return h * 0.08;
+}
+
+// --- Particles ---
+const MAX_PARTICLES = 3000;
+let particles = [];
+
+function spawnPlankton(x, y, count, vx, vy) {
+  const p = palettes[palette];
+  for (let i = 0; i < count && particles.length < MAX_PARTICLES; i++) {
+    particles.push({
+      x: x + (Math.random() - 0.5) * 40,
+      y: y + (Math.random() - 0.5) * 20,
+      vx: vx + (Math.random() - 0.5) * 1.5,
+      vy: vy + (Math.random() - 0.5) * 1.5,
+      life: 0.6 + Math.random() * 0.4,
+      maxLife: 0.6 + Math.random() * 0.4,
+      size: 1 + Math.random() * 2.5,
+      hue: Math.random() < 0.3 ? 1 : 0, // 1 = accent, 0 = glow
+      pulse: Math.random() * Math.PI * 2
+    });
+  }
+}
+
+function spawnRipple(x, y, strength) {
+  const p = palettes[palette];
+  const count = Math.floor(30 + strength * 50);
+  for (let i = 0; i < count && particles.length < MAX_PARTICLES; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 0.5 + Math.random() * 3 * strength;
+    particles.push({
+      x: x,
+      y: y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - Math.random() * 2,
+      life: 0.8 + Math.random() * 0.2,
+      maxLife: 0.8 + Math.random() * 0.2,
+      size: 1 + Math.random() * 3,
+      hue: Math.random() < 0.5 ? 1 : 0,
+      pulse: Math.random() * Math.PI * 2
+    });
+  }
+}
+
+// --- Ripples (water disturbance) ---
+let ripples = [];
+
+function addRipple(x, y, strength) {
+  ripples.push({ x, y, strength, life: 1, maxLife: 1, radius: 0 });
+}
+
+// --- Stars ---
+let stars = [];
+function initStars() {
+  stars = [];
+  for (let i = 0; i < 200; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H * 0.5,
+      size: Math.random() * 1.5,
+      twinkle: Math.random() * Math.PI * 2,
+      speed: 0.5 + Math.random() * 2
+    });
+  }
+}
+initStars();
+
+// --- Shooting stars ---
+let shooters = [];
+function maybeSpawnShooter() {
+  if (Math.random() < 0.002 && shooters.length < 2) {
+    shooters.push({
+      x: Math.random() * W,
+      y: Math.random() * H * 0.3,
+      vx: 4 + Math.random() * 6,
+      vy: 1 + Math.random() * 2,
+      life: 1,
+      trail: []
+    });
+  }
+}
+
+// --- Input ---
+let mouse = { x: W / 2, y: H / 2, down: false };
+let mouseHistory = [];
+
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  if (mouse.down) {
+    mouseHistory.push({ x: e.clientX, y: e.clientY, t: time });
+    if (mouseHistory.length > 20) mouseHistory.shift();
+    // Stir water
+    if (Math.random() < 0.3) {
+      spawnPlankton(e.clientX, e.clientY, 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
+    }
+  }
+});
+
+canvas.addEventListener('mousedown', e => {
+  mouse.down = true;
+  spawnRipple(e.clientX, e.clientY, 1);
+  addRipple(e.clientX, e.clientY, 1);
+});
+
+canvas.addEventListener('mouseup', () => { mouse.down = false; mouseHistory = []; });
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  mouse.down = true;
+  spawnRipple(t.clientX, t.clientY, 1);
+  addRipple(t.clientX, t.clientY, 1);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  if (Math.random() < 0.3) {
+    spawnPlankton(t.clientX, t.clientY, 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', () => { mouse.down = false; });
+
+// --- Palette switching ---
+document.querySelectorAll('.btn[data-palette]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.btn[data-palette]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    palette = btn.dataset.palette;
+  });
+});
+
+// --- Hint fade ---
+setTimeout(() => {
+  const hint = document.getElementById('hint');
+  if (hint) hint.style.opacity = '0';
+}, 5000);
+
+// --- Main loop ---
+let lastTime = performance.now();
+
+function update(dt) {
+  time += dt;
+  tidePhase += dt * 0.08; // Slow tide cycle (~12 seconds per cycle)
+  
+  // Tide level: sinusoidal with harmonics
+  const tideBase = Math.sin(tidePhase) * 0.5 + 0.5;
+  const tideHarmonic = Math.sin(tidePhase * 2.3) * 0.15;
+  tideLevel = Math.max(0.1, Math.min(0.9, tideBase + tideHarmonic));
+  
+  // Moon phase affects tide range
+  const moonInfluence = 0.8 + Math.sin(tidePhase * 0.5) * 0.2;
+  
+  // Update tide fill
+  const tideFill = document.getElementById('tideFill');
+  if (tideFill) tideFill.style.height = (tideLevel * 100) + '%';
+  
+  // Moon indicator
+  const moonEl = document.getElementById('moon');
+  if (moonEl) {
+    const moonNames = ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘'];
+    const idx = Math.floor(((time * 0.02) % 1 + 1) % 1 * 8);
+    moonEl.textContent = moonNames[idx];
+  }
+  
+  // Update ripples
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const r = ripples[i];
+    r.life -= dt * 0.6;
+    r.radius += dt * 120 * r.strength;
+    if (r.life <= 0) ripples.splice(i, 1);
+  }
+  
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const pt = particles[i];
+    pt.life -= dt * 0.15;
+    pt.x += pt.vx * dt * 30;
+    pt.y += pt.vy * dt * 30;
+    pt.vx *= 0.99;
+    pt.vy *= 0.99;
+    pt.pulse += dt * 3;
+    
+    // Gentle buoyancy
+    pt.vy -= dt * 2;
+    
+    // Current
+    pt.vx += Math.sin(time * 0.5 + pt.y * 0.01) * dt * 0.5;
+    
+    // Ripple influence
+    for (const r of ripples) {
+      const dx = pt.x - r.x;
+      const dy = pt.y - r.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (Math.abs(dist - r.radius) < 30 && dist > 0) {
+        const force = (1 - Math.abs(dist - r.radius) / 30) * r.strength * r.life;
+        pt.vx += (dx / dist) * force * dt * 20;
+        pt.vy += (dy / dist) * force * dt * 20;
+      }
+    }
+    
+    // Mouse attraction when dragging
+    if (mouse.down) {
+      const dx = mouse.x - pt.x;
+      const dy = mouse.y - pt.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 150 && dist > 0) {
+        const force = (1 - dist / 150) * dt * 2;
+        pt.vx += (dx / dist) * force;
+        pt.vy += (dy / dist) * force;
+      }
+    }
+    
+    // Remove dead or offscreen
+    if (pt.life <= 0 || pt.x < -50 || pt.x > W + 50 || pt.y < -50 || pt.y > H + 50) {
+      particles.splice(i, 1);
+    }
+  }
+  
+  // Spawn natural plankton along shoreline
+  const shorelineY = H * 0.55;
+  if (Math.random() < dt * 8) {
+    const x = Math.random() * W;
+    const shore = shorelineY + shoreHeight(x, 0) * H;
+    spawnPlankton(x, shore + (Math.random() - 0.5) * 40, 1, (Math.random() - 0.5) * 0.5, Math.random() * 0.5);
+  }
+  
+  // Wave wash
+  if (Math.random() < dt * 3) {
+    const x = Math.random() * W;
+    const waveY = shorelineY - 20 + Math.sin(time * 2 + x * 0.01) * 15;
+    spawnPlankton(x, waveY, 3, Math.sin(time + x * 0.01) * 2, -0.5);
+  }
+  
+  // Shooting stars
+  maybeSpawnShooter();
+  for (let i = shooters.length - 1; i >= 0; i--) {
+    const s = shooters[i];
+    s.x += s.vx;
+    s.y += s.vy;
+    s.trail.push({ x: s.x, y: s.y });
+    if (s.trail.length > 20) s.trail.shift();
+    s.life -= dt * 0.5;
+    if (s.life <= 0 || s.x > W + 50) shooters.splice(i, 1);
+  }
+  
+  // Stats
+  const stats = document.getElementById('stats');
+  if (stats && Math.floor(time * 2) !== Math.floor((time - dt) * 2)) {
+    stats.textContent = `particles: ${particles.length}`;
+  }
+}
+
+function draw() {
+  const p = palettes[palette];
+  
+  // Sky gradient
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
+  skyGrad.addColorStop(0, p.deep);
+  skyGrad.addColorStop(0.4, p.mid);
+  skyGrad.addColorStop(0.55, p.foam);
+  skyGrad.addColorStop(0.56, '#000000');
+  skyGrad.addColorStop(1, '#000000');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Stars
+  for (const s of stars) {
+    const alpha = 0.3 + Math.sin(time * s.speed + s.twinkle) * 0.3 + 0.3;
+    ctx.fillStyle = `rgba(200, 220, 255, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Moon
+  const moonX = W * 0.8;
+  const moonY = H * 0.15;
+  const moonGrad = ctx.createRadialGradient(moonX, moonY, 0, moonX, moonY, 40);
+  moonGrad.addColorStop(0, 'rgba(220, 230, 255, 0.9)');
+  moonGrad.addColorStop(0.3, 'rgba(200, 220, 255, 0.4)');
+  moonGrad.addColorStop(1, 'rgba(200, 220, 255, 0)');
+  ctx.fillStyle = moonGrad;
+  ctx.beginPath();
+  ctx.arc(moonX, moonY, 40, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Moon reflection on water
+  const reflY = H * 0.55 + (tideLevel - 0.5) * H * 0.2;
+  const reflGrad = ctx.createRadialGradient(moonX, reflY, 0, moonX, reflY, 60 + tideLevel * 40);
+  reflGrad.addColorStop(0, `rgba(${p.glow.join(',')}, ${0.2 * tideLevel})`);
+  reflGrad.addColorStop(1, `rgba(${p.glow.join(',')}, 0)`);
+  ctx.fillStyle = reflGrad;
+  ctx.beginPath();
+  ctx.arc(moonX, reflY, 60 + tideLevel * 40, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Shoreline (dark landmass)
+  ctx.fillStyle = '#010508';
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  for (let x = 0; x <= W; x += 4) {
+    const shore = H * 0.55 + shoreHeight(x, 0) * H;
+    ctx.lineTo(x, shore);
+  }
+  ctx.lineTo(W, H);
+  ctx.closePath();
+  ctx.fill();
+  
+  // Shoreline glow line
+  ctx.strokeStyle = `rgba(${p.accent.join(',')}, 0.15)`;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let x = 0; x <= W; x += 4) {
+    const shore = H * 0.55 + shoreHeight(x, 0) * H;
+    if (x === 0) ctx.moveTo(x, shore);
+    else ctx.lineTo(x, shore);
+  }
+  ctx.stroke();
+  
+  // Water body
+  const waterTop = H * 0.55;
+  const waterGrad = ctx.createLinearGradient(0, waterTop, 0, H);
+  waterGrad.addColorStop(0, `rgba(${p.glow.join(',')}, 0.05)`);
+  waterGrad.addColorStop(0.5, `rgba(${p.glow.join(',')}, 0.15)`);
+  waterGrad.addColorStop(1, `rgba(${p.glow.join(',')}, 0.3)`);
+  ctx.fillStyle = waterGrad;
+  ctx.fillRect(0, waterTop, W, H - waterTop);
+  
+  // Ripple rings
+  for (const r of ripples) {
+    const alpha = r.life * 0.3 * r.strength;
+    ctx.strokeStyle = `rgba(${p.accent.join(',')}, ${alpha})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Inner glow
+    const rippleGrad = ctx.createRadialGradient(r.x, r.y, r.radius * 0.8, r.x, r.y, r.radius);
+    rippleGrad.addColorStop(0, `rgba(${p.glow.join(',')}, 0)`);
+    rippleGrad.addColorStop(1, `rgba(${p.accent.join(',')}, ${alpha * 0.5})`);
+    ctx.fillStyle = rippleGrad;
+    ctx.beginPath();
+    ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Particles (plankton)
+  ctx.globalCompositeOperation = 'lighter';
+  for (const pt of particles) {
+    const alpha = pt.life / pt.maxLife;
+    const pulseAlpha = 0.5 + Math.sin(pt.pulse) * 0.5;
+    const finalAlpha = alpha * pulseAlpha;
+    const color = pt.hue ? p.accent : p.glow;
+    
+    // Glow
+    const glowSize = pt.size * 4;
+    const glow = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, glowSize);
+    glow.addColorStop(0, `rgba(${color.join(',')}, ${finalAlpha * 0.6})`);
+    glow.addColorStop(1, `rgba(${color.join(',')}, 0)`);
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, glowSize, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Core
+    ctx.fillStyle = `rgba(${color.join(',')}, ${finalAlpha})`;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, pt.size * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  
+  // Shooting stars
+  for (const s of shooters) {
+    ctx.strokeStyle = `rgba(255, 255, 255, ${s.life * 0.8})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < s.trail.length; i++) {
+      const t = s.trail[i];
+      const alpha = (i / s.trail.length) * s.life;
+      ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.6})`;
+      if (i === 0) ctx.moveTo(t.x, t.y);
+      else ctx.lineTo(t.x, t.y);
+    }
+    ctx.stroke();
+    
+    // Head glow
+    const headGrad = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, 4);
+    headGrad.addColorStop(0, `rgba(255, 255, 255, ${s.life})`);
+    headGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = headGrad;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Vignette
+  const vigGrad = ctx.createRadialGradient(W / 2, H / 2, W * 0.3, W / 2, H / 2, W * 0.8);
+  vigGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  vigGrad.addColorStop(1, 'rgba(0, 0, 0, 0.4)');
+  ctx.fillStyle = vigGrad;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function loop() {
+  const now = performance.now();
+  const dt = Math.min(0.1, (now - lastTime) / 1000);
+  lastTime = now;
+  
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+
+</body>
+</html>
