@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Resonance — Ambient Synth</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    cursor: crosshair;
+    user-select: none;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    color: rgba(255,255,255,0.7);
+    font-size: 11px;
+    pointer-events: none;
+  }
+  #title {
+    font-size: 18px;
+    font-weight: 300;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    color: rgba(255,255,255,0.9);
+  }
+  #hint {
+    opacity: 0.5;
+    line-height: 1.6;
+  }
+  #controls {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    z-index: 10;
+    display: flex;
+    gap: 10px;
+  }
+  .mode-btn {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.7);
+    padding: 8px 14px;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-transform: uppercase;
+  }
+  .mode-btn:hover {
+    background: rgba(255,255,255,0.1);
+    border-color: rgba(255,255,255,0.3);
+    color: #fff;
+  }
+  .mode-btn.active {
+    background: rgba(255,255,255,0.15);
+    border-color: rgba(255,255,255,0.4);
+    color: #fff;
+  }
+  #stats {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10;
+    color: rgba(255,255,255,0.4);
+    font-size: 10px;
+    text-align: right;
+    font-family: inherit;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="ui">
+  <div id="title">Resonance</div>
+  <div id="hint">
+    Click + drag to play<br>
+    Scroll to change octave<br>
+    1-5 switch palette<br>
+    Space clears
+  </div>
+</div>
+<div id="controls">
+  <button class="mode-btn active" data-mode="harmonic">Harmonic</button>
+  <button class="mode-btn" data-mode="pad">Pad</button>
+  <button class="mode-btn" data-mode="bells">Bells</button>
+  <button class="mode-btn" data-mode="drone">Drone</button>
+</div>
+<div id="stats"></div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Audio context
+let audioCtx;
+let masterGain;
+let reverbNode;
+let delayNode;
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.4;
+  
+  // Simple reverb via convolver
+  reverbNode = audioCtx.createConvolver();
+  const reverbLen = audioCtx.sampleRate * 2;
+  const reverbBuf = audioCtx.createBuffer(2, reverbLen, audioCtx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = reverbBuf.getChannelData(ch);
+    for (let i = 0; i < reverbLen; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / reverbLen, 2.5);
+    }
+  }
+  reverbNode.buffer = reverbBuf;
+  
+  // Delay
+  delayNode = audioCtx.createDelay();
+  delayNode.delayTime.value = 0.3;
+  const delayGain = audioCtx.createGain();
+  delayGain.gain.value = 0.2;
+  
+  // Routing
+  masterGain.connect(reverbNode);
+  reverbNode.connect(audioCtx.destination);
+  
+  masterGain.connect(delayNode);
+  delayNode.connect(delayGain);
+  delayGain.connect(audioCtx.destination);
+  delayGain.connect(delayNode); // feedback
+}
+
+// Pentatonic scale frequencies
+const BASE_FREQS = [
+  130.81, 146.83, 164.81, 196.00, 220.00,  // C3 pentatonic
+  261.63, 293.66, 329.63, 392.00, 440.00,
+  523.25, 587.33, 659.25, 783.99, 880.00,
+  1046.50, 1174.66, 1318.51, 1567.98, 1760.00
+];
+
+// Palettes
+const palettes = [
+  { name: 'Cosmic', bg: '#0a0a1a', colors: ['#00d4ff', '#7b2fff', '#ff2d95', '#ffd700', '#00ff88'] },
+  { name: 'Aurora', bg: '#0a1a0f', colors: ['#00ff88', '#00d4ff', '#7bffda', '#ff2dff', '#88ff00'] },
+  { name: 'Ember', bg: '#1a0a0a', colors: ['#ff4400', '#ff8800', '#ffcc00', '#ff0066', '#ff6633'] },
+  { name: 'Ocean', bg: '#0a0f1a', colors: ['#0066ff', '#00ccff', '#0099ff', '#66ffff', '#0033ff'] },
+  { name: 'Nebula', bg: '#0f0a1a', colors: ['#cc00ff', '#ff00cc', '#6600ff', '#ff66ff', '#9900ff'] }
+];
+
+let currentPalette = 0;
+let currentMode = 'harmonic';
+let octave = 0; // 0 = middle
+let mouseX = W/2, mouseY = H/2;
+let mouseDown = false;
+let lastNoteTime = 0;
+let activeNotes = [];
+
+// Ripples
+let ripples = [];
+
+// Particles
+let particles = [];
+const MAX_PARTICLES = 500;
+
+// Drone oscillators
+let droneOscs = [];
+
+class Ripple {
+  constructor(x, y, freq) {
+    this.x = x;
+    this.y = y;
+    this.radius = 0;
+    this.maxRadius = 150 + Math.random() * 200;
+    this.speed = 1.5 + Math.random();
+    this.alpha = 0.6;
+    this.color = palettes[currentPalette].colors[Math.floor(Math.random() * 5)];
+    this.freq = freq;
+    this.harmonics = [];
+    for (let i = 0; i < 5; i++) {
+      this.harmonics.push({
+        angle: Math.random() * Math.PI * 2,
+        speed: 0.01 + Math.random() * 0.02,
+        radius: 20 + Math.random() * 40,
+        alpha: 0.3 + Math.random() * 0.3
+      });
+    }
+  }
+  
+  update() {
+    this.radius += this.speed;
+    this.alpha *= 0.99;
+    this.harmonics.forEach(h => h.angle += h.speed);
+    return this.radius < this.maxRadius && this.alpha > 0.01;
+  }
+  
+  draw() {
+    // Outer ring
+    ctx.strokeStyle = this.color;
+    ctx.globalAlpha = this.alpha * 0.5;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Harmonics
+    this.harmonics.forEach(h => {
+      const hx = this.x + Math.cos(h.angle) * (this.radius * 0.6 + h.radius);
+      const hy = this.y + Math.sin(h.angle) * (this.radius * 0.6 + h.radius);
+      ctx.globalAlpha = h.alpha * this.alpha;
+      ctx.fillStyle = this.color;
+      ctx.beginPath();
+      ctx.arc(hx, hy, 2, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    
+    ctx.globalAlpha = 1;
+  }
+}
+
+class Particle {
+  constructor(x, y, color) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 2;
+    this.vy = (Math.random() - 0.5) * 2;
+    this.life = 1;
+    this.decay = 0.003 + Math.random() * 0.008;
+    this.color = color;
+    this.size = 1 + Math.random() * 2;
+  }
+  
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vx *= 0.99;
+    this.vy *= 0.99;
+    this.life -= this.decay;
+    return this.life > 0;
+  }
+  
+  draw() {
+    ctx.globalAlpha = this.life * 0.6;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function playNote(freq, x, y) {
+  if (!audioCtx) initAudio();
+  
+  const t = audioCtx.currentTime;
+  const palette = palettes[currentPalette];
+  const color = palette.colors[Math.floor(Math.random() * palette.colors.length)];
+  
+  // Ripple
+  ripples.push(new Ripple(x, y, freq));
+  
+  // Particles burst
+  for (let i = 0; i < 15; i++) {
+    particles.push(new Particle(x, y, color));
+  }
+  
+  // Mode-specific sound generation
+  if (currentMode === 'harmonic') {
+    // Pure sine with overtones
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.15, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
+    osc.connect(gain);
+    gain.connect(masterGain);
+    osc.start(t);
+    osc.stop(t + 1.5);
+    
+    // Add slight detune for warmth
+    const osc2 = audioCtx.createOscillator();
+    const gain2 = audioCtx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.value = freq * 1.002;
+    gain2.gain.setValueAtTime(0.05, t);
+    gain2.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
+    osc2.connect(gain2);
+    gain2.connect(masterGain);
+    osc2.start(t);
+    osc2.stop(t + 1.5);
+    
+  } else if (currentMode === 'pad') {
+    // Multiple detuned oscillators for pad
+    for (let i = 0; i < 3; i++) {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq * (1 + (i - 1) * 0.003);
+      gain.gain.setValueAtTime(0.08, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 2.5);
+      osc.connect(gain);
+      gain.connect(masterGain);
+      osc.start(t);
+      osc.stop(t + 2.5);
+    }
+    
+  } else if (currentMode === 'bells') {
+    // FM synthesis for bell-like tones
+    const carrier = audioCtx.createOscillator();
+    const modulator = audioCtx.createOscillator();
+    const modGain = audioCtx.createGain();
+    const envGain = audioCtx.createGain();
+    
+    carrier.type = 'sine';
+    carrier.frequency.value = freq;
+    modulator.type = 'sine';
+    modulator.frequency.value = freq * 2.4;
+    modGain.gain.setValueAtTime(freq * 0.5, t);
+    modGain.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
+    
+    modulator.connect(modGain);
+    modGain.connect(carrier.frequency);
+    carrier.connect(envGain);
+    envGain.connect(masterGain);
+    
+    envGain.gain.setValueAtTime(0.12, t);
+    envGain.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
+    
+    carrier.start(t);
+    modulator.start(t);
+    carrier.stop(t + 1.2);
+    modulator.stop(t + 1.2);
+    
+  } else if (currentMode === 'drone') {
+    // Sustained drone with harmonics
+    droneOscs.push({ freq, startTime: t, duration: 3 + Math.random() * 2 });
+    
+    const harmonics = [1, 1.5, 2, 2.5, 3];
+    harmonics.forEach((mult, i) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = i % 2 === 0 ? 'sine' : 'triangle';
+      osc.frequency.value = freq * mult;
+      gain.gain.setValueAtTime(0.03, t);
+      gain.gain.linearRampToValueAtTime(0.04, t + 0.5);
+      gain.gain.linearRampToValueAtTime(0.001, t + 4);
+      osc.connect(gain);
+      gain.connect(masterGain);
+      osc.start(t);
+      osc.stop(t + 4);
+    });
+  }
+}
+
+function getFreqFromPos(x, y) {
+  // Map x to pitch, y to octave modifier
+  const normalizedX = x / W;
+  const noteIndex = Math.floor(normalizedX * BASE_FREQS.length);
+  const clampedIndex = Math.max(0, Math.min(BASE_FREQS.length - 1, noteIndex));
+  const baseFreq = BASE_FREQS[clampedIndex];
+  
+  // Y controls octave shift (0-3)
+  const normalizedY = y / H;
+  const octShift = Math.floor(normalizedY * 4) - 1;
+  
+  return baseFreq * Math.pow(2, octShift);
+}
+
+let lastX = 0, lastY = 0;
+
+canvas.addEventListener('mousedown', (e) => {
+  mouseDown = true;
+  initAudio();
+  const freq = getFreqFromPos(e.clientX, e.clientY);
+  const now = Date.now();
+  if (now - lastNoteTime > 50) {
+    playNote(freq, e.clientX, e.clientY);
+    lastNoteTime = now;
+  }
+  lastX = e.clientX;
+  lastY = e.clientY;
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  
+  if (mouseDown) {
+    const freq = getFreqFromPos(e.clientX, e.clientY);
+    const dist = Math.hypot(e.clientX - lastX, e.clientY - lastY);
+    const now = Date.now();
+    const threshold = Math.max(30, 100 - dist * 2);
+    
+    if (now - lastNoteTime > threshold) {
+      playNote(freq, e.clientX, e.clientY);
+      lastNoteTime = now;
+    }
+    lastX = e.clientX;
+    lastY = e.clientY;
+  }
+});
+
+canvas.addEventListener('mouseup', () => mouseDown = false);
+canvas.addEventListener('mouseleave', () => mouseDown = false);
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  octave = Math.max(-2, Math.min(3, octave + (e.deltaY > 0 ? -1 : 1)));
+  document.getElementById('stats').textContent = `Octave: ${octave}`;
+});
+
+// Touch support
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  initAudio();
+  mouseDown = true;
+  const touch = e.touches[0];
+  mouseX = touch.clientX;
+  mouseY = touch.clientY;
+  const freq = getFreqFromPos(touch.clientX, touch.clientY);
+  playNote(freq, touch.clientX, touch.clientY);
+  lastX = touch.clientX;
+  lastY = touch.clientY;
+});
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const touch = e.touches[0];
+  mouseX = touch.clientX;
+  mouseY = touch.clientY;
+  
+  if (mouseDown) {
+    const freq = getFreqFromPos(touch.clientX, touch.clientY);
+    const dist = Math.hypot(touch.clientX - lastX, touch.clientY - lastY);
+    const now = Date.now();
+    const threshold = Math.max(30, 100 - dist * 2);
+    
+    if (now - lastNoteTime > threshold) {
+      playNote(freq, touch.clientX, touch.clientY);
+      lastNoteTime = now;
+    }
+    lastX = touch.clientX;
+    lastY = touch.clientY;
+  }
+});
+
+canvas.addEventListener('touchend', () => mouseDown = false);
+
+// Keyboard
+document.addEventListener('keydown', (e) => {
+  if (e.key >= '1' && e.key <= '5') {
+    currentPalette = parseInt(e.key) - 1;
+    document.body.style.background = palettes[currentPalette].bg;
+    updateModeButtons();
+  }
+  if (e.key === ' ') {
+    ripples = [];
+    particles = [];
+    e.preventDefault();
+  }
+});
+
+// Mode buttons
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentMode = btn.dataset.mode;
+    updateModeButtons();
+  });
+});
+
+function updateModeButtons() {
+  document.querySelectorAll('.mode-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === currentMode);
+  });
+  document.getElementById('stats').innerHTML = 
+    `${palettes[currentPalette].name} · ${currentMode}<br>Scroll = octave · 1-5 = palette`;
+}
+
+// Background stars
+const stars = [];
+for (let i = 0; i < 150; i++) {
+  stars.push({
+    x: Math.random() * W,
+    y: Math.random() * H,
+    size: Math.random() * 1.5,
+    twinkle: Math.random() * Math.PI * 2,
+    speed: 0.01 + Math.random() * 0.03
+  });
+}
+
+// Animation loop
+let lastTime = 0;
+function animate(time) {
+  const dt = time - lastTime;
+  lastTime = time;
+  
+  // Fade background
+  ctx.fillStyle = palettes[currentPalette].bg + 'f0';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Stars
+  stars.forEach(star => {
+    star.twinkle += star.speed;
+    const alpha = 0.3 + Math.sin(star.twinkle) * 0.3;
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.fillRect(star.x, star.y, star.size, star.size);
+  });
+  
+  // Mouse glow
+  if (mouseX > 0 && mouseY > 0) {
+    const glow = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 100);
+    const color = palettes[currentPalette].colors[0];
+    glow.addColorStop(0, color + '20');
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.fillRect(mouseX - 100, mouseY - 100, 200, 200);
+  }
+  
+  // Connection lines between nearby ripples
+  for (let i = 0; i < ripples.length; i++) {
+    for (let j = i + 1; j < ripples.length; j++) {
+      const dist = Math.hypot(ripples[i].x - ripples[j].x, ripples[i].y - ripples[j].y);
+      if (dist < 200) {
+        ctx.strokeStyle = palettes[currentPalette].colors[0];
+        ctx.globalAlpha = 0.1 * (1 - dist / 200);
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(ripples[i].x, ripples[i].y);
+        ctx.lineTo(ripples[j].x, ripples[j].y);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+  
+  // Update & draw ripples
+  ripples = ripples.filter(r => {
+    r.draw();
+    return r.update();
+  });
+  
+  // Update & draw particles
+  particles = particles.filter(p => {
+    p.draw();
+    return p.update();
+  });
+  
+  // Limit particles
+  if (particles.length > MAX_PARTICLES) {
+    particles = particles.slice(-MAX_PARTICLES);
+  }
+  
+  requestAnimationFrame(animate);
+}
+
+// Initialize
+document.body.style.background = palettes[currentPalette].bg;
+updateModeButtons();
+requestAnimationFrame(animate);
+
+// Handle resize for stars
+window.addEventListener('resize', () => {
+  stars.forEach(star => {
+    star.x = Math.random() * W;
+    star.y = Math.random() * H;
+  });
+});
+</script>
+</body>
+</html>
