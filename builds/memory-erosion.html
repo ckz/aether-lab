@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memory Erosion — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a0f; }
+  canvas { display: block; }
+  #ui {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.4); font: 11px/1.5 'Courier New', monospace;
+    text-align: center; pointer-events: none; letter-spacing: 0.1em;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">TYPE ANYTHING · WATCH IT ERODE</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = innerWidth; H = canvas.height = innerHeight; }
+resize(); addEventListener('resize', resize);
+
+class Particle {
+  constructor(x, y, color) {
+    this.x = x; this.y = y;
+    this.ox = x; this.oy = y;
+    this.vx = (Math.random() - 0.5) * 1.2;
+    this.vy = (Math.random() - 0.5) * 1.2 - 0.3;
+    this.life = 1;
+    this.decay = 0.0008 + Math.random() * 0.0025;
+    this.size = 1 + Math.random() * 2;
+    this.color = color;
+    this.wander = Math.random() * Math.PI * 2;
+  }
+  update() {
+    this.wander += 0.04;
+    this.vx += Math.cos(this.wander) * 0.02;
+    this.vy += Math.sin(this.wander) * 0.02 - 0.01;
+    this.vx *= 0.995; this.vy *= 0.995;
+    this.x += this.vx; this.y += this.vy;
+    this.life -= this.decay;
+    return this.life > 0;
+  }
+  draw(ctx) {
+    ctx.globalAlpha = this.life * 0.85;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+let particles = [];
+let textPixels = [];
+let phase = 'idle'; // idle | text | eroding | gone
+let erosionStart = 0;
+const EROSION_DURATION = 12000;
+const PALETTES = [
+  ['#ff6b9d','#c44dff','#4dc9f6','#f9ca24','#ff9f43'],
+  ['#00d2ff','#3a7bd5','#a8edea','#fed6e3','#d299c2'],
+  ['#f7971e','#ffd200','#ff6b6b','#c31432','#89216b'],
+  ['#11998e','#38ef7d','#56ab2f','#a8e063','#d4fc79'],
+  ['#fc5c7d','#6a82fb','#a1c4fd','#c2e9fb','#e0c3fc']
+];
+let palette = PALETTES[0];
+let msg = '';
+
+function randomPalette() {
+  palette = PALETTES[Math.floor(Math.random() * PALETTES.length)];
+}
+
+function colorFor(i, total) {
+  return palette[Math.floor((i / total) * palette.length) % palette.length];
+}
+
+function sampleTextPixels(text) {
+  const off = document.createElement('canvas');
+  off.width = W; off.height = H;
+  const oc = off.getContext('2d');
+  const size = Math.min(W / (text.length * 0.6), H * 0.18, 180);
+  oc.font = `bold ${size}px "Courier New", monospace`;
+  oc.fillStyle = '#fff';
+  oc.textAlign = 'center'; oc.textBaseline = 'middle';
+  oc.fillText(text, W/2, H/2);
+  const id = oc.getImageData(0, 0, W, H).data;
+  const pts = [];
+  const gap = 3;
+  for (let y = 0; y < H; y += gap)
+    for (let x = 0; x < W; x += gap)
+      if (id[(y*W+x)*4 + 3] > 128) pts.push({x, y});
+  return pts;
+}
+
+function spawnFromPixels(pts) {
+  particles = [];
+  for (let i = 0; i < pts.length; i++) {
+    const c = colorFor(i, pts.length);
+    // slight jitter for organic feel
+    const jx = (Math.random()-0.5)*2;
+    const jy = (Math.random()-0.5)*2;
+    particles.push(new Particle(pts[i].x + jx, pts[i].y + jy, c));
+  }
+}
+
+function drawBackground() {
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = 'rgba(10,10,15,0.12)';
+  ctx.fillRect(0, 0, W, H);
+}
+
+function frame() {
+  drawBackground();
+  if (phase === 'text' || phase === 'eroding') {
+    particles = particles.filter(p => {
+      const alive = p.update();
+      if (alive) p.draw(ctx);
+      return alive;
+    });
+    if (phase === 'eroding' && Date.now() - erosionStart > EROSION_DURATION) {
+      phase = 'gone';
+      document.getElementById('ui').textContent = 'IT IS GONE · TYPE AGAIN';
+    }
+  }
+  ctx.globalAlpha = 1;
+  requestAnimationFrame(frame);
+}
+frame();
+
+addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    phase = 'idle'; particles = []; msg = '';
+    document.getElementById('ui').textContent = 'TYPE ANYTHING · WATCH IT ERODE';
+    return;
+  }
+  if (phase === 'eroding' || phase === 'text') return;
+  if (e.key === 'Backspace' || e.key === 'Enter') return;
+  if (e.key.length === 1) {
+    msg += e.key;
+    if (msg.length > 28) msg = msg.slice(-28);
+    randomPalette();
+    const pts = sampleTextPixels(msg);
+    spawnFromPixels(pts);
+    phase = 'text';
+    setTimeout(() => { if (phase === 'text') { phase = 'eroding'; erosionStart = Date.now(); }}, 1800);
+    document.getElementById('ui').textContent = `"${msg}" · WATCHING...`;
+  }
+});
+</script>
+</body>
+</html>
