@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Word Garden — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a12;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1;
+  }
+  .ui {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    background: rgba(10, 10, 18, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid #1e1e2e;
+    border-radius: 16px;
+    padding: 0.75rem 1.25rem;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  .ui input {
+    background: #14141f;
+    border: 1px solid #2a2a3a;
+    border-radius: 10px;
+    padding: 0.65rem 1rem;
+    color: #e0e0e0;
+    font-size: 1rem;
+    width: 220px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .ui input:focus { border-color: #6a6a9a; }
+  .ui button {
+    background: linear-gradient(135deg, #2a2a4a, #1a1a3a);
+    border: 1px solid #3a3a5c;
+    border-radius: 10px;
+    padding: 0.65rem 1.1rem;
+    color: #d0d0e8;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .ui button:hover {
+    background: linear-gradient(135deg, #3a3a6a, #2a2a5a);
+    border-color: #5a5a8a;
+    transform: translateY(-1px);
+  }
+  .ui button.secondary {
+    background: rgba(30,30,50,0.6);
+    border-color: #2a2a3a;
+    font-size: 0.8rem;
+    padding: 0.5rem 0.8rem;
+  }
+  .stats {
+    position: fixed;
+    top: 1.5rem;
+    right: 1.5rem;
+    z-index: 10;
+    font-size: 0.75rem;
+    color: #666;
+    text-align: right;
+    line-height: 1.6;
+  }
+  .hint {
+    position: fixed;
+    top: 1.5rem;
+    left: 1.5rem;
+    z-index: 10;
+    font-size: 0.8rem;
+    color: #555;
+    max-width: 280px;
+    line-height: 1.5;
+  }
+  .tooltip {
+    position: fixed;
+    z-index: 20;
+    background: rgba(10, 10, 18, 0.95);
+    border: 1px solid #3a3a5c;
+    border-radius: 8px;
+    padding: 0.5rem 0.85rem;
+    font-size: 0.85rem;
+    color: #e0e0e0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  }
+  .tooltip.visible { opacity: 1; }
+</style>
+</head>
+<body>
+<canvas id="garden"></canvas>
+
+<div class="hint">
+  Type a word, press Enter to plant it.<br>
+  Each word grows a unique plant.<br>
+  Short = flower, long = tree,<br>
+  punctuation = berries &amp; thorns.<br>
+  Hover to read. Double-click to harvest.
+</div>
+
+<div class="stats" id="stats">Plants: 0<br>Words planted: 0</div>
+
+<div class="ui">
+  <input type="text" id="wordInput" placeholder="Type a word..." maxlength="30" autocomplete="off">
+  <button id="plantBtn">🌱 Plant</button>
+  <button id="windBtn" class="secondary">💨 Wind</button>
+  <button id="clearBtn" class="secondary">🧹 Clear</button>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+const canvas = document.getElementById('garden');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+const statsEl = document.getElementById('stats');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- State ---
+const plants = [];
+const particles = [];
+const groundY = () => H * 0.78;
+const GROUND_COLORS = ['#1a2a1a', '#1a1a2a', '#2a1a2a', '#1a2a2a', '#2a2a1a'];
+let groundColor = GROUND_COLORS[0];
+let time = 0;
+let windStrength = 0;
+let windTarget = 0;
+let mouseX = W/2, mouseY = H/2;
+let wordCount = 0;
+
+// --- Color Palettes based on word hash ---
+const PALETTES = [
+  { stem: '#4a7c59', leaf: '#7cb342', flower: ['#ff6b9d', '#ffa0c0', '#ff8fab'], glow: '#ff6b9d' },
+  { stem: '#5c7c9a', leaf: '#64b5f6', flower: ['#ffd54f', '#ffecb3', '#ffe082'], glow: '#ffd54f' },
+  { stem: '#7c5c7c', leaf: '#ba68c8', flower: ['#80deea', '#b2ebf2', '#4dd0e1'], glow: '#80deea' },
+  { stem: '#9a7c5c', leaf: '#ffb74d', flower: ['#ef5350', '#ff8a80', '#ff5252'], glow: '#ef5350' },
+  { stem: '#5c9a7c', leaf: '#69f0ae', flower: ['#e040fb', '#ea80fc', '#ce93d8'], glow: '#e040fb' },
+  { stem: '#8a6c4a', leaf: '#a1887f', flower: ['#ffffff', '#f5f5f5', '#e0e0e0'], glow: '#ffffff' },
+  { stem: '#4a6a8a', leaf: '#64b5f6', flower: ['#ff6e40', '#ff8a65', '#ff7043'], glow: '#ff6e40' },
+  { stem: '#6a5a7a', leaf: '#9575cd', flower: ['#64ffda', '#1de9b6', '#00e676'], glow: '#64ffda' },
+];
+
+// --- Word Analysis ---
+function analyzeWord(word) {
+  const len = word.length;
+  const lower = word.toLowerCase();
+  let vowels = 0;
+  for (const c of lower) if ('aeiouy'.includes(c)) vowels++;
+  const vowelRatio = vowels / Math.max(1, len);
+  
+  // Detect punctuation
+  const hasPunct = /[^a-zA-Z]/.test(word);
+  const punctCount = (word.match(/[^a-zA-Z]/g) || []).length;
+  
+  return { len, vowels, vowelRatio, hasPunct, punctCount, hash: simpleHash(word) };
+}
+
+function simpleHash(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+// --- Plant Classes ---
+class Plant {
+  constructor(word, x) {
+    this.word = word;
+    this.analysis = analyzeWord(word);
+    this.x = x;
+    this.baseY = groundY();
+    this.palette = PALETTES[this.analysis.hash % PALETTES.length];
+    this.growProgress = 0;
+    this.growSpeed = 0.008 + Math.random() * 0.008;
+    this.swayOffset = Math.random() * Math.PI * 2;
+    this.swaySpeed = 0.01 + Math.random() * 0.01;
+    this.swayAmount = 0.3 + Math.random() * 0.4;
+    this.type = this.determineType();
+    this.particles = this.generateParticles();
+    this.hovered = false;
+    this.harvested = false;
+    this.age = 0;
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    this.segments = this.generateSegments();
+  }
+
+  determineType() {
+    const { len, hasPunct, punctCount, vowelRatio } = this.analysis;
+    if (hasPunct && punctCount > len * 0.3) return 'thornbush';
+    if (len <= 2) return 'sprout';
+    if (len <= 4) return 'flower';
+    if (len <= 7) return 'shrub';
+    if (len <= 12) return 'tree';
+    return 'ancient';
+  }
+
+  generateSegments() {
+    const segs = [];
+    const typeHeights = { sprout: 20, flower: 50, shrub: 80, tree: 150, ancient: 220, thornbush: 70 };
+    const targetH = typeHeights[this.type] || 80;
+    const segments = Math.floor(targetH / 12);
+    
+    for (let i = 0; i < segments; i++) {
+      segs.push({
+        y: (i / segments) * targetH,
+        thickness: Math.max(1.5, 5 - (i / segments) * 3.5),
+        angle: (Math.random() - 0.5) * 0.4
+      });
+    }
+    return segs;
+  }
+
+  generateParticles() {
+    const parts = [];
+    const count = this.type === 'ancient' ? 40 : this.type === 'tree' ? 25 : 12;
+    for (let i = 0; i < count; i++) {
+      parts.push({
+        x: (Math.random() - 0.5) * 40,
+        y: Math.random(),
+        size: 1 + Math.random() * 2.5,
+        speed: 0.002 + Math.random() * 0.005,
+        phase: Math.random() * Math.PI * 2,
+        type: Math.random() < 0.3 ? 'glow' : 'leaf'
+      });
+    }
+    return parts;
+  }
+
+  update() {
+    this.age += 0.016;
+    if (this.growProgress < 1) {
+      this.growProgress = Math.min(1, this.growProgress + this.growSpeed);
+    }
+    this.pulsePhase += 0.03;
+  }
+
+  draw(ctx) {
+    const gp = this.growProgress;
+    if (gp <= 0) return;
+    
+    ctx.save();
+    ctx.translate(this.x, this.baseY);
+    
+    const sway = Math.sin(time * this.swaySpeed + this.swayOffset) * this.swayAmount * gp;
+    
+    // Draw stem/branches
+    this.drawStem(ctx, sway, gp);
+    
+    // Draw leaves/flowers at segment endpoints
+    this.drawFoliage(ctx, sway, gp);
+    
+    // Draw particles
+    this.drawParticles(ctx, sway, gp);
+    
+    // Hover glow
+    if (this.hovered && gp >= 1) {
+      ctx.save();
+      ctx.globalAlpha = 0.15 + Math.sin(this.pulsePhase) * 0.05;
+      const grad = ctx.createRadialGradient(0, -60, 0, 0, -60, 100);
+      grad.addColorStop(0, this.palette.glow);
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.fillRect(-100, -160, 200, 200);
+      ctx.restore();
+    }
+    
+    ctx.restore();
+  }
+
+  drawStem(ctx, sway, gp) {
+    ctx.strokeStyle = this.palette.stem;
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    
+    const drawnSegs = Math.floor(this.segments.length * gp);
+    for (let i = 0; i < drawnSegs; i++) {
+      const seg = this.segments[i];
+      const progress = i / this.segments.length;
+      const localSway = sway * (0.3 + progress * 0.7);
+      
+      ctx.beginPath();
+      const startX = i === 0 ? 0 : this.segments[i-1].x + localSway * 0.5;
+      const startY = i === 0 ? 0 : this.segments[i-1].y;
+      const endX = seg.angle * 30 * progress + localSway;
+      const endY = seg.y;
+      
+      ctx.moveTo(startX, -startY);
+      ctx.quadraticCurveTo(
+        (startX + endX) / 2 + localSway * 0.3,
+        -(startY + endY) / 2,
+        endX, -endY
+      );
+      ctx.stroke();
+      
+      seg.x = endX;
+      seg._y = -endY;
+    }
+  }
+
+  drawFoliage(ctx, sway, gp) {
+    const drawnSegs = Math.floor(this.segments.length * gp);
+    for (let i = 0; i < drawnSegs; i++) {
+      const seg = this.segments[i];
+      if (!seg._y) continue;
+      const progress = i / this.segments.length;
+      const localSway = sway * (0.3 + progress * 0.7);
+      const x = seg.x + localSway * 0.3;
+      const y = seg._y;
+      
+      // Leaves
+      if (this.type !== 'sprout') {
+        ctx.fillStyle = this.palette.leaf;
+        ctx.globalAlpha = 0.7 * gp;
+        ctx.beginPath();
+        ctx.ellipse(x + 5, y, 4 + progress * 3, 2 + progress * 1.5, 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(x - 5, y, 4 + progress * 3, 2 + progress * 1.5, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      
+      // Flowers at top
+      if (i === drawnSegs - 1 && this.type !== 'tree' && this.type !== 'ancient' && this.type !== 'thornbush') {
+        const flowerColor = this.palette.flower[Math.floor(this.pulsePhase) % this.palette.flower.length];
+        ctx.fillStyle = flowerColor;
+        ctx.globalAlpha = 0.9 * gp;
+        const petalCount = 5;
+        for (let p = 0; p < petalCount; p++) {
+          const angle = (p / petalCount) * Math.PI * 2 + this.pulsePhase * 0.5;
+          const px = x + Math.cos(angle) * 6;
+          const py = y + Math.sin(angle) * 6;
+          ctx.beginPath();
+          ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // Center
+        ctx.fillStyle = '#fff';
+        ctx.globalAlpha = 0.9 * gp;
+        ctx.beginPath();
+        ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      
+      // Thornbush thorns
+      if (this.type === 'thornbush' && Math.random() < 0.02) {
+        ctx.strokeStyle = '#8b4513';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + 8, y - 8);
+        ctx.stroke();
+      }
+    }
+  }
+
+  drawParticles(ctx, sway, gp) {
+    this.particles.forEach(p => {
+      p.phase += p.speed;
+      const px = p.x + Math.sin(p.phase) * 8 + sway * p.y;
+      const py = -30 - p.y * 80 * gp;
+      if (py < -200 || py > 0) return;
+      
+      ctx.globalAlpha = 0.4 * gp;
+      if (p.type === 'glow') {
+        ctx.fillStyle = this.palette.glow;
+        ctx.beginPath();
+        ctx.arc(px, py, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = this.palette.leaf;
+        ctx.beginPath();
+        ctx.ellipse(px, py, p.size * 1.5, p.size, 0.3 + Math.sin(p.phase) * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    });
+  }
+
+  containsPoint(px, py) {
+    if (this.growProgress < 0.5) return false;
+    const topY = this.baseY - 200;
+    const bottomY = this.baseY;
+    const leftX = this.x - 40;
+    const rightX = this.x + 40;
+    return px > leftX && px < rightX && py > topY && py < bottomY;
+  }
+}
+
+// --- Ambient Particles ---
+class AmbientParticle {
+  constructor() {
+    this.reset();
+  }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.size = 0.5 + Math.random() * 1.5;
+    this.speedX = (Math.random() - 0.5) * 0.3;
+    this.speedY = -0.1 - Math.random() * 0.3;
+    this.opacity = 0.1 + Math.random() * 0.3;
+    this.twinkleSpeed = 0.02 + Math.random() * 0.03;
+    this.twinklePhase = Math.random() * Math.PI * 2;
+  }
+  update() {
+    this.x += this.speedX + windStrength * 0.5;
+    this.y += this.speedY;
+    this.twinklePhase += this.twinkleSpeed;
+    if (this.y < 0 || this.x < 0 || this.x > W) this.reset();
+    if (this.y < 0) this.y = H;
+  }
+  draw(ctx) {
+    const twinkle = 0.5 + Math.sin(this.twinklePhase) * 0.5;
+    ctx.globalAlpha = this.opacity * twinkle;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// --- Burst Particles ---
+class BurstParticle {
+  constructor(x, y, color) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 3;
+    this.vy = -1 - Math.random() * 3;
+    this.size = 1 + Math.random() * 3;
+    this.life = 1;
+    this.decay = 0.015 + Math.random() * 0.02;
+    this.color = color || '#ffffff';
+    this.gravity = 0.03;
+  }
+  update() {
+    this.x += this.vx + windStrength * 0.3;
+    this.y += this.vy;
+    this.vy += this.gravity;
+    this.life -= this.decay;
+    this.size *= 0.98;
+  }
+  draw(ctx) {
+    ctx.globalAlpha = Math.max(0, this.life);
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// --- Init ambient particles ---
+for (let i = 0; i < 80; i++) {
+  particles.push(new AmbientParticle());
+}
+
+// --- Draw functions ---
+function drawSky() {
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0a0a18');
+  grad.addColorStop(0.6, '#12121f');
+  grad.addColorStop(1, '#1a1a2a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Moon/stars
+  ctx.globalAlpha = 0.08;
+  ctx.fillStyle = '#ffffff';
+  const moonX = W * 0.8;
+  const moonY = H * 0.15;
+  const moonGrad = ctx.createRadialGradient(moonX, moonY, 0, moonX, moonY, 80);
+  moonGrad.addColorStop(0, 'rgba(255,255,255,0.15)');
+  moonGrad.addColorStop(1, 'transparent');
+  ctx.fillStyle = moonGrad;
+  ctx.beginPath();
+  ctx.arc(moonX, moonY, 80, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+function drawGround() {
+  const gy = groundY();
+  const grad = ctx.createLinearGradient(0, gy - 20, 0, H);
+  grad.addColorStop(0, groundColor);
+  grad.addColorStop(1, '#0a0a12');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(0, gy);
+  
+  // Rolling ground
+  for (let x = 0; x <= W; x += 20) {
+    const yOff = Math.sin(x * 0.01 + time * 0.2) * 5 + Math.sin(x * 0.03) * 3;
+    ctx.lineTo(x, gy + yOff);
+  }
+  ctx.lineTo(W, H);
+  ctx.lineTo(0, H);
+  ctx.closePath();
+  ctx.fill();
+  
+  // Ground line
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, gy);
+  for (let x = 0; x <= W; x += 20) {
+    const yOff = Math.sin(x * 0.01 + time * 0.2) * 5 + Math.sin(x * 0.03) * 3;
+    ctx.lineTo(x, gy + yOff);
+  }
+  ctx.stroke();
+}
+
+// --- Plant a word ---
+function plantWord(word) {
+  if (!word.trim()) return;
+  
+  const x = Math.random() * (W - 200) + 100;
+  const plant = new Plant(word.trim(), x);
+  plants.push(plant);
+  wordCount++;
+  
+  // Burst particles at plant location
+  for (let i = 0; i < 15; i++) {
+    particles.push(new BurstParticle(x, groundY(), plant.palette.glow));
+  }
+  
+  // Shift ground color slightly
+  groundColor = GROUND_COLORS[Math.floor(Math.random() * GROUND_COLORS.length)];
+  
+  updateStats();
+}
+
+function updateStats() {
+  statsEl.innerHTML = `Plants: ${plants.length}<br>Words planted: ${wordCount}`;
+}
+
+// --- Event handlers ---
+const wordInput = document.getElementById('wordInput');
+const plantBtn = document.getElementById('plantBtn');
+const windBtn = document.getElementById('windBtn');
+const clearBtn = document.getElementById('clearBtn');
+
+function doPlant() {
+  plantWord(wordInput.value);
+  wordInput.value = '';
+  wordInput.focus();
+}
+
+plantBtn.addEventListener('click', doPlant);
+wordInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') doPlant();
+});
+
+windBtn.addEventListener('click', () => {
+  windTarget = (Math.random() - 0.5) * 1.5;
+});
+
+clearBtn.addEventListener('click', () => {
+  plants.length = 0;
+  wordCount = 0;
+  updateStats();
+});
+
+// Mouse tracking for hover
+canvas.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  
+  let found = null;
+  for (const plant of plants) {
+    if (plant.containsPoint(mouseX, mouseY)) {
+      found = plant;
+      break;
+    }
+  }
+  
+  plants.forEach(p => p.hovered = (p === found));
+  
+  if (found && found.growProgress >= 1) {
+    tooltip.textContent = found.word;
+    tooltip.style.left = (mouseX + 15) + 'px';
+    tooltip.style.top = (mouseY - 30) + 'px';
+    tooltip.classList.add('visible');
+    canvas.style.cursor = 'pointer';
+  } else {
+    tooltip.classList.remove('visible');
+    canvas.style.cursor = 'default';
+  }
+});
+
+canvas.addEventListener('dblclick', (e) => {
+  for (const plant of plants) {
+    if (plant.containsPoint(e.clientX, e.clientY) && plant.growProgress >= 1) {
+      // Harvest: burst into particles, remove plant
+      for (let i = 0; i < 30; i++) {
+        particles.push(new BurstParticle(plant.x, groundY() - 60, plant.palette.flower[0]));
+      }
+      const idx = plants.indexOf(plant);
+      if (idx > -1) plants.splice(idx, 1);
+      updateStats();
+      break;
+    }
+  }
+});
+
+// --- Main loop ---
+function animate() {
+  time += 0.016;
+  
+  // Smooth wind
+  windStrength += (windTarget - windStrength) * 0.02;
+  windTarget *= 0.995;
+  
+  // Update
+  plants.forEach(p => p.update());
+  
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update();
+    if (particles[i].life <= 0 && particles[i].vy === undefined) continue;
+    if (particles[i] instanceof BurstParticle && particles[i].life <= 0) {
+      particles.splice(i, 1);
+    }
+  }
+  
+  // Draw
+  drawSky();
+  
+  // Draw ambient particles (back layer)
+  particles.filter(p => !(p instanceof BurstParticle)).forEach(p => p.draw(ctx));
+  
+  // Draw plants sorted by Y for depth
+  plants.sort((a, b) => a.x - b.x);
+  plants.forEach(p => p.draw(ctx));
+  
+  // Draw burst particles (front layer)
+  particles.filter(p => p instanceof BurstParticle).forEach(p => p.draw(ctx));
+  
+  drawGround();
+  
+  requestAnimationFrame(animate);
+}
+
+animate();
+
+// --- Seed some starter words ---
+setTimeout(() => {
+  const starters = ['hello', 'curiosity', 'bloom', 'wander', 'spark'];
+  starters.forEach((w, i) => {
+    setTimeout(() => plantWord(w), i * 400);
+  });
+}, 300);
+</script>
+</body>
+</html>
