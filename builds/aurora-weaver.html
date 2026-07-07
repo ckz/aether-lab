@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aurora Weaver</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #000;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #info {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(180, 255, 220, 0.6);
+    font-size: 12px;
+    text-align: center;
+    pointer-events: none;
+    letter-spacing: 1px;
+    text-shadow: 0 0 8px rgba(100, 255, 180, 0.3);
+    transition: opacity 3s;
+  }
+  #controls {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    color: rgba(180, 255, 220, 0.5);
+    font-size: 11px;
+    text-align: right;
+    pointer-events: none;
+    line-height: 1.8;
+    letter-spacing: 0.5px;
+  }
+  #palette-name {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    color: rgba(180, 255, 220, 0.6);
+    font-size: 13px;
+    pointer-events: none;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    text-shadow: 0 0 10px rgba(100, 255, 180, 0.3);
+    transition: opacity 1s;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="palette-name"></div>
+<div id="controls">
+  MOVE MOUSE — weave aurora<br>
+  CLICK — pulse<br>
+  SCROLL — intensity<br>
+  SPACE — next palette<br>
+  H — hide UI
+</div>
+<div id="info">AURORA WEAVER</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const paletteNameEl = document.getElementById('palette-name');
+const infoEl = document.getElementById('info');
+
+let W, H, DPR;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  generateStars();
+  generateMountains();
+}
+window.addEventListener('resize', resize);
+
+// ─── State ───────────────────────────────────────────────
+const mouse = { x: W / 2, y: H / 2, active: false };
+let intensity = 1.0;
+let targetIntensity = 1.0;
+let time = 0;
+let showUI = true;
+let paletteIndex = 0;
+let pulseWaves = [];
+
+// ─── Palettes ────────────────────────────────────────────
+const palettes = [
+  {
+    name: 'Arctic',
+    colors: ['#00ff88', '#00ccaa', '#00ffcc', '#44ffdd', '#00ff66', '#88ffcc'],
+    bg: ['#000511', '#000a1a', '#001122', '#000d1a'],
+    mountain: '#050d15',
+    starColor: [200, 240, 255]
+  },
+  {
+    name: 'Violet Dream',
+    colors: ['#aa44ff', '#cc66ff', '#8833ee', '#dd88ff', '#7733dd', '#bb55ff'],
+    bg: ['#0a001a', '#12002a', '#080015', '#0e0022'],
+    mountain: '#0a0518',
+    starColor: [220, 200, 255]
+  },
+  {
+    name: 'Solar Wind',
+    colors: ['#ff6600', '#ff8800', '#ffaa22', '#ff4400', '#ff9933', '#ffbb44'],
+    bg: ['#110500', '#1a0800', '#0f0300', '#150600'],
+    mountain: '#120800',
+    starColor: [255, 220, 180]
+  },
+  {
+    name: 'Rose Aurora',
+    colors: ['#ff4488', '#ff66aa', '#ee3377', '#ff5599', '#ff77bb', '#cc2266'],
+    bg: ['#0f0008', '#1a0010', '#0a0005', '#12000c'],
+    mountain: '#0f050a',
+    starColor: [255, 200, 220]
+  },
+  {
+    name: 'Deep Ocean',
+    colors: ['#0088ff', '#00aaff', '#0066dd', '#33bbff', '#0055cc', '#66ccff'],
+    bg: ['#000a14', '#000f1e', '#000810', '#000c18'],
+    mountain: '#040d14',
+    starColor: [180, 220, 255]
+  },
+  {
+    name: 'Emerald',
+    colors: ['#00ff44', '#22ff66', '#00dd33', '#44ff77', '#00bb22', '#66ff88'],
+    bg: ['#000f05', '#001a0a', '#000800', '#001208'],
+    mountain: '#040f08',
+    starColor: [200, 255, 220]
+  }
+];
+
+let palette = palettes[0];
+
+// ─── Stars ───────────────────────────────────────────────
+let stars = [];
+function generateStars() {
+  stars = [];
+  const count = Math.floor((W * H) / 800);
+  for (let i = 0; i < count; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H * 0.7,
+      r: Math.random() * 1.2 + 0.2,
+      twinkleSpeed: Math.random() * 2 + 0.5,
+      twinkleOffset: Math.random() * Math.PI * 2,
+      brightness: Math.random() * 0.5 + 0.5
+    });
+  }
+}
+
+// ─── Mountains ───────────────────────────────────────────
+let mountainLayers = [];
+function generateMountains() {
+  mountainLayers = [];
+  for (let layer = 0; layer < 3; layer++) {
+    const points = [];
+    const baseY = H * (0.72 + layer * 0.06);
+    const amplitude = 40 + layer * 30;
+    const frequency = 0.002 + layer * 0.001;
+    const segments = Math.ceil(W / 3);
+    for (let i = 0; i <= segments; i++) {
+      const x = (i / segments) * W;
+      const noise = Math.sin(i * frequency * 10 + layer * 3) * amplitude
+                  + Math.sin(i * frequency * 23 + layer * 7) * amplitude * 0.5
+                  + Math.sin(i * frequency * 47 + layer * 11) * amplitude * 0.25;
+      points.push({ x, y: baseY - Math.abs(noise) });
+    }
+    mountainLayers.push({
+      points,
+      color: palette.mountain,
+      alpha: 0.3 + layer * 0.25
+    });
+  }
+}
+
+// ─── Aurora Curtains ─────────────────────────────────────
+class AuroraCurtain {
+  constructor(y, amplitude, frequency, speed, colorIndex) {
+    this.baseY = y;
+    this.amplitude = amplitude;
+    this.frequency = frequency;
+    this.speed = speed;
+    this.colorIndex = colorIndex;
+    this.phase = Math.random() * Math.PI * 2;
+    this.phase2 = Math.random() * Math.PI * 2;
+    this.thickness = 30 + Math.random() * 50;
+    this.segments = 80;
+    this.mouseInfluence = 0;
+    this.targetMouseInfluence = 0;
+  }
+
+  getPoints(t) {
+    const points = [];
+    for (let i = 0; i <= this.segments; i++) {
+      const x = (i / this.segments) * W;
+      const normalizedX = i / this.segments;
+
+      // Multiple wave layers for organic feel
+      const wave1 = Math.sin(normalizedX * this.frequency * 6 + t * this.speed + this.phase) * this.amplitude;
+      const wave2 = Math.sin(normalizedX * this.frequency * 10 + t * this.speed * 0.7 + this.phase2) * this.amplitude * 0.4;
+      const wave3 = Math.sin(normalizedX * this.frequency * 3 + t * this.speed * 1.3) * this.amplitude * 0.6;
+
+      // Mouse influence — aurora follows cursor loosely
+      let mouseEffect = 0;
+      if (mouse.active) {
+        const dx = x - mouse.x;
+        const distFactor = 1 - Math.min(Math.abs(dx) / (W * 0.4), 1);
+        mouseEffect = distFactor * distFactor * 80 * this.mouseInfluence * (mouse.y < H * 0.6 ? 1 : -0.5);
+      }
+
+      const y = this.baseY + wave1 + wave2 + wave3 + mouseEffect;
+      points.push({ x, y });
+    }
+    return points;
+  }
+
+  draw(t) {
+    const points = this.getPoints(t);
+    const colors = palette.colors;
+    const c1 = colors[this.colorIndex % colors.length];
+    const c2 = colors[(this.colorIndex + 1) % colors.length];
+
+    // Draw vertical curtain strands
+    for (let strand = 0; strand < 5; strand++) {
+      const strandOffset = (strand - 2) * (this.thickness / 5);
+      const alpha = 0.03 + intensity * 0.04;
+
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y + strandOffset);
+
+      for (let i = 1; i < points.length - 1; i++) {
+        const xc = (points[i].x + points[i + 1].x) / 2;
+        const yc = (points[i].y + points[i + 1].y) / 2 + strandOffset;
+        ctx.quadraticCurveTo(points[i].x, points[i].y + strandOffset, xc, yc);
+      }
+
+      ctx.strokeStyle = strand % 2 === 0 ? c1 : c2;
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = alpha * intensity;
+      ctx.shadowColor = c1;
+      ctx.shadowBlur = 20;
+      ctx.stroke();
+    }
+
+    // Draw filled glow beneath the curve
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+    ctx.lineTo(W, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+
+    const grad = ctx.createLinearGradient(0, this.baseY - this.amplitude, 0, this.baseY + 150);
+    grad.addColorStop(0, c1.replace(')', `, ${0.08 * intensity})`).replace('rgb', 'rgba').replace('#', ''));
+    // Use hex with alpha manually
+    ctx.globalAlpha = 0.06 * intensity;
+    ctx.fillStyle = c1;
+    ctx.shadowColor = c1;
+    ctx.shadowBlur = 40;
+    ctx.fill();
+
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+
+    // Smooth mouse influence transition
+    this.mouseInfluence += (this.targetMouseInfluence - this.mouseInfluence) * 0.05;
+  }
+}
+
+// ─── Shooting Stars ──────────────────────────────────────
+class ShootingStar {
+  constructor() {
+    this.reset();
+  }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H * 0.3;
+    this.vx = 3 + Math.random() * 5;
+    this.vy = 1 + Math.random() * 2;
+    this.life = 1;
+    this.decay = 0.01 + Math.random() * 0.02;
+    this.length = 30 + Math.random() * 60;
+    this.active = true;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= this.decay;
+    if (this.life <= 0 || this.x > W + 100 || this.y > H) this.active = false;
+  }
+  draw() {
+    if (!this.active) return;
+    const alpha = this.life * 0.8;
+    const tailX = this.x - this.vx * this.length * 0.15;
+    const tailY = this.y - this.vy * this.length * 0.15;
+
+    const grad = ctx.createLinearGradient(tailX, tailY, this.x, this.y);
+    grad.addColorStop(0, `rgba(255,255,255,0)`);
+    grad.addColorStop(1, `rgba(255,255,255,${alpha})`);
+
+    ctx.beginPath();
+    ctx.moveTo(tailX, tailY);
+    ctx.lineTo(this.x, this.y);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 1;
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur = 8;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+}
+
+// ─── Pulse Waves ─────────────────────────────────────────
+class PulseWave {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.radius = 0;
+    this.maxRadius = 300;
+    this.life = 1;
+  }
+  update() {
+    this.radius += 4;
+    this.life = 1 - this.radius / this.maxRadius;
+    return this.life > 0;
+  }
+  draw() {
+    const c = palette.colors[Math.floor(time * 0.5) % palette.colors.length];
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.strokeStyle = c;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = this.life * 0.4 * intensity;
+    ctx.shadowColor = c;
+    ctx.shadowBlur = 15;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ─── Initialize ──────────────────────────────────────────
+let curtains = [];
+let shootingStars = [];
+let lastShootingStar = 0;
+
+function init() {
+  resize();
+  curtains = [
+    new AuroraCurtain(H * 0.15, 40, 80, 0.3, 0),
+    new AuroraCurtain(H * 0.20, 55, 100, 0.25, 2),
+    new AuroraCurtain(H * 0.12, 35, 65, 0.35, 4),
+    new AuroraCurtain(H * 0.25, 65, 120, 0.2, 1),
+    new AuroraCurtain(H * 0.18, 45, 90, 0.28, 3),
+    new AuroraCurtain(H * 0.10, 30, 55, 0.38, 5),
+  ];
+  shootingStars = [new ShootingStar()];
+}
+
+// ─── Draw Stars ──────────────────────────────────────────
+function drawStars() {
+  const [r, g, b] = palette.starColor;
+  stars.forEach(star => {
+    const twinkle = Math.sin(time * star.twinkleSpeed + star.twinkleOffset) * 0.3 + 0.7;
+    const alpha = star.brightness * twinkle;
+    ctx.beginPath();
+    ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+    ctx.globalAlpha = 1;
+    ctx.fill();
+  });
+}
+
+// ─── Draw Mountains ──────────────────────────────────────
+function drawMountains() {
+  mountainLayers.forEach((layer, i) => {
+    ctx.beginPath();
+    ctx.moveTo(0, H);
+    layer.points.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.lineTo(W, H);
+    ctx.closePath();
+    ctx.fillStyle = palette.mountain;
+    ctx.globalAlpha = layer.alpha + 0.1;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  });
+}
+
+// ─── Draw Background ─────────────────────────────────────
+function drawBackground() {
+  const bgColors = palette.bg;
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  bgColors.forEach((c, i) => {
+    grad.addColorStop(i / (bgColors.length - 1), c);
+  });
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ─── Main Loop ───────────────────────────────────────────
+function animate() {
+  time += 0.016;
+  intensity += (targetIntensity - intensity) * 0.03;
+
+  drawBackground();
+  drawStars();
+
+  // Update curtain mouse influence
+  curtains.forEach(c => {
+    if (mouse.active) {
+      c.targetMouseInfluence = 1;
+    } else {
+      c.targetMouseInfluence = 0;
+    }
+  });
+
+  // Draw aurora curtains
+  curtains.forEach(c => c.draw(time));
+
+  // Shooting stars
+  if (time - lastShootingStar > 3 + Math.random() * 8) {
+    shootingStars.push(new ShootingStar());
+    lastShootingStar = time;
+  }
+  shootingStars = shootingStars.filter(s => s.active);
+  shootingStars.forEach(s => { s.update(); s.draw(); });
+
+  // Mountains (foreground silhouette)
+  drawMountains();
+
+  // Pulse waves
+  pulseWaves = pulseWaves.filter(p => p.update());
+  pulseWaves.forEach(p => p.draw());
+
+  // Ground glow reflection
+  const groundGrad = ctx.createLinearGradient(0, H * 0.8, 0, H);
+  const c = palette.colors[0];
+  ctx.globalAlpha = 0.03 * intensity;
+  ctx.fillStyle = c;
+  ctx.shadowColor = c;
+  ctx.shadowBlur = 30;
+  ctx.fillRect(0, H * 0.85, W, H * 0.15);
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+
+  requestAnimationFrame(animate);
+}
+
+// ─── Events ──────────────────────────────────────────────
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  mouse.active = true;
+}, { passive: false });
+canvas.addEventListener('touchend', () => { mouse.active = false; });
+
+canvas.addEventListener('click', e => {
+  pulseWaves.push(new PulseWave(e.clientX, e.clientY));
+});
+
+canvas.addEventListener('wheel', e => {
+  targetIntensity = Math.max(0.2, Math.min(2.5, targetIntensity - e.deltaY * 0.001));
+});
+
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    paletteIndex = (paletteIndex + 1) % palettes.length;
+    palette = palettes[paletteIndex];
+    paletteNameEl.textContent = palette.name;
+    paletteNameEl.style.opacity = 1;
+    setTimeout(() => paletteNameEl.style.opacity = 0.4, 2000);
+    generateMountains();
+  }
+  if (e.code === 'KeyH') {
+    showUI = !showUI;
+    document.getElementById('controls').style.opacity = showUI ? 1 : 0;
+    infoEl.style.opacity = showUI ? 0.6 : 0;
+  }
+});
+
+// Fade info
+setTimeout(() => { infoEl.style.opacity = '0'; }, 5000);
+
+// ─── Boot ────────────────────────────────────────────────
+resize();
+init();
+animate();
+</script>
+</body>
+</html>
