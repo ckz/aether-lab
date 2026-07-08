@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frost Forge — Procedural Crystal Growth</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a14;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Courier New', monospace;
+    color: #8af;
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+    border-radius: 8px;
+    box-shadow: 0 0 60px rgba(120, 180, 255, 0.15);
+    cursor: crosshair;
+  }
+  .controls {
+    margin-top: 16px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    font-size: 13px;
+    color: #68a;
+  }
+  .controls button, .controls select {
+    background: rgba(100, 150, 220, 0.1);
+    border: 1px solid rgba(100, 150, 220, 0.3);
+    color: #8af;
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    transition: all 0.2s;
+  }
+  .controls button:hover, .controls select:hover {
+    background: rgba(100, 150, 220, 0.25);
+    border-color: rgba(100, 150, 220, 0.6);
+  }
+  .info {
+    margin-top: 10px;
+    font-size: 11px;
+    color: #557;
+    text-align: center;
+    max-width: 600px;
+    line-height: 1.6;
+  }
+  .title {
+    margin-bottom: 14px;
+    font-size: 18px;
+    letter-spacing: 4px;
+    color: #acf;
+    text-shadow: 0 0 20px rgba(120, 180, 255, 0.4);
+  }
+</style>
+</head>
+<body>
+<div class="title">✦ FROST FORGE ✦</div>
+<canvas id="canvas"></canvas>
+<div class="controls">
+  <button onclick="seedCrystal()">🌱 Seed Crystal</button>
+  <button onclick="toggleAutoGrow()">⏱ Auto-Grow</button>
+  <select id="paletteSelect" onchange="setPalette(this.value)">
+    <option value="arctic">Arctic</option>
+    <option value="midnight">Midnight</option>
+    <option value="ember">Ember Frost</option>
+    <option value="aurora">Aurora</option>
+    <option value="void">Void Crystal</option>
+    <option value="necrotic">Necrotic</option>
+  </select>
+  <button onclick="clearCanvas()">🗑 Clear</button>
+  <button onclick="saveImage()">💾 Save</button>
+</div>
+<div class="info">
+  Click anywhere to seed a crystal. Each branch divides into 2–4 sub-branches with fractal angles.
+  Temperature noise affects growth speed. Watch crystals compete for space.
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  const s = Math.min(window.innerWidth - 40, window.innerHeight - 160, 900);
+  W = H = s;
+  canvas.width = W;
+  canvas.height = H;
+  redraw();
+}
+window.addEventListener('resize', resize);
+
+const palettes = {
+  arctic: {
+    bg: '#060d18',
+    core: ['#e8f4ff', '#c8e4ff', '#a0d0ff', '#78b8ff', '#50a0f0'],
+    glow: 'rgba(150, 200, 255, 0.06)',
+    branch: ['rgba(180,220,255,', 'rgba(140,200,255,', 'rgba(100,170,240,', 'rgba(80,150,220,'],
+    particle: '#c8e4ff'
+  },
+  midnight: {
+    bg: '#050510',
+    core: ['#c8c8ff', '#8888cc', '#6666aa', '#4444aa', '#222288'],
+    glow: 'rgba(100, 100, 200, 0.05)',
+    branch: ['rgba(160,160,240,', 'rgba(120,120,200,', 'rgba(90,90,170,', 'rgba(60,60,140,'],
+    particle: '#8888cc'
+  },
+  ember: {
+    bg: '#100a05',
+    core: ['#ffe8c0', '#ffd090', '#ffb860', '#ff9830', '#ff7800'],
+    glow: 'rgba(255, 150, 50, 0.06)',
+    branch: ['rgba(255,220,180,', 'rgba(255,190,130,', 'rgba(255,160,90,', 'rgba(255,130,50,'],
+    particle: '#ffb860'
+  },
+  aurora: {
+    bg: '#050f0a',
+    core: ['#c0ffe0', '#80f0c0', '#40e0a0', '#20d080', '#00c060'],
+    glow: 'rgba(50, 220, 140, 0.06)',
+    branch: ['rgba(160,240,200,', 'rgba(100,220,170,', 'rgba(60,200,140,', 'rgba(30,180,110,'],
+    particle: '#80f0c0'
+  },
+  void: {
+    bg: '#080008',
+    core: ['#ff88ff', '#dd66dd', '#bb44bb', '#9922aa', '#771199'],
+    glow: 'rgba(200, 80, 200, 0.05)',
+    branch: ['rgba(230,140,230,', 'rgba(200,100,200,', 'rgba(170,70,180,', 'rgba(140,50,150,'],
+    particle: '#cc66cc'
+  },
+  necrotic: {
+    bg: '#080808',
+    core: ['#aaffaa', '#66dd66', '#44bb44', '#229922', '#117711'],
+    glow: 'rgba(80, 200, 80, 0.05)',
+    branch: ['rgba(140,220,140,', 'rgba(100,190,100,', 'rgba(70,160,70,', 'rgba(50,130,50,'],
+    particle: '#66dd66'
+  }
+};
+
+let currentPalette = 'arctic';
+let crystals = [];
+let particles = [];
+let autoGrow = false;
+let autoGrowInterval = null;
+let bgLayer = null;
+
+class Crystal {
+  constructor(x, y, angle, depth, palette) {
+    this.x = x;
+    this.y = y;
+    this.angle = angle;
+    this.depth = depth;
+    this.palette = palette;
+    this.segments = [];
+    this.growing = true;
+    this.growSpeed = 0.6 + Math.random() * 1.2;
+    this.currentSeg = 0;
+    this.totalSegs = 8 + Math.floor(Math.random() * 20);
+    this.thickness = Math.max(1, (6 - depth) * 0.8 + Math.random() * 1.5);
+    this.length = 15 + Math.random() * 40 - depth * 2;
+    this.divergence = (Math.random() - 0.5) * 1.2;
+    this.branchProb = 0.35 - depth * 0.06;
+    this.maxDepth = 4 + Math.floor(Math.random() * 3);
+    this.opacity = 0.7 + Math.random() * 0.3;
+    this.colorIdx = Math.floor(Math.random() * 4);
+    this.age = 0;
+    this.noiseOff = Math.random() * 1000;
+
+    // Temperature field influence
+    this.temp = Math.random();
+  }
+
+  update(tempField) {
+    if (!this.growing) return;
+    this.age++;
+
+    const localTemp = tempField[Math.floor(this.x) % W]?.[Math.floor(this.y) % H] ?? 0.5;
+    const speed = this.growSpeed * (0.5 + localTemp * 1.0);
+
+    if (this.age % Math.max(1, Math.floor(3 / speed)) === 0 && this.currentSeg < this.totalSegs) {
+      const prevX = this.x;
+      const prevY = this.y;
+      const noise = simplex2(this.x * 0.01 + this.noiseOff, this.y * 0.01) * 0.3;
+      this.angle += this.divergence * 0.15 + noise;
+
+      this.x += Math.cos(this.angle) * this.length * 0.3;
+      this.y += Math.sin(this.angle) * this.length * 0.3;
+
+      const alpha = this.opacity * (1 - this.depth / this.maxDepth * 0.5);
+      this.segments.push({
+        x1: prevX, y1: prevY,
+        x2: this.x, y2: this.y,
+        thickness: this.thickness,
+        alpha: alpha,
+        colorIdx: this.colorIdx
+      });
+
+      // Spawn particles at tip
+      if (Math.random() < 0.3) {
+        particles.push(new Particle(this.x, this.y, this.palette));
+      }
+
+      this.currentSeg++;
+
+      // Branch
+      if (this.depth < this.maxDepth && this.currentSeg > 3 && Math.random() < this.branchProb) {
+        const numBranches = 2 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < numBranches; i++) {
+          const branchAngle = this.angle + (Math.random() - 0.5) * 1.5;
+          crystals.push(new Crystal(
+            this.x, this.y,
+            branchAngle,
+            this.depth + 1,
+            this.palette
+          ));
+        }
+      }
+
+      // Occasionally redirect
+      if (Math.random() < 0.15) {
+        this.divergence = (Math.random() - 0.5) * 1.5;
+      }
+    }
+
+    if (this.currentSeg >= this.totalSegs || this.depth >= this.maxDepth) {
+      this.growing = false;
+    }
+  }
+
+  draw(ctx) {
+    const p = palettes[this.palette];
+    for (const seg of this.segments) {
+      const alpha = seg.alpha * (1 - this.age / 400);
+      if (alpha <= 0) continue;
+      ctx.strokeStyle = p.branch[seg.colorIdx % p.branch.length] + alpha + ')';
+      ctx.lineWidth = seg.thickness;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(seg.x1, seg.y1);
+      ctx.lineTo(seg.x2, seg.y2);
+      ctx.stroke();
+    }
+  }
+
+  isDead() {
+    return !this.growing && this.segments.length > 0 && this.age > 500;
+  }
+}
+
+class Particle {
+  constructor(x, y, palette) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 0.8;
+    this.vy = (Math.random() - 0.5) * 0.8;
+    this.life = 1;
+    this.decay = 0.005 + Math.random() * 0.02;
+    this.size = 0.5 + Math.random() * 2;
+    this.palette = palette;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+    this.life -= this.decay;
+  }
+  draw(ctx) {
+    const p = palettes[this.palette];
+    ctx.fillStyle = p.particle;
+    ctx.globalAlpha = this.life * 0.6;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  isDead() { return this.life <= 0; }
+}
+
+// Simple 2D noise
+function simplex2(x, y) {
+  const dot = x * 12.9898 + y * 78.233;
+  return (Math.sin(dot) * 43758.5453) % 1;
+}
+
+function buildTempField() {
+  const field = [];
+  for (let x = 0; x < W; x += 8) {
+    field[x] = [];
+    for (let y = 0; y < H; y += 8) {
+      const nx = x / W * 3;
+      const ny = y / H * 3;
+      field[x][y] = (Math.sin(nx * 2.1 + ny * 1.3) * Math.cos(ny * 1.7 - nx * 0.9) + 1) / 2;
+    }
+  }
+  return field;
+}
+
+let tempField = buildTempField();
+
+function seedCrystal() {
+  const margin = 80;
+  const x = margin + Math.random() * (W - margin * 2);
+  const y = margin + Math.random() * (H - margin * 2);
+  const angle = Math.random() * Math.PI * 2;
+  crystals.push(new Crystal(x, y, angle, 0, currentPalette));
+
+  // Seed burst particles
+  for (let i = 0; i < 30; i++) {
+    particles.push(new Particle(x, y, currentPalette));
+  }
+}
+
+function toggleAutoGrow() {
+  autoGrow = !autoGrow;
+  if (autoGrow) {
+    autoGrowInterval = setInterval(() => {
+      if (crystals.length < 25) seedCrystal();
+    }, 2000);
+  } else {
+    clearInterval(autoGrowInterval);
+  }
+}
+
+function setPalette(name) {
+  currentPalette = name;
+}
+
+function clearCanvas() {
+  crystals = [];
+  particles = [];
+  tempField = buildTempField();
+  redraw();
+}
+
+function saveImage() {
+  const link = document.createElement('a');
+  link.download = `frost-forge-${Date.now()}.png`;
+  link.href = canvas.toDataURL();
+  link.click();
+}
+
+function drawBackground() {
+  const p = palettes[currentPalette];
+  if (!bgLayer || bgLayer.palette !== currentPalette) {
+    bgLayer = { palette: currentPalette, canvas: document.createElement('canvas') };
+    bgLayer.canvas.width = W;
+    bgLayer.canvas.height = H;
+    const bctx = bgLayer.canvas.getContext('2d');
+    bctx.fillStyle = p.bg;
+    bctx.fillRect(0, 0, W, H);
+
+    // Subtle frosted texture
+    for (let i = 0; i < 2000; i++) {
+      const x = Math.random() * W;
+      const y = Math.random() * H;
+      const a = Math.random() * 0.03;
+      bctx.fillStyle = `rgba(200, 220, 255, ${a})`;
+      bctx.fillRect(x, y, 1, 1);
+    }
+
+    // Radial center glow
+    const grad = bctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, W * 0.6);
+    grad.addColorStop(0, p.glow);
+    grad.addColorStop(1, 'transparent');
+    bctx.fillStyle = grad;
+    bctx.fillRect(0, 0, W, H);
+
+    bgLayer.palette = currentPalette;
+  }
+  ctx.drawImage(bgLayer.canvas, 0, 0);
+}
+
+function redraw() {
+  drawBackground();
+  for (const c of crystals) c.draw(ctx);
+  for (const p of particles) p.draw(ctx);
+}
+
+function loop() {
+  // Temperature field evolves slowly
+  if (Math.random() < 0.01) tempField = buildTempField();
+
+  // Update crystals
+  for (const c of crystals) c.update(tempField);
+
+  // Update particles
+  for (const p of particles) p.update();
+  particles = particles.filter(p => !p.isDead());
+  crystals = crystals.filter(c => !c.isDead());
+
+  // Redraw
+  redraw();
+
+  requestAnimationFrame(loop);
+}
+
+// Click to seed
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const angle = Math.random() * Math.PI * 2;
+  crystals.push(new Crystal(x, y, angle, 0, currentPalette));
+  for (let i = 0; i < 20; i++) {
+    particles.push(new Particle(x, y, currentPalette));
+  }
+});
+
+resize();
+
+// Seed a starter crystal
+setTimeout(() => seedCrystal(), 300);
+setTimeout(() => seedCrystal(), 900);
+setTimeout(() => seedCrystal(), 1600);
+
+loop();
+</script>
+</body>
+</html>
