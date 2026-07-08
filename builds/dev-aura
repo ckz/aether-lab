@@ -1,0 +1,306 @@
+#!/usr/bin/env bash
+# dev-aura — what's your developer aura?
+# Analyzes your .bash_history / .zsh_history and tells you who you really are.
+# Usage: dev-aura [--history-file FILE] [--limit N]
+# Dependencies: coreutils, awk, sed, sort, uniq (standard on Linux/macOS)
+
+set -euo pipefail
+
+HISTORY_FILE=""
+LIMIT=5000
+
+# Parse args
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --history-file) HISTORY_FILE="$2"; shift 2 ;;
+    --limit) LIMIT="$2"; shift 2 ;;
+    -h|--help)
+      echo "dev-aura — reveal your developer aura from your command history"
+      echo ""
+      echo "Usage: dev-aura [--history-file FILE] [--limit N]"
+      echo "  --history-file   Path to history file (auto-detects bash/zsh if omitted)"
+      echo "  --limit          Max lines to analyze (default: $LIMIT)"
+      exit 0
+      ;;
+    *) echo "Unknown option: $1"; exit 1 ;;
+  esac
+done
+
+# Auto-detect history file
+if [[ -z "$HISTORY_FILE" ]]; then
+  if [[ -f "$HOME/.zsh_history" ]]; then
+    HISTORY_FILE="$HOME/.zsh_history"
+  elif [[ -f "$HOME/.bash_history" ]]; then
+    HISTORY_FILE="$HOME/.bash_history"
+  else
+    echo "❌ No history file found. Specify with --history-file."
+    exit 1
+  fi
+fi
+
+if [[ ! -r "$HISTORY_FILE" ]]; then
+  echo "❌ Cannot read: $HISTORY_FILE"
+  exit 1
+fi
+
+# zsh history format: ": 1609459200:0;command"
+# bash history format: "command"
+tail -n "$LIMIT" "$HISTORY_FILE" \
+  | sed -E 's/^: [0-9]+:[0-9]+;//' \
+  | sed '/^$/d' \
+  | sed 's/^[[:space:]]*//' \
+  | awk '!seen[$0]++' \
+  | awk '{
+      cmd = $1;
+      # Normalize: strip flags, get base command
+      sub(/ .*/, "", cmd);
+      gsub(/[^a-zA-Z0-9_\-]/, "", cmd);
+      if (cmd != "") counts[cmd]++;
+      total++;
+    }
+    END {
+      for (c in counts) print counts[c], c;
+    }' \
+  | sort -rn \
+  | head -20 > /tmp/dev-aura-top-cmds.txt
+
+TOTAL_CMDS=$(wc -l < "$HISTORY_FILE" | tr -d ' ')
+UNIQUE_CMDS=$(wc -l < /tmp/dev-aura-top-cmds.txt)
+TOP_CMD=$(head -1 /tmp/dev-aura-top-cmds.txt | awk '{print $2}')
+TOP_CMD_COUNT=$(head -1 /tmp/dev-aura-top-cmds.txt | awk '{print $1}')
+
+# Detect archetypes
+AURA=""
+DESCRIPTION=""
+SYMBOL=""
+
+# Count specific patterns
+GIT_COUNT=$(awk '$2 ~ /^git$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+NPM_COUNT=$(awk '$2 ~ /^(npm|npx|yarn|pnpm)$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+VIM_COUNT=$(awk '$2 ~ /^vi?m?$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+DOCKER_COUNT=$(awk '$2 ~ /^docker$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+SSH_COUNT=$(awk '$2 ~ /^ssh$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+SUDO_COUNT=$(awk '$2 ~ /^sudo$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+LS_COUNT=$(awk '$2 ~ /^ls$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+CD_COUNT=$(awk '$2 ~ /^cd$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+CAT_COUNT=$(awk '$2 ~ /^cat$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+GREP_COUNT=$(awk '$2 ~ /^grep$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+CURL_COUNT=$(awk '$2 ~ /^curl$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+WGET_COUNT=$(awk '$2 ~ /^wget$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+CHMOD_COUNT=$(awk '$2 ~ /^chmod$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+RM_COUNT=$(awk '$2 ~ /^rm$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+MAKE_COUNT=$(awk '$2 ~ /^make$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+PYTHON_COUNT=$(awk '$2 ~ /^(python|python3|py)$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+NODE_COUNT=$(awk '$2 ~ /^node$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+HELP_COUNT=$(awk '$2 ~ /^(man|help|--help|-h)$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+SCREEN_COUNT=$(awk '$2 ~ /^(screen|tmux)$/' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+PIP_COUNT=$(awk '$2 ~ /^pip/ ' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+KUBE_COUNT=$(awk '$2 ~ /^kubectl$/ ' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+AWS_COUNT=$(awk '$2 ~ /^aws$/ ' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+GO_COUNT=$(awk '$2 ~ /^go$/ ' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+RUST_COUNT=$(awk '$2 ~ /^cargo$/ ' /tmp/dev-aura-top-cmds.txt | awk '{s+=$1} END {print s+0}')
+CARGO_COUNT=$RUST_COUNT
+
+# Check for "lazy but clever" patterns
+HISTORY_CONTENT=$(tail -n "$LIMIT" "$HISTORY_FILE" | sed -E 's/^: [0-9]+:[0-9]+;//' | sed '/^$/d')
+ALIAS_COUNT=$(echo "$HISTORY_CONTENT" | grep -cE '^[a-z]+ ' || true)
+SUPERUSER=$(echo "$HISTORY_CONTENT" | grep -cE '^sudo ' || true)
+
+# Determine aura
+if [[ $DOCKER_COUNT -gt 5 && $KUBE_COUNT -gt 3 ]]; then
+  SYMBOL="🐳"
+  AURA="The Container Mystic"
+  DESCRIPTION="You live in containers, deploy with kubectl, and have strong opinions about orchestration. The cloud is your home, and you have at least three Dockerfiles memorized."
+elif [[ $VIM_COUNT -gt 3 && $GIT_COUNT -gt 10 ]]; then
+  SYMBOL="🌿"
+  AURA="The Git-Wandering Vim Sage"
+  DESCRIPTION="You navigate code and life with hjkl. Git is your time machine, and your .vimrc is longer than most people's résumés. You've never met a plugin you didn't compile."
+elif [[ $SUDO_COUNT -gt 10 ]]; then
+  SYMBOL="👑"
+  AURA="The Sudo Sorcerer"
+  DESCRIPTION="You have root on everything and you're not afraid to use it. chmod 777 is your personality type. The system is your sandbox and you own it."
+elif [[ $AWS_COUNT -gt 5 ]]; then
+  SYMBOL="☁️"
+  AURA="The Cloud Architect"
+  DESCRIPTION="You spin up instances faster than most people open tabs. Your infrastructure is code, your code is infrastructure, and your credit card bill is terrifying."
+elif [[ $GIT_COUNT -gt 20 ]]; then
+  SYMBOL="🔀"
+  AURA="The Git Flow Oracle"
+  DESCRIPTION="Git is not a tool — it's a lifestyle. You rebase before breakfast, squash before dinner, and have resolved more merge conflicts than most people have hot meals."
+elif [[ $DOCKER_COUNT -gt 5 ]]; then
+  SYMBOL="🐳"
+  AURA="The Docker Alchemist"
+  DESCRIPTION="It works on your machine, it works in a container, it works in production (mostly). You have strong opinions about multi-stage builds."
+elif [[ $PYTHON_COUNT -gt 10 ]]; then
+  SYMBOL="🐍"
+  AURA="The Pythonic Dreamer"
+  DESCRIPTION="You could write a script for that. In fact, you already have — three versions, the first two using pandas when you didn't need to."
+elif [[ $NPM_COUNT -gt 10 ]]; then
+  SYMBOL="📦"
+  AURA="The Node Nomad"
+  DESCRIPTION="npm install is your heartbeat. node_modules is both your home and your nemesis. You have 47 package.json files and a complex relationship with semver."
+elif [[ $NODE_COUNT -gt 5 ]]; then
+  SYMBOL="🟢"
+  AURA="The Runtime Runner"
+  DESCRIPTION="node index.js is your meditation. You've seen 'Cannot find module' so many times it's become a haiku."
+elif [[ $RUST_COUNT -gt 3 ]]; then
+  SYMBOL="🦀"
+  AURA="The Rust Evangelist"
+  DESCRIPTION="You fought the borrow checker and won. Now you evangelize. Your code compiles on the first try, your coffee is cold, and your lifetimes are explicit."
+elif [[ $GO_COUNT -gt 3 ]]; then
+  SYMBOL="🔵"
+  AURA="The Golang Gardener"
+  DESCRIPTION="Simple, concurrent, compiled. You write Go because it gets out of your way — and occasionally yells at you about error handling."
+elif [[ $SCREEN_COUNT -gt 3 ]]; then
+  SYMBOL="🖥️"
+  AURA="The Terminal Tunnel Digger"
+  DESCRIPTION="tmux is your window manager, screen is your safety blanket, and you have more panes than a greenhouse. You live in the terminal and you're not sorry."
+elif [[ $CURL_COUNT -gt 5 ]]; then
+  SYMBOL="🌐"
+  AURA="The Curl Diplomat"
+  DESCRIPTION="You talk to APIs with curl. You've memorized 12 flags and your fingers remember three different Content-Type headers. Postman is for casuals."
+elif [[ $GREP_COUNT -gt 5 ]]; then
+  SYMBOL="🔍"
+  AURA="The Pattern Seeker"
+  DESCRIPTION="grep is your first language, regex your second. You find things that shouldn't be findable and you find them fast."
+elif [[ $HELP_COUNT -gt 3 ]]; then
+  SYMBOL="📚"
+  AURA="The Manual Monk"
+  DESCRIPTION="You read man pages for fun. You know flags that don't exist in the help text. RTFM is your love language."
+elif [[ $LS_COUNT -gt 5 ]]; then
+  SYMBOL="👁️"
+  AURA="The Directory Observer"
+  DESCRIPTION="You ls before you breathe. ls -la is your morning prayer. You know what's in every folder and you're not afraid to show hidden files."
+elif [[ $CHMOD_COUNT -gt 3 ]]; then
+  SYMBOL="🔐"
+  AURA="The Permission Warden"
+  DESCRIPTION="chmod 755, chmod +x, chown — you manage access like a bouncer at an exclusive club. Your filesystem is tidy and your permissions are correct."
+elif [[ $RM_COUNT -gt 5 ]]; then
+  SYMBOL="💣"
+  AURA="The Deletion Daredevil"
+  DESCRIPTION="You rm without -i. You rm -rf like it's a personality trait. You keep no backups and fear no consequences. The filesystem trembles at your keystrokes."
+elif [[ $SUPERUSER -gt 5 ]]; then
+  SYMBOL="🛡️"
+  AURA="The Privilege Pilot"
+  DESCRIPTION="sudo make me a sandwich is your humor. You know which commands need sudo and which don't, and you're quick with the password prompt."
+elif [[ $MAKE_COUNT -gt 3 ]]; then
+  SYMBOL="🔨"
+  AURA="The Buildsmith"
+  DESCRIPTION="make is your ritual. You know what every target does, you've read every Makefile, and make clean is your therapy."
+elif [[ $CAT_COUNT -gt 5 ]]; then
+  SYMBOL="🐱"
+  AURA="The Concatenation Cat"
+  DESCRIPTION="You cat everything. Configs, logs, READMEs, binaries (once). less is for when you're feeling luxurious. cat is forever."
+elif [[ $PIP_COUNT -gt 5 ]]; then
+  SYMBOL="🐍"
+  AURA="The Python Package Curator"
+  DESCRIPTION="pip install is your gateway drug. You have virtualenvs for different moods. requirements.txt is your autobiography."
+elif [[ $CARGO_COUNT -gt 3 ]]; then
+  SYMBOL="🦀"
+  AURA="The Cargo Commander"
+  DESCRIPTION="cargo build, cargo run, cargo test — your life is a lifecycle. You speak in crates and your dependencies are minimal."
+elif [[ $SSH_COUNT -gt 3 ]]; then
+  SYMBOL="🔑"
+  AURA="The Remote Ranger"
+  DESCRIPTION="You ssh everywhere. Your .ssh/config is a novel. You've got keys for servers you forgot you had access to."
+elif [[ $NODE_COUNT -gt 3 ]]; then
+  SYMBOL="🟢"
+  AURA="The Node Runner"
+  DESCRIPTION="node is your interpreter of choice. You've debugged callback pyramids and emerged stronger. require() is your love language."
+elif [[ $GIT_COUNT -gt 10 ]]; then
+  SYMBOL="🔀"
+  AURA="The Version Control Virtuoso"
+  DESCRIPTION="git is your instrument. You compose commits like symphonies, rebase like a conductor, and never commit secrets to main."
+elif [[ $NPM_COUNT -gt 5 ]]; then
+  SYMBOL="📦"
+  AURA="The Package Manager"
+  DESCRIPTION="npm is your ecosystem. You install before you think, delete node_modules when you're angry, and always --save-dev."
+elif [[ $CURL_COUNT -gt 3 ]]; then
+  SYMBOL="🌐"
+  AURA="The HTTP Bard"
+  DESCRIPTION="curl is your poetry. You compose requests in headers and parse responses in your head. REST is your rhythm, JSON is your meter."
+elif [[ $DOCKER_COUNT -gt 3 ]]; then
+  SYMBOL="🐳"
+  AURA="The Container Captain"
+  DESCRIPTION="docker run is your incantation. Containers are your world and the world is containers. You've never said 'but it works on my machine' unironically."
+elif [[ $PYTHON_COUNT -gt 5 ]]; then
+  SYMBOL="🐍"
+  AURA="The Python Poet"
+  DESCRIPTION="Python is your prose. Import this is your philosophy. You solve problems with one-liners and teach machines to speak your language."
+elif [[ $SCREEN_COUNT -gt 2 ]]; then
+  SYMBOL="🖥️"
+  AURA="The Multiplex Maestro"
+  DESCRIPTION="You run tmux or screen like a symphony. Each pane a movement, each session a concerto. You've detached so long you forgot which host you're on."
+elif [[ $GIT_COUNT -gt 5 ]]; then
+  SYMBOL="🔀"
+  AURA="The Commit Composer"
+  DESCRIPTION="You commit with intention. Your git log tells a story and your branches are pruned. You've never force-pushed to main (you lie)."
+elif [[ $LS_COUNT -gt 3 ]]; then
+  SYMBOL="👁️"
+  AURA="The Listener"
+  DESCRIPTION="You ls before you act. You know the contents of every directory and you're never surprised by what you find. ls -lah is your meditation."
+elif [[ $SUDO_COUNT -gt 3 ]]; then
+  SYMBOL="👑"
+  AURA="The Sudo Samurai"
+  DESCRIPTION="You wield root like a katana. Quick, precise, occasionally dangerous. You have opinions about systemd and you're not afraid to apt-get remove them."
+else
+  SYMBOL="✨"
+  AURA="The Enigmatic Explorer"
+  DESCRIPTION="Your history is a mystery — even to us. You're either very clean, very dangerous, or you just started your journey. The terminal is your canvas and you haven't picked a brush yet."
+fi
+
+# Detect night owl
+NIGHT_COUNT=$(echo "$HISTORY_CONTENT" | grep -cE '^[0-9]{2}:[0-9]{2}' || true)
+HAS_NIGHT=$(echo "$HISTORY_CONTENT" | grep -cE '(0[0-5]|2[0-3]):[0-5][0-9]' || true)
+
+# Check for "danger zone" commands (for fun)
+DANGER_ZONE=""
+if [[ $RM_COUNT -gt 10 ]]; then
+  DANGER_ZONE="💣 Deletion enthusiast"
+fi
+if [[ $SUDO_COUNT -gt 15 ]]; then
+  DANGER_ZONE="${DANGER_ZONE:+$DANGER_ZONE /n }👑 Power user"
+fi
+if [[ $CHMOD_COUNT -gt 5 ]]; then
+  DANGER_ZONE="${DANGER_ZONE:+$DANGER_ZONE /n }🔐 Permission tinkerer"
+fi
+
+# Output
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  $SYMBOL  DEV AURA READING"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "  Aura:    $AURA"
+echo ""
+echo "  $DESCRIPTION"
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  📊 STATS"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "  History file:    $HISTORY_FILE"
+echo "  Lines analyzed:  $TOTAL_CMDS"
+echo "  Top command:     $TOP_CMD ($TOP_CMD_COUNT uses)"
+echo "  Git commits:     $GIT_COUNT"
+echo "  Sudo uses:       $SUDO_COUNT"
+echo "  Night owl hrs:   $HAS_NIGHT late-night sessions"
+if [[ -n "$DANGER_ZONE" ]]; then
+  echo ""
+  echo "  ⚠️  Danger zones: $DANGER_ZONE"
+fi
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "  Top 10 commands:"
+echo ""
+head -10 /tmp/dev-aura-top-cmds.txt | while read -r count cmd; do
+  printf "    %4s  %s\n" "$count" "$cmd"
+done
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "  Your aura says: be curious, stay dangerous."
+echo "  ✨ Generated by dev-aura"
+echo ""
+rm -f /tmp/dev-aura-top-cmds.txt
