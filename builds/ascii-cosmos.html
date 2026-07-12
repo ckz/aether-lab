@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASCII Cosmos — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #05060a;
+    overflow: hidden;
+    font-family: 'Courier New', Courier, monospace;
+    cursor: crosshair;
+    user-select: none;
+  }
+  canvas { display: block; }
+  #hud {
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #4a5568;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    pointer-events: none;
+    text-align: center;
+    z-index: 10;
+  }
+  #hud .title {
+    color: #718096;
+    font-size: 0.9rem;
+    margin-bottom: 0.25rem;
+  }
+  #hud .hint {
+    color: #2d3748;
+    font-size: 0.7rem;
+  }
+</style>
+</head>
+<body>
+<canvas id="cosmos"></canvas>
+<div id="hud">
+  <div class="title">⬡ ascii cosmos</div>
+  <div class="hint">click: burst · move: attract · space: palette · r: reset</div>
+</div>
+
+<script>
+(() => {
+  // --- CONFIG ---
+  const CONFIG = {
+    particleCount: 300,
+    connectionDist: 120,
+    mouseRadius: 180,
+    mouseForce: 0.08,
+    friction: 0.96,
+    burstCount: 25,
+    breatheAmp: 0.15,
+    breatheSpeed: 0.0015,
+  };
+
+  // --- PALETTES ---
+  const PALETTES = [
+    { name: 'void',      chars: ['·', '∘', '○', '◎', '◉', '⬡', '✦', '⬢'], fg: '#718096', line: '#2d3748', glow: '#4a5568' },
+    { name: 'matrix',    chars: ['░', '▒', '▓', '█', '◈', '◆', '◇', '⬢'], fg: '#48bb78', line: '#276749', glow: '#38a169' },
+    { name: 'cyber',     chars: ['⌬', '⏣', '⎔', '⏦', '⬡', '⬢', '◈', '◇'], fg: '#63b3ed', line: '#2b6cb0', glow: '#4299e1' },
+    { name: 'ember',     chars: ['·', '∘', '○', '●', '⬡', '◆', '◈', '✧'], fg: '#f6ad55', line: '#c05621', glow: '#ed8936' },
+    { name: 'phantom',   chars: ['·', '∘', '○', '◎', '◉', '⬡', '✦', '✧'], fg: '#e2e8f0', line: '#718096', glow: '#cbd5e0' },
+    { name: 'void-gold', chars: ['·', '∘', '○', '◉', '⬡', '◆', '✦', '⬢'], fg: '#d69e2e', line: '#975a16', glow: '#b7791f' },
+  ];
+
+  // --- STATE ---
+  const canvas = document.getElementById('cosmos');
+  const ctx = canvas.getContext('2d');
+  let W, H, DPR;
+  let palette = PALETTES[0];
+  let paletteIdx = 0;
+  let particles = [];
+  let mouse = { x: -9999, y: -9999, active: false };
+  let time = 0;
+  let breathing = 0;
+
+  // --- RESIZE ---
+  function resize() {
+    DPR = window.devicePixelRatio || 1;
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // --- PARTICLE ---
+  class Particle {
+    constructor(x, y, burst = false) {
+      this.x = x ?? Math.random() * W;
+      this.y = y ?? Math.random() * H;
+      this.vx = burst ? (Math.random() - 0.5) * 4 : (Math.random() - 0.5) * 0.5;
+      this.vy = burst ? (Math.random() - 0.5) * 4 : (Math.random() - 0.5) * 0.5;
+      this.char = palette.chars[Math.floor(Math.random() * palette.chars.length)];
+      this.size = 10 + Math.random() * 6;
+      this.opacity = 0.4 + Math.random() * 0.6;
+      this.phase = Math.random() * Math.PI * 2;
+      this.twinkleSpeed = 0.02 + Math.random() * 0.03;
+    }
+
+    update() {
+      // Mouse attraction
+      if (mouse.active) {
+        const dx = mouse.x - this.x;
+        const dy = mouse.y - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < CONFIG.mouseRadius && dist > 1) {
+          const force = CONFIG.mouseForce * (1 - dist / CONFIG.mouseRadius);
+          this.vx += (dx / dist) * force;
+          this.vy += (dy / dist) * force;
+        }
+      }
+
+      // Breathing drift
+      const breathX = Math.sin(time * CONFIG.breatheSpeed + this.phase) * CONFIG.breatheAmp;
+      const breathY = Math.cos(time * CONFIG.breatheSpeed * 0.7 + this.phase) * CONFIG.breatheAmp;
+
+      this.vx += breathX * 0.01;
+      this.vy += breathY * 0.01;
+
+      this.vx *= CONFIG.friction;
+      this.vy *= CONFIG.friction;
+
+      this.x += this.vx;
+      this.y += this.vy;
+
+      // Wrap
+      if (this.x < -20) this.x = W + 20;
+      if (this.x > W + 20) this.x = -20;
+      if (this.y < -20) this.y = H + 20;
+      if (this.y > H + 20) this.y = -20;
+    }
+
+    draw() {
+      const twinkle = 0.7 + 0.3 * Math.sin(time * this.twinkleSpeed + this.phase);
+      const alpha = this.opacity * twinkle;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = palette.fg;
+      ctx.font = `${this.size}px 'Courier New', monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(this.char, this.x, this.y);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // --- SPAWN ---
+  function spawnParticles(count) {
+    for (let i = 0; i < count; i++) {
+      particles.push(new Particle(
+        Math.random() * W,
+        Math.random() * H
+      ));
+    }
+  }
+
+  function burst(x, y) {
+    for (let i = 0; i < CONFIG.burstCount; i++) {
+      particles.push(new Particle(x, y, true));
+    }
+  }
+
+  // --- DRAW CONNECTIONS ---
+  function drawConnections() {
+    const maxDist = CONFIG.connectionDist;
+    ctx.lineWidth = 0.5;
+
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const dx = particles[i].x - particles[j].x;
+        const dy = particles[i].y - particles[j].y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < maxDist) {
+          const alpha = (1 - dist / maxDist) * 0.2;
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = palette.line;
+          ctx.beginPath();
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(particles[j].x, particles[j].y);
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // --- MOUSE GLOW ---
+  function drawMouseGlow() {
+    if (!mouse.active) return;
+    const grad = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, CONFIG.mouseRadius);
+    grad.addColorStop(0, palette.glow + '15');
+    grad.addColorStop(1, palette.glow + '00');
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(mouse.x, mouse.y, CONFIG.mouseRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // --- MAIN LOOP ---
+  function loop() {
+    time++;
+
+    // Fade trail
+    ctx.globalAlpha = 0.15;
+    ctx.fillStyle = '#05060a';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+
+    // Draw connections first (behind particles)
+    drawConnections();
+
+    // Mouse glow
+    drawMouseGlow();
+
+    // Update & draw particles
+    for (const p of particles) {
+      p.update();
+      p.draw();
+    }
+
+    // Particle count cull
+    if (particles.length > 600) {
+      particles.splice(0, particles.length - 600);
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  // --- EVENTS ---
+  canvas.addEventListener('mousemove', (e) => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    mouse.active = true;
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    mouse.active = false;
+  });
+
+  canvas.addEventListener('click', (e) => {
+    burst(e.clientX, e.clientY);
+  });
+
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    const t = e.touches[0];
+    mouse.x = t.clientX;
+    mouse.y = t.clientY;
+    mouse.active = true;
+  }, { passive: false });
+
+  canvas.addEventListener('touchstart', (e) => {
+    const t = e.touches[0];
+    mouse.x = t.clientX;
+    mouse.y = t.clientY;
+    mouse.active = true;
+    burst(t.clientX, t.clientY);
+  });
+
+  canvas.addEventListener('touchend', () => {
+    mouse.active = false;
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      paletteIdx = (paletteIdx + 1) % PALETTES.length;
+      palette = PALETTES[paletteIdx];
+      // Recolor existing particles
+      for (const p of particles) {
+        p.char = palette.chars[Math.floor(Math.random() * palette.chars.length)];
+      }
+    }
+    if (e.code === 'KeyR') {
+      particles = [];
+      spawnParticles(CONFIG.particleCount);
+    }
+  });
+
+  // --- INIT ---
+  spawnParticles(CONFIG.particleCount);
+  loop();
+})();
+</script>
+</body>
+</html>
