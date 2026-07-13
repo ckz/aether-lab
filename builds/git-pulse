@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+# git-pulse — instant repo health check
+# Shows: last commit age, velocity, contributors, active files, top hotspots, health score
+# Usage: cd into any git repo and run: git-pulse
+set -uo pipefail
+
+# ── Colors ──────────────────────────────────────────────
+if [[ -t 1 ]]; then
+  R='\033[0;31m' G='\033[0;32m' Y='\033[0;33m' C='\033[0;36m'
+  B='\033[1m' D='\033[0;2m' RESET='\033[0m'
+else
+  R='' G='' Y='' C='' B='' D='' RESET=''
+fi
+
+# ── Helpers ─────────────────────────────────────────────
+die()  { echo -e "${R}error:${RESET} $1" >&2; exit 1; }
+info() { echo -e "${C}▸${RESET} $1"; }
+stat() { printf "  ${D}%-20s${RESET} %s\n" "$1" "$2"; }
+
+# ── Preflight ───────────────────────────────────────────
+git rev-parse --is-inside-work-tree &>/dev/null || die "not a git repository"
+
+REPO_NAME=$(basename "$(git rev-parse --show-toplevel)")
+TOTAL_COMMITS=$(git rev-list --all --count 2>/dev/null || echo 0)
+NOW_EPOCH=$(date +%s)
+
+# ── Banner ──────────────────────────────────────────────
+echo ""
+echo -e "${B}${C}╔══════════════════════════════════════╗${RESET}"
+echo -e "${B}${C}║${RESET}  ${B}git-pulse${RESET}  ·  ${REPO_NAME}  ${D}(${TOTAL_COMMITS} commits total)${RESET}"
+echo -e "${B}${C}╚══════════════════════════════════════╝${RESET}"
+echo ""
+
+# ── Last Commit ─────────────────────────────────────────
+LAST_MSG=$(git log -1 --format='%s')
+LAST_AUTHOR=$(git log -1 --format='%an')
+LAST_DATE=$(git log -1 --format='%ci' | cut -d' ' -f1,2)
+LAST_EPOCH=$(git log -1 --format='%ct')
+HOURS_AGO=$(( (NOW_EPOCH - LAST_EPOCH) / 3600 ))
+
+if (( HOURS_AGO < 1 )); then
+  AGE_STR="just now 🔴"
+elif (( HOURS_AGO < 24 )); then
+  AGE_STR="${HOURS_AGO}h ago 🟢"
+elif (( HOURS_AGO < 168 )); then
+  DAYS=$(( HOURS_AGO / 24 ))
+  AGE_STR="${DAYS}d ago 🟡"
+else
+  WEEKS=$(( HOURS_AGO / 168 ))
+  AGE_STR="${WEEKS}w ago ⚫"
+fi
+
+info "Last commit"
+stat "  message" "$LAST_MSG"
+stat "  author"  "$LAST_AUTHOR"
+stat "  date"    "$LAST_DATE"
+stat "  age"     "$AGE_STR"
+echo ""
+
+# ── Velocity ────────────────────────────────────────────
+WEEK_COMMITS=$(git log --since="7 days ago" --oneline 2>/dev/null | wc -l | tr -d ' ')
+MONTH_COMMITS=$(git log --since="30 days ago" --oneline 2>/dev/null | wc -l | tr -d ' ')
+
+if (( TOTAL_COMMITS > 0 )); then
+  FIRST_EPOCH=$(git log --all --format='%ct' 2>/dev/null | tail -1)
+  DAYS_OLD=$(( (NOW_EPOCH - FIRST_EPOCH) / 86400 ))
+  (( DAYS_OLD < 1 )) && DAYS_OLD=1
+  AVG_VELOCITY=$(echo "scale=1; $TOTAL_COMMITS / $DAYS_OLD" | bc 2>/dev/null || echo "?")
+else
+  AVG_VELOCITY="0"
+fi
+
+info "Velocity"
+stat "  this week"   "$WEEK_COMMITS commits"
+stat "  this month"  "$MONTH_COMMITS commits"
+stat "  avg/day"     "${AVG_VELOCITY} commits/day (lifetime)"
+echo ""
+
+# ── Contributors ────────────────────────────────────────
+CONTRIB_COUNT=$(git shortlog -sn --all 2>/dev/null | wc -l | tr -d ' ')
+TOP_CONTRIB=$(git shortlog -sn --all 2>/dev/null | head -3 | sed 's/^[[:space:]]*//')
+
+info "Contributors (${CONTRIB_COUNT})"
+while IFS= read -r line; do
+  [[ -n "$line" ]] && stat "" "  ${line}"
+done <<< "$TOP_CONTRIB"
+echo ""
+
+# ── Active Files (last 7 days) ──────────────────────────
+if (( WEEK_COMMITS > 0 )); then
+  OLDEST_WEEK=$(git log --since="7 days ago" --format="%H" 2>/dev/null | tail -1)
+  if [[ -n "$OLDEST_WEEK" ]]; then
+    DIFF_BASE="${OLDEST_WEEK}^"
+    # Check if the parent exists (first commit might not have one)
+    git cat-file -e "${DIFF_BASE}" 2>/dev/null || DIFF_BASE=$(git log --before="7 days ago" --format="%H" | head -1)
+  else
+    DIFF_BASE=""
+  fi
+
+  if [[ -n "$DIFF_BASE" ]]; then
+    ACTIVE_FILES=$(git diff --name-only "$DIFF_BASE" HEAD 2>/dev/null | sort -u | wc -l | tr -d ' ')
+    TOP_FILES=$(git diff --name-only "$DIFF_BASE" HEAD 2>/dev/null | sort | uniq -c 2>/dev/null | sort -rn 2>/dev/null | head -5)
+  else
+    ACTIVE_FILES=0
+    TOP_FILES=""
+  fi
+
+  info "Active files (7d): ${ACTIVE_FILES}"
+  if [[ -n "$TOP_FILES" ]]; then
+    while IFS= read -r line; do
+      COUNT=$(echo "$line" | awk '{print $1}')
+      FILE=$(echo "$line" | sed 's/^[[:space:]]*[0-9]*[[:space:]]*//')
+      stat "" "  ${COUNT}× ${FILE}"
+    done <<< "$TOP_FILES"
+  fi
+  echo ""
+fi
+
+# ── Language Breakdown ──────────────────────────────────
+if (( WEEK_COMMITS > 0 )) && [[ -n "${DIFF_BASE:-}" ]]; then
+  LANG_BREAKDOWN=$(git diff --name-only "$DIFF_BASE" HEAD 2>/dev/null | \
+    awk -F. 'NF>1 {ext=$NF; gsub(/[[:space:]]/,"",ext); count[ext]++} END {for (e in count) printf "%d %s\n", count[e], e}' | \
+    sort -rn 2>/dev/null | head -5)
+
+  if [[ -n "$LANG_BREAKDOWN" ]]; then
+    info "Languages touched (7d)"
+    while read -r count ext; do
+      stat "" "  .${ext}: ${count} files"
+    done <<< "$LANG_BREAKDOWN"
+    echo ""
+  fi
+fi
+
+# ── Branch Status ───────────────────────────────────────
+CURRENT_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "(detached)")
+BRANCHES_AHEAD=$(git rev-list --count "@{upstream}..HEAD" 2>/dev/null | tr -d ' ' || echo "0")
+BRANCHES_BEHIND=$(git rev-list --count "HEAD..@{upstream}" 2>/dev/null | tr -d ' ' || echo "0")
+
+info "Branch: ${CURRENT_BRANCH}"
+stat "  ahead"  "${BRANCHES_AHEAD} commits"
+stat "  behind" "${BRANCHES_BEHIND} commits"
+echo ""
+
+# ── Health Score ────────────────────────────────────────
+SCORE=50
+(( WEEK_COMMITS >= 10 )) && SCORE=$(( SCORE + 20 )) || (( WEEK_COMMITS >= 5 )) && SCORE=$(( SCORE + 10 )) || (( WEEK_COMMITS >= 1 )) && SCORE=$(( SCORE + 5 ))
+(( HOURS_AGO < 24 )) && SCORE=$(( SCORE + 15 ))
+if [[ -n "${ACTIVE_FILES:-}" ]]; then
+  (( ACTIVE_FILES >= 10 )) && SCORE=$(( SCORE + 10 )) || (( ACTIVE_FILES >= 5 )) && SCORE=$(( SCORE + 5 ))
+fi
+if [[ "${BRANCHES_AHEAD}" != "?" ]] && [[ "${BRANCHES_BEHIND}" != "?" ]]; then
+  (( BRANCHES_AHEAD == 0 && BRANCHES_BEHIND == 0 )) && SCORE=$(( SCORE + 5 ))
+fi
+(( CONTRIB_COUNT >= 3 )) && SCORE=$(( SCORE + 10 )) || (( CONTRIB_COUNT >= 2 )) && SCORE=$(( SCORE + 5 ))
+(( SCORE > 100 )) && SCORE=100
+(( SCORE < 0 )) && SCORE=0
+
+if (( SCORE >= 85 )); then
+  HEALTH_EMOJI="🔥" HEALTH_LABEL="ON FIRE" HEALTH_COLOR="$G"
+elif (( SCORE >= 70 )); then
+  HEALTH_EMOJI="✨" HEALTH_LABEL="THRIVING" HEALTH_COLOR="$G"
+elif (( SCORE >= 55 )); then
+  HEALTH_EMOJI="🌱" HEALTH_LABEL="GROWING" HEALTH_COLOR="$C"
+elif (( SCORE >= 40 )); then
+  HEALTH_EMOJI="😐" HEALTH_LABEL="DORMANT" HEALTH_COLOR="$Y"
+elif (( SCORE >= 25 )); then
+  HEALTH_EMOJI="😴" HEALTH_LABEL="SLEEPING" HEALTH_COLOR="$Y"
+else
+  HEALTH_EMOJI="💀" HEALTH_LABEL="CRITICAL" HEALTH_COLOR="$R"
+fi
+
+echo -e "${B}Health Score${RESET}"
+echo ""
+echo -e "  ${HEALTH_COLOR}${HEALTH_EMOJI}  ${HEALTH_LABEL}${RESET}  ${D}${SCORE}/100${RESET}"
+echo ""
+
+BAR_FULL=$(( SCORE / 5 ))
+BAR_EMPTY=$(( 20 - BAR_FULL ))
+BAR=""
+for (( i=0; i<BAR_FULL; i++ )); do BAR+="█"; done
+BAR_EMPTY_STR=""
+for (( i=0; i<BAR_EMPTY; i++ )); do BAR_EMPTY_STR+="░"; done
+echo -e "  ${HEALTH_COLOR}${BAR}${D}${BAR_EMPTY_STR}${RESET} ${SCORE}%"
+echo ""
+
+# ── Vibe verdict ────────────────────────────────────────
+echo -e "${B}Verdict${RESET}"
+if (( WEEK_COMMITS == 0 )); then
+  echo -e "  ${D}Repo is quiet. Maybe give it some attention?${RESET}"
+elif (( HOURS_AGO > 168 )); then
+  echo -e "  ${Y}Last commit was over a week ago. Dust gathering?${RESET}"
+elif (( SCORE >= 85 )); then
+  echo -e "  ${G}This repo is cooking. Keep the streak alive.${RESET}"
+elif (( SCORE >= 70 )); then
+  echo -e "  ${C}Healthy rhythm. Ship something small today.${RESET}"
+elif (( SCORE >= 55 )); then
+  echo -e "  ${D}Steady but could use a spark. Open an issue?${RESET}"
+else
+  echo -e "  ${Y}Low activity. Perfect time to experiment.${RESET}"
+fi
+
+echo ""
+echo -e "${D}── git-pulse · because repos have heartbeats too ──${RESET}"
+echo ""
