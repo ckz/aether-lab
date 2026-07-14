@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Luminous Root System</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    background: #050508;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+  }
+  
+  canvas {
+    display: block;
+    cursor: crosshair;
+  }
+  
+  .controls {
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    background: rgba(10, 10, 20, 0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    font-size: 0.8rem;
+    line-height: 1.8;
+    z-index: 10;
+    min-width: 200px;
+  }
+  
+  .controls h3 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: #fff;
+    letter-spacing: 0.05em;
+  }
+  
+  .controls .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 0.2rem 0;
+  }
+  
+  .controls .key {
+    color: #888;
+    font-family: monospace;
+  }
+  
+  .controls .desc {
+    color: #aaa;
+    font-size: 0.75rem;
+  }
+  
+  .palette-btn {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.2);
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-left: 4px;
+  }
+  
+  .palette-btn:hover, .palette-btn.active {
+    border-color: #fff;
+    transform: scale(1.2);
+  }
+  
+  .stats {
+    position: fixed;
+    bottom: 1rem;
+    left: 1rem;
+    font-size: 0.7rem;
+    color: #555;
+    font-family: monospace;
+    z-index: 10;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="controls">
+  <h3>🌱 Luminous Root System</h3>
+  <div class="row"><span class="key">Click</span><span class="desc">Plant seed</span></div>
+  <div class="row"><span class="key">Hold</span><span class="desc">Grow roots</span></div>
+  <div class="row"><span class="key">Space</span><span class="desc">Cycle palette</span></div>
+  <div class="row"><span class="key">C</span><span class="desc">Clear all</span></div>
+  <div class="row"><span class="key">S</span><span class="desc">Save PNG</span></div>
+  <div class="row">
+    <span class="key">Palette</span>
+    <span id="palette-dots"></span>
+  </div>
+</div>
+
+<div class="stats" id="stats"></div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Palettes
+const palettes = [
+  { name: 'Bioluminescent', bg: '#020510', glow: '#00ffff', root: '#006688', tip: '#aaffff', mycelium: '#004455', nutrient: '#00ffaa', particle: '#88ffee' },
+  { name: 'Ember', bg: '#0a0502', glow: '#ff6600', root: '#883300', tip: '#ffcc66', mycelium: '#553300', nutrient: '#ff4400', particle: '#ffaa44' },
+  { name: 'Necrotic', bg: '#020a02', glow: '#66ff00', root: '#336611', tip: '#ccff88', mycelium: '#225500', nutrient: '#44ff00', particle: '#aaff44' },
+  { name: 'Void', bg: '#08050a', glow: '#cc66ff', root: '#552288', tip: '#eeccff', mycelium: '#331155', nutrient: '#aa44ff', particle: '#ddaaff' },
+  { name: 'Golden', bg: '#0a0802', glow: '#ffcc00', root: '#886600', tip: '#ffee88', mycelium: '#554400', nutrient: '#ffaa00', particle: '#ffdd66' },
+  { name: 'Abyss', bg: '#020208', glow: '#4466ff', root: '#112288', tip: '#8899ff', mycelium: '#001155', nutrient: '#2244ff', particle: '#6688ff' }
+];
+let palette = palettes[0];
+let paletteIdx = 0;
+
+// State
+let seeds = [];
+let roots = [];
+let pulses = [];
+let mycelium = [];
+let particles = [];
+let mouse = { x: W/2, y: H/2, down: false };
+let frame = 0;
+
+// Seeds (starting points for root systems)
+class Seed {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.energy = 1;
+    this.growTimer = 0;
+    this.maxRoots = 3 + Math.floor(Math.random() * 5);
+    this.rootsGrown = 0;
+    this.pulseTimer = 0;
+    this.birth = frame;
+  }
+}
+
+// Root segments
+class Root {
+  constructor(x, y, angle, depth, energy) {
+    this.x = x;
+    this.y = y;
+    this.angle = angle;
+    this.depth = depth;
+    this.energy = energy;
+    this.segments = [{x, y}];
+    this.growing = true;
+    this.growSpeed = 0.5 + Math.random() * 1.5;
+    this.thickness = Math.max(0.5, 3 - depth * 0.4);
+    this.swayPhase = Math.random() * Math.PI * 2;
+    this.swayAmp = 0.02 + Math.random() * 0.03;
+    this.life = 1;
+    this.maxDepth = 6 + Math.floor(Math.random() * 4);
+    this.branchTimer = 30 + Math.random() * 60;
+    this.tipGlow = 1;
+  }
+  
+  update() {
+    if (!this.growing) {
+      this.life -= 0.0005;
+      return;
+    }
+    
+    this.swayPhase += 0.02;
+    this.angle += Math.sin(this.swayPhase) * this.swayAmp;
+    
+    let speed = this.growSpeed * this.energy;
+    let nx = this.x + Math.cos(this.angle) * speed;
+    let ny = this.y + Math.sin(this.angle) * speed;
+    
+    // Tend to grow downward
+    this.angle += 0.01;
+    
+    // Slight randomness
+    this.angle += (Math.random() - 0.5) * 0.1;
+    
+    this.x = nx;
+    this.y = ny;
+    this.segments.push({x: nx, y: ny});
+    
+    // Trim segments if too many
+    if (this.segments.length > 500) {
+      this.segments.shift();
+    }
+    
+    // Branch
+    this.branchTimer--;
+    if (this.branchTimer <= 0 && this.depth < this.maxDepth && this.energy > 0.3) {
+      this.growing = false;
+      return true; // signal to branch
+    }
+    
+    // Die at edges
+    if (ny > H - 10 || nx < 5 || nx > W - 5) {
+      this.growing = false;
+      this.tipGlow = 0;
+    }
+    
+    // Energy fades with depth
+    this.energy *= 0.999;
+    
+    return false;
+  }
+  
+  draw() {
+    if (this.segments.length < 2) return;
+    
+    ctx.beginPath();
+    ctx.moveTo(this.segments[0].x, this.segments[0].y);
+    
+    for (let i = 1; i < this.segments.length; i++) {
+      ctx.lineTo(this.segments[i].x, this.segments[i].y);
+    }
+    
+    let alpha = this.life * (0.4 + this.energy * 0.4);
+    ctx.strokeStyle = hexToRgba(palette.root, alpha);
+    ctx.lineWidth = this.thickness;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    
+    // Tip glow
+    if (this.growing && this.tipGlow > 0) {
+      let tip = this.segments[this.segments.length - 1];
+      let glow = ctx.createRadialGradient(tip.x, tip.y, 0, tip.x, tip.y, 15);
+      glow.addColorStop(0, hexToRgba(palette.tip, 0.6 * this.tipGlow));
+      glow.addColorStop(1, hexToRgba(palette.tip, 0));
+      ctx.fillStyle = glow;
+      ctx.fillRect(tip.x - 15, tip.y - 15, 30, 30);
+    }
+  }
+}
+
+// Nutrient pulses (flowing along roots)
+class Pulse {
+  constructor(root) {
+    this.root = root;
+    this.progress = 0;
+    this.speed = 0.005 + Math.random() * 0.01;
+    this.size = 1 + Math.random() * 2;
+    this.alive = true;
+  }
+  
+  update() {
+    this.progress += this.speed;
+    if (this.progress >= 1) {
+      this.alive = false;
+    }
+  }
+  
+  draw() {
+    if (!this.alive || this.root.segments.length < 2) return;
+    let idx = Math.floor(this.progress * (this.root.segments.length - 1));
+    if (idx >= this.root.segments.length) idx = this.root.segments.length - 1;
+    let seg = this.root.segments[idx];
+    
+    let glow = ctx.createRadialGradient(seg.x, seg.y, 0, seg.x, seg.y, this.size * 4);
+    glow.addColorStop(0, hexToRgba(palette.nutrient, 0.8));
+    glow.addColorStop(1, hexToRgba(palette.nutrient, 0));
+    ctx.fillStyle = glow;
+    ctx.fillRect(seg.x - this.size * 4, seg.y - this.size * 4, this.size * 8, this.size * 8);
+  }
+}
+
+// Mycelium connections (between nearby root tips)
+class Mycelium {
+  constructor(x1, y1, x2, y2) {
+    this.x1 = x1;
+    this.y1 = y1;
+    this.x2 = x2;
+    this.y2 = y2;
+    this.life = 1;
+    this.pulsePhase = Math.random() * Math.PI * 2;
+  }
+  
+  draw() {
+    let alpha = this.life * 0.25;
+    ctx.beginPath();
+    ctx.moveTo(this.x1, this.y1);
+    // Slight curve
+    let mx = (this.x1 + this.x2) / 2 + (Math.random() - 0.5) * 20;
+    let my = (this.y1 + this.y2) / 2 + (Math.random() - 0.5) * 20;
+    ctx.quadraticCurveTo(mx, my, this.x2, this.y2);
+    ctx.strokeStyle = hexToRgba(palette.mycelium, alpha);
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+  }
+}
+
+// Ambient floating particles
+class Particle {
+  constructor(x, y) {
+    this.x = x || Math.random() * W;
+    this.y = y || Math.random() * H;
+    this.vx = (Math.random() - 0.5) * 0.3;
+    this.vy = -0.2 - Math.random() * 0.5;
+    this.life = 1;
+    this.decay = 0.003 + Math.random() * 0.008;
+    this.size = 0.5 + Math.random() * 1.5;
+  }
+  
+  update() {
+    this.x += this.vx + Math.sin(frame * 0.01 + this.y * 0.01) * 0.2;
+    this.y += this.vy;
+    this.life -= this.decay;
+  }
+  
+  draw() {
+    if (this.life <= 0) return;
+    let alpha = this.life * 0.6;
+    let glow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size * 3);
+    glow.addColorStop(0, hexToRgba(palette.particle, alpha));
+    glow.addColorStop(1, hexToRgba(palette.particle, 0));
+    ctx.fillStyle = glow;
+    ctx.fillRect(this.x - this.size * 3, this.y - this.size * 3, this.size * 6, this.size * 6);
+  }
+}
+
+function hexToRgba(hex, alpha) {
+  let r = parseInt(hex.slice(1,3), 16);
+  let g = parseInt(hex.slice(3,5), 16);
+  let b = parseInt(hex.slice(5,7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// Mouse events
+canvas.addEventListener('mousedown', (e) => {
+  mouse.down = true;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  plantSeed(e.clientX, e.clientY);
+});
+
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  if (mouse.down && Math.random() < 0.1) {
+    plantSeed(e.clientX, e.clientY);
+  }
+});
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  mouse.down = true;
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  plantSeed(mouse.x, mouse.y);
+});
+
+canvas.addEventListener('touchend', () => mouse.down = false);
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  if (mouse.down && Math.random() < 0.1) {
+    plantSeed(mouse.x, mouse.y);
+  }
+});
+
+// Keyboard
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    paletteIdx = (paletteIdx + 1) % palettes.length;
+    palette = palettes[paletteIdx];
+    updatePaletteUI();
+  }
+  if (e.code === 'KeyC') {
+    seeds = [];
+    roots = [];
+    pulses = [];
+    mycelium = [];
+    particles = [];
+  }
+  if (e.code === 'KeyS') {
+    savePNG();
+  }
+});
+
+function updatePaletteUI() {
+  let dots = document.getElementById('palette-dots');
+  dots.innerHTML = palettes.map((p, i) => 
+    `<div class="palette-btn ${i === paletteIdx ? 'active' : ''}" style="background:${p.glow}" onclick="setPalette(${i})"></div>`
+  ).join('');
+}
+
+function setPalette(idx) {
+  paletteIdx = idx;
+  palette = palettes[idx];
+  updatePaletteUI();
+}
+
+function plantSeed(x, y) {
+  if (seeds.length < 50) {
+    seeds.push(new Seed(x, y));
+  }
+}
+
+// Grow roots from seeds
+function growRoots() {
+  for (let seed of seeds) {
+    if (seed.rootsGrown < seed.maxRoots) {
+      seed.growTimer++;
+      if (seed.growTimer > 10) {
+        seed.growTimer = 0;
+        let angle = Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.8;
+        roots.push(new Root(seed.x, seed.y, angle, 0, 0.6 + Math.random() * 0.4));
+        seed.rootsGrown++;
+      }
+    }
+    
+    // Spawn pulses from seed
+    seed.pulseTimer++;
+    if (seed.pulseTimer > 120 && roots.length > 0) {
+      seed.pulseTimer = 0;
+      let activeRoots = roots.filter(r => r.growing && r.segments.length > 20);
+      if (activeRoots.length > 0) {
+        pulses.push(new Pulse(activeRoots[Math.floor(Math.random() * activeRoots.length)]));
+      }
+    }
+  }
+}
+
+// Branch roots
+function branchRoots() {
+  for (let i = roots.length - 1; i >= 0; i--) {
+    let root = roots[i];
+    let shouldBranch = root.update();
+    if (shouldBranch && root.segments.length > 30) {
+      let tip = root.segments[root.segments.length - 1];
+      let numBranches = 1 + Math.floor(Math.random() * 3);
+      for (let b = 0; b < numBranches; b++) {
+        let newAngle = root.angle + (Math.random() - 0.5) * 1.2;
+        roots.push(new Root(tip.x, tip.y, newAngle, root.depth + 1, root.energy * 0.7));
+      }
+      root.growing = true; // Continue parent
+      root.branchTimer = 60 + Math.random() * 120;
+    }
+    if (root.life <= 0 && roots.length > 200) {
+      roots.splice(i, 1);
+    }
+  }
+}
+
+// Mycelium network
+function updateMycelium() {
+  // Find nearby root tips
+  let tips = [];
+  for (let root of roots) {
+    if (root.segments.length > 20 && root.life > 0.3) {
+      let tip = root.segments[root.segments.length - 1];
+      tips.push({x: tip.x, y: tip.y, root});
+    }
+  }
+  
+  // Connect nearby tips
+  if (tips.length > 1 && frame % 30 === 0) {
+    for (let i = 0; i < tips.length; i++) {
+      for (let j = i + 1; j < tips.length; j++) {
+        let dx = tips[i].x - tips[j].x;
+        let dy = tips[i].y - tips[j].y;
+        let dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 100 && mycelium.length < 500) {
+          mycelium.push(new Mycelium(tips[i].x, tips[i].y, tips[j].x, tips[j].y));
+        }
+      }
+    }
+  }
+  
+  // Fade mycelium
+  for (let i = mycelium.length - 1; i >= 0; i--) {
+    mycelium[i].life -= 0.001;
+    if (mycelium[i].life <= 0) {
+      mycelium.splice(i, 1);
+    }
+  }
+}
+
+// Update pulses
+function updatePulses() {
+  for (let i = pulses.length - 1; i >= 0; i--) {
+    pulses[i].update();
+    if (!pulses[i].alive) {
+      pulses.splice(i, 1);
+    }
+  }
+}
+
+// Ambient particles
+function spawnParticles() {
+  if (particles.length < 100 && Math.random() < 0.1) {
+    // Spawn from active root tips
+    let activeRoots = roots.filter(r => r.growing && r.segments.length > 10);
+    if (activeRoots.length > 0) {
+      let root = activeRoots[Math.floor(Math.random() * activeRoots.length)];
+      let tip = root.segments[root.segments.length - 1];
+      particles.push(new Particle(tip.x, tip.y));
+    } else {
+      particles.push(new Particle());
+    }
+  }
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update();
+    if (particles[i].life <= 0) {
+      particles.splice(i, 1);
+    }
+  }
+}
+
+// Draw mouse glow
+function drawMouseGlow() {
+  let glow = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 80);
+  glow.addColorStop(0, hexToRgba(palette.glow, 0.05));
+  glow.addColorStop(1, hexToRgba(palette.glow, 0));
+  ctx.fillStyle = glow;
+  ctx.fillRect(mouse.x - 80, mouse.y - 80, 160, 160);
+}
+
+function savePNG() {
+  const link = document.createElement('a');
+  link.download = `luminous-roots-${Date.now()}.png`;
+  link.href = canvas.toDataURL();
+  link.click();
+}
+
+// Main loop
+function animate() {
+  // Fade trail
+  ctx.fillStyle = hexToRgba(palette.bg, 0.08);
+  ctx.fillRect(0, 0, W, H);
+  
+  drawMouseGlow();
+  
+  growRoots();
+  branchRoots();
+  updateMycelium();
+  updatePulses();
+  spawnParticles();
+  updateParticles();
+  
+  // Draw mycelium
+  for (let m of mycelium) m.draw();
+  
+  // Draw roots
+  for (let root of roots) root.draw();
+  
+  // Draw pulses
+  for (let pulse of pulses) pulse.draw();
+  
+  // Draw particles
+  for (let p of particles) p.draw();
+  
+  // Draw seeds as glowing dots
+  for (let seed of seeds) {
+    let glow = ctx.createRadialGradient(seed.x, seed.y, 0, seed.x, seed.y, 10);
+    glow.addColorStop(0, hexToRgba(palette.tip, 0.4));
+    glow.addColorStop(1, hexToRgba(palette.tip, 0));
+    ctx.fillStyle = glow;
+    ctx.fillRect(seed.x - 10, seed.y - 10, 20, 20);
+  }
+  
+  frame++;
+  
+  // Stats
+  document.getElementById('stats').textContent = 
+    `seeds: ${seeds.length} | roots: ${roots.length} | pulses: ${pulses.length} | particles: ${particles.length}`;
+  
+  requestAnimationFrame(animate);
+}
+
+// Init
+updatePaletteUI();
+
+// Full clear on start
+ctx.fillStyle = palette.bg;
+ctx.fillRect(0, 0, W, H);
+
+animate();
+</script>
+</body>
+</html>
