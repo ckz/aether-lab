@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aether's Particle Flow Field</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+  }
+  .overlay {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    color: rgba(255,255,255,0.6);
+    font-size: 12px;
+    pointer-events: none;
+    z-index: 10;
+    text-shadow: 0 0 10px rgba(0,0,0,0.8);
+  }
+  .overlay h1 {
+    font-size: 14px;
+    font-weight: normal;
+    margin-bottom: 6px;
+    color: rgba(180,220,255,0.8);
+  }
+  .overlay p { margin: 2px 0; }
+  .controls {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 10;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 400px;
+  }
+  .controls button {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.7);
+    padding: 6px 14px;
+    font-size: 11px;
+    cursor: pointer;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    transition: all 0.3s;
+    backdrop-filter: blur(10px);
+  }
+  .controls button:hover {
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+    border-color: rgba(255,255,255,0.3);
+  }
+  .controls button.active {
+    background: rgba(100,180,255,0.2);
+    border-color: rgba(100,180,255,0.5);
+    color: #a0d0ff;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div class="overlay">
+  <h1>◈ Particle Flow Field</h1>
+  <p>Move your mouse to influence the field</p>
+  <p>Click to burst particles</p>
+  <p id="stats"></p>
+</div>
+<div class="controls">
+  <button id="btnPalette">◐ Palette</button>
+  <button id="btnDensity">◉ Density</button>
+  <button id="btnTrails">≋ Trails</button>
+  <button id="btnReset">↻ Reset</button>
+  <button id="btnPause">❚❚ Pause</button>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const stats = document.getElementById('stats');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Config ---
+const PALETTES = [
+  { name: 'Aurora',  colors: ['#00ffaa','#00aaff','#8844ff','#ff44aa','#ffaa00'] },
+  { name: 'Ember',   colors: ['#ff4400','#ff8800','#ffcc00','#ff2200','#ff6644'] },
+  { name: 'Ocean',   colors: ['#003366','#0066aa','#00aacc','#44ddee','#88ffee'] },
+  { name: 'Neon',    colors: ['#ff00ff','#00ffff','#ff0088','#ffff00','#ff4400'] },
+  { name: 'Pastel',  colors: ['#ffaaaa','#aaffff','#aaffaa','#ffffaa','#ffaaff'] },
+  { name: 'Mono',    colors: ['#ffffff','#cccccc','#999999','#666666','#cccccc'] },
+];
+
+let paletteIdx = 0;
+let particleCount = 1200;
+let trailAlpha = 0.03;
+let paused = false;
+let mouse = { x: W/2, y: H/2, active: false, clicked: false };
+
+// --- Simplex-like noise ---
+// Using a hash-based pseudo-noise for flow field
+function noise2D(x, y) {
+  const n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+function smoothNoise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  const a = noise2D(ix, iy);
+  const b = noise2D(ix+1, iy);
+  const c = noise2D(ix, iy+1);
+  const d = noise2D(ix+1, iy+1);
+  return a*(1-sx)*(1-sy) + b*sx*(1-sy) + c*(1-sx)*sy + d*sx*sy;
+}
+
+function fbm(x, y) {
+  let val = 0, amp = 0.5, freq = 1;
+  for (let i = 0; i < 4; i++) {
+    val += amp * smoothNoise(x * freq, y * freq);
+    amp *= 0.5;
+    freq *= 2.0;
+  }
+  return val;
+}
+
+// --- Particles ---
+class Particle {
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.vx = 0;
+    this.vy = 0;
+    this.life = Math.random() * 200 + 100;
+    this.maxLife = this.life;
+    this.size = Math.random() * 1.5 + 0.5;
+    this.colorIdx = Math.floor(Math.random() * 5);
+    this.speed = Math.random() * 0.5 + 0.3;
+  }
+  update(time) {
+    // Flow field angle
+    const scale = 0.003;
+    const angle = fbm(this.x * scale + time * 0.0002, this.y * scale) * Math.PI * 4;
+    
+    this.vx += Math.cos(angle) * 0.15 * this.speed;
+    this.vy += Math.sin(angle) * 0.15 * this.speed;
+    
+    // Mouse influence
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const radius = 180;
+      if (dist < radius) {
+        const force = (1 - dist/radius) * 0.8;
+        const mouseAngle = Math.atan2(dy, dx);
+        // Swirl around mouse
+        this.vx += Math.cos(mouseAngle + Math.PI*0.5) * force;
+        this.vy += Math.sin(mouseAngle + Math.PI*0.5) * force;
+        // Gentle pull toward mouse
+        this.vx += dx * force * 0.002;
+        this.vy += dy * force * 0.002;
+      }
+    }
+    
+    // Damping
+    this.vx *= 0.96;
+    this.vy *= 0.96;
+    
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life--;
+    
+    // Wrap around edges
+    if (this.x < -10) this.x = W + 10;
+    if (this.x > W + 10) this.x = -10;
+    if (this.y < -10) this.y = H + 10;
+    if (this.y > H + 10) this.y = -10;
+    
+    if (this.life <= 0) this.reset();
+  }
+  draw(ctx) {
+    const alpha = Math.min(1, this.life / 30) * Math.min(1, (this.maxLife - this.life) / 20);
+    const palette = PALETTES[paletteIdx].colors;
+    const color = palette[this.colorIdx % palette.length];
+    
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = alpha * 0.7;
+    ctx.fill();
+    
+    // Trail line
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y);
+    ctx.lineTo(this.x - this.vx * 3, this.y - this.vy * 3);
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alpha * 0.3;
+    ctx.lineWidth = this.size * 0.5;
+    ctx.stroke();
+  }
+}
+
+let particles = [];
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < particleCount; i++) {
+    particles.push(new Particle());
+  }
+}
+initParticles();
+
+// --- Mouse ---
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('click', e => {
+  mouse.clicked = true;
+  // Burst new particles at click location
+  for (let i = 0; i < 80; i++) {
+    const p = new Particle();
+    p.x = e.clientX + (Math.random() - 0.5) * 40;
+    p.y = e.clientY + (Math.random() - 0.5) * 40;
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 3 + 1;
+    p.vx = Math.cos(angle) * speed;
+    p.vy = Math.sin(angle) * speed;
+    p.size = Math.random() * 2 + 1;
+    p.life = 120;
+    p.maxLife = 120;
+    particles.push(p);
+  }
+  // Remove excess particles
+  while (particles.length > particleCount + 300) {
+    particles.shift();
+  }
+});
+
+// Touch support
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  mouse.active = true;
+}, { passive: false });
+canvas.addEventListener('touchend', () => { mouse.active = false; });
+
+// --- Controls ---
+const btnPalette = document.getElementById('btnPalette');
+const btnDensity = document.getElementById('btnDensity');
+const btnTrails = document.getElementById('btnTrails');
+const btnReset = document.getElementById('btnReset');
+const btnPause = document.getElementById('btnPause');
+
+btnPalette.addEventListener('click', () => {
+  paletteIdx = (paletteIdx + 1) % PALETTES.length;
+  btnPalette.textContent = '◐ ' + PALETTES[paletteIdx].name;
+});
+
+const densities = [600, 1200, 2500, 4000];
+let densityIdx = 1;
+btnDensity.addEventListener('click', () => {
+  densityIdx = (densityIdx + 1) % densities.length;
+  particleCount = densities[densityIdx];
+  btnDensity.textContent = '◉ ' + particleCount;
+  initParticles();
+});
+
+const trails = [0.08, 0.03, 0.01, 0.005];
+let trailIdx = 1;
+btnTrails.addEventListener('click', () => {
+  trailIdx = (trailIdx + 1) % trails.length;
+  trailAlpha = trails[trailIdx];
+  const labels = ['Short', 'Medium', 'Long', 'Infinite'];
+  btnTrails.textContent = '≋ ' + labels[trailIdx];
+});
+
+btnReset.addEventListener('click', () => {
+  initParticles();
+});
+
+btnPause.addEventListener('click', () => {
+  paused = !paused;
+  btnPause.textContent = paused ? '▶ Play' : '❚❚ Pause';
+  btnPause.classList.toggle('active', paused);
+});
+
+// --- Render loop ---
+let time = 0;
+let frameCount = 0;
+let lastFpsTime = performance.now();
+let fps = 0;
+
+function animate() {
+  if (!paused) {
+    // Semi-transparent overlay for trail effect
+    ctx.globalAlpha = trailAlpha;
+    ctx.fillStyle = '#0a0a0f';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+    
+    time++;
+    
+    // Update and draw particles in batches by color for fewer draw calls
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      p.update(time);
+      p.draw(ctx);
+    }
+    
+    ctx.globalAlpha = 1;
+    
+    // FPS
+    frameCount++;
+    const now = performance.now();
+    if (now - lastFpsTime > 1000) {
+      fps = Math.round(frameCount * 1000 / (now - lastFpsTime));
+      frameCount = 0;
+      lastFpsTime = now;
+    }
+    stats.textContent = `${fps} fps · ${particles.length} particles · ${PALETTES[paletteIdx].name}`;
+  }
+  
+  requestAnimationFrame(animate);
+}
+
+// Initial black fill
+ctx.fillStyle = '#0a0a0f';
+ctx.fillRect(0, 0, W, H);
+
+animate();
+</script>
+</body>
+</html>
