@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Star Forge</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+    height: 100vh;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0; left: 0;
+  }
+  #ui {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    text-align: center;
+  }
+  #input {
+    background: rgba(10, 10, 30, 0.7);
+    border: 1px solid rgba(100, 180, 255, 0.3);
+    color: #a0d0ff;
+    padding: 10px 20px;
+    font-family: 'Courier New', monospace;
+    font-size: 16px;
+    border-radius: 25px;
+    outline: none;
+    text-align: center;
+    width: 300px;
+    backdrop-filter: blur(10px);
+    transition: all 0.3s;
+  }
+  #input:focus {
+    border-color: rgba(100, 180, 255, 0.8);
+    box-shadow: 0 0 20px rgba(100, 180, 255, 0.2);
+  }
+  #input::placeholder {
+    color: rgba(160, 208, 255, 0.4);
+  }
+  #hint {
+    color: rgba(160, 208, 255, 0.5);
+    font-size: 11px;
+    margin-top: 8px;
+    letter-spacing: 1px;
+  }
+  #stats {
+    position: fixed;
+    top: 15px;
+    right: 20px;
+    color: rgba(160, 208, 255, 0.4);
+    font-size: 11px;
+    text-align: right;
+    z-index: 10;
+    line-height: 1.6;
+  }
+  #title {
+    position: fixed;
+    top: 15px;
+    left: 20px;
+    z-index: 10;
+    color: rgba(160, 208, 255, 0.3);
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+  #title span {
+    color: rgba(100, 180, 255, 0.6);
+  }
+</style>
+</head>
+<body>
+<canvas id="sky"></canvas>
+<div id="title">⚡ <span>STAR FORGE</span> — type to cast stars</div>
+<div id="stats">
+  <span id="star-count">stars: 0</span><br>
+  <span id="trail-count">trails: 0</span><br>
+  <span id="constellation-count">constellations: 0</span>
+</div>
+<div id="ui">
+  <input type="text" id="input" placeholder="type a word and press enter..." maxlength="20" autocomplete="off" autofocus>
+  <div id="hint">ENTER = forge &nbsp;|&nbsp; SPACE = pause &nbsp;|&nbsp; C = clear sky &nbsp;|&nbsp; S = save</div>
+</div>
+
+<script>
+const canvas = document.getElementById('sky');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- State ---
+let paused = false;
+let stars = [];
+let trails = [];
+let particles = [];
+let twinkles = [];
+let constellations = [];
+let mouse = { x: W/2, y: H/2 };
+
+// --- Background stars ---
+for (let i = 0; i < 200; i++) {
+  twinkles.push({
+    x: Math.random() * W,
+    y: Math.random() * H,
+    r: Math.random() * 1.5 + 0.3,
+    phase: Math.random() * Math.PI * 2,
+    speed: Math.random() * 0.02 + 0.005
+  });
+}
+
+// --- Color palettes ---
+const palettes = [
+  { name: 'aurora',  colors: ['#00ffaa', '#00aaff', '#ff00ff', '#ffaa00', '#ffffff'] },
+  { name: 'ember',   colors: ['#ff4400', '#ff8800', '#ffcc00', '#ff2200', '#ffeedd'] },
+  { name: 'frost',   colors: ['#88ccff', '#ffffff', '#aaddff', '#ddeeff', '#ffffff'] },
+  { name: 'violet',  colors: ['#aa44ff', '#ff44aa', '#8844ff', '#cc66ff', '#ffffff'] },
+  { name: 'gold',    colors: ['#ffcc00', '#ff9900', '#ffdd44', '#ffaa00', '#ffffcc'] },
+  { name: 'void',    colors: ['#8844aa', '#cc66ff', '#6622aa', '#aa88ff', '#ffffff'] }
+];
+let paletteIdx = 0;
+
+function getPalette() {
+  return palettes[paletteIdx % palettes.length];
+}
+
+function randomColor() {
+  return getPalette().colors[Math.floor(Math.random() * getPalette().colors.length)];
+}
+
+// --- Letter constellation data ---
+// Define simple constellation shapes for each letter
+const letterPoints = {
+  'A': [[0,1],[0.5,0],[1,1],[0.5,0.5]],
+  'B': [[0,0],[0,1],[0.3,1],[0.3,0.7],[0,0.7],[0.3,0.7],[0.3,0.4],[0,0.4],[0.3,0.4],[0.3,0],[0,0]],
+  'C': [[1,0],[0.3,0],[0,0.5],[0.3,1],[1,1]],
+  'D': [[0,0],[0,1],[0.3,1],[0.7,0.7],[0.7,0.3],[0.3,0],[0,0]],
+  'E': [[1,0],[0,0],[0,1],[1,1],[0,1],[0,0.5],[0.6,0.5]],
+  'F': [[1,0],[0,0],[0,1],[0.6,1],[0,0.5],[0.6,0.5]],
+  'G': [[0.7,0.7],[1,0.7],[1,0.3],[0.7,0.3],[0.7,0],[0.3,0],[0,0.5],[0,1],[0.3,1],[0.7,0.7]],
+  'H': [[0,0],[0,1],[0,0.5],[0.7,0.5],[0.7,1],[0.7,0]],
+  'I': [[0,0],[1,0],[0.5,0],[0.5,1],[0,1],[1,1]],
+  'J': [[0,0],[1,0],[1,1],[0.7,1],[0.5,1.1],[0.3,1]],
+  'K': [[0,0],[0,1],[0,0.5],[0.7,1],[0,0.5],[0.7,0]],
+  'L': [[0,0],[0,1],[1,1]],
+  'M': [[0,1],[0,0],[0.5,0.5],[1,0],[1,1]],
+  'N': [[0,1],[0,0],[1,1],[1,0]],
+  'O': [[0.5,0],[0,0.3],[0,0.7],[0.5,1],[1,0.7],[1,0.3],[0.5,0]],
+  'P': [[0,1],[0,0],[0.5,0],[0.7,0.2],[0.7,0.4],[0.5,0.5],[0,0.5]],
+  'Q': [[0.5,0],[0,0.3],[0,0.7],[0.5,1],[1,0.7],[1,0.3],[0.5,0],[0.7,0.7],[1,1]],
+  'R': [[0,1],[0,0],[0.5,0],[0.7,0.2],[0.7,0.4],[0.5,0.5],[0,0.5],[0.5,0.5],[0.7,1]],
+  'S': [[1,0],[0,0],[0,0.3],[0.7,0.3],[0.7,0.7],[0,0.7],[0,1],[1,1]],
+  'T': [[0,0],[1,0],[0.5,0],[0.5,1]],
+  'U': [[0,0],[0,0.7],[0.3,1],[0.7,1],[1,0.7],[1,0]],
+  'V': [[0,0],[0.5,1],[1,0]],
+  'W': [[0,0],[0.2,1],[0.5,0.3],[0.8,1],[1,0]],
+  'X': [[0,0],[1,1],[0.5,0.5],[0,1],[1,0]],
+  'Y': [[0,0],[0.5,0.5],[1,0],[0.5,0.5],[0.5,1]],
+  'Z': [[0,0],[1,0],[0,1],[1,1]],
+  '0': [[0.5,0],[0,0.3],[0,0.7],[0.5,1],[1,0.7],[1,0.3],[0.5,0],[0.7,0.7],[0.3,0.3]],
+  '1': [[0.3,0],[0.5,0],[0.5,1],[0.3,1]],
+  '2': [[0,0.3],[0.3,0],[0.7,0],[1,0.3],[1,0.5],[0,1],[0,0.7],[1,0.7]],
+  '3': [[0,0],[0.3,0],[0.7,0.3],[0.5,0.5],[0.7,0.7],[0.3,1],[0,1]],
+  '4': [[0.7,0],[0.7,1],[0,0.5],[1,0.5]],
+  '5': [[1,0],[0,0],[0,0.5],[0.7,0.5],[0.7,0.7],[0,0.7],[0,1],[1,1]],
+  '6': [[0.7,0],[0.3,0],[0,0.3],[0,0.7],[0.3,1],[0.7,1],[1,0.7],[1,0.5],[0.3,0.5],[0,0.3]],
+  '7': [[0,0],[1,0],[0.3,1]],
+  '8': [[0.5,0.5],[0,0.3],[0,0.7],[0.5,1],[1,0.7],[1,0.3],[0.5,0.5],[0.5,0],[0.5,1]],
+  '9': [[0.3,1],[0.7,1],[1,0.7],[1,0.3],[0.7,0],[0.3,0],[0,0.3],[0,0.5],[0.7,0.5],[1,0.3]],
+  ' ': []
+};
+
+// --- Forge a word ---
+function forgeWord(word) {
+  const chars = word.toUpperCase().split('');
+  const totalWidth = chars.reduce((sum, c) => {
+    const pts = letterPoints[c] || [];
+    return sum + (pts.length > 0 ? 1.2 : 0.5);
+  }, 0);
+  
+  let offsetX = -totalWidth / 2;
+  const centerY = H * 0.35;
+  const letterScale = Math.min(60, (W * 0.6) / totalWidth);
+
+  const allLetterStars = [];
+
+  chars.forEach((char, ci) => {
+    const pts = letterPoints[char] || [];
+    const letterWidth = pts.length > 0 ? 1.2 : 0.5;
+    const lx = offsetX + letterWidth / 2;
+
+    if (pts.length === 0) {
+      offsetX += letterWidth;
+      return;
+    }
+
+    const color = randomColor();
+    const starGroup = {
+      points: [],
+      color: color,
+      char: char,
+      born: performance.now(),
+      launched: false
+    };
+
+    pts.forEach((p, pi) => {
+      const sx = W/2 + (lx + p[0] - 0.5) * letterScale;
+      const sy = centerY + (p[1] - 0.5) * letterScale;
+      starGroup.points.push({ x: sx, y: sy, origX: sx, origY: sy });
+    });
+
+    allLetterStars.push(starGroup);
+    offsetX += letterWidth;
+  });
+
+  // Create a "shooting star" trail for each letter group
+  allLetterStars.forEach((group, gi) => {
+    const delay = gi * 300;
+    setTimeout(() => {
+      // Trail arcs from below toward the letter
+      group.points.forEach((pt, pi) => {
+        const startX = pt.origX + (Math.random() - 0.5) * 200;
+        const startY = H + 50;
+        const cpX = pt.origX + (Math.random() - 0.5) * 150;
+        const cpY = H * 0.6;
+        
+        const star = {
+          x: startX,
+          y: startY,
+          targetX: pt.origX,
+          targetY: pt.origY,
+          cpX: cpX,
+          cpY: cpY,
+          t: 0,
+          speed: 0.008 + Math.random() * 0.007,
+          color: group.color,
+          size: Math.random() * 2 + 1.5,
+          trail: [],
+          arrived: false,
+          letterIdx: gi,
+          glowPhase: Math.random() * Math.PI * 2
+        };
+        stars.push(star);
+      });
+
+      // Add sparkle particles along path
+      for (let i = 0; i < 8; i++) {
+        particles.push({
+          x: W/2 + (Math.random() - 0.5) * W * 0.6,
+          y: H + Math.random() * 100,
+          vx: (Math.random() - 0.5) * 0.5,
+          vy: -(Math.random() * 2 + 1),
+          life: 1,
+          decay: 0.01 + Math.random() * 0.02,
+          color: group.color,
+          size: Math.random() * 2 + 0.5
+        });
+      }
+    }, delay);
+  });
+
+  // After all arrive, slowly form constellation connections
+  const totalArrivalTime = allLetterStars.length * 300 + 2000;
+  setTimeout(() => {
+    const allPts = [];
+    allLetterStars.forEach(g => {
+      g.points.forEach(p => allPts.push({ x: p.origX, y: p.origY, color: g.color }));
+    });
+    if (allPts.length >= 2) {
+      // Connect nearby points within each letter
+      allLetterStars.forEach(g => {
+        for (let i = 0; i < g.points.length - 1; i++) {
+          constellations.push({
+            x1: g.points[i].origX,
+            y1: g.points[i].origY,
+            x2: g.points[i+1].origX,
+            y2: g.points[i+1].origY,
+            color: g.color,
+            opacity: 0,
+            maxOpacity: 0.3 + Math.random() * 0.3,
+            delay: Math.random() * 1000,
+            startTime: performance.now()
+          });
+        }
+      });
+    }
+  }, totalArrivalTime);
+}
+
+// --- Input handling ---
+const input = document.getElementById('input');
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && input.value.trim()) {
+    forgeWord(input.value.trim());
+    input.value = '';
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.target === input) return;
+  if (e.key === ' ') { paused = !paused; e.preventDefault(); }
+  if (e.key === 'c' || e.key === 'C') {
+    stars = []; trails = []; particles = []; constellations = [];
+  }
+  if (e.key === 's' || e.key === 'S') {
+    const link = document.createElement('a');
+    link.download = 'star-forge.png';
+    link.href = canvas.toDataURL();
+    link.click();
+  }
+});
+
+document.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  // Ambient sparkles near mouse
+  if (Math.random() < 0.3) {
+    particles.push({
+      x: mouse.x + (Math.random() - 0.5) * 40,
+      y: mouse.y + (Math.random() - 0.5) * 40,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: -(Math.random() * 0.8 + 0.2),
+      life: 1,
+      decay: 0.015 + Math.random() * 0.02,
+      color: randomColor(),
+      size: Math.random() * 1.5 + 0.5
+    });
+  }
+});
+
+canvas.addEventListener('click', (e) => {
+  // Click to forge a random star burst
+  for (let i = 0; i < 15; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 3 + 1;
+    particles.push({
+      x: e.clientX,
+      y: e.clientY,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      decay: 0.01 + Math.random() * 0.02,
+      color: randomColor(),
+      size: Math.random() * 2 + 1
+    });
+  }
+});
+
+// --- Animation ---
+let lastTime = performance.now();
+
+function animate(time) {
+  requestAnimationFrame(animate);
+  if (paused) return;
+
+  const dt = Math.min((time - lastTime) / 16.67, 3);
+  lastTime = time;
+
+  // Fade trail
+  ctx.fillStyle = 'rgba(0, 0, 5, 0.15)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Twinkle stars
+  twinkles.forEach(t => {
+    t.phase += t.speed * dt;
+    const alpha = 0.3 + Math.sin(t.phase) * 0.4 + 0.4;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, t.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(200, 220, 255, ${alpha * 0.6})`;
+    ctx.fill();
+  });
+
+  // Constellation lines
+  constellations.forEach(c => {
+    const elapsed = time - c.startTime - c.delay;
+    if (elapsed > 0) {
+      c.opacity = Math.min(c.maxOpacity, c.opacity + 0.003 * dt);
+      ctx.beginPath();
+      ctx.moveTo(c.x1, c.y1);
+      ctx.lineTo(c.x2, c.y2);
+      ctx.strokeStyle = c.color + hexAlpha(c.opacity);
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+  });
+
+  // Stars flying in
+  stars.forEach(star => {
+    if (!star.arrived) {
+      star.t += star.speed * dt;
+      if (star.t >= 1) {
+        star.t = 1;
+        star.arrived = true;
+      }
+      // Quadratic bezier
+      const t = star.t;
+      const mt = 1 - t;
+      star.x = mt*mt*star.x + 2*mt*t*star.cpX + t*t*star.targetX;
+      star.y = mt*mt*(star.y) + 2*mt*t*star.cpY + t*t*star.targetY;
+
+      // Trail
+      star.trail.push({ x: star.x, y: star.y, life: 1 });
+      if (star.trail.length > 30) star.trail.shift();
+    } else {
+      // Gentle hover at target
+      star.glowPhase += 0.03 * dt;
+      star.x = star.targetX + Math.sin(star.glowPhase) * 1.5;
+      star.y = star.targetY + Math.cos(star.glowPhase * 1.3) * 1.5;
+    }
+
+    // Draw trail
+    if (star.trail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(star.trail[0].x, star.trail[0].y);
+      for (let i = 1; i < star.trail.length; i++) {
+        ctx.lineTo(star.trail[i].x, star.trail[i].y);
+      }
+      const trailAlpha = star.arrived ? 0.15 : 0.4;
+      ctx.strokeStyle = star.color + hexAlpha(trailAlpha);
+      ctx.lineWidth = star.size * 0.5;
+      ctx.stroke();
+    }
+
+    // Draw star point
+    const glow = star.arrived ? 0.8 + Math.sin(star.glowPhase) * 0.2 : 0.6;
+    ctx.beginPath();
+    ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+    ctx.fillStyle = star.color + hexAlpha(glow);
+    ctx.fill();
+
+    // Glow halo
+    ctx.beginPath();
+    ctx.arc(star.x, star.y, star.size * 3, 0, Math.PI * 2);
+    ctx.fillStyle = star.color + hexAlpha(glow * 0.15);
+    ctx.fill();
+  });
+
+  // Particles
+  particles = particles.filter(p => {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += 0.01 * dt; // gentle rise
+    p.life -= p.decay * dt;
+    if (p.life <= 0) return false;
+
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fillStyle = p.color + hexAlpha(p.life * 0.7);
+    ctx.fill();
+    return true;
+  });
+
+  // Stats
+  document.getElementById('star-count').textContent = 'stars: ' + stars.length;
+  document.getElementById('trail-count').textContent = 'trails: ' + trails.length;
+  document.getElementById('constellation-count').textContent = 'constellations: ' + constellations.length;
+}
+
+function hexAlpha(a) {
+  const val = Math.max(0, Math.min(1, a));
+  return Math.round(val * 255).toString(16).padStart(2, '0');
+}
+
+// Initial welcome
+setTimeout(() => forgeWord('HELLO'), 500);
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
