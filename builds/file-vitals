@@ -1,0 +1,304 @@
+#!/usr/bin/env bash
+#
+# file-vitals — "What's the personality of this file?"
+# Analyzes a file's git history and gives it a character readout.
+#
+# Usage: file-vitals <path>
+#
+# Requires: git, bash, stat, wc, awk
+
+FILE="${1:-}"
+FORMAT="text"
+
+# Parse args
+if [[ "${2:-}" == "--json" || "${2:-}" == "-j" ]]; then
+  FORMAT="json"
+fi
+
+if [[ -z "$FILE" ]]; then
+  echo "file-vitals — What's the personality of this file?"
+  echo ""
+  echo "Usage: file-vitals <path>"
+  echo ""
+  echo "Examples:"
+  echo "  file-vitals src/main.rs"
+  echo "  file-vitals README.md"
+  echo "  file-vitals src/utils/helpers.ts"
+  exit 1
+fi
+
+if [[ ! -f "$FILE" ]]; then
+  echo "Error: '$FILE' not found (or not a regular file)."
+  exit 1
+fi
+
+# Find git root
+GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+if [[ -z "$GIT_ROOT" ]]; then
+  echo "Error: not in a git repository."
+  exit 1
+fi
+
+REL_PATH="${FILE#./}"
+if command -v realpath &>/dev/null; then
+  ABS_PATH=$(realpath "$FILE" 2>/dev/null || echo "")
+  if [[ -n "$ABS_PATH" ]]; then
+    REL_PATH="${ABS_PATH#$GIT_ROOT/}"
+  fi
+fi
+
+# ── Gather stats ────────────────────────────────────────────────
+
+SIZE_BYTES=$(stat -c%s "$FILE" 2>/dev/null || stat -f%z "$FILE" 2>/dev/null || echo "0")
+SIZE_LINES=$(wc -l < "$FILE" | tr -d ' ')
+
+# Git history — use temp file to avoid pipefail issues
+TMPFILE=$(mktemp)
+git log --follow --format="%H|%an|%ae|%ai|%s" -- "$REL_PATH" 2>/dev/null | head -200 > "$TMPFILE"
+COMMITS=$(cat "$TMPFILE")
+
+if [[ -z "$COMMITS" ]]; then
+  COMMIT_COUNT=0
+  FIRST_DATE="unknown"
+  LAST_DATE="unknown"
+  CONTRIBUTORS=0
+  LINES_ADDED=0
+  LINES_DELETED=0
+else
+  COMMIT_COUNT=$(wc -l < "$TMPFILE" | tr -d ' ')
+  FIRST_DATE=$(tail -1 "$TMPFILE" | cut -d'|' -f4 | cut -d' ' -f1)
+  LAST_DATE=$(head -1 "$TMPFILE" | cut -d'|' -f4 | cut -d' ' -f1)
+  CONTRIBUTORS=$(cut -d'|' -f2 "$TMPFILE" | sort -u | { grep -c '.' 2>/dev/null || true; })
+fi
+rm -f "$TMPFILE"
+
+# Net lines changed
+TMPSTAT=$(mktemp)
+git log --follow --numstat --format="" -- "$REL_PATH" 2>/dev/null > "$TMPSTAT"
+LINES_ADDED=$(awk '{sum+=$1} END{print sum+0}' "$TMPSTAT")
+LINES_DELETED=$(awk '{sum+=$2} END{print sum+0}' "$TMPSTAT")
+rm -f "$TMPSTAT"
+NET_CHANGE=$((LINES_ADDED - LINES_DELETED))
+
+# Days since last commit
+NOW_EPOCH=$(date +%s)
+if [[ "$LAST_DATE" != "unknown" ]]; then
+  LAST_EPOCH=$(date -d "$LAST_DATE" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$LAST_DATE" +%s 2>/dev/null || echo "0")
+  if [[ "$LAST_EPOCH" -gt 0 ]]; then
+    DAYS_SINCE=$(( (NOW_EPOCH - LAST_EPOCH) / 86400 ))
+  else
+    DAYS_SINCE="?"
+  fi
+else
+  DAYS_SINCE="?"
+fi
+
+# Extension
+EXT="${FILE##*.}"
+EXT="${EXT,,}"
+
+# ── Determine Personality ────────────────────────────────────────
+
+# Archetype
+if [[ "$COMMIT_COUNT" -eq 0 ]]; then
+  ARCHETYPE="The Orphan"
+  EMOJI="👶"
+  TAGLINE="Freshly born. No scars yet. Full of potential."
+elif [[ "$COMMIT_COUNT" -ge 1 && "$COMMIT_COUNT" -le 2 ]]; then
+  ARCHETYPE="The Sprout"
+  EMOJI="🌱"
+  TAGLINE="Young and tender. Just getting started."
+elif [[ "$COMMIT_COUNT" -ge 3 && "$COMMIT_COUNT" -le 8 ]]; then
+  ARCHETYPE="The Wanderer"
+  EMOJI="🚶"
+  TAGLINE="Has seen a few things. Still finding its way."
+elif [[ "$COMMIT_COUNT" -ge 9 && "$COMMIT_COUNT" -le 25 ]]; then
+  ARCHETYPE="The Workhorse"
+  EMOJI="🐴"
+  TAGLINE="Reliable. Shows up every day. Gets the job done."
+elif [[ "$COMMIT_COUNT" -ge 26 && "$COMMIT_COUNT" -le 60 ]]; then
+  ARCHETYPE="The Veteran"
+  EMOJI="🧙"
+  TAGLINE="Battle-tested. Has stories you haven't read yet."
+else
+  ARCHETYPE="The Ancient One"
+  EMOJI="🏛️"
+  TAGLINE="It was here before you. It will be here after."
+fi
+
+# Volatility
+if [[ "$LINES_ADDED" -gt 0 ]]; then
+  CHURN_RATIO=$(echo "scale=1; ($LINES_DELETED * 100) / $LINES_ADDED" | bc 2>/dev/null || echo "0")
+else
+  CHURN_RATIO="0"
+fi
+
+if [[ "${CHURN_RATIO%%.*}" -ge 150 ]]; then
+  VOLATILITY="Volatile"
+elif [[ "${CHURN_RATIO%%.*}" -ge 80 ]]; then
+  VOLATILITY="Restless"
+elif [[ "${CHURN_RATIO%%.*}" -ge 40 ]]; then
+  VOLATILITY="Evolving"
+else
+  VOLATILITY="Stable"
+fi
+
+# Collaboration
+if [[ "$CONTRIBUTORS" -ge 4 ]]; then
+  COLLAB="Communal"
+elif [[ "$CONTRIBUTORS" -ge 2 ]]; then
+  COLLAB="Shared"
+else
+  COLLAB="Solo"
+fi
+
+# Age
+if [[ "$FIRST_DATE" != "unknown" ]]; then
+  FIRST_EPOCH=$(date -d "$FIRST_DATE" +%s 2>/dev/null || echo "0")
+  if [[ "$FIRST_EPOCH" -gt 0 ]]; then
+    AGE_DAYS=$(( (NOW_EPOCH - FIRST_EPOCH) / 86400 ))
+    if [[ "$AGE_DAYS" -ge 730 ]]; then
+      AGE_TAG="Elder"
+    elif [[ "$AGE_DAYS" -ge 365 ]]; then
+      AGE_TAG="Seasoned"
+    elif [[ "$AGE_DAYS" -ge 90 ]]; then
+      AGE_TAG="Established"
+    elif [[ "$AGE_DAYS" -ge 30 ]]; then
+      AGE_TAG="Growing"
+    else
+      AGE_TAG="New"
+    fi
+  else
+    AGE_TAG="Unknown"
+  fi
+else
+  AGE_TAG="Unknown"
+fi
+
+# Recency
+if [[ "$DAYS_SINCE" == "?" ]]; then
+  RECENCY="Unknown"
+elif [[ "$DAYS_SINCE" -eq 0 ]]; then
+  RECENCY="On fire 🔥"
+elif [[ "$DAYS_SINCE" -le 7 ]]; then
+  RECENCY="Active"
+elif [[ "$DAYS_SINCE" -le 30 ]]; then
+  RECENCY="Dormant"
+elif [[ "$DAYS_SINCE" -le 90 ]]; then
+  RECENCY="Hibernating"
+else
+  RECENCY="Fossilized"
+fi
+
+# Badges
+BADGES=()
+if [[ "$SIZE_LINES" -ge 2000 ]]; then
+  BADGES+=("📖 Epic Length")
+elif [[ "$SIZE_LINES" -ge 1000 ]]; then
+  BADGES+=("📚 Long Read")
+elif [[ "$SIZE_LINES" -le 10 ]]; then
+  BADGES+=("🍃 Micro File")
+fi
+if [[ "$NET_CHANGE" -ge 500 ]]; then
+  BADGES+=("📈 Expanding")
+elif [[ "$NET_CHANGE" -le -500 ]]; then
+  BADGES+=("📉 Shrinking")
+fi
+if [[ "$AGE_TAG" == "Elder" || "$AGE_TAG" == "Seasoned" ]]; then
+  BADGES+=("🏛️ Archive Material")
+fi
+if [[ "$VOLATILITY" == "Volatile" ]]; then
+  BADGES+=("💣 Churn Factory")
+fi
+
+# ── Output ──────────────────────────────────────────────────────
+
+if [[ "$FORMAT" == "json" ]]; then
+  BADGE_JSON=""
+  for i in "${!BADGES[@]}"; do
+    [[ $i -gt 0 ]] && BADGE_JSON+=","
+    BADGE_JSON+="\"${BADGES[$i]}\""
+  done
+
+  cat <<EOF
+{
+  "file": "$REL_PATH",
+  "size_bytes": $SIZE_BYTES,
+  "size_lines": $SIZE_LINES,
+  "commits": $COMMIT_COUNT,
+  "contributors": $CONTRIBUTORS,
+  "lines_added": $LINES_ADDED,
+  "lines_deleted": $LINES_DELETED,
+  "net_change": $NET_CHANGE,
+  "first_commit": "$FIRST_DATE",
+  "last_commit": "$LAST_DATE",
+  "days_since_last": $DAYS_SINCE,
+  "archetype": "$ARCHETYPE $EMOJI",
+  "volatility": "$VOLATILITY",
+  "collaboration": "$COLLAB",
+  "age": "$AGE_TAG",
+  "recency": "$RECENCY",
+  "tagline": "$TAGLINE",
+  "badges": [$BADGE_JSON]
+}
+EOF
+  exit 0
+fi
+
+# Pretty text output
+echo ""
+echo "  ╔══════════════════════════════════════════════╗"
+echo "  ║          📄  FILE VITALS REPORT             ║"
+echo "  ╚══════════════════════════════════════════════╝"
+echo ""
+echo "  File:      $REL_PATH"
+echo "  Size:      ${SIZE_LINES} lines (${SIZE_BYTES} bytes)"
+echo "  History:   ${COMMIT_COUNT} commits · ${CONTRIBUTORS} contributor(s)"
+echo "  Age:       First touched ${FIRST_DATE} (${AGE_TAG})"
+echo "  Activity:  Last touched ${LAST_DATE} (${RECENCY})"
+echo ""
+echo "  ┌──────────────────────────────────────────┐"
+echo "  │  $EMOJI  $ARCHETYPE"
+echo "  │  \"$TAGLINE\""
+echo "  └──────────────────────────────────────────┘"
+echo ""
+echo "  Modifiers:"
+echo "    • Volatility:    $VOLATILITY (${CHURN_RATIO}% deletion ratio)"
+echo "    • Collaboration: $COLLAB"
+echo "    • Age:           $AGE_TAG"
+echo ""
+
+if [[ ${#BADGES[@]} -gt 0 ]]; then
+  echo "  Badges:"
+  for badge in "${BADGES[@]}"; do
+    echo "    🏷️  $badge"
+  done
+  echo ""
+fi
+
+echo "  Stats:"
+echo "    +${LINES_ADDED} added  |  -${LINES_DELETED} deleted  |  net ${NET_CHANGE}"
+echo ""
+
+# Oracle verdict
+VERDICT=""
+if [[ "$ARCHETYPE" == "The Ancient One" && "$VOLATILITY" == "Stable" ]]; then
+  VERDICT="This file is code archaeology. Do not touch unless you know the ritual."
+elif [[ "$ARCHETYPE" == "The Orphan" ]]; then
+  VERDICT="It's innocent. For now."
+elif [[ "$VOLATILITY" == "Volatile" && "$RECENCY" == "On fire 🔥" ]]; then
+  VERDICT="This file is having an identity crisis. Multiple times a day."
+elif [[ "$COLLAB" == "Communal" && "$VOLATILITY" == "Stable" ]]; then
+  VERDICT="A well-negotiated peace treaty. Everyone agrees on this one."
+elif [[ "$AGE_TAG" == "Elder" && "$VOLATILITY" == "Restless" ]]; then
+  VERDICT="Ancient and fidgety. Like a retired general who still keeps a sword."
+elif [[ "$RECENCY" == "Fossilized" && "$SIZE_LINES" -le 5 ]]; then
+  VERDICT="A tiny fossil. Perfect, untouched, and utterly forgotten."
+elif [[ "$NET_CHANGE" -ge 1000 ]]; then
+  VERDICT="This file has been through wars. What hasn't killed it made it larger."
+else
+  VERDICT="Just a file. But every file has a ghost story if you listen."
+fi
+
+echo "  🔮 Oracle says: $VERDICT"
+echo ""
