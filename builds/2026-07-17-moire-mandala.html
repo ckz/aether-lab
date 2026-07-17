@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Moire Mandala — Interference Patterns</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #e8e6e3;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    min-height: 100vh;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0; left: 0;
+    z-index: 1;
+  }
+  .controls {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    background: rgba(10, 10, 15, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 20px 28px;
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 95vw;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  .control-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .control-group label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: #888;
+  }
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100px;
+    height: 4px;
+    background: #333;
+    border-radius: 2px;
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    box-shadow: 0 0 8px rgba(255,255,255,0.4);
+  }
+  button {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #e8e6e3;
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    transition: all 0.3s;
+  }
+  button:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.4);
+    box-shadow: 0 0 16px rgba(255,255,255,0.1);
+  }
+  .title {
+    position: fixed;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    font-size: 13px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.35);
+    pointer-events: none;
+    text-align: center;
+  }
+  .hint {
+    position: fixed;
+    top: 52px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: rgba(255,255,255,0.2);
+    pointer-events: none;
+    text-align: center;
+  }
+  .palette-indicator {
+    display: flex;
+    gap: 6px;
+  }
+  .palette-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+  .palette-dot.active {
+    border-color: #fff;
+    box-shadow: 0 0 10px currentColor;
+  }
+</style>
+</head>
+<body>
+<div class="title">Moire Mandala</div>
+<div class="hint">move mouse to interact · click to pulse · scroll to zoom</div>
+<div class="controls">
+  <div class="control-group">
+    <label>Rings</label>
+    <input type="range" id="rings" min="6" max="48" value="24">
+  </div>
+  <div class="control-group">
+    <label>Density</label>
+    <input type="range" id="density" min="12" max="120" value="60">
+  </div>
+  <div class="control-group">
+    <label>Speed</label>
+    <input type="range" id="speed" min="1" max="30" value="8">
+  </div>
+  <div class="control-group">
+    <label>Color</label>
+    <div class="palette-indicator" id="palette"></div>
+  </div>
+  <div class="control-group">
+    <label>Symmetry</label>
+    <input type="range" id="symmetry" min="2" max="16" value="8">
+  </div>
+  <button id="resetBtn">Reset</button>
+  <button id="screenshotBtn">Save PNG</button>
+</div>
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H, cx, cy;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2; cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+let mouse = { x: cx, y: cy, active: false };
+let zoom = 1;
+let pulse = 0;
+let time = 0;
+
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('click', () => { pulse = 1; });
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoom *= e.deltaY > 0 ? 0.96 : 1.04;
+  zoom = Math.max(0.3, Math.min(3, zoom));
+});
+
+const params = {
+  rings: 24,
+  density: 60,
+  speed: 8,
+  symmetry: 8,
+  palette: 0
+};
+
+const palettes = [
+  { name: 'nebula', colors: [[180,120,255],[120,180,255],[255,120,200],[120,255,220],[255,200,100]] },
+  { name: 'ember', colors: [[255,100,50],[255,180,50],[255,50,100],[200,50,255],[50,200,255]] },
+  { name: 'forest', colors: [[50,180,100],[100,220,150],[180,255,100],[50,200,180],[200,255,150]] },
+  { name: 'ice', colors: [[100,180,255],[180,220,255],[255,255,255],[150,200,255],[200,240,255]] },
+  { name: 'mono', colors: [[255,255,255],[200,200,200],[150,150,150],[220,220,220],[180,180,180]] },
+  { name: 'aurora', colors: [[100,255,200],[200,100,255],[255,100,180],[100,200,255],[255,255,100]] },
+];
+
+function buildPaletteUI() {
+  const el = document.getElementById('palette');
+  el.innerHTML = '';
+  palettes.forEach((p, i) => {
+    const dot = document.createElement('div');
+    dot.className = 'palette-dot' + (i === params.palette ? ' active' : '');
+    dot.style.background = `rgb(${p.colors[0].join(',')})`;
+    dot.onclick = () => {
+      params.palette = i;
+      buildPaletteUI();
+    };
+    el.appendChild(dot);
+  });
+}
+buildPaletteUI();
+
+document.getElementById('rings').oninput = e => params.rings = +e.target.value;
+document.getElementById('density').oninput = e => params.density = +e.target.value;
+document.getElementById('speed').oninput = e => params.speed = +e.target.value;
+document.getElementById('symmetry').oninput = e => params.symmetry = +e.target.value;
+document.getElementById('resetBtn').onclick = () => {
+  params.rings = 24; params.density = 60; params.speed = 8; params.symmetry = 8; params.palette = 0;
+  zoom = 1; pulse = 0;
+  document.getElementById('rings').value = 24;
+  document.getElementById('density').value = 60;
+  document.getElementById('speed').value = 8;
+  document.getElementById('symmetry').value = 8;
+  buildPaletteUI();
+};
+
+document.getElementById('screenshotBtn').onclick = () => {
+  const link = document.createElement('a');
+  link.download = 'moire-mandala.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+};
+
+function getColor(t, alpha) {
+  const pal = palettes[params.palette].colors;
+  const idx = Math.abs(Math.sin(t * 1.3)) * pal.length;
+  const i = Math.floor(idx) % pal.length;
+  const j = (i + 1) % pal.length;
+  const f = idx - Math.floor(idx);
+  const r = pal[i][0] + (pal[j][0] - pal[i][0]) * f;
+  const g = pal[i][1] + (pal[j][1] - pal[i][1]) * f;
+  const b = pal[i][2] + (pal[j][2] - pal[i][2]) * f;
+  return `rgba(${r|0},${g|0},${b|0},${alpha})`;
+}
+
+function draw() {
+  time += 0.005 * params.speed / 8;
+  pulse *= 0.94;
+
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.18)';
+  ctx.fillRect(0, 0, W, H);
+
+  const mx = mouse.active ? (mouse.x - cx) / cx : 0;
+  const my = mouse.active ? (mouse.y - cy) / cy : 0;
+  const mDist = Math.sqrt(mx * mx + my * my);
+  const mAngle = Math.atan2(my, mx);
+
+  const maxR = Math.min(W, H) * 0.42 * zoom;
+  const symmetry = params.symmetry;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  for (let ring = 0; ring < params.rings; ring++) {
+    const t = ring / params.rings;
+    const r = maxR * (0.08 + t * 0.92);
+
+    for (let i = 0; i < params.density; i++) {
+      const phase = (i / params.density) * Math.PI * 2;
+      const wobble = Math.sin(phase * symmetry + time * 2 + ring * 0.3 + mAngle * 2) * 0.15;
+      const mouseInfluence = mouse.active ? Math.sin(phase - mAngle * symmetry + mDist * 3) * mDist * 0.2 : 0;
+
+      const angle = phase + time * (0.5 + ring * 0.05) + wobble + mouseInfluence;
+
+      const x = Math.cos(angle) * r;
+      const y = Math.sin(angle) * r;
+
+      const depth = Math.sin(phase * symmetry + time * 1.5 + ring * 0.2);
+      const alpha = 0.03 + Math.abs(depth) * 0.12 + pulse * 0.15;
+
+      const size = (0.5 + Math.abs(Math.sin(phase * 3 + time)) * 1.5) * (1 + pulse * 3);
+
+      ctx.beginPath();
+      ctx.arc(x, y, size, 0, Math.PI * 2);
+      ctx.fillStyle = getColor(t + time * 0.3 + phase * 0.1, alpha);
+      ctx.fill();
+
+      if (ring > 0 && i % 2 === 0) {
+        const prevRing = ring - 1;
+        const prevR = maxR * (0.08 + (prevRing / params.rings) * 0.92);
+        const prevPhase = (i / params.density) * Math.PI * 2;
+        const prevWobble = Math.sin(prevPhase * symmetry + time * 2 + prevRing * 0.3 + mAngle * 2) * 0.15;
+        const prevMouseInf = mouse.active ? Math.sin(prevPhase - mAngle * symmetry + mDist * 3) * mDist * 0.2 : 0;
+        const prevAngle = prevPhase + time * (0.5 + prevRing * 0.05) + prevWobble + prevMouseInf;
+
+        const px = Math.cos(prevAngle) * prevR;
+        const py = Math.sin(prevAngle) * prevR;
+
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(px, py);
+        ctx.strokeStyle = getColor(t + time * 0.2, alpha * 0.4);
+        ctx.lineWidth = 0.3 + pulse * 1.5;
+        ctx.stroke();
+      }
+    }
+  }
+
+  ctx.restore();
+
+  requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>
