@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reaction Diffusion Garden</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050508;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+  }
+  #canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    cursor: crosshair;
+  }
+  .controls {
+    position: fixed;
+    top: 20px; right: 20px;
+    background: rgba(10, 10, 20, 0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid #1e1e2e;
+    border-radius: 12px;
+    padding: 1.25rem;
+    min-width: 240px;
+    z-index: 10;
+  }
+  .controls h2 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: #888;
+    margin-bottom: 1rem;
+  }
+  .control-group {
+    margin-bottom: 0.75rem;
+  }
+  .control-group label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: #aaa;
+    margin-bottom: 0.25rem;
+  }
+  .control-group label span { color: #666; font-family: monospace; }
+  .control-group input[type="range"] {
+    width: 100%;
+    accent-color: #7c3aed;
+  }
+  .presets {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    margin-top: 0.75rem;
+  }
+  .preset-btn {
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+    color: #ccc;
+    padding: 0.35rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .preset-btn:hover {
+    background: #2a2a4e;
+    border-color: #7c3aed;
+    color: #fff;
+  }
+  .info {
+    position: fixed;
+    bottom: 20px; left: 20px;
+    font-size: 0.75rem;
+    color: #555;
+    z-index: 10;
+  }
+  .stats {
+    position: fixed;
+    top: 20px; left: 20px;
+    font-size: 0.7rem;
+    color: #444;
+    font-family: monospace;
+    z-index: 10;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div class="stats" id="stats">FPS: --</div>
+
+<div class="controls">
+  <h2>⚗️ Parameters</h2>
+  
+  <div class="control-group">
+    <label>Feed Rate <span id="feedVal">0.055</span></label>
+    <input type="range" id="feed" min="0.01" max="0.1" step="0.001" value="0.055">
+  </div>
+  
+  <div class="control-group">
+    <label>Kill Rate <span id="killVal">0.062</span></label>
+    <input type="range" id="kill" min="0.04" max="0.07" step="0.001" value="0.062">
+  </div>
+  
+  <div class="control-group">
+    <label>Diffusion A <span id="diffAVal">1.0</span></label>
+    <input type="range" id="diffA" min="0.1" max="2" step="0.05" value="1.0">
+  </div>
+  
+  <div class="control-group">
+    <label>Diffusion B <span id="diffBVal">0.5</span></label>
+    <input type="range" id="diffB" min="0.1" max="1" step="0.05" value="0.5">
+  </div>
+  
+  <div class="control-group">
+    <label>Brush Size <span id="brushVal">8</span></label>
+    <input type="range" id="brush" min="2" max="30" step="1" value="8">
+  </div>
+  
+  <div class="presets">
+    <button class="preset-btn" data-preset="coral">🪸 Coral</button>
+    <button class="preset-btn" data-preset="mitosis">🧬 Mitosis</button>
+    <button class="preset-btn" data-preset="worms">🪱 Worms</button>
+    <button class="preset-btn" data-preset="spots">🦎 Spots</button>
+    <button class="preset-btn" data-preset="waves">🌊 Waves</button>
+    <button class="preset-btn" data-preset="chaos">🌀 Chaos</button>
+  </div>
+</div>
+
+<div class="info">
+  Click/drag to paint chemicals • Scroll to resize brush
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const stats = document.getElementById('stats');
+  
+  let W, H;
+  const SCALE = 2; // simulation runs at half res for speed
+  let simW, simH;
+  
+  let gridA, gridB, nextA, nextB;
+  let feed = 0.055;
+  let kill = 0.062;
+  let diffA = 1.0;
+  let diffB = 0.5;
+  let brushSize = 8;
+  let painting = false;
+  let lastX = -1, lastY = -1;
+  
+  // FPS tracking
+  let frameCount = 0;
+  let lastFpsTime = performance.now();
+  
+  const presets = {
+    coral: { feed: 0.055, kill: 0.062, diffA: 1.0, diffB: 0.5 },
+    mitosis: { feed: 0.037, kill: 0.060, diffA: 1.0, diffB: 0.3 },
+    worms: { feed: 0.078, kill: 0.061, diffA: 1.0, diffB: 0.4 },
+    spots: { feed: 0.035, kill: 0.060, diffA: 0.8, diffB: 0.4 },
+    waves: { feed: 0.014, kill: 0.054, diffA: 1.0, diffB: 0.3 },
+    chaos: { feed: 0.026, kill: 0.051, diffA: 1.2, diffB: 0.6 }
+  };
+  
+  function resize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W;
+    canvas.height = H;
+    simW = Math.floor(W / SCALE);
+    simH = Math.floor(H / SCALE);
+    
+    const oldA = gridA;
+    const oldB = gridB;
+    const size = simW * simH;
+    
+    gridA = new Float32Array(size);
+    gridB = new Float32Array(size);
+    nextA = new Float32Array(size);
+    nextB = new Float32Array(size);
+    
+    if (oldA) {
+      for (let y = 0; y < Math.min(simH, oldA.length); y++) {
+        for (let x = 0; x < Math.min(simW, oldA.length); x++) {
+          gridA[y * simW + x] = oldA[y * Math.min(simW, oldA.length) + x] || 1;
+          gridB[y * simW + x] = oldB[y * Math.min(simW, oldB.length) + x] || 0;
+        }
+      }
+    } else {
+      // Seed with some initial B chemicals in the center
+      seedCenter();
+    }
+  }
+  
+  function seedCenter() {
+    const cx = simW >> 1;
+    const cy = simH >> 1;
+    const r = Math.min(simW, simH) >> 3;
+    for (let y = cy - r; y < cy + r; y++) {
+      for (let x = cx - r; x < cx + r; x++) {
+        if (x >= 0 && x < simW && y >= 0 && y < simH) {
+          const dx = x - cx, dy = y - cy;
+          if (dx*dx + dy*dy < r*r) {
+            const idx = y * simW + x;
+            gridA[idx] = 1;
+            gridB[idx] = 0.5 + Math.random() * 0.5;
+          }
+        }
+      }
+    }
+  }
+  
+  function addChemical(x, y) {
+    const sx = Math.floor(x / SCALE);
+    const sy = Math.floor(y / SCALE);
+    const r = brushSize;
+    
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = sx + dx;
+        const ny = sy + dy;
+        if (nx >= 0 && nx < simW && ny >= 0 && ny < simH) {
+          if (dx*dx + dy*dy <= r*r) {
+            const idx = ny * simW + nx;
+            gridB[idx] = 0.9;
+            gridA[idx] = 0.1;
+          }
+        }
+      }
+    }
+  }
+  
+  function addLine(x0, y0, x1, y1) {
+    const dist = Math.hypot(x1 - x0, y1 - y0);
+    const steps = Math.max(1, Math.floor(dist / (SCALE * 0.5)));
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      addChemical(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t);
+    }
+  }
+  
+  function step() {
+    const w = simW;
+    const h = simH;
+    const dA = diffA;
+    const dB = diffB;
+    const f = feed;
+    const k = kill;
+    
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const idx = y * w + x;
+        const a = gridA[idx];
+        const b = gridB[idx];
+        
+        // Laplacian
+        const lapA = 
+          gridA[idx - 1] + gridA[idx + 1] +
+          gridA[idx - w] + gridA[idx + w] -
+          4 * a;
+        const lapB = 
+          gridB[idx - 1] + gridB[idx + 1] +
+          gridB[idx - w] + gridB[idx + w] -
+          4 * b;
+        
+        // Gray-Scott reaction
+        const abb = a * b * b;
+        nextA[idx] = a + (dA * lapA - abb + f * (1 - a));
+        nextB[idx] = b + (dB * lapB + abb - (k + f) * b);
+        
+        // Clamp
+        nextA[idx] = Math.max(0, Math.min(1, nextA[idx]));
+        nextB[idx] = Math.max(0, Math.min(1, nextB[idx]));
+      }
+    }
+    
+    // Swap buffers
+    [gridA, nextA] = [nextA, gridA];
+    [gridB, nextB] = [nextB, gridB];
+  }
+  
+  // Color mapping - HSL-based for beautiful gradients
+  function getColor(b) {
+    // Map b concentration to hue/saturation
+    const hue = 260 + b * 60; // purple to cyan
+    const sat = 80 + b * 20;
+    const light = 5 + b * 55;
+    const alpha = Math.min(1, b * 1.5);
+    return `hsla(${hue}, ${sat}%, ${light}%, ${alpha})`;
+  }
+  
+  // Alternative: multi-tone mapping
+  function getColor2(b) {
+    const v = b;
+    if (v < 0.2) {
+      // Deep purple/black
+      const t = v / 0.2;
+      return `rgb(${Math.floor(t * 30)}, ${Math.floor(t * 10)}, ${Math.floor(t * 60)})`;
+    } else if (v < 0.5) {
+      // Purple to magenta
+      const t = (v - 0.2) / 0.3;
+      return `rgb(${Math.floor(30 + t * 100)}, ${Math.floor(10 + t * 20)}, ${Math.floor(60 + t * 80)})`;
+    } else if (v < 0.8) {
+      // Magenta to cyan
+      const t = (v - 0.5) / 0.3;
+      return `rgb(${Math.floor(130 - t * 80)}, ${Math.floor(30 + t * 150)}, ${Math.floor(140 + t * 60)})`;
+    } else {
+      // Cyan to white
+      const t = (v - 0.8) / 0.2;
+      return `rgb(${Math.floor(50 + t * 205)}, ${Math.floor(180 + t * 75)}, ${Math.floor(200 + t * 55)})`;
+    }
+  }
+  
+  function render() {
+    // Create image data for simulation grid
+    const imgData = ctx.createImageData(simW, simH);
+    const data = imgData.data;
+    
+    for (let y = 0; y < simH; y++) {
+      for (let x = 0; x < simW; x++) {
+        const idx = y * simW + x;
+        const b = gridB[idx];
+        const a = gridA[idx];
+        
+        const pi = idx * 4;
+        
+        if (b > 0.01) {
+          // Color based on B concentration
+          const v = Math.min(1, b);
+          let r, g, bl;
+          
+          if (v < 0.25) {
+            const t = v / 0.25;
+            r = Math.floor(20 + t * 80);
+            g = Math.floor(5 + t * 15);
+            bl = Math.floor(40 + t * 100);
+          } else if (v < 0.5) {
+            const t = (v - 0.25) / 0.25;
+            r = Math.floor(100 + t * 80);
+            g = Math.floor(20 + t * 60);
+            bl = Math.floor(140 - t * 40);
+          } else if (v < 0.75) {
+            const t = (v - 0.5) / 0.25;
+            r = Math.floor(180 - t * 100);
+            g = Math.floor(80 + t * 120);
+            bl = Math.floor(100 + t * 80);
+          } else {
+            const t = (v - 0.75) / 0.25;
+            r = Math.floor(80 + t * 175);
+            g = Math.floor(200 + t * 55);
+            bl = Math.floor(180 + t * 75);
+          }
+          
+          data[pi] = r;
+          data[pi + 1] = g;
+          data[pi + 2] = bl;
+          data[pi + 3] = Math.min(255, Math.floor(v * 300));
+        } else {
+          // Near-black background with slight tint
+          data[pi] = 5;
+          data[pi + 1] = 5;
+          data[pi + 2] = 8;
+          data[pi + 3] = 255;
+        }
+      }
+    }
+    
+    // Draw to offscreen canvas, then scale up
+    const offCanvas = document.createElement('canvas');
+    offCanvas.width = simW;
+    offCanvas.height = simH;
+    const offCtx = offCanvas.getContext('2d');
+    offCtx.putImageData(imgData, 0, 0);
+    
+    // Clear and draw scaled
+    ctx.fillStyle = '#050508';
+    ctx.fillRect(0, 0, W, H);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(offCanvas, 0, 0, W, H);
+  }
+  
+  function loop() {
+    // Multiple simulation steps per frame for faster evolution
+    const steps = 4;
+    for (let i = 0; i < steps; i++) {
+      step();
+    }
+    render();
+    
+    // FPS
+    frameCount++;
+    const now = performance.now();
+    if (now - lastFpsTime >= 1000) {
+      stats.textContent = `FPS: ${frameCount}`;
+      frameCount = 0;
+      lastFpsTime = now;
+    }
+    
+    requestAnimationFrame(loop);
+  }
+  
+  // Controls
+  function setupControls() {
+    const feedSlider = document.getElementById('feed');
+    const killSlider = document.getElementById('kill');
+    const diffASlider = document.getElementById('diffA');
+    const diffBSlider = document.getElementById('diffB');
+    const brushSlider = document.getElementById('brush');
+    
+    feedSlider.addEventListener('input', (e) => {
+      feed = parseFloat(e.target.value);
+      document.getElementById('feedVal').textContent = feed.toFixed(3);
+    });
+    
+    killSlider.addEventListener('input', (e) => {
+      kill = parseFloat(e.target.value);
+      document.getElementById('killVal').textContent = kill.toFixed(3);
+    });
+    
+    diffASlider.addEventListener('input', (e) => {
+      diffA = parseFloat(e.target.value);
+      document.getElementById('diffAVal').textContent = diffA.toFixed(2);
+    });
+    
+    diffBSlider.addEventListener('input', (e) => {
+      diffB = parseFloat(e.target.value);
+      document.getElementById('diffBVal').textContent = diffB.toFixed(2);
+    });
+    
+    brushSlider.addEventListener('input', (e) => {
+      brushSize = parseInt(e.target.value);
+      document.getElementById('brushVal').textContent = brushSize;
+    });
+    
+    // Presets
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const p = presets[btn.dataset.preset];
+        if (!p) return;
+        feed = p.feed;
+        kill = p.kill;
+        diffA = p.diffA;
+        diffB = p.diffB;
+        feedSlider.value = feed;
+        killSlider.value = kill;
+        diffASlider.value = diffA;
+        diffBSlider.value = diffB;
+        document.getElementById('feedVal').textContent = feed.toFixed(3);
+        document.getElementById('killVal').textContent = kill.toFixed(3);
+        document.getElementById('diffAVal').textContent = diffA.toFixed(2);
+        document.getElementById('diffBVal').textContent = diffB.toFixed(2);
+      });
+    });
+  }
+  
+  // Mouse events
+  canvas.addEventListener('mousedown', (e) => {
+    painting = true;
+    addChemical(e.clientX, e.clientY);
+  });
+  
+  canvas.addEventListener('mousemove', (e) => {
+    if (painting) {
+      if (lastX >= 0) {
+        addLine(lastX, lastY, e.clientX, e.clientY);
+      } else {
+        addChemical(e.clientX, e.clientY);
+      }
+      lastX = e.clientX;
+      lastY = e.clientY;
+    }
+  });
+  
+  canvas.addEventListener('mouseup', () => {
+    painting = false;
+    lastX = -1;
+    lastY = -1;
+  });
+  
+  canvas.addEventListener('mouseleave', () => {
+    painting = false;
+    lastX = -1;
+    lastY = -1;
+  });
+  
+  // Touch support
+  canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    painting = true;
+    const t = e.touches[0];
+    addChemical(t.clientX, t.clientY);
+  }, { passive: false });
+  
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (painting) {
+      const t = e.touches[0];
+      if (lastX >= 0) {
+        addLine(lastX, lastY, t.clientX, t.clientY);
+      } else {
+        addChemical(t.clientX, t.clientY);
+      }
+      lastX = t.clientX;
+      lastY = t.clientY;
+    }
+  }, { passive: false });
+  
+  canvas.addEventListener('touchend', () => {
+    painting = false;
+    lastX = -1;
+    lastY = -1;
+  });
+  
+  // Scroll to change brush size
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    brushSize = Math.max(2, Math.min(30, brushSize + (e.deltaY > 0 ? -1 : 1)));
+    document.getElementById('brush').value = brushSize;
+    document.getElementById('brushVal').textContent = brushSize;
+  }, { passive: false });
+  
+  // Init
+  resize();
+  setupControls();
+  seedCenter();
+  loop();
+  
+  window.addEventListener('resize', () => {
+    resize();
+    seedCenter();
+  });
+  
+  // Double-click to reseed
+  canvas.addEventListener('dblclick', seedCenter);
+})();
+</script>
+</body>
+</html>
