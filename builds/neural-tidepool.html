@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neural Tidepool — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { 
+    width: 100%; height: 100%; overflow: hidden; 
+    background: #020810;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    cursor: none;
+  }
+  canvas { display: block; position: absolute; top: 0; left: 0; }
+  
+  .ui {
+    position: fixed;
+    top: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    pointer-events: none;
+  }
+  
+  .badge {
+    background: rgba(2, 8, 16, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(100, 200, 255, 0.15);
+    border-radius: 20px;
+    padding: 0.4rem 1rem;
+    color: rgba(180, 220, 255, 0.8);
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    pointer-events: auto;
+  }
+  
+  .title {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    text-align: center;
+    pointer-events: none;
+  }
+  
+  .title h1 {
+    font-size: 1.1rem;
+    font-weight: 300;
+    letter-spacing: 0.25em;
+    color: rgba(180, 220, 255, 0.5);
+    text-transform: uppercase;
+  }
+  
+  .title p {
+    font-size: 0.7rem;
+    color: rgba(120, 180, 220, 0.35);
+    letter-spacing: 0.15em;
+    margin-top: 0.4rem;
+  }
+  
+  #cursor-glow {
+    position: fixed;
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 1;
+    background: radial-gradient(circle, rgba(100, 200, 255, 0.08) 0%, transparent 70%);
+    transform: translate(-50%, -50%);
+    transition: opacity 0.3s;
+  }
+</style>
+</head>
+<body>
+  <canvas id="bg"></canvas>
+  <canvas id="fg"></canvas>
+  
+  <div class="ui">
+    <span class="badge" id="count">0 organisms</span>
+    <span class="badge">click to spawn • hold to attract</span>
+  </div>
+  
+  <div class="title">
+    <h1>Neural Tidepool</h1>
+    <p>move through the darkness</p>
+  </div>
+  
+  <div id="cursor-glow"></div>
+
+<script>
+const bgCanvas = document.getElementById('bg');
+const fgCanvas = document.getElementById('fg');
+const bgCtx = bgCanvas.getContext('2d');
+const fgCtx = fgCanvas.getContext('2d');
+const glow = document.getElementById('cursor-glow');
+const countEl = document.getElementById('count');
+
+let W, H;
+function resize() {
+  W = bgCanvas.width = fgCanvas.width = window.innerWidth;
+  H = bgCanvas.height = fgCanvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const mouse = { x: W / 2, y: H / 2, active: false, clicking: false };
+
+document.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+  glow.style.left = e.clientX + 'px';
+  glow.style.top = e.clientY + 'px';
+  glow.style.opacity = '1';
+});
+
+document.addEventListener('mousedown', () => { mouse.clicking = true; });
+document.addEventListener('mouseup', () => { mouse.clicking = false; });
+document.addEventListener('mouseleave', () => {
+  mouse.active = false;
+  glow.style.opacity = '0';
+});
+
+// Click to spawn a burst of organisms
+document.addEventListener('click', e => {
+  const count = 8 + Math.floor(Math.random() * 12);
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * 40;
+    organisms.push(new Organism(
+      e.clientX + Math.cos(angle) * dist,
+      e.clientY + Math.sin(angle) * dist,
+      Math.random() * Math.PI * 2
+    ));
+  }
+});
+
+// Touch support
+document.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  mouse.active = true;
+  glow.style.left = t.clientX + 'px';
+  glow.style.top = t.clientY + 'px';
+  glow.style.opacity = '1';
+}, { passive: false });
+
+document.addEventListener('touchstart', e => {
+  mouse.clicking = true;
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  mouse.active = true;
+  // Spawn on touch
+  const count = 8 + Math.floor(Math.random() * 12);
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * 40;
+    organisms.push(new Organism(
+      t.clientX + Math.cos(angle) * dist,
+      t.clientY + Math.sin(angle) * dist,
+      Math.random() * Math.PI * 2
+    ));
+  }
+});
+
+document.addEventListener('touchend', () => { mouse.clicking = false; });
+
+// --- Organism types ---
+const TYPES = {
+  medusa: { color: [100, 220, 255], glow: 20, size: [4, 10], speed: [0.3, 1.2], pulse: 0.02, trail: 0.92, life: 600 },
+  plankton: { color: [180, 255, 200], glow: 12, size: [1.5, 3.5], speed: [0.1, 0.6], pulse: 0.04, trail: 0.97, life: 800 },
+  polyps: { color: [255, 140, 180], glow: 15, size: [3, 7], speed: [0.2, 0.8], pulse: 0.015, trail: 0.94, life: 1000 },
+  deep: { color: [140, 120, 255], glow: 25, size: [5, 14], speed: [0.5, 1.8], pulse: 0.01, trail: 0.88, life: 500 },
+  spore: { color: [255, 220, 120], glow: 18, size: [2, 6], speed: [0.4, 1.5], pulse: 0.03, trail: 0.90, life: 400 },
+};
+
+const TYPE_NAMES = Object.keys(TYPES);
+
+class Organism {
+  constructor(x, y, angle) {
+    const typeName = TYPE_NAMES[Math.floor(Math.random() * TYPE_NAMES.length)];
+    const type = TYPES[typeName];
+    
+    this.x = x;
+    this.y = y;
+    this.vx = Math.cos(angle) * random(type.speed);
+    this.vy = Math.sin(angle) * random(type.speed);
+    this.type = typeName;
+    this.color = type.color;
+    this.glowRadius = type.glow + Math.random() * 8;
+    this.size = random(type.size);
+    this.baseSize = this.size;
+    this.life = type.life + Math.random() * 400;
+    this.age = 0;
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    this.pulseSpeed = type.pulse + Math.random() * 0.01;
+    this.trailAlpha = type.trail;
+    this.history = [];
+    this.maxHistory = 20 + Math.floor(Math.random() * 30);
+    this.wanderAngle = angle;
+    this.wanderStrength = 0.02 + Math.random() * 0.04;
+    this.personalSpace = 40 + Math.random() * 80;
+    this.frequency = 0.0005 + Math.random() * 0.002;
+    this.amplitude = 0.3 + Math.random() * 0.7;
+    this.depth = Math.random(); // 0 = foreground, 1 = deep background
+  }
+  
+  update(all) {
+    this.age++;
+    
+    // Drift with perlin-like wandering
+    this.wanderAngle += (Math.random() - 0.5) * this.wanderStrength;
+    this.vx += Math.cos(this.wanderAngle) * 0.02;
+    this.vy += Math.sin(this.wanderAngle) * 0.02;
+    
+    // Mouse interaction
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      
+      if (dist < 250) {
+        const force = (250 - dist) / 250;
+        if (mouse.clicking) {
+          // Attract when holding
+          this.vx += (dx / dist) * force * 0.15;
+          this.vy += (dy / dist) * force * 0.15;
+          this.size = this.baseSize * (1 + force * 0.5);
+        } else {
+          // Gentle repel when just moving
+          this.vx -= (dx / dist) * force * 0.03;
+          this.vy -= (dy / dist) * force * 0.03;
+        }
+      }
+    }
+    
+    // Separation from nearby organisms
+    for (const other of all) {
+      if (other === this) continue;
+      const dx = this.x - other.x;
+      const dy = this.y - other.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const minDist = this.personalSpace * 0.5;
+      
+      if (dist < minDist && dist > 0) {
+        const force = (minDist - dist) / minDist;
+        this.vx += (dx / dist) * force * 0.05;
+        this.vy += (dy / dist) * force * 0.05;
+      }
+    }
+    
+    // Damping
+    this.vx *= 0.99;
+    this.vy *= 0.99;
+    
+    // Speed limit
+    const spd = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    const maxSpd = 2.5;
+    if (spd > maxSpd) {
+      this.vx = (this.vx / spd) * maxSpd;
+      this.vy = (this.vy / spd) * maxSpd;
+    }
+    
+    this.x += this.vx;
+    this.y += this.vy;
+    
+    // Wrap around edges with padding
+    const pad = 50;
+    if (this.x < -pad) this.x = W + pad;
+    if (this.x > W + pad) this.x = -pad;
+    if (this.y < -pad) this.y = H + pad;
+    if (this.y > H + pad) this.y = -pad;
+    
+    // History trail
+    if (this.age % 2 === 0) {
+      this.history.push({ x: this.x, y: this.y });
+      if (this.history.length > this.maxHistory) this.history.shift();
+    }
+    
+    // Pulse size
+    this.pulsePhase += this.pulseSpeed;
+    this.size = this.baseSize * (1 + Math.sin(this.pulsePhase) * 0.3);
+  }
+  
+  draw(ctx) {
+    // Life fade
+    const lifeRatio = this.age / this.life;
+    let alpha = 1;
+    if (lifeRatio < 0.05) alpha = lifeRatio / 0.05;
+    else if (lifeRatio > 0.8) alpha = (1 - lifeRatio) / 0.2;
+    
+    if (alpha <= 0) return;
+    
+    const [r, g, b] = this.color;
+    
+    // Draw trail
+    if (this.history.length > 2) {
+      ctx.beginPath();
+      ctx.moveTo(this.history[0].x, this.history[0].y);
+      for (let i = 1; i < this.history.length; i++) {
+        ctx.lineTo(this.history[i].x, this.history[i].y);
+      }
+      ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha * 0.15})`;
+      ctx.lineWidth = this.size * 0.4;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+    
+    // Glow
+    const glowSize = this.glowRadius * (1 + Math.sin(this.pulsePhase) * 0.2);
+    const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, glowSize);
+    gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${alpha * 0.3})`);
+    gradient.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, ${alpha * 0.08})`);
+    gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+    
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, glowSize, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    
+    // Core
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${Math.min(255, r + 60)}, ${Math.min(255, g + 60)}, ${Math.min(255, b + 60)}, ${alpha})`;
+    ctx.fill();
+    
+    // Bright center
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * 0.4, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.7})`;
+    ctx.fill();
+  }
+  
+  get alive() {
+    return this.age < this.life;
+  }
+}
+
+function random(range) {
+  return range[0] + Math.random() * (range[1] - range[0]);
+}
+
+const organisms = [];
+const MAX_ORGANISMS = 250;
+
+// Seed initial population
+for (let i = 0; i < 60; i++) {
+  organisms.push(new Organism(
+    Math.random() * W,
+    Math.random() * H,
+    Math.random() * Math.PI * 2
+  ));
+}
+
+// Continuous gentle spawning
+let spawnTimer = 0;
+
+function animate() {
+  // Background canvas — slow fade for trails
+  bgCtx.fillStyle = 'rgba(2, 8, 16, 0.06)';
+  bgCtx.fillRect(0, 0, W, H);
+  
+  // Foreground canvas — clear for crisp UI elements
+  fgCtx.clearRect(0, 0, W, H);
+  
+  // Spawn new organisms occasionally
+  spawnTimer++;
+  if (spawnTimer > 30 && organisms.length < MAX_ORGANISMS && Math.random() < 0.3) {
+    const edge = Math.floor(Math.random() * 4);
+    let x, y;
+    switch(edge) {
+      case 0: x = Math.random() * W; y = -20; break;
+      case 1: x = W + 20; y = Math.random() * H; break;
+      case 2: x = Math.random() * W; y = H + 20; break;
+      case 3: x = -20; y = Math.random() * H; break;
+    }
+    organisms.push(new Organism(x, y, Math.atan2(H/2 - y, W/2 - x) + (Math.random() - 0.5)));
+    spawnTimer = 0;
+  }
+  
+  // Update and draw
+  const alive = organisms.filter(o => o.alive);
+  
+  for (const org of alive) {
+    org.update(alive);
+    org.draw(bgCtx);
+  }
+  
+  // Remove dead
+  for (let i = organisms.length - 1; i >= 0; i--) {
+    if (!organisms[i].alive) organisms.splice(i, 1);
+  }
+  
+  // Draw connection filaments between close organisms (subtle)
+  fgCtx.lineWidth = 0.5;
+  for (let i = 0; i < alive.length; i++) {
+    for (let j = i + 1; j < alive.length; j++) {
+      const dx = alive[i].x - alive[j].x;
+      const dy = alive[i].y - alive[j].y;
+      const dist = dx * dx + dy * dy;
+      if (dist < 6400) { // 80^2
+        const alpha = (1 - dist / 6400) * 0.08;
+        const [r1, g1, b1] = alive[i].color;
+        const [r2, g2, b2] = alive[j].color;
+        const mr = (r1 + r2) >> 1;
+        const mg = (g1 + g2) >> 1;
+        const mb = (b1 + b2) >> 1;
+        fgCtx.beginPath();
+        fgCtx.moveTo(alive[i].x, alive[i].y);
+        fgCtx.lineTo(alive[j].x, alive[j].y);
+        fgCtx.strokeStyle = `rgba(${mr}, ${mg}, ${mb}, ${alpha})`;
+        fgCtx.stroke();
+      }
+    }
+  }
+  
+  countEl.textContent = `${alive.length} organisms`;
+  
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>
