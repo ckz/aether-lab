@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Constellation Flow — Generative Canvas</title>
+<style>
+  html,body{margin:0;height:100%;background:#07070f;overflow:hidden;font-family:Inter,system-ui,sans-serif;color:#cfd6e4}
+  canvas{display:block;width:100%;height:100%}
+  .ui{position:fixed;left:24px;bottom:24px;background:rgba(20,22,35,.55);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.08);padding:14px 18px;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.4);user-select:none}
+  h1{font-size:14px;margin:0 0 6px;letter-spacing:.12em;text-transform:uppercase;color:#a7b1c7}
+  p{font-size:12px;margin:0;opacity:.85}
+  .kbd{display:inline-block;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:6px;padding:2px 8px;font-size:11px;margin:0 2px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="ui">
+  <h1>Constellation Flow</h1>
+  <p>Move the mouse to attract stars. <span class="kbd">1</span> <span class="kbd">2</span> <span class="kbd">3</span> switch palettes. <span class="kbd">Space</span> to pause.</p>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W=0,H=0;
+function resize(){W=canvas.width=innerWidth;H=canvas.height=innerHeight} addEventListener('resize',resize); resize();
+
+const palettes=[
+  {bg:'#07070f',stars:['#7dd3fc','#c084fc','#f472b6']},
+  {bg:'#0a0c10',stars:['#f59e0b','#fde047','#fb923c']},
+  {bg:'#09100a',stars:['#4ade80','#a3e635','#22d3ee']}
+];
+let pal=0,paused=false;
+addEventListener('keydown',e=>{
+  if(e.key==='1')pal=0;
+  if(e.key==='2')pal=1;
+  if(e.key==='3')pal=2;
+  if(e.code==='Space')paused=!paused;
+});
+
+class Star{
+  constructor(){this.reset(true)}
+  reset(initial=false){
+    this.x=Math.random()*W;
+    this.y=initial?Math.random()*H:-20;
+    this.z=Math.random()*0.6+0.4;
+    this.size=Math.random()*1.6+0.4;
+    this.speed=Math.random()*0.35+0.15;
+    this.twinkle=Math.random()*Math.PI*2;
+    this.twinkleSpeed=Math.random()*0.02+0.005;
+    this.color=palettes[pal].stars[Math.floor(Math.random()*3)];
+  }
+  update(mx,my){
+    this.y+=this.speed*this.z*1.2;
+    this.twinkle+=this.twinkleSpeed;
+    if(mx!=null){
+      const dx=mx-this.x,dy=my-this.y,d=Math.hypot(dx,dy)+1;
+      const force=Math.min(40,800/d);
+      this.x+=dx/d*force*0.015;
+      this.y+=dy/d*force*0.015;
+    }
+    if(this.y>H+20||this.x<-80||this.x>W+80)this.reset();
+  }
+  draw(ctx){
+    const a=0.5+0.5*Math.sin(this.twinkle);
+    ctx.globalAlpha=a;
+    ctx.fillStyle=this.color;
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,this.size*this.z,0,Math.PI*2);
+    ctx.fill();
+  }
+}
+
+const stars=Array.from({length:260},()=>new Star());
+let mx=null,my=null;
+addEventListener('pointermove',e=>{mx=e.clientX;my=e.clientY});
+
+function connectStars(){
+  const maxDist=90;
+  ctx.lineWidth=1;
+  for(let i=0;i<stars.length;i++){
+    for(let j=i+1;j<stars.length;j++){
+      const dx=stars[i].x-stars[j].x,dy=stars[i].y-stars[j].y;
+      const d=Math.hypot(dx,dy);
+      if(d<maxDist){
+        ctx.globalAlpha=Math.pow(1-d/maxDist,2)*0.35;
+        ctx.strokeStyle=palettes[pal].stars[0];
+        ctx.beginPath();
+        ctx.moveTo(stars[i].x,stars[i].y);
+        ctx.lineTo(stars[j].x,stars[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+let last=performance.now();
+function frame(){
+  const now=performance.now();
+  const dt=Math.min(50,now-last);
+  last=now;
+  ctx.globalAlpha=1;
+  ctx.fillStyle=palettes[pal].bg;
+  ctx.fillRect(0,0,W,H);
+
+  if(!paused){
+    for(const s of stars) s.update(mx,my);
+  }
+  connectStars();
+  for(const s of stars) s.draw(ctx);
+
+  ctx.globalAlpha=1;
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
+</body>
+</html>
