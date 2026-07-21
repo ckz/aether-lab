@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stellar Mandala Weaver</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #aaa;
+  }
+  canvas {
+    display: block;
+    cursor: crosshair;
+  }
+  #controls {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    background: rgba(0,0,0,0.7);
+    padding: 15px;
+    border-radius: 8px;
+    font-size: 12px;
+    z-index: 10;
+    border: 1px solid #222;
+  }
+  #controls button {
+    background: #111;
+    color: #0ff;
+    border: 1px solid #0ff;
+    padding: 6px 12px;
+    margin: 4px 2px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    border-radius: 4px;
+    transition: all 0.2s;
+  }
+  #controls button:hover {
+    background: #0ff;
+    color: #000;
+  }
+  #controls .info {
+    margin-top: 8px;
+    color: #666;
+    font-size: 10px;
+  }
+  #title {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    text-align: right;
+    font-size: 11px;
+    color: #444;
+    z-index: 10;
+  }
+  #title h1 {
+    font-size: 16px;
+    color: #0ff;
+    font-weight: 300;
+    letter-spacing: 0.2em;
+    margin-bottom: 4px;
+  }
+</style>
+</head>
+<body>
+
+<div id="controls">
+  <button onclick="regenerate()">⟳ New Pattern</button>
+  <button onclick="togglePause()">⏯ Pause/Play</button>
+  <button onclick="cyclePalette()">◈ Palette</button>
+  <button onclick="saveImage()">💾 Save</button>
+  <div class="info">
+    Click to plant stars · Scroll to zoom · Space to pause
+  </div>
+</div>
+
+<div id="title">
+  <h1>STELLAR MANDALA</h1>
+  <div>weaver v1.0</div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H, cx, cy;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// State
+let paused = false;
+let time = 0;
+let zoom = 1;
+let mouseX = cx, mouseY = cy;
+let mouseDown = false;
+let stars = [];
+let layers = [];
+let seed = Math.random() * 10000;
+
+// Palettes
+const palettes = [
+  { name: 'Cosmic', bg: '#000010', colors: ['#0ff', '#f0f', '#ff0', '#0f0', '#00f'] },
+  { name: 'Ember', bg: '#0a0000', colors: ['#f80', '#f00', '#ff0', '#f60', '#fc0'] },
+  { name: 'Aurora', bg: '#000510', colors: ['#0ff', '#0f0', '#80f', '#0ff', '#0f8'] },
+  { name: 'Nebula', bg: '#050010', colors: ['#f0f', '#80f', '#0ff', '#f0f', '#a0f'] },
+  { name: 'Monochrome', bg: '#000000', colors: ['#fff', '#aaa', '#888', '#ccc', '#666'] },
+  { name: 'Gold', bg: '#0a0800', colors: ['#ffd700', '#ffaa00', '#ff8800', '#ffcc00', '#ffe066'] }
+];
+let currentPalette = 0;
+
+// Seeded random
+function seededRandom(s) {
+  const x = Math.sin(s * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+// Generate mandala layers
+function generateMandala() {
+  layers = [];
+  const numLayers = 6 + Math.floor(seededRandom(seed) * 8); // 6-13 layers
+  const baseSymmetry = 6 + Math.floor(seededRandom(seed + 1) * 10); // 6-15 fold
+  
+  for (let i = 0; i < numLayers; i++) {
+    const layer = {
+      radius: 60 + i * 45 + seededRandom(seed + i * 3) * 30,
+      symmetry: baseSymmetry + Math.floor(seededRandom(seed + i * 7) * 4) - 2,
+      rotation: seededRandom(seed + i * 11) * Math.PI * 2,
+      rotationSpeed: (seededRandom(seed + i * 13) - 0.5) * 0.002,
+      points: [],
+      type: Math.floor(seededRandom(seed + i * 17) * 4), // 0: dots, 1: lines, 2: arcs, 3: mixed
+      colorIndex: Math.floor(seededRandom(seed + i * 19) * palettes[currentPalette].colors.length),
+      size: 2 + seededRandom(seed + i * 23) * 4,
+      opacity: 0.3 + seededRandom(seed + i * 29) * 0.7
+    };
+    
+    // Generate points for this layer
+    const numPoints = layer.symmetry * (1 + Math.floor(seededRandom(seed + i * 31) * 3));
+    for (let j = 0; j < numPoints; j++) {
+      const angle = (j / numPoints) * Math.PI * 2;
+      const dist = layer.radius + (seededRandom(seed + i * 37 + j) - 0.5) * 40;
+      layer.points.push({
+        angle: angle,
+        dist: dist,
+        size: layer.size * (0.5 + seededRandom(seed + i * 41 + j) * 0.5),
+        phase: seededRandom(seed + i * 43 + j) * Math.PI * 2
+      });
+    }
+    
+    layers.push(layer);
+  }
+  
+  // Generate background stars
+  stars = [];
+  for (let i = 0; i < 200; i++) {
+    stars.push({
+      x: seededRandom(seed + i * 100) * W,
+      y: seededRandom(seed + i * 101) * H,
+      size: seededRandom(seed + i * 102) * 2,
+      twinkle: seededRandom(seed + i * 103) * Math.PI * 2,
+      speed: 0.5 + seededRandom(seed + i * 104) * 2
+    });
+  }
+}
+
+// Draw functions
+function drawBackground() {
+  const pal = palettes[currentPalette];
+  ctx.fillStyle = pal.bg;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Draw twinkling stars
+  stars.forEach(star => {
+    const alpha = 0.3 + 0.7 * Math.abs(Math.sin(time * star.speed + star.twinkle));
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.5})`;
+    ctx.beginPath();
+    ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawMandala() {
+  const pal = palettes[currentPalette];
+  
+  layers.forEach((layer, idx) => {
+    layer.rotation += layer.rotationSpeed;
+    
+    const color = pal.colors[layer.colorIndex % pal.colors.length];
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = layer.opacity * (0.7 + 0.3 * Math.sin(time + idx));
+    
+    // Draw layer circle guide (very faint)
+    ctx.beginPath();
+    ctx.arc(cx, cy, layer.radius * zoom, 0, Math.PI * 2);
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.05;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.globalAlpha = layer.opacity * (0.7 + 0.3 * Math.sin(time + idx));
+    
+    // Draw points
+    layer.points.forEach((point, pidx) => {
+      const angle = point.angle + layer.rotation;
+      const pulse = 1 + 0.2 * Math.sin(time * 2 + point.phase);
+      const dist = point.dist * zoom * pulse;
+      
+      const x = cx + Math.cos(angle) * dist;
+      const y = cy + Math.sin(angle) * dist;
+      
+      // Draw connecting lines to neighbors
+      if (layer.type === 1 || layer.type === 3) {
+        const nextPoint = layer.points[(pidx + 1) % layer.points.length];
+        const nextAngle = nextPoint.angle + layer.rotation;
+        const nextDist = nextPoint.dist * zoom * (1 + 0.2 * Math.sin(time * 2 + nextPoint.phase));
+        const nx = cx + Math.cos(nextAngle) * nextDist;
+        const ny = cy + Math.sin(nextAngle) * nextDist;
+        
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(nx, ny);
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+      
+      // Draw arcs
+      if (layer.type === 2 || layer.type === 3) {
+        const arcStart = angle - 0.2;
+        const arcEnd = angle + 0.2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, dist, arcStart, arcEnd);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      
+      // Draw point
+      ctx.beginPath();
+      ctx.arc(x, y, point.size * zoom, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Draw glow
+      const gradient = ctx.createRadialGradient(x, y, 0, x, y, point.size * zoom * 3);
+      gradient.addColorStop(0, color);
+      gradient.addColorStop(1, 'transparent');
+      ctx.fillStyle = gradient;
+      ctx.globalAlpha = layer.opacity * 0.3;
+      ctx.beginPath();
+      ctx.arc(x, y, point.size * zoom * 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = layer.opacity * (0.7 + 0.3 * Math.sin(time + idx));
+    });
+    
+    // Connect to next layer
+    if (idx < layers.length - 1) {
+      const nextLayer = layers[idx + 1];
+      ctx.globalAlpha = 0.1;
+      ctx.lineWidth = 0.5;
+      layer.points.forEach((point, pidx) => {
+        if (pidx % 3 === 0) { // Only connect every 3rd point
+          const angle = point.angle + layer.rotation;
+          const dist = point.dist * zoom;
+          const x = cx + Math.cos(angle) * dist;
+          const y = cy + Math.sin(angle) * dist;
+          
+          const nextPoint = nextLayer.points[pidx % nextLayer.points.length];
+          const nextAngle = nextPoint.angle + nextLayer.rotation;
+          const nextDist = nextLayer.dist * zoom;
+          const nx = cx + Math.cos(nextAngle) * nextDist;
+          const ny = cy + Math.sin(nextAngle) * nextDist;
+          
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(nx, ny);
+          ctx.stroke();
+        }
+      });
+      ctx.globalAlpha = layer.opacity * (0.7 + 0.3 * Math.sin(time + idx));
+    }
+  });
+}
+
+function drawCenter() {
+  const pal = palettes[currentPalette];
+  const color = pal.colors[0];
+  
+  // Pulsing center
+  const pulse = 1 + 0.3 * Math.sin(time * 3);
+  const size = 8 * zoom * pulse;
+  
+  const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, size * 4);
+  gradient.addColorStop(0, color);
+  gradient.addColorStop(0.5, color + '80');
+  gradient.addColorStop(1, 'transparent');
+  
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(cx, cy, size * 4, 0, Math.PI * 2);
+  ctx.fill();
+  
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx, cy, size * 0.5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawMouseStars() {
+  if (!mouseDown) return;
+  
+  const pal = palettes[currentPalette];
+  const color = pal.colors[Math.floor(time) % pal.colors.length];
+  
+  for (let i = 0; i < 3; i++) {
+    const angle = time * 2 + i * Math.PI * 2 / 3;
+    const dist = 20 + Math.sin(time * 5 + i) * 10;
+    const x = mouseX + Math.cos(angle) * dist;
+    const y = mouseY + Math.sin(angle) * dist;
+    
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function animate() {
+  if (!paused) {
+    time += 0.016;
+  }
+  
+  drawBackground();
+  drawMandala();
+  drawCenter();
+  drawMouseStars();
+  
+  requestAnimationFrame(animate);
+}
+
+// Controls
+function regenerate() {
+  seed = Math.random() * 10000;
+  generateMandala();
+}
+
+function togglePause() {
+  paused = !paused;
+}
+
+function cyclePalette() {
+  currentPalette = (currentPalette + 1) % palettes.length;
+}
+
+function saveImage() {
+  const link = document.createElement('a');
+  link.download = `stellar-mandala-${Date.now()}.png`;
+  link.href = canvas.toDataURL();
+  link.click();
+}
+
+// Event listeners
+canvas.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+});
+
+canvas.addEventListener('mousedown', () => {
+  mouseDown = true;
+});
+
+canvas.addEventListener('mouseup', () => {
+  mouseDown = false;
+});
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  zoom += e.deltaY * -0.001;
+  zoom = Math.max(0.5, Math.min(3, zoom));
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    togglePause();
+  } else if (e.code === 'KeyR') {
+    regenerate();
+  } else if (e.code === 'KeyC') {
+    cyclePalette();
+  } else if (e.code === 'KeyS') {
+    saveImage();
+  }
+});
+
+// Start
+generateMandala();
+animate();
+</script>
+
+</body>
+</html>
