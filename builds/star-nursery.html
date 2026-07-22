@@ -1,179 +1,533 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Star Nursery — Aether Lab</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Star Nursery ✨</title>
 <style>
-  html,body{margin:0;height:100%;background:#05060d;color:#cfe0ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;overflow:hidden}
-  header{position:fixed;inset:auto 0 0 0;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;pointer-events:none;z-index:2;background:linear-gradient(to top,rgba(5,6,13,.85),transparent)}
-  h1{font-size:13px;letter-spacing:.5px;margin:0;opacity:.9}
-  .controls{pointer-events:auto;display:flex;gap:8px}
-  button{background:#10152a;color:#cfe0ff;border:1px solid #1f2a4a;padding:5px 10px;border-radius:10px;cursor:pointer;font:inherit;font-size:11px}
-  button:hover{background:#182038}
-  canvas{display:block;width:100vw;height:100vh}
-  .meta{position:fixed;top:12px;left:16px;font-size:10px;opacity:.6;z-index:2;pointer-events:none;letter-spacing:.4px}
-  .stats{position:fixed;top:12px;right:16px;font-size:10px;opacity:.6;z-index:2;pointer-events:none;text-align:right}
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #05060f;
+    color: #d0d8f0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    user-select: none;
+  }
+  canvas { display: block; cursor: crosshair; }
+  #hud {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #hud h1 {
+    font-size: 1.1rem;
+    font-weight: 300;
+    letter-spacing: 0.3em;
+    color: #8af;
+    text-shadow: 0 0 20px #48f;
+    margin-bottom: 4px;
+  }
+  #hud p {
+    font-size: 0.75rem;
+    color: #567;
+    letter-spacing: 0.1em;
+  }
+  #stats {
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    font-size: 0.72rem;
+    color: #456;
+    letter-spacing: 0.05em;
+    line-height: 1.6;
+    pointer-events: none;
+  }
+  #hint {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    font-size: 0.72rem;
+    color: #345;
+    letter-spacing: 0.05em;
+    line-height: 1.6;
+    text-align: right;
+    pointer-events: none;
+  }
+  #legend {
+    position: fixed;
+    top: 80px;
+    right: 16px;
+    font-size: 0.68rem;
+    color: #456;
+    line-height: 1.8;
+    pointer-events: none;
+    background: rgba(5,6,15,0.6);
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid #1a1a2e;
+  }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
 </style>
 </head>
 <body>
-  <div class="meta">STAR NURSERY · Nebula Simulation</div>
-  <div class="stats" id="stats">stars: 0</div>
-  <header>
-    <h1>✨ Star Nursery</h1>
-    <div class="controls">
-      <button id="burst">Burst</button>
-      <button id="reset">Reset</button>
-    </div>
-  </header>
-  <canvas id="c"></canvas>
+<canvas id="c"></canvas>
+<div id="hud">
+  <h1>✦ STAR NURSERY ✦</h1>
+  <p>click to plant a star &nbsp;·&nbsp; hold for supergiant &nbsp;·&nbsp; space to clear</p>
+</div>
+<div id="stats"></div>
+<div id="hint"></div>
+<div id="legend"></div>
+
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-const stats = document.getElementById('stats');
-let W, H, dpr;
-let stars = [];
-let nebulae = [];
-let frame = 0;
+let W, H;
+function resize() {
+  W = canvas.width = innerWidth;
+  H = canvas.height = innerHeight;
+}
+resize();
+addEventListener('resize', resize);
 
-const starColors = [
-  '#aecbfa','#c9b1ff','#ffd1a9','#ffb3c1','#b8f2e6','#ffe9a0','#ffffff','#ffb347'
+// --- Star type definitions ---
+const STAR_TYPES = [
+  { name: 'Red Dwarf',   mass: [0.08, 0.45], color: '#e07050', lifetime: [500, 10000], radius: [3, 7],   prob: 0.55 },
+  { name: 'Yellow Star', mass: [0.45, 1.1],  color: '#ffdd70', lifetime: [3, 15],     radius: [6, 12],  prob: 0.28 },
+  { name: 'Blue Giant',  mass: [1.1, 20],    color: '#70b8ff', lifetime: [0.5, 5],    radius: [10, 22], prob: 0.15 },
+  { name: 'Supergiant',  mass: [20, 100],    color: '#c080ff', lifetime: [0.1, 1.5],  radius: [18, 32], prob: 0.02 },
 ];
 
-class Nebula {
-  constructor(){
-    this.x = Math.random() * W;
-    this.y = Math.random() * H;
-    this.r = 120 + Math.random() * 260;
-    this.color = starColors[Math.floor(Math.random()*starColors.length)];
-    this.alpha = .015 + Math.random() * .04;
-    this.drift = { x: (Math.random()-.5)*.15, y: (Math.random()-.5)*.15 };
-    this.phase = Math.random() * Math.PI * 2;
+function pickStarType(holdBoost) {
+  const r = Math.random() + (holdBoost ? 0.25 : 0);
+  let cum = 0;
+  for (const t of STAR_TYPES) {
+    cum += t.prob;
+    if (r < cum) return t;
   }
-  step(){
-    this.x += this.drift.x;
-    this.y += this.drift.y;
-    this.phase += .003;
-    if(this.x < -this.r) this.x = W + this.r;
-    if(this.x > W + this.r) this.x = -this.r;
-    if(this.y < -this.r) this.y = H + this.r;
-    if(this.y > H + this.r) this.y = -this.r;
-  }
-  draw(){
-    const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.r);
-    const a = this.alpha * (.7 + .3 * Math.sin(this.phase));
-    g.addColorStop(0, this.color + hexAlpha(a));
-    g.addColorStop(1, this.color + '00');
-    ctx.fillStyle = g;
-    ctx.fillRect(this.x - this.r, this.y - this.r, this.r*2, this.r*2);
-  }
+  return STAR_TYPES[STAR_TYPES.length - 1];
 }
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function rand(a, b) { return lerp(a, b, Math.random()); }
+function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
+
+// --- Star class ---
+const phases = ['protostar', 'main sequence', 'red giant', 'supernova', 'white dwarf', 'neutron star', 'black hole'];
 
 class Star {
-  constructor(x, y, age){
-    this.x = x ?? Math.random() * W;
-    this.y = y ?? Math.random() * H;
-    this.age = age ?? 0;
-    this.life = 400 + Math.random() * 600;
-    this.birthSize = .4 + Math.random() * 2.2;
-    this.drift = { x: (Math.random()-.5)*.25, y: (Math.random()-.5)*.25 };
-    this.twinkleSpeed = .02 + Math.random() * .06;
-    this.twinklePhase = Math.random() * Math.PI * 2;
-    this.color = starColors[Math.floor(Math.random()*starColors.length)];
-    this.hasGlow = Math.random() < .15;
-  }
-  step(){
-    this.x += this.drift.x;
-    this.y += this.drift.y;
-    this.age += 1;
-    this.twinklePhase += this.twinkleSpeed;
-    if(this.age > this.life || this.x < -30 || this.x > W+30 || this.y < -30 || this.y > H+30){
-      return false;
+  constructor(x, y, type, holdBoost) {
+    this.x = x;
+    this.y = y;
+    this.type = type;
+    this.phase = 0; // 0=protostar, 1=main seq, 2=red giant, 3=supernova, 4=white dwarf, 5=neutron, 6=black hole
+    this.phaseTime = 0;
+    this.age = 0;
+    this.lifetime = type.lifetime[0] * 60 + Math.random() * (type.lifetime[1] - type.lifetime[0]) * 60; // in "seconds" (scaled)
+    this.r = type.radius[0];
+    this.targetR = type.radius[1];
+    this.maxR = type.radius[1] * (type.mass[1] > 10 ? 4 : 2.5);
+    this.opacity = 0;
+    this.alive = true;
+    this.holdBoost = holdBoost;
+    this.flicker = Math.random() * Math.PI * 2;
+    this.particles = [];
+    this.flash = 0;
+    this.birthParticles = Array.from({length: 30}, () => ({
+      x, y,
+      vx: rand(-3, 3), vy: rand(-3, 3),
+      life: 1, decay: rand(0.01, 0.04),
+      size: rand(1, 3),
+      color: type.color
+    }));
+    // Nebula cloud
+    this.nebula = [];
+    for (let i = 0; i < 12; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const d = rand(30, 120);
+      this.nebula.push({
+        x: Math.cos(angle) * d,
+        y: Math.sin(angle) * d,
+        r: rand(20, 60),
+        vx: rand(-0.1, 0.1),
+        vy: rand(-0.1, 0.1),
+        opacity: rand(0.02, 0.08)
+      });
     }
-    return true;
   }
-  draw(){
-    const t = this.age / this.life;
-    const fade = Math.sin(t * Math.PI);
-    const twinkle = .6 + .4 * Math.sin(this.twinklePhase);
-    const alpha = fade * twinkle;
-    const size = this.birthSize * (1 - t * .4);
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = this.color;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, size, 0, Math.PI*2);
-    ctx.fill();
-    if(this.hasGlow){
-      ctx.globalAlpha = alpha * .25;
+
+  update(dt, allStars) {
+    this.age += dt;
+    this.flicker += dt * (this.type.mass[1] > 10 ? 4 : 2.5);
+
+    // Birth particles
+    if (this.phase === 0) {
+      this.birthParticles.forEach(p => {
+        p.x += p.vx; p.y += p.vy;
+        p.life -= p.decay;
+      });
+      this.birthParticles = this.birthParticles.filter(p => p.life > 0);
+      if (this.age > 1.5) { this.phase = 1; this.phaseTime = 0; }
+    }
+
+    // Main sequence
+    if (this.phase === 1) {
+      this.phaseTime += dt;
+      const growT = Math.min(this.phaseTime / 3, 1);
+      this.r = lerp(this.type.radius[0], this.type.radius[1], growT);
+      this.opacity = Math.min(growT * 1.5, 1);
+
+      // Check for giant phase
+      const lifetimeFraction = this.age / this.lifetime;
+      if (lifetimeFraction > 0.7) { this.phase = 2; this.phaseTime = 0; }
+    }
+
+    // Red giant
+    if (this.phase === 2) {
+      this.phaseTime += dt;
+      const swellT = Math.min(this.phaseTime / 4, 1);
+      this.r = lerp(this.targetR, this.maxR, swellT * 0.7);
+      this.flash = Math.sin(this.flicker * 0.5) * 0.3;
+
+      // Check for supernova or white dwarf
+      const lifetimeFraction = this.age / this.lifetime;
+      if (lifetimeFraction > 0.95) {
+        if (this.type.mass[1] > 8) { this.phase = 3; this.triggerSupernova(); }
+        else { this.phase = 4; this.r = this.type.radius[0] * 0.8; this.flash = 0; }
+        this.phaseTime = 0;
+      }
+    }
+
+    // Supernova
+    if (this.phase === 3) {
+      this.phaseTime += dt;
+      if (this.phaseTime > 3) {
+        this.phase = this.type.mass[1] > 25 ? 6 : 5;
+        this.r = this.phase === 6 ? 4 : this.type.radius[0] * 0.9;
+        this.flash = 0;
+      }
+    }
+
+    // White dwarf / neutron star / black hole - stable end states
+    if (this.phase >= 4) {
+      this.opacity = 1;
+    }
+
+    // Update nebula
+    this.nebula.forEach(n => {
+      n.x += n.vx; n.y += n.vy;
+      if (Math.abs(n.x) > 140) n.vx *= -1;
+      if (Math.abs(n.y) > 140) n.vy *= -1;
+    });
+
+    // Update particles
+    this.particles.forEach(p => {
+      p.x += p.vx; p.y += p.vy;
+      p.life -= p.decay;
+      p.vx *= 0.99; p.vy *= 0.99;
+    });
+    this.particles = this.particles.filter(p => p.life > 0);
+
+    if (this.flash > 0.1 && Math.random() < 0.3) {
+      this.spawnParticle(3);
+    }
+  }
+
+  triggerSupernova() {
+    const count = this.type.mass[1] > 25 ? 200 : 120;
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = rand(2, 15);
+      const colors = ['#ffffff', '#ffdd70', '#ff8844', '#ff4466', '#ff88cc', '#88ccff'];
+      this.particles.push({
+        x: this.x, y: this.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        decay: rand(0.003, 0.02),
+        size: rand(1, 5),
+        color: colors[Math.floor(Math.random() * colors.length)]
+      });
+    }
+    this.flash = 1;
+    this.r = this.maxR * 2;
+  }
+
+  spawnParticle(count = 1) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = rand(0.2, 1.5);
+      this.particles.push({
+        x: this.x + Math.cos(angle) * this.r,
+        y: this.y + Math.sin(angle) * this.r,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 0.3,
+        life: 1,
+        decay: rand(0.005, 0.03),
+        size: rand(0.5, 2),
+        color: this.type.color
+      });
+    }
+  }
+
+  draw() {
+    // Nebula
+    ctx.save();
+    this.nebula.forEach(n => {
+      const grad = ctx.createRadialGradient(this.x + n.x, this.y + n.y, 0, this.x + n.x, this.y + n.y, n.r);
+      const c = this.type.color;
+      grad.addColorStop(0, c + Math.floor(n.opacity * 80).toString(16).padStart(2, '0'));
+      grad.addColorStop(1, c + '00');
+      ctx.fillStyle = grad;
       ctx.beginPath();
-      ctx.arc(this.x, this.y, size * 4, 0, Math.PI*2);
+      ctx.arc(this.x + n.x, this.y + n.y, n.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+
+    // Birth particles
+    this.birthParticles.forEach(p => {
+      ctx.globalAlpha = p.life * 0.7;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    // Supernova particles
+    this.particles.forEach(p => {
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    // Flash overlay
+    if (this.flash > 0.05) {
+      const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.r * 4);
+      grad.addColorStop(0, `rgba(255,255,255,${this.flash * 0.4})`);
+      grad.addColorStop(0.5, `rgba(255,200,100,${this.flash * 0.2})`);
+      grad.addColorStop(1, 'rgba(255,100,50,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.r * 4, 0, Math.PI * 2);
       ctx.fill();
     }
+
+    // Main star body (skip if supernova flash in progress)
+    if (this.phase !== 3 || this.phaseTime > 0.5) {
+      const flick = 1 + Math.sin(this.flicker) * 0.08;
+      const r = this.r * flick;
+
+      // Outer glow
+      const glowR = r * 4;
+      const glow = ctx.createRadialGradient(this.x, this.y, r * 0.5, this.x, this.y, glowR);
+      glow.addColorStop(0, this.type.color + '88');
+      glow.addColorStop(0.4, this.type.color + '22');
+      glow.addColorStop(1, this.type.color + '00');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, glowR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Inner glow
+      const innerGlow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r * 1.6);
+      innerGlow.addColorStop(0, '#ffffff');
+      innerGlow.addColorStop(0.3, this.type.color);
+      innerGlow.addColorStop(1, this.type.color + '00');
+      ctx.fillStyle = innerGlow;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, r * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Core
+      ctx.fillStyle = '#ffffff';
+      ctx.globalAlpha = this.opacity;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, r * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // Red giant extra corona
+      if (this.phase === 2) {
+        const coronaR = r * 2.5;
+        const corona = ctx.createRadialGradient(this.x, this.y, r, this.x, this.y, coronaR);
+        corona.addColorStop(0, this.type.color + '44');
+        corona.addColorStop(1, this.type.color + '00');
+        ctx.fillStyle = corona;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, coronaR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Black hole accretion disk
+      if (this.phase === 6) {
+        ctx.strokeStyle = '#8844ff66';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(this.x, this.y, r * 3, r * 1.2, this.flicker * 0.3, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    // Phase label
+    if (this.phase < 4 && this.opacity > 0.5) {
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = '#aaf';
+      ctx.font = '9px monospace';
+      ctx.textAlign = 'center';
+      const phaseNames = ['seedling', this.type.name, 'red giant', '💥 SUPERNOVA', 'white dwarf', 'neutron star', 'black hole'];
+      ctx.fillText(phaseNames[this.phase], this.x, this.y - this.r - 8);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  getPhaseName() {
+    const phaseNames = ['seedling', this.type.name, 'red giant', 'SUPERNOVA', 'white dwarf', 'neutron star', 'black hole'];
+    return phaseNames[this.phase];
   }
 }
 
-function hexAlpha(a){
-  return Math.round(Math.max(0,Math.min(1,a))*255).toString(16).padStart(2,'0');
-}
+// --- State ---
+let stars = [];
+let mouseX = 0, mouseY = 0;
+let mouseDown = false;
+let holdStart = 0;
+let lastTime = performance.now();
+let totalBorn = 0, totalSupernovas = 0;
 
-function resize(){
-  dpr = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth;
-  H = window.innerHeight;
-  canvas.width = W * dpr;
-  canvas.height = H * dpr;
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-}
+// --- Background stars ---
+const bgStars = Array.from({length: 300}, () => ({
+  x: Math.random() * 3000 - 500,
+  y: Math.random() * 2000 - 200,
+  r: Math.random() * 1.5,
+  twinkle: Math.random() * Math.PI * 2,
+  speed: rand(0.5, 2)
+}));
 
-function init(){
-  resize();
-  stars = [];
-  nebulae = [];
-  const nebulaCount = Math.max(4, Math.floor((W*H)/180000));
-  for(let i=0;i<nebulaCount;i++) nebulae.push(new Nebula());
-  const starCount = Math.min(900, Math.floor((W*H)/1600));
-  for(let i=0;i<starCount;i++) stars.push(new Star(null, null, Math.floor(Math.random()*200)));
-}
+function drawBackground() {
+  // Deep space gradient
+  const bg = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.7);
+  bg.addColorStop(0, '#0a0c1a');
+  bg.addColorStop(1, '#030408');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
 
-function burst(){
-  const cx = W * (.2 + Math.random() * .6);
-  const cy = H * (.2 + Math.random() * .6);
-  for(let i=0;i<80;i++){
-    const angle = Math.random() * Math.PI * 2;
-    const dist = Math.random() * 120;
-    stars.push(new Star(cx + Math.cos(angle)*dist, cy + Math.sin(angle)*dist, 0));
-  }
-}
-
-function frameLoop(){
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.globalAlpha = .08;
-  ctx.fillStyle = '#05060d';
-  ctx.fillRect(0,0,W,H);
-
-  ctx.globalCompositeOperation = 'screen';
-  for(const n of nebulae){ n.step(); n.draw(); }
-
-  stars = stars.filter(s => s.step());
-  for(const s of stars) s.draw();
-
-  // gentle replenishment
-  if(stars.length < 300 && frame % 4 === 0){
-    stars.push(new Star(null, null, 0));
-  }
-
+  // Background stars
+  bgStars.forEach(s => {
+    s.twinkle += 0.02 * s.speed;
+    const alpha = 0.3 + Math.sin(s.twinkle) * 0.3;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#aab';
+    ctx.beginPath();
+    ctx.arc(s.x % W, s.y % H, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
   ctx.globalAlpha = 1;
-  ctx.globalCompositeOperation = 'source-over';
-  stats.textContent = `stars: ${stars.length}`;
-  frame += 1;
-  requestAnimationFrame(frameLoop);
+
+  // Subtle nebula haze
+  const haze = ctx.createRadialGradient(W * 0.3, H * 0.6, 0, W * 0.3, H * 0.6, 400);
+  haze.addColorStop(0, 'rgba(40,20,80,0.05)');
+  haze.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = haze;
+  ctx.fillRect(0, 0, W, H);
+
+  const haze2 = ctx.createRadialGradient(W * 0.75, H * 0.3, 0, W * 0.75, H * 0.3, 350);
+  haze2.addColorStop(0, 'rgba(20,40,80,0.04)');
+  haze2.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = haze2;
+  ctx.fillRect(0, 0, W, H);
 }
 
-document.getElementById('burst').onclick = burst;
-document.getElementById('reset').onclick = init;
-window.addEventListener('resize', init);
-init();
-frameLoop();
+// --- Interactions ---
+canvas.addEventListener('mousedown', e => {
+  mouseDown = true;
+  holdStart = performance.now();
+});
+canvas.addEventListener('mouseup', e => {
+  if (mouseDown) {
+    const holdDuration = (performance.now() - holdStart) / 1000;
+    plantStar(e.clientX, e.clientY, holdDuration > 1.5);
+  }
+  mouseDown = false;
+});
+canvas.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  plantStar(t.clientX, t.clientY, false);
+}, {passive: false});
+
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { stars = []; totalBorn = 0; totalSupernovas = 0; e.preventDefault(); }
+  if (e.code === 'KeyS') savePNG();
+});
+
+function plantStar(x, y, isSupergiant) {
+  const type = pickStarType(isSupergiant);
+  const star = new Star(x, y, type, isSupergiant);
+  stars.push(star);
+  totalBorn++;
+  if (stars.length > 80) stars.shift(); // Keep performance sane
+}
+
+function savePNG() {
+  const link = document.createElement('a');
+  link.download = 'star-nursery.png';
+  link.href = canvas.toDataURL();
+  link.click();
+}
+
+// --- Legend ---
+document.getElementById('legend').innerHTML = `
+  <div><span class="dot" style="background:#e07050"></span>Red Dwarf (55%)</div>
+  <div><span class="dot" style="background:#ffdd70"></span>Yellow Star (28%)</div>
+  <div><span class="dot" style="background:#70b8ff"></span>Blue Giant (15%)</div>
+  <div><span class="dot" style="background:#c080ff"></span>Supergiant (2%)</div>
+`;
+
+document.getElementById('hint').innerHTML = `
+  click · plant<br>
+  hold 1.5s · supergiant<br>
+  space · clear<br>
+  S · save PNG
+`;
+
+// --- Main loop ---
+function loop(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.1);
+  lastTime = now;
+
+  drawBackground();
+
+  // Update and draw stars
+  stars = stars.filter(s => s.alive);
+  stars.forEach(star => {
+    star.update(dt, stars);
+    star.draw();
+  });
+
+  // Stats
+  const alive = stars.length;
+  const phases = stars.reduce((acc, s) => { acc[s.phase] = (acc[s.phase]||0) + 1; return acc; }, {});
+  const phaseNames = ['seedling', 'main seq', 'red giant', 'supernova', 'white dwarf', 'neutron star', 'black hole'];
+  let phaseStr = Object.entries(phases).map(([k,v]) => `${phaseNames[k]}: ${v}`).join('  ');
+  document.getElementById('stats').innerHTML = `
+    stars: ${alive} &nbsp;·&nbsp; born: ${totalBorn} &nbsp;·&nbsp; novas: ${totalSupernovas}<br>
+    ${phaseStr}
+  `;
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
