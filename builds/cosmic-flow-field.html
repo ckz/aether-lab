@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosmic Flow Field</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a12;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Courier New', monospace;
+    color: #aaa;
+    overflow: hidden;
+  }
+  canvas {
+    border-radius: 8px;
+    box-shadow: 0 0 60px rgba(100, 60, 255, 0.3);
+    max-width: 95vw;
+    max-height: 85vh;
+  }
+  .controls {
+    margin-top: 16px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    z-index: 10;
+  }
+  button {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #ccc;
+    padding: 8px 18px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    transition: all 0.2s;
+    letter-spacing: 0.5px;
+  }
+  button:hover {
+    background: rgba(255,255,255,0.12);
+    border-color: rgba(255,255,255,0.3);
+    color: #fff;
+  }
+  .info {
+    margin-top: 10px;
+    font-size: 11px;
+    opacity: 0.5;
+    letter-spacing: 1px;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="controls">
+  <button onclick="resetField()">↻ Reset</button>
+  <button onclick="togglePause()">⏯ Pause</button>
+  <button onclick="changePalette()">🎨 Palette</button>
+  <button onclick="toggleTrails()">~ Trails</button>
+</div>
+<div class="info" id="info">COSMIC FLOW FIELD — particles: <span id="count">0</span></div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+let W, H;
+function resize() {
+  const rect = { w: Math.min(window.innerWidth * 0.92, 1000), h: Math.min(window.innerHeight * 0.78, 700) };
+  canvas.width = rect.w * DPR;
+  canvas.height = rect.h * DPR;
+  canvas.style.width = rect.w + 'px';
+  canvas.style.height = rect.h + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  W = rect.w; H = rect.h;
+}
+resize();
+window.addEventListener('resize', () => { resize(); initParticles(); });
+
+// --- Simplex-like noise (hash-based) ---
+function hash(x, y) {
+  let h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return h - Math.floor(h);
+}
+function smoothNoise(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const a = hash(ix, iy), b = hash(ix+1, iy);
+  const c = hash(ix, iy+1), d = hash(ix+1, iy+1);
+  return a + (b-a)*sx + (c-a)*sy + (a-b-c+d)*sx*sy;
+}
+function fbm(x, y, octaves=4) {
+  let v=0, amp=0.5, freq=1;
+  for(let i=0;i<octaves;i++) {
+    v += amp * smoothNoise(x*freq, y*freq);
+    amp *= 0.5; freq *= 2.07;
+  }
+  return v;
+}
+
+// --- Palettes ---
+const palettes = [
+  { name: 'Nebula',  colors: ['#6c5ce7','#a29bfe','#fd79a8','#e17055','#fdcb6e','#00cec9','#0984e3'], bg: '#0a0a18' },
+  { name: 'Aurora',  colors: ['#00b894','#00cec9','#0984e3','#6c5ce7','#fd79a8','#55efc4','#74b9ff'], bg: '#050f0f' },
+  { name: 'Ember',   colors: ['#e17055','#fdcb6e','#d63031','#e84393','#fd79a8','#ff7675','#fab1a0'], bg: '#120a08' },
+  { name: 'Frost',   colors: ['#dfe6e9','#b2bec3','#74b9ff','#0984e3','#a29bfe','#81ecec','#00cec9'], bg: '#080c14' },
+  { name: 'Biolum',  colors: ['#00ff87','#60efff','#0061ff','#a29bfe','#fd79a8','#55efc4','#ffeaa7'], bg: '#020a0a' },
+];
+let paletteIdx = 0;
+
+// --- Particles ---
+const NUM = 1800;
+let particles = [];
+let paused = false;
+let showTrails = true;
+let time = 0;
+let flowOffset = 0;
+
+class Particle {
+  constructor() { this.reset(true); }
+  reset(initial=false) {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.prevX = this.x;
+    this.prevY = this.y;
+    this.life = initial ? Math.random() * 300 : 250 + Math.random() * 200;
+    this.maxLife = this.life;
+    const pal = palettes[paletteIdx].colors;
+    this.color = pal[Math.floor(Math.random() * pal.length)];
+    this.speed = 0.4 + Math.random() * 1.2;
+    this.size = 0.4 + Math.random() * 1.2;
+  }
+  update() {
+    this.prevX = this.x;
+    this.prevY = this.y;
+    const scale = 0.0028;
+    const n = fbm(this.x * scale + flowOffset, this.y * scale + time * 0.15, 4);
+    const angle = n * Math.PI * 4;
+    this.x += Math.cos(angle) * this.speed;
+    this.y += Math.sin(angle) * this.speed;
+    this.life--;
+    if (this.life <= 0 || this.x < -10 || this.x > W+10 || this.y < -10 || this.y > H+10) {
+      this.reset();
+      this.prevX = this.x;
+      this.prevY = this.y;
+    }
+  }
+  draw() {
+    const alpha = Math.min(1, this.life / 40) * Math.min(1, (this.maxLife - this.life) / 20) * 0.7;
+    ctx.strokeStyle = this.color + Math.floor(alpha * 200).toString(16).padStart(2,'0');
+    ctx.lineWidth = this.size;
+    ctx.beginPath();
+    ctx.moveTo(this.prevX, this.prevY);
+    ctx.lineTo(this.x, this.y);
+    ctx.stroke();
+  }
+}
+
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < NUM; i++) particles.push(new Particle());
+}
+
+function resetField() {
+  time = Math.random() * 100;
+  flowOffset = Math.random() * 100;
+  ctx.fillStyle = palettes[paletteIdx].bg;
+  ctx.fillRect(0, 0, W, H);
+  initParticles();
+}
+
+function togglePause() {
+  paused = !paused;
+}
+
+function changePalette() {
+  paletteIdx = (paletteIdx + 1) % palettes.length;
+  document.body.style.background = palettes[paletteIdx].bg;
+  // Recolor existing particles gradually
+  const pal = palettes[paletteIdx].colors;
+  particles.forEach(p => {
+    if (Math.random() < 0.3) p.color = pal[Math.floor(Math.random() * pal.length)];
+  });
+}
+
+function toggleTrails() {
+  showTrails = !showTrails;
+}
+
+// --- Main loop ---
+function loop() {
+  requestAnimationFrame(loop);
+  if (paused) return;
+
+  if (showTrails) {
+    ctx.fillStyle = palettes[paletteIdx].bg + '18';
+    ctx.fillRect(0, 0, W, H);
+  } else {
+    ctx.fillStyle = palettes[paletteIdx].bg;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  for (const p of particles) {
+    p.update();
+    p.draw();
+  }
+
+  document.getElementById('count').textContent = particles.length;
+}
+
+// --- Init ---
+document.body.style.background = palettes[0].bg;
+ctx.fillStyle = palettes[0].bg;
+ctx.fillRect(0, 0, W, H);
+initParticles();
+loop();
+</script>
+</body>
+</html>
