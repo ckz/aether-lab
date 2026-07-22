@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Luminous Trace</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #050508;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    color: #aaa;
+  }
+  canvas { display: block; cursor: crosshair; }
+  .controls {
+    position: fixed; top: 1rem; left: 1rem;
+    background: rgba(10,10,18,0.75);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+    font-size: 0.75rem;
+    line-height: 1.7;
+    z-index: 10;
+    min-width: 190px;
+    transition: opacity 0.3s;
+  }
+  .controls h3 {
+    font-size: 0.8rem; font-weight: 600; color: #fff;
+    margin-bottom: 0.4rem; letter-spacing: 0.06em;
+  }
+  .controls .row { display: flex; justify-content: space-between; gap: 0.5rem; align-items: center; }
+  .controls .row span { color: #777; }
+  .controls .val { color: #ccc; font-variant-numeric: tabular-nums; }
+  .controls button {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #ddd; border-radius: 6px;
+    padding: 0.3rem 0.55rem; cursor: pointer;
+    font-size: 0.7rem; transition: all 0.15s;
+  }
+  .controls button:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.25); }
+  .controls .sep { height: 1px; background: rgba(255,255,255,0.06); margin: 0.5rem 0; }
+  .legend { color: #555; font-size: 0.65rem; margin-top: 0.4rem; line-height: 1.6; }
+  .legend kbd {
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 3px; padding: 0 0.25rem; font-family: inherit; font-size: 0.65rem;
+  }
+  .title {
+    position: fixed; top: 1rem; right: 1rem;
+    font-size: 0.65rem; color: rgba(255,255,255,0.25);
+    letter-spacing: 0.15em; text-transform: uppercase; z-index: 10;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div class="controls">
+  <h3>✦ LUMINOUS TRACE</h3>
+  <div class="row"><span>Particles</span><span class="val" id="pCount">0</span></div>
+  <div class="row"><span>Palette</span><span class="val" id="palName">Aurora</span></div>
+  <div class="row"><span>Flow</span><span class="val" id="flowState">ON</span></div>
+  <div class="sep"></div>
+  <div class="row" style="gap:0.35rem">
+    <button id="btnPal">Palette</button>
+    <button id="btnClear">Clear</button>
+    <button id="btnSave">Save</button>
+  </div>
+  <div class="legend">
+    <kbd>drag</kbd> draw &nbsp; <kbd>Space</kbd> flow &nbsp; <kbd>C</kbd> clear &nbsp; <kbd>S</kbd> save &nbsp; <kbd>1-6</kbd> palette
+  </div>
+</div>
+
+<div class="title">Generative Flow Drawing</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H, DPR = Math.min(window.devicePixelRatio || 1, 2);
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Palettes ---
+const palettes = [
+  { name: 'Aurora', colors: ['#00ffc8','#00b4d8','#7b2ff7','#ff2d95','#00ff88','#4cc9f0'] },
+  { name: 'Ember', colors: ['#ff4d00','#ff8c00','#ffd700','#ff2d55','#ff6b6b','#ffaa00'] },
+  { name: 'Ocean', colors: ['#0077b6','#00b4d8','#48cae4','#90e0ef','#023e8a','#03045e'] },
+  { name: 'Neon', colors: ['#ff00ff','#00ffff','#ff0080','#80ff00','#ffff00','#ff4500'] },
+  { name: 'Pastel', colors: ['#ffb3ba','#ffdfba','#ffffba','#baffc9','#bae1ff','#e8baff'] },
+  { name: 'Mono', colors: ['#ffffff','#cccccc','#999999','#666666','#eeeeee','#bbbbbb'] },
+];
+let paletteIdx = 0;
+function pal() { return palettes[paletteIdx]; }
+
+// --- Simplex-like noise (fast, small) ---
+const perm = new Uint8Array(512);
+(function initNoise() {
+  const p = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) p[i] = i;
+  for (let i = 255; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [p[i], p[j]] = [p[j], p[i]];
+  }
+  for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+})();
+
+function noise2D(x, y) {
+  const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+  const xf = x - Math.floor(x), yf = y - Math.floor(y);
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = perm[X] + Y, b = perm[X + 1] + Y;
+  const g = (hash, x, y) => { const h = hash & 3; return ((h & 1) ? -x : x) + ((h & 2) ? -y : y); };
+  const lerp = (a, b, t) => a + t * (b - a);
+  return lerp(
+    lerp(g(perm[a], xf, yf), g(perm[b], xf - 1, yf), u),
+    lerp(g(perm[a + 1], xf, yf - 1), g(perm[b + 1], xf - 1, yf - 1), u),
+    v
+  );
+}
+
+function fbm(x, y, octaves = 3) {
+  let val = 0, amp = 0.5, freq = 1;
+  for (let i = 0; i < octaves; i++) {
+    val += amp * noise2D(x * freq, y * freq);
+    amp *= 0.5; freq *= 2;
+  }
+  return val;
+}
+
+// --- Particles ---
+const MAX_PARTICLES = 2200;
+const particles = [];
+
+class Particle {
+  constructor(x, y, hue) {
+    this.x = x; this.y = y;
+    this.vx = (Math.random() - 0.5) * 0.6;
+    this.vy = (Math.random() - 0.5) * 0.6;
+    this.life = 1;
+    this.decay = 0.0008 + Math.random() * 0.0025;
+    this.size = 1.2 + Math.random() * 2.2;
+    this.hue = hue;
+    this.alpha = 0.9;
+  }
+  update(flowOn, time) {
+    if (flowOn) {
+      const scale = 0.0025;
+      const n = fbm(this.x * scale + time * 0.15, this.y * scale + time * 0.1, 3);
+      const angle = n * Math.PI * 4;
+      this.vx += Math.cos(angle) * 0.12;
+      this.vy += Math.sin(angle) * 0.12;
+    }
+    this.vx *= 0.985;
+    this.vy *= 0.985;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= this.decay;
+    this.alpha = Math.max(0, this.life);
+  }
+}
+
+// --- State ---
+let mouse = { x: W/2, y: H/2, down: false, moved: false };
+let flowOn = true;
+let time = 0;
+let drawing = false;
+let frameCount = 0;
+
+function getHue() {
+  const c = pal().colors;
+  return c[Math.floor(Math.random() * c.length)];
+}
+
+function hexToRgb(hex) {
+  const v = parseInt(hex.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+const paletteRGB = palettes.map(p => p.colors.map(hexToRgb));
+
+function spawnBurst(x, y, count = 18) {
+  for (let i = 0; i < count; i++) {
+    if (particles.length >= MAX_PARTICLES) particles.shift();
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 0.4 + Math.random() * 1.8;
+    const p = new Particle(x, y, getHue());
+    p.vx = Math.cos(angle) * speed;
+    p.vy = Math.sin(angle) * speed;
+    p.decay = 0.002 + Math.random() * 0.004;
+    particles.push(p);
+  }
+}
+
+function spawnStream(x, y, count = 8) {
+  for (let i = 0; i < count; i++) {
+    if (particles.length >= MAX_PARTICLES) particles.shift();
+    const p = new Particle(
+      x + (Math.random() - 0.5) * 16,
+      y + (Math.random() - 0.5) * 16,
+      getHue()
+    );
+    p.size = 1.0 + Math.random() * 2.5;
+    p.decay = 0.001 + Math.random() * 0.003;
+    particles.push(p);
+  }
+}
+
+// --- Input ---
+canvas.addEventListener('mousedown', e => { mouse.down = true; drawing = true; spawnBurst(e.clientX, e.clientY, 22); });
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.moved = true;
+  if (mouse.down) spawnStream(e.clientX, e.clientY, 10);
+});
+canvas.addEventListener('mouseup', () => { mouse.down = false; drawing = false; });
+canvas.addEventListener('mouseleave', () => { mouse.down = false; drawing = false; });
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.down = true; drawing = true;
+  mouse.x = t.clientX; mouse.y = t.clientY;
+  spawnBurst(t.clientX, t.clientY, 22);
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+  if (mouse.down) spawnStream(t.clientX, t.clientY, 10);
+}, { passive: false });
+canvas.addEventListener('touchend', () => { mouse.down = false; drawing = false; });
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); flowOn = !flowOn; updateUI(); }
+  if (e.key === 'c' || e.key === 'C') { particles.length = 0; ctx.fillStyle = '#050508'; ctx.fillRect(0,0,W,H); }
+  if (e.key === 's' || e.key === 'S') savePNG();
+  if (e.key >= '1' && e.key <= '6') { paletteIdx = parseInt(e.key) - 1; updateUI(); }
+});
+
+document.getElementById('btnPal').addEventListener('click', () => { paletteIdx = (paletteIdx + 1) % palettes.length; updateUI(); });
+document.getElementById('btnClear').addEventListener('click', () => { particles.length = 0; ctx.fillStyle = '#050508'; ctx.fillRect(0,0,W,H); });
+document.getElementById('btnSave').addEventListener('click', savePNG);
+
+function savePNG() {
+  const link = document.createElement('a');
+  link.download = 'luminous-trace-' + Date.now() + '.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+function updateUI() {
+  document.getElementById('pCount').textContent = particles.length;
+  document.getElementById('palName').textContent = pal().name;
+  document.getElementById('flowState').textContent = flowOn ? 'ON' : 'OFF';
+}
+
+// --- Main loop ---
+function loop() {
+  requestAnimationFrame(loop);
+  time += 0.008;
+  frameCount++;
+
+  // Fade overlay
+  ctx.fillStyle = 'rgba(5,5,8,0.06)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Update & draw particles
+  const rgb = paletteRGB[paletteIdx];
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.update(flowOn, time);
+    if (p.life <= 0 || p.x < -40 || p.x > W + 40 || p.y < -40 || p.y > H + 40) {
+      particles.splice(i, 1);
+      continue;
+    }
+    const c = rgb[Math.floor(p.hue) % rgb.length];
+    const a = p.alpha * 0.85;
+    // Glow
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${a * 0.18})`;
+    ctx.fill();
+    // Core
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+    ctx.fill();
+  }
+
+  // Connection filaments (sparse, only nearby)
+  if (particles.length < 600 && frameCount % 2 === 0) {
+    ctx.strokeStyle = `rgba(${rgb[0][0]},${rgb[0][1]},${rgb[0][2]},0.04)`;
+    ctx.lineWidth = 0.4;
+    for (let i = 0; i < particles.length; i += 3) {
+      const a = particles[i];
+      if (a.alpha < 0.3) continue;
+      for (let j = i + 1; j < particles.length; j += 5) {
+        const b = particles[j];
+        if (b.alpha < 0.3) continue;
+        const dx = a.x - b.x, dy = a.y - b.y;
+        const dist = dx * dx + dy * dy;
+        if (dist < 6400) { // 80px
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
+  // Ambient auto-spawn when idle
+  if (frameCount % 8 === 0 && !drawing && particles.length < 300) {
+    const x = Math.random() * W;
+    const y = Math.random() * H;
+    spawnStream(x, y, 3);
+  }
+
+  if (frameCount % 15 === 0) updateUI();
+}
+
+// --- Init ---
+ctx.fillStyle = '#050508';
+ctx.fillRect(0, 0, W, H);
+loop();
+</script>
+</body>
+</html>
