@@ -1,468 +1,194 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Constellation Forge</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #05050a;
-    color: #c8c8e0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    overflow: hidden;
-    height: 100vh;
-    user-select: none;
-  }
-  canvas { display: block; cursor: crosshair; }
-  .ui {
-    position: fixed;
-    top: 1rem;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 0.75rem;
-    z-index: 10;
-    background: rgba(10, 10, 20, 0.7);
-    backdrop-filter: blur(10px);
-    padding: 0.6rem 1rem;
-    border-radius: 999px;
-    border: 1px solid rgba(255,255,255,0.08);
-  }
-  .ui button {
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.1);
-    color: #e0e0f0;
-    padding: 0.45rem 0.9rem;
-    border-radius: 999px;
-    cursor: pointer;
-    font-size: 0.8rem;
-    letter-spacing: 0.04em;
-    transition: all 0.2s ease;
-  }
-  .ui button:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.25); }
-  .ui button.active { background: rgba(120, 140, 255, 0.2); border-color: rgba(120, 140, 255, 0.5); color: #c4d0ff; }
-  .info {
-    position: fixed;
-    bottom: 1.25rem;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 0.75rem;
-    color: #555;
-    text-align: center;
-    z-index: 10;
-    pointer-events: none;
-  }
-  .info kbd {
-    background: rgba(255,255,255,0.08);
-    padding: 0.15rem 0.4rem;
-    border-radius: 4px;
-    border: 1px solid rgba(255,255,255,0.12);
-    font-family: inherit;
-    font-size: 0.7rem;
-  }
-  .toast {
-    position: fixed;
-    top: 5rem;
-    left: 50%;
-    transform: translateX(-50%) translateY(-20px);
-    background: rgba(20, 20, 40, 0.9);
-    border: 1px solid rgba(120, 140, 255, 0.3);
-    color: #c4d0ff;
-    padding: 0.6rem 1.2rem;
-    border-radius: 8px;
-    font-size: 0.85rem;
-    opacity: 0;
-    transition: all 0.3s ease;
-    pointer-events: none;
-    z-index: 20;
-  }
-  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-</style>
+  <meta charset="utf-8" />
+  <title>Aether's Constellation Forge</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; background: radial-gradient(ellipse at center, #0b0d17 0%, #000 100%); font-family: 'Segoe UI', sans-serif; color: #e6e6fa; }
+    canvas { display: block; cursor: crosshair; }
+    #ui { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; z-index: 5; }
+    .pill { background: rgba(255,255,255,.08); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: 8px 14px; font-size: 13px; color: #d8d8ff; cursor: pointer; user-select: none; }
+    .pill:hover { background: rgba(255,255,255,.16); }
+    .pill.active { background: rgba(120, 120, 255, .25); border-color: rgba(160,160,255,.5); color: #fff; }
+    #hint { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); font-size: 12px; color: rgba(220,220,255,.7); z-index: 5; letter-spacing: .04em; }
+  </style>
 </head>
 <body>
+  <div id="ui">
+    <div class="pill active" data-mode="draw">✦ Draw stars</div>
+    <div class="pill" data-mode="connect">︱ Connect</div>
+    <div class="pill" data-mode="twinkle">✧ Twinkle</div>
+    <div class="pill" data-mode="wipe">◌ Wipe</div>
+  </div>
+  <div id="hint">Click or drag to create. Scroll to change size. Space clears the sky.</div>
+  <canvas id="c"></canvas>
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    let W, H;
+    const resize = () => { W = canvas.width = innerWidth; H = canvas.height = innerHeight; };
+    addEventListener('resize', resize); resize();
 
-<canvas id="canvas"></canvas>
+    const modeEls = document.querySelectorAll('.pill');
+    let mode = 'draw';
+    modeEls.forEach(el => el.addEventListener('click', () => {
+      modeEls.forEach(e => e.classList.remove('active'));
+      el.classList.add('active');
+      mode = el.dataset.mode;
+    }));
 
-<div class="ui">
-  <button id="btnPlace" class="active">✦ Place Stars</button>
-  <button id="btnLink">⛓ Link</button>
-  <button id="btnErase">⌫ Erase</button>
-  <button id="btnClear">↺ Clear</button>
-  <button id="btnSave">💾 Save</button>
-</div>
+    const stars = []; // {x,y,r,color,vx,vy,phase,linked:[index]}
+    const hue = (i) => 210 + (i * 37) % 120;
+    const rand = (a=1,b=0)=>Math.random()*(a-b)+b;
+    const dist = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
 
-<div class="toast" id="toast"></div>
+    const starColors = ['#ffffff','#ffe9c4','#d4fbff','#ffb6c1','#e0c3fc','#c2f0fc','#ffd166'];
 
-<div class="info">
-  <kbd>Click</kbd> place / link · <kbd>D</kbd> toggle drift · <kbd>H</kbd> toggle hints · <kbd>Space</kbd> pause
-</div>
+    const addStar = (x,y,r=rand(1.6, 2.8)) => {
+      stars.push({
+        x, y, r,
+        color: starColors[Math.floor(rand(starColors.length))],
+        phase: rand(Math.PI*2),
+        speed: rand(.6, 2.2),
+        linked: []
+      });
+      if (stars.length > 600) stars.shift();
+    };
 
-<script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
+    let painting = false;
+    let radius = 3;
+    addEventListener('mousedown', e => {
+      if (e.target !== canvas) return;
+      painting = true;
+      addStar(e.clientX, e.clientY, radius);
+    });
+    addEventListener('mousemove', e => {
+      if (!painting) return;
+      if (mode === 'draw') addStar(e.clientX, e.clientY, radius);
+    });
+    addEventListener('mouseup', () => painting = false);
+    addEventListener('wheel', e => { radius = Math.max(1, Math.min(12, radius - Math.sign(e.deltaY))); });
 
-let W, H;
-function resize() {
-  W = canvas.width = window.innerWidth;
-  H = canvas.height = window.innerHeight;
-}
-resize();
-window.addEventListener('resize', resize);
+    // Connect mode: draw between nearby stars
+    addEventListener('click', e => {
+      if (mode !== 'connect' || e.target !== canvas) return;
+      const a = {x: e.clientX, y: e.clientY};
+      stars.forEach(s => {
+        if (dist(a,s) < 90) s.linked.push(-1); // placeholder "clicked"
+      });
+    });
 
-// State
-let stars = [];
-let mode = 'place'; // place | link | erase
-let drift = true;
-let hints = true;
-let paused = false;
-let linkStart = null;
-let mouse = { x: W/2, y: H/2 };
-
-// Nebula background
-const nebulaColors = [
-  { r: 30, g: 10, b: 60 },
-  { r: 10, g: 20, b: 50 },
-  { r: 40, g: 15, b: 35 },
-  { r: 15, g: 30, b: 55 }
-];
-let nebulaSeeds = [];
-for (let i = 0; i < 6; i++) {
-  nebulaSeeds.push({
-    x: Math.random() * W,
-    y: Math.random() * H,
-    r: 150 + Math.random() * 250,
-    color: nebulaColors[Math.floor(Math.random() * nebulaColors.length)],
-    vx: (Math.random() - 0.5) * 0.15,
-    vy: (Math.random() - 0.5) * 0.15
-  });
-}
-
-// Background stars
-const bgStars = [];
-for (let i = 0; i < 300; i++) {
-  bgStars.push({
-    x: Math.random() * W,
-    y: Math.random() * H,
-    r: Math.random() * 1.2 + 0.2,
-    phase: Math.random() * Math.PI * 2,
-    speed: Math.random() * 0.02 + 0.005
-  });
-}
-
-// Star colors
-const starColors = [
-  '#ffe9c4', '#d4e5ff', '#ffd1dc', '#c4ffe4',
-  '#fff4c4', '#e8d4ff', '#ffd4a8', '#c8f0ff'
-];
-
-class Star {
-  constructor(x, y) {
-    this.x = x;
-    this.y = y;
-    this.r = Math.random() * 2.5 + 1.5;
-    this.color = starColors[Math.floor(Math.random() * starColors.length)];
-    this.phase = Math.random() * Math.PI * 2;
-    this.twinkleSpeed = Math.random() * 0.04 + 0.015;
-    this.driftX = (Math.random() - 0.5) * 0.12;
-    this.driftY = (Math.random() - 0.5) * 0.12;
-    this.born = Date.now();
-    this.sparkle = 0;
-  }
-  update() {
-    this.phase += this.twinkleSpeed;
-    if (drift) {
-      this.x += this.driftX;
-      this.y += this.driftY;
-      // wrap
-      if (this.x < -20) this.x = W + 20;
-      if (this.x > W + 20) this.x = -20;
-      if (this.y < -20) this.y = H + 20;
-      if (this.y > H + 20) this.y = -20;
-    }
-    // decay sparkle
-    if (this.sparkle > 0) this.sparkle *= 0.92;
-  }
-  draw() {
-    const alpha = 0.6 + Math.sin(this.phase) * 0.35;
-    const glow = this.r * 3 + this.sparkle * 8;
-    // glow
-    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, glow);
-    grad.addColorStop(0, this.color + 'cc');
-    grad.addColorStop(0.4, this.color + '44');
-    grad.addColorStop(1, this.color + '00');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, glow, 0, Math.PI * 2);
-    ctx.fill();
-    // core
-    ctx.fillStyle = this.color;
-    ctx.globalAlpha = Math.max(0.3, alpha);
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-}
-
-function drawNebula() {
-  nebulaSeeds.forEach(s => {
-    if (drift) {
-      s.x += s.vx;
-      s.y += s.vy;
-      if (s.x < -s.r) s.x = W + s.r;
-      if (s.x > W + s.r) s.x = -s.r;
-      if (s.y < -s.r) s.y = H + s.r;
-      if (s.y > H + s.r) s.y = -s.r;
-    }
-    const c = s.color;
-    const grad = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r);
-    grad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},0.12)`);
-    grad.addColorStop(0.5, `rgba(${c.r},${c.g},${c.b},0.04)`);
-    grad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-    ctx.fill();
-  });
-}
-
-function drawBgStars() {
-  bgStars.forEach(s => {
-    s.phase += s.speed;
-    const alpha = 0.3 + Math.sin(s.phase) * 0.3;
-    ctx.fillStyle = '#8899cc';
-    ctx.globalAlpha = alpha;
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-    ctx.fill();
-  });
-  ctx.globalAlpha = 1;
-}
-
-function drawLinks() {
-  stars.forEach((a, i) => {
-    stars.forEach((b, j) => {
-      if (j <= i) return;
-      const dx = a.x - b.x;
-      const dy = a.y - b.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 120) {
-        const alpha = (1 - dist / 120) * 0.35;
-        ctx.strokeStyle = `rgba(180,200,255,${alpha})`;
-        ctx.lineWidth = 0.6;
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
+    // Wipe mode: remove stars near cursor
+    addEventListener('mousemove', e => {
+      if (mode !== 'wipe' || e.buttons !== 1) return;
+      for (let i = stars.length - 1; i >= 0; i--) {
+        if (dist({x:e.clientX, y:e.clientY}, stars[i]) < 40) stars.splice(i, 1);
       }
     });
-  });
-}
 
-function drawHints() {
-  if (!hints) return;
-  if (mode === 'place') {
-    ctx.strokeStyle = 'rgba(120,140,255,0.25)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.arc(mouse.x, mouse.y, 80, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-  if (mode === 'link' && linkStart) {
-    ctx.strokeStyle = 'rgba(255,200,100,0.4)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    ctx.beginPath();
-    ctx.moveTo(linkStart.x, linkStart.y);
-    ctx.lineTo(mouse.x, mouse.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-}
-
-function drawLinkStartMarker() {
-  if (mode === 'link' && linkStart) {
-    ctx.strokeStyle = 'rgba(255,200,100,0.8)';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(linkStart.x, linkStart.y, 8, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-}
-
-function animate() {
-  if (!paused) {
-    ctx.fillStyle = '#05050a';
-    ctx.fillRect(0, 0, W, H);
-    drawNebula();
-    drawBgStars();
-    drawLinks();
-    stars.forEach(s => { s.update(); s.draw(); });
-    drawHints();
-    drawLinkStartMarker();
-  }
-  requestAnimationFrame(animate);
-}
-
-animate();
-
-// Input
-function getStarNear(x, y, threshold = 20) {
-  let closest = null;
-  let closestDist = Infinity;
-  stars.forEach(s => {
-    const dx = s.x - x;
-    const dy = s.y - y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < threshold && dist < closestDist) {
-      closestDist = dist;
-      closest = s;
-    }
-  });
-  return closest;
-}
-
-canvas.addEventListener('mousemove', e => {
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
-});
-
-canvas.addEventListener('click', e => {
-  const x = e.clientX;
-  const y = e.clientY;
-  if (mode === 'place') {
-    const s = new Star(x, y);
-    stars.push(s);
-    s.sparkle = 1;
-  } else if (mode === 'link') {
-    const hit = getStarNear(x, y, 25);
-    if (!linkStart) {
-      if (hit) {
-        linkStart = hit;
-        showToast('Star locked — click another to connect');
-      } else {
-        showToast('Click near a star to start linking');
-      }
-    } else {
-      if (hit && hit !== linkStart) {
-        // Create a permanent link by drawing a stronger connection
-        linkStart._links = linkStart._links || [];
-        hit._links = hit._links || [];
-        linkStart._links.push(hit);
-        hit._links.push(linkStart);
-        hit.sparkle = 1;
-        linkStart.sparkle = 1;
-        showToast('Constellation connected');
-        linkStart = null;
-      } else if (!hit) {
-        showToast('Click near another star to complete the link');
-      }
-    }
-  } else if (mode === 'erase') {
-    const hit = getStarNear(x, y, 25);
-    if (hit) {
-      // Also remove links pointing to this star
+    // Twinkle mode: toggle nearby star brightness/speed
+    addEventListener('click', e => {
+      if (mode !== 'twinkle' || e.target !== canvas) return;
       stars.forEach(s => {
-        if (s._links) {
-          s._links = s._links.filter(l => l !== hit);
+        if (dist({x:e.clientX, y:e.clientY}, s) < 100) {
+          s.speed = rand(.2, 4);
+          s.color = starColors[Math.floor(rand(starColors.length))];
         }
       });
-      stars = stars.filter(s => s !== hit);
-      showToast('Star removed');
-    }
-  }
-});
+    });
 
-// Keyboard
-document.addEventListener('keydown', e => {
-  if (e.key === 'd' || e.key === 'D') {
-    drift = !drift;
-    showToast(drift ? 'Drift: on' : 'Drift: off');
-  }
-  if (e.key === 'h' || e.key === 'H') {
-    hints = !hints;
-    showToast(hints ? 'Hints: on' : 'Hints: off');
-  }
-  if (e.key === ' ') {
-    e.preventDefault();
-    paused = !paused;
-    showToast(paused ? 'Paused' : 'Resumed');
-  }
-  if (e.key === '1') setMode('place');
-  if (e.key === '2') setMode('link');
-  if (e.key === '3') setMode('erase');
-});
-
-function setMode(m) {
-  mode = m;
-  linkStart = null;
-  document.querySelectorAll('.ui button').forEach(b => b.classList.remove('active'));
-  if (m === 'place') document.getElementById('btnPlace').classList.add('active');
-  if (m === 'link') document.getElementById('btnLink').classList.add('active');
-  if (m === 'erase') document.getElementById('btnErase').classList.add('active');
-}
-
-document.getElementById('btnPlace').addEventListener('click', () => setMode('place'));
-document.getElementById('btnLink').addEventListener('click', () => setMode('link'));
-document.getElementById('btnErase').addEventListener('click', () => setMode('erase'));
-document.getElementById('btnClear').addEventListener('click', () => {
-  if (stars.length === 0 || confirm('Clear all stars?')) {
-    stars = [];
-    linkStart = null;
-    showToast('Canvas cleared');
-  }
-});
-document.getElementById('btnSave').addEventListener('click', () => {
-  // Export as SVG-like data URL via canvas
-  const link = document.createElement('a');
-  link.download = 'constellation-' + Date.now() + '.png';
-  link.href = canvas.toDataURL('image/png');
-  link.click();
-  showToast('Saved as PNG');
-});
-
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  clearTimeout(t._timeout);
-  t._timeout = setTimeout(() => t.classList.remove('show'), 1800);
-}
-
-// Seed some starter stars if canvas is empty
-setTimeout(() => {
-  if (stars.length === 0) {
-    const cx = W / 2;
-    const cy = H / 2;
-    const names = ['Polaris', 'Vega', 'Sirius', 'Altair', 'Deneb', 'Spica', 'Antares', 'Regulus'];
-    for (let i = 0; i < 8; i++) {
-      const angle = (i / 8) * Math.PI * 2;
-      const dist = 80 + Math.random() * 100;
-      const s = new Star(cx + Math.cos(angle) * dist, cy + Math.sin(angle) * dist);
-      s._named = names[i];
-      stars.push(s);
-      // Link adjacent to form a ring
-      if (i > 0) {
-        const prev = stars[stars.length - 2];
-        s._links = s._links || [];
-        prev._links = prev._links || [];
-        s._links.push(prev);
-        prev._links.push(s);
+    // Touch
+    addEventListener('touchstart', e => {
+      const t = e.touches[0];
+      addStar(t.clientX, t.clientY, radius);
+      painting = true;
+    }, {passive:true});
+    addEventListener('touchmove', e => {
+      if (!painting) return;
+      const t = e.touches[0];
+      if (mode === 'draw') addStar(t.clientX, t.clientY, radius);
+      if (mode === 'wipe') {
+        for (let i = stars.length - 1; i >= 0; i--) {
+          if (dist({x:t.clientX, y:t.clientY}, stars[i]) < 40) stars.splice(i, 1);
+        }
       }
-    }
-    // Close the ring
-    const first = stars[0];
-    const last = stars[stars.length - 1];
-    first._links = first._links || [];
-    last._links = last._links || [];
-    first._links.push(last);
-    last._links.push(first);
-    showToast('A starter constellation awaits — forge your own');
-  }
-}, 300);
-</script>
+    }, {passive:true});
+    addEventListener('touchend', () => painting = false);
+
+    addEventListener('keydown', e => {
+      if (e.code === 'Space') { stars.length = 0; e.preventDefault(); }
+    });
+
+    // Shooting star
+    const meteors = [];
+    const spawnMeteor = () => {
+      if (Math.random() > .004) return;
+      meteors.push({
+        x: rand(W*.2, W*.8),
+        y: 0,
+        vx: rand(3, 7) * (Math.random()>.5?1:-1),
+        vy: rand(4, 9),
+        life: 1
+      });
+    };
+
+    const draw = t => {
+      ctx.fillStyle = 'rgba(11,13,23,.18)';
+      ctx.fillRect(0,0,W,H);
+
+      stars.forEach(s => {
+        const a = .4 + .6 * (.5 + .5 * Math.sin(t * .001 * s.speed + s.phase));
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fillStyle = s.color;
+        ctx.globalAlpha = a;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      });
+
+      // connections in connect mode
+      if (mode === 'connect' || true) {
+        ctx.lineWidth = .4;
+        for (let i = 0; i < stars.length; i++) {
+          for (let j = i+1; j < stars.length; j++) {
+            const d = dist(stars[i], stars[j]);
+            if (d < 70) {
+              ctx.beginPath();
+              ctx.moveTo(stars[i].x, stars[i].y);
+              ctx.lineTo(stars[j].x, stars[j].y);
+              ctx.strokeStyle = `rgba(180,200,255,${.25*(1-d/70)})`;
+              ctx.stroke();
+            }
+          }
+        }
+      }
+
+      spawnMeteor();
+      meteors.forEach((m,i) => {
+        m.x += m.vx; m.y += m.vy; m.life -= .015;
+        ctx.beginPath();
+        ctx.moveTo(m.x, m.y);
+        ctx.lineTo(m.x - m.vx*5, m.y - m.vy*5);
+        ctx.strokeStyle = `rgba(255,255,255,${m.life})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        if (m.life <= 0 || m.x < 0 || m.x > W || m.y > H) meteors.splice(i,1);
+      });
+
+      // ambient nebula glow
+      const g = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, W*.7);
+      g.addColorStop(0, 'rgba(40,20,90,.05)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0,0,W,H);
+
+      requestAnimationFrame(draw);
+    };
+
+    // seed with a few initial stars
+    for (let i = 0; i < 80; i++) addStar(rand(W), rand(H), rand(1,2.5));
+    requestAnimationFrame(draw);
+  </script>
 </body>
 </html>
