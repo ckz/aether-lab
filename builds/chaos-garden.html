@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chaos Garden — Strange Attractor Seeds</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #aab;
+    cursor: crosshair;
+    user-select: none;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed; top: 20px; left: 20px; z-index: 10;
+    pointer-events: none;
+  }
+  #title {
+    font-size: 18px; font-weight: bold; color: #fff;
+    text-shadow: 0 0 20px rgba(120,200,255,0.4);
+    letter-spacing: 3px; margin-bottom: 8px;
+  }
+  #subtitle {
+    font-size: 11px; color: #667;
+    margin-bottom: 16px; line-height: 1.6;
+  }
+  .stat {
+    font-size: 11px; color: #889; margin: 3px 0;
+  }
+  .stat span { color: #cdd; }
+  #controls {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 12px; z-index: 10;
+  }
+  .btn {
+    background: rgba(20,20,35,0.85);
+    border: 1px solid rgba(100,140,180,0.25);
+    color: #aab; padding: 8px 16px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px; cursor: pointer;
+    letter-spacing: 1px;
+    transition: all 0.3s;
+    backdrop-filter: blur(8px);
+  }
+  .btn:hover { border-color: rgba(120,200,255,0.5); color: #fff; }
+  #legend {
+    position: fixed; top: 20px; right: 20px; z-index: 10;
+    font-size: 10px; color: #667; text-align: right;
+    pointer-events: none; line-height: 1.8;
+  }
+  #legend .name { color: #aac; }
+  .toast {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    font-size: 14px; color: #fff; letter-spacing: 3px;
+    text-shadow: 0 0 30px rgba(120,200,255,0.6);
+    opacity: 0; transition: opacity 0.5s; pointer-events: none;
+    z-index: 20;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="ui">
+  <div id="title">✦ CHAOS GARDEN ✦</div>
+  <div id="subtitle">
+    Click to plant a strange attractor seed<br>
+    Right-click to clear &middot; Scroll to zoom<br>
+    Drag to orbit &middot; Space to pause
+  </div>
+  <div class="stat">Seeds: <span id="seedCount">0</span></div>
+  <div class="stat">Particles: <span id="particleCount">0</span></div>
+  <div class="stat">FPS: <span id="fps">0</span></div>
+</div>
+<div id="legend">
+  <div class="name" style="color:#ff6b9d">Lorenz</div>
+  <div class="name" style="color:#ffd93d">Rössler</div>
+  <div class="name" style="color:#6bc5ff">Aizawa</div>
+  <div class="name" style="color:#c084fc">Thomas</div>
+  <div class="name" style="color:#51cf66">Halvorsen</div>
+  <div class="name" style="color:#ff922b">Dadras</div>
+</div>
+<div id="controls">
+  <button class="btn" onclick="clearAll()">CLEAR</button>
+  <button class="btn" onclick="togglePause()">PAUSE</button>
+  <button class="btn" onclick="saveImage()">SAVE PNG</button>
+  <button class="btn" onclick="randomSeed()">RANDOM SEED</button>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Strange Attractor Definitions ───
+// Each returns {x, y, z} derivatives given current {x, y, z}
+const attractors = {
+  lorenz: {
+    name: 'Lorenz',
+    color: '#ff6b9d',
+    params: () => ({ sigma: 10, rho: 28, beta: 8/3 }),
+    deriv: (p, s) => ({
+      x: s.sigma * (p.y - p.x),
+      y: p.x * (s.rho - p.z) - p.y,
+      z: p.x * p.y - s.beta * p.z
+    }),
+    scale: 0.35,
+    dt: 0.005
+  },
+  rossler: {
+    name: 'Rössler',
+    color: '#ffd93d',
+    params: () => ({ a: 0.2, b: 0.2, c: 5.7 }),
+    deriv: (p, s) => ({
+      x: -p.y - p.z,
+      y: p.x + s.a * p.y,
+      z: s.b + p.z * (p.x - s.c)
+    }),
+    scale: 0.55,
+    dt: 0.012
+  },
+  aizawa: {
+    name: 'Aizawa',
+    color: '#6bc5ff',
+    params: () => ({ a: 0.95, b: 0.7, c: 0.6, d: 3.5, e: 0.25, f: 0.1 }),
+    deriv: (p, s) => ({
+      x: (p.z - s.b) * p.x - s.d * p.y,
+      y: s.d * p.x + (p.z - s.b) * p.y,
+      z: s.c + s.a * p.z - (p.z * p.z * p.z) / 3 - (p.x * p.x + p.y * p.y) * (1 + s.e * p.z) + s.f * p.z * p.x * p.x * p.x
+    }),
+    scale: 28,
+    dt: 0.008
+  },
+  thomas: {
+    name: 'Thomas',
+    color: '#c084fc',
+    params: () => ({ b: 0.208186 }),
+    deriv: (p, s) => ({
+      x: Math.sin(p.y) - s.b * p.x,
+      y: Math.sin(p.z) - s.b * p.y,
+      z: Math.sin(p.x) - s.b * p.z
+    }),
+    scale: 22,
+    dt: 0.04
+  },
+  halvorsen: {
+    name: 'Halvorsen',
+    color: '#51cf66',
+    params: () => ({ a: 1.89 }),
+    deriv: (p, s) => ({
+      x: -s.a * p.x - 4 * p.y - 4 * p.z - p.y * p.y,
+      y: -s.a * p.y - 4 * p.z - 4 * p.x - p.z * p.z,
+      z: -s.a * p.z - 4 * p.x - 4 * p.y - p.x * p.x
+    }),
+    scale: 0.45,
+    dt: 0.005
+  },
+  dadras: {
+    name: 'Dadras',
+    color: '#ff922b',
+    params: () => ({ a: 3, b: 2.7, c: 1.7, d: 2, e: 9 }),
+    deriv: (p, s) => ({
+      x: p.y - s.a * p.x + s.b * p.y * p.z,
+      y: s.c * p.y - p.x * p.z + p.z,
+      z: s.d * p.x * p.y - s.e * p.z
+    }),
+    scale: 0.25,
+    dt: 0.005
+  }
+};
+
+// ─── State ───
+let seeds = [];
+let paused = false;
+let mouse = { x: W/2, y: H/2, down: false };
+let camera = { x: 0, y: 0, zoom: 1, targetZoom: 1 };
+let dragging = null;
+let dragStart = { x: 0, y: 0 };
+let frameCount = 0;
+let lastTime = performance.now();
+let fpsValue = 0;
+let particlesThisFrame = 0;
+
+const ATTRACTOR_NAMES = Object.keys(attractors);
+
+// ─── Seed class ───
+class Seed {
+  constructor(type, sx, sy) {
+    const att = attractors[type];
+    this.type = type;
+    this.name = att.name;
+    this.color = att.color;
+    this.params = att.params();
+    this.scale = att.scale;
+    this.dt = att.dt;
+    // Starting position — slight random variation per type
+    const starts = {
+      lorenz: { x: 0.1 + Math.random()*0.1, y: 0 + Math.random()*0.1, z: 25 + Math.random()*2 },
+      rossler: { x: 0.1 + Math.random()*0.2, y: 0, z: 0.1 + Math.random()*0.2 },
+      aizawa: { x: 0.1, y: 0, z: 0 },
+      thomas: { x: 1.1, y: 1.1, z: -0.01 + Math.random()*0.02 },
+      halvorsen: { x: -1.5, y: 0, z: 0 },
+      dadras: { x: 1, y: 0, z: 0 }
+    };
+    const s = starts[type] || { x: 0.1, y: 0, z: 0 };
+    this.px = s.x; this.py = s.y; this.pz = s.z;
+    // Screen position
+    this.sx = sx; this.sy = sy;
+    this.trail = [];
+    this.maxTrail = 3000;
+    this.age = 0;
+    this.phase = 'growing'; // growing -> thriving
+    this.growDuration = 120 + Math.random() * 60;
+    this.opacity = 0;
+    this.alive = true;
+  }
+
+  update() {
+    if (paused) return;
+    this.age++;
+    // Fade in
+    if (this.opacity < 1) this.opacity = Math.min(1, this.opacity + 0.015);
+
+    const att = attractors[this.type];
+    // Sub-steps for accuracy
+    for (let i = 0; i < 3; i++) {
+      const d = att.deriv(this, this.params);
+      this.px += d.x * this.dt;
+      this.py += d.y * this.dt;
+      this.pz += d.z * this.dt;
+    }
+
+    // Project to screen
+    const wx = this.px * this.scale + camera.x;
+    const wy = this.py * this.scale + camera.y;
+    const cx = W / 2, cy = H / 2;
+    const screenX = (wx - cx) * camera.zoom + cx;
+    const screenY = (wy - cy) * camera.zoom + cy;
+
+    this.trail.push({ x: screenX, y: screenY });
+    if (this.trail.length > this.maxTrail) this.trail.shift();
+
+    particlesThisFrame++;
+  }
+
+  draw(ctx) {
+    if (this.trail.length < 2) return;
+    const len = this.trail.length;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    for (let i = 1; i < len; i++) {
+      const t = i / len;
+      const alpha = t * this.opacity * 0.7;
+      const width = t * 2.5 * camera.zoom;
+      if (alpha < 0.01 || width < 0.2) continue;
+
+      ctx.beginPath();
+      ctx.moveTo(this.trail[i-1].x, this.trail[i-1].y);
+      ctx.lineTo(this.trail[i].x, this.trail[i].y);
+      ctx.strokeStyle = this.color + Math.round(alpha * 255).toString(16).padStart(2,'0');
+      ctx.lineWidth = width;
+      ctx.stroke();
+    }
+
+    // Glow at tip
+    if (this.trail.length > 0 && !paused) {
+      const tip = this.trail[this.trail.length - 1];
+      const grad = ctx.createRadialGradient(tip.x, tip.y, 0, tip.x, tip.y, 6 * camera.zoom);
+      grad.addColorStop(0, this.color + '88');
+      grad.addColorStop(1, this.color + '00');
+      ctx.beginPath();
+      ctx.arc(tip.x, tip.y, 6 * camera.zoom, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+  }
+
+  getParticleCount() {
+    return this.trail.length;
+  }
+}
+
+// ─── Background stars ───
+const stars = [];
+for (let i = 0; i < 200; i++) {
+  stars.push({
+    x: Math.random() * 2000 - 500,
+    y: Math.random() * 2000 - 500,
+    r: Math.random() * 1.2 + 0.3,
+    twinkle: Math.random() * Math.PI * 2,
+    speed: 0.01 + Math.random() * 0.03
+  });
+}
+
+function drawStars() {
+  for (const s of stars) {
+    s.twinkle += s.speed;
+    const alpha = 0.3 + 0.3 * Math.sin(s.twinkle);
+    const sx = (s.x / 1000) * W * camera.zoom * 0.5 + W/2;
+    const sy = (s.y / 1000) * H * camera.zoom * 0.5 + H/2;
+    ctx.beginPath();
+    ctx.arc(sx, sy, s.r * camera.zoom, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(180,200,240,${alpha})`;
+    ctx.fill();
+  }
+}
+
+// ─── Mouse glow ───
+function drawMouseGlow() {
+  if (!mouse.down) return;
+  const grad = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 120);
+  grad.addColorStop(0, 'rgba(120,200,255,0.08)');
+  grad.addColorStop(1, 'rgba(120,200,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(mouse.x - 120, mouse.y - 120, 240, 240);
+}
+
+// ─── Spawn burst of small particles ───
+let burstParticles = [];
+function spawnBurst(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 3;
+    burstParticles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      decay: 0.015 + Math.random() * 0.02,
+      color,
+      size: 1 + Math.random() * 2
+    });
+  }
+}
+
+function updateBurstParticles() {
+  for (let i = burstParticles.length - 1; i >= 0; i--) {
+    const p = burstParticles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vx *= 0.98;
+    p.vy *= 0.98;
+    p.life -= p.decay;
+    if (p.life <= 0) burstParticles.splice(i, 1);
+  }
+}
+
+function drawBurstParticles() {
+  for (const p of burstParticles) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * camera.zoom, 0, Math.PI * 2);
+    ctx.fillStyle = p.color + Math.round(p.life * 180).toString(16).padStart(2,'0');
+    ctx.fill();
+  }
+}
+
+// ─── Interaction ───
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 2) return;
+  mouse.down = true;
+  if (e.shiftKey) {
+    dragging = { x: e.clientX, y: e.clientY, cx: camera.x, cy: camera.y };
+  }
+});
+
+canvas.addEventListener('mouseup', (e) => {
+  if (e.button === 0 && mouse.down && !dragging) {
+    const type = ATTRACTOR_NAMES[Math.floor(Math.random() * ATTRACTOR_NAMES.length)];
+    const seed = new Seed(type, e.clientX, e.clientY);
+    seeds.push(seed);
+    spawnBurst(e.clientX, e.clientY, attractors[type].color, 40);
+    showToast(`${attractors[type].name} seed planted`);
+  }
+  mouse.down = false;
+  dragging = null;
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  if (dragging) {
+    camera.x = dragging.cx + (e.clientX - dragging.x);
+    camera.y = dragging.cy + (e.clientY - dragging.y);
+  }
+});
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const factor = e.deltaY > 0 ? 0.92 : 1.08;
+  camera.zoom = Math.max(0.2, Math.min(4, camera.zoom * factor));
+  camera.targetZoom = camera.zoom;
+}, { passive: false });
+
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); togglePause(); }
+  if (e.code === 'KeyC') clearAll();
+  if (e.code === 'KeyS') saveImage();
+  if (e.code === 'KeyR') randomSeed();
+});
+
+// ─── Buttons ───
+function clearAll() {
+  seeds = [];
+  burstParticles = [];
+  camera.x = 0; camera.y = 0; camera.zoom = 1;
+  showToast('GARDEN CLEARED');
+}
+
+function togglePause() {
+  paused = !paused;
+  showToast(paused ? 'PAUSED' : 'GROWING');
+}
+
+function saveImage() {
+  const link = document.createElement('a');
+  link.download = `chaos-garden-${Date.now()}.png`;
+  link.href = canvas.toDataURL();
+  link.click();
+  showToast('IMAGE SAVED');
+}
+
+function randomSeed() {
+  const type = ATTRACTOR_NAMES[Math.floor(Math.random() * ATTRACTOR_NAMES.length)];
+  const sx = W/2 + (Math.random() - 0.5) * W * 0.5;
+  const sy = H/2 + (Math.random() - 0.5) * H * 0.5;
+  const seed = new Seed(type, sx, sy);
+  seeds.push(seed);
+  spawnBurst(sx, sy, attractors[type].color, 40);
+  showToast(`${attractors[type].name} seed planted`);
+}
+
+// ─── Toast ───
+let toastTimeout;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => t.classList.remove('show'), 1200);
+}
+
+// ─── Main Loop ───
+function loop() {
+  requestAnimationFrame(loop);
+
+  // FPS
+  frameCount++;
+  const now = performance.now();
+  if (now - lastTime >= 1000) {
+    fpsValue = frameCount;
+    frameCount = 0;
+    lastTime = now;
+  }
+  particlesThisFrame = 0;
+
+  // Background — subtle fade for ghost trails
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.03)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  drawStars();
+
+  // Mouse glow
+  drawMouseGlow();
+
+  // Update & draw seeds
+  for (const seed of seeds) {
+    seed.update();
+    seed.draw(ctx);
+  }
+
+  // Burst particles
+  updateBurstParticles();
+  drawBurstParticles();
+
+  // Stats
+  document.getElementById('seedCount').textContent = seeds.length;
+  document.getElementById('particleCount').textContent = seeds.reduce((a, s) => a + s.getParticleCount(), 0);
+  document.getElementById('fps').textContent = fpsValue;
+}
+
+// Initial full clear
+ctx.fillStyle = '#0a0a0f';
+ctx.fillRect(0, 0, W, H);
+
+// Plant a welcome seed
+setTimeout(() => {
+  randomSeed();
+}, 300);
+
+loop();
+</script>
+</body>
+</html>
