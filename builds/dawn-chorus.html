@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dawn Chorus — An Ambient Forest</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    cursor: none;
+    user-select: none;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.5);
+    font-size: 12px;
+    letter-spacing: 0.05em;
+    text-align: center;
+    pointer-events: none;
+    transition: opacity 0.5s;
+  }
+  #ui:hover { opacity: 1; }
+  #time-display {
+    position: fixed;
+    top: 16px;
+    right: 20px;
+    color: rgba(255,255,255,0.4);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    pointer-events: none;
+  }
+  #bird-label {
+    position: fixed;
+    top: 16px;
+    left: 20px;
+    color: rgba(255,255,255,0.7);
+    font-size: 12px;
+    letter-spacing: 0.05em;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  #instructions {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: rgba(255,255,255,0.8);
+    font-size: 14px;
+    letter-spacing: 0.05em;
+    text-align: center;
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 2s;
+    line-height: 2;
+  }
+  #instructions.hidden { opacity: 0; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="instructions">Click anywhere to summon a bird<br><span style="font-size:11px;opacity:0.6">Move mouse to attract fireflies · Space to pause time · 1-4 to change season</span></div>
+<div id="time-display"></div>
+<div id="bird-label"></div>
+<div id="ui">Dawn Chorus · click to sing · Space pause · 1-4 season</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── State ───
+let time = 0.25; // 0=midnight, 0.25=dawn, 0.5=noon, 0.75=dusk
+let timeSpeed = 0.00003;
+let paused = false;
+let season = 0; // 0=spring, 1=summer, 2=autumn, 3=winter
+let mouseX = W/2, mouseY = H/2;
+let clicked = false;
+let clickX = 0, clickY = 0;
+let instructionsHidden = false;
+
+const seasonNames = ['spring', 'summer', 'autumn', 'winter'];
+const seasonColors = [
+  { sky: ['#0a0a2e', '#1a1a4e', '#2d1b4e', '#4a2c6e'], ground: '#1a3a2a', leaves: ['#4a8c3f', '#6aac5a', '#8fbc8f', '#3a7c2f'] },
+  { sky: ['#0a1a3e', '#1a2a5e', '#2d4b6e', '#4a6c8e'], ground: '#1a3a1a', leaves: ['#2d6b1a', '#4a8c2a', '#6aac3a', '#1a5a0a'] },
+  { sky: ['#2e1a0a', '#4e2a1a', '#6e4b2d', '#8e6c4a'], ground: '#2a2a1a', leaves: ['#8c6a2a', '#bc8a4a', '#dcac6a', '#7c5a1a'] },
+  { sky: ['#1a1a2e', '#2a2a4e', '#3a3a5e', '#4a4a6e'], ground: '#1a2a2a', leaves: ['#4a6a5a', '#6a8a7a', '#8aaa9a', '#3a5a4a'] },
+];
+
+// ─── Trees ───
+const trees = [];
+function generateTrees() {
+  trees.length = 0;
+  const count = Math.floor(W / 80);
+  for (let i = 0; i < count; i++) {
+    trees.push({
+      x: (i + Math.random() * 0.8) / count * W,
+      height: H * (0.3 + Math.random() * 0.4),
+      width: 30 + Math.random() * 50,
+      type: Math.random() > 0.5 ? 'deciduous' : 'pine',
+      phase: Math.random() * Math.PI * 2,
+      swaySpeed: 0.5 + Math.random() * 1.5,
+      swayAmount: 0.01 + Math.random() * 0.02,
+    });
+  }
+  trees.sort((a, b) => a.height - b.height);
+}
+generateTrees();
+window.addEventListener('resize', generateTrees);
+
+// ─── Stars ───
+const stars = [];
+for (let i = 0; i < 200; i++) {
+  stars.push({
+    x: Math.random() * W,
+    y: Math.random() * H * 0.6,
+    size: Math.random() * 1.5 + 0.3,
+    twinkle: Math.random() * Math.PI * 2,
+    speed: 0.02 + Math.random() * 0.05,
+  });
+}
+
+// ─── Fireflies ───
+const fireflies = [];
+for (let i = 0; i < 40; i++) {
+  fireflies.push({
+    x: Math.random() * W,
+    y: H * 0.5 + Math.random() * H * 0.4,
+    vx: (Math.random() - 0.5) * 0.3,
+    vy: (Math.random() - 0.5) * 0.3,
+    phase: Math.random() * Math.PI * 2,
+    brightness: Math.random(),
+  });
+}
+
+// ─── Birds ───
+const birds = [];
+const birdTypes = [
+  { name: 'Robin', color: '#c0392b', wingSpan: 12, callFreq: [1200, 1800], callDur: 0.15, pattern: 'rise' },
+  { name: 'Wren', color: '#8B4513', wingSpan: 8, callFreq: [2000, 3000], callDur: 0.08, pattern: 'trill' },
+  { name: 'Thrush', color: '#D2691E', wingSpan: 16, callFreq: [800, 1400], callDur: 0.4, pattern: 'fall' },
+  { name: 'Blackbird', color: '#1a1a1a', wingSpan: 14, callFreq: [600, 900], callDur: 0.2, pattern: 'repeat' },
+  { name: 'Cardinal', color: '#DC143C', wingSpan: 13, callFreq: [1500, 2200], callDur: 0.25, pattern: 'whistle' },
+  { name: 'Mockingbird', color: '#708090', wingSpan: 15, callFreq: [1000, 2500], callDur: 0.12, pattern: 'mimic' },
+  { name: 'Owl', color: '#8B7355', wingSpan: 18, callFreq: [200, 400], callDur: 0.6, pattern: 'hoot', nightOnly: true },
+  { name: 'Swallow', color: '#4169E1', wingSpan: 10, callFreq: [3000, 5000], callDur: 0.05, pattern: 'chirp' },
+];
+
+function spawnBird(x, y) {
+  const nightFactor = time < 0.2 || time > 0.8 ? 1 : 0;
+  const available = birdTypes.filter(b => !b.nightOnly || nightFactor);
+  const type = available[Math.floor(Math.random() * available.length)];
+  
+  birds.push({
+    x, y,
+    vx: (Math.random() - 0.5) * 2,
+    vy: (Math.random() - 0.5) * 0.5,
+    wingPhase: 0,
+    wingSpeed: 0.3 + Math.random() * 0.4,
+    life: 1,
+    decay: 0.002 + Math.random() * 0.003,
+    type,
+    trail: [],
+    callTimer: 0,
+    callInterval: 60 + Math.random() * 120,
+  });
+  
+  // Show label
+  const label = document.getElementById('bird-label');
+  label.textContent = type.name + ' appeared';
+  label.style.opacity = 1;
+  setTimeout(() => label.style.opacity = 0, 2000);
+  
+  // Play call
+  playBirdCall(type);
+}
+
+// ─── Clouds ───
+const clouds = [];
+for (let i = 0; i < 8; i++) {
+  clouds.push({
+    x: Math.random() * W,
+    y: H * 0.1 + Math.random() * H * 0.25,
+    width: 80 + Math.random() * 200,
+    height: 20 + Math.random() * 40,
+    speed: 0.1 + Math.random() * 0.3,
+    opacity: 0.1 + Math.random() * 0.3,
+  });
+}
+
+// ─── Shooting Stars ───
+let shootingStars = [];
+function maybeSpawnShootingStar() {
+  if (Math.random() < 0.002 && (time < 0.2 || time > 0.75)) {
+    shootingStars.push({
+      x: Math.random() * W,
+      y: Math.random() * H * 0.3,
+      vx: 3 + Math.random() * 5,
+      vy: 1 + Math.random() * 2,
+      life: 1,
+      length: 30 + Math.random() * 50,
+    });
+  }
+}
+
+// ─── Audio ───
+let audioCtx;
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playBirdCall(type) {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  
+  switch(type.pattern) {
+    case 'rise': // Rising whistle
+      playTone(type.callFreq[0], now, type.callDur, 'sine');
+      playTone(type.callFreq[1], now + type.callDur * 0.5, type.callDur * 0.8, 'sine');
+      break;
+      
+    case 'trill': // Rapid alternating
+      for (let i = 0; i < 8; i++) {
+        const f = i % 2 === 0 ? type.callFreq[0] : type.callFreq[1];
+        playTone(f, now + i * type.callDur, type.callDur * 0.7, 'sine');
+      }
+      break;
+      
+    case 'fall': // Descending flute
+      for (let i = 0; i < 5; i++) {
+        const f = type.callFreq[1] - (type.callFreq[1] - type.callFreq[0]) * (i / 5);
+        playTone(f, now + i * type.callDur * 1.5, type.callDur * 1.5, 'sine', 0.15);
+      }
+      break;
+      
+    case 'repeat': // Repeated sharp notes
+      for (let i = 0; i < 4; i++) {
+        playTone(type.callFreq[0], now + i * type.callDur * 2, type.callDur * 0.8, 'triangle');
+      }
+      break;
+      
+    case 'whistle': // Clear 2-3 note whistle
+      playTone(type.callFreq[0], now, type.callDur * 2, 'sine');
+      playTone(type.callFreq[0] * 1.25, now + type.callDur * 2, type.callDur * 2, 'sine');
+      break;
+      
+    case 'mimic': // Varied quick notes
+      const notes = [1, 1.5, 0.75, 1.25, 1, 2];
+      notes.forEach((mult, i) => {
+        playTone(type.callFreq[0] * mult, now + i * type.callDur, type.callDur * 0.6, 'sine');
+      });
+      break;
+      
+    case 'hoot': // Low slow hoots
+      for (let i = 0; i < 3; i++) {
+        playTone(type.callFreq[0], now + i * type.callDur * 3, type.callDur * 2.5, 'sine', 0.2);
+        playTone(type.callFreq[0] * 0.8, now + i * type.callDur * 3 + 0.1, type.callDur * 2.5, 'sine', 0.1);
+      }
+      break;
+      
+    case 'chirp': // Very fast high chirps
+      for (let i = 0; i < 12; i++) {
+        const f = type.callFreq[0] + (type.callFreq[1] - type.callFreq[0]) * Math.sin(i * 0.5);
+        playTone(f, now + i * type.callDur, type.callDur * 0.5, 'sine', 0.05);
+      }
+      break;
+  }
+}
+
+function playTone(freq, startTime, duration, type = 'sine', vol = 0.1) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, startTime);
+  gain.gain.setValueAtTime(0, startTime);
+  gain.gain.linearRampToValueAtTime(vol, startTime + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(startTime);
+  osc.stop(startTime + duration + 0.1);
+}
+
+// Play ambient drone based on time of day
+let ambientGain, ambientOsc;
+function startAmbient() {
+  if (!audioCtx || ambientOsc) return;
+  ambientGain = audioCtx.createGain();
+  ambientGain.gain.setValueAtTime(0, audioCtx.currentTime);
+  ambientGain.connect(audioCtx.destination);
+  
+  // Subtle wind/ambient
+  ambientOsc = audioCtx.createOscillator();
+  const ambientFilter = audioCtx.createBiquadFilter();
+  ambientOsc.type = 'sine';
+  ambientOsc.frequency.setValueAtTime(80, audioCtx.currentTime);
+  ambientFilter.type = 'lowpass';
+  ambientFilter.frequency.setValueAtTime(200, audioCtx.currentTime);
+  ambientOsc.connect(ambientFilter);
+  ambientFilter.connect(ambientGain);
+  ambientOsc.start();
+}
+
+function updateAmbient() {
+  if (!audioCtx || !ambientGain) return;
+  // More ambient at night
+  const nightFactor = time < 0.2 || time > 0.8 ? 1 : Math.max(0, 1 - (time - 0.2) / 0.3);
+  const dawnFactor = time > 0.2 && time < 0.35 ? (time - 0.2) / 0.15 : (time > 0.65 && time < 0.8 ? (0.8 - time) / 0.15 : 0);
+  const targetVol = nightFactor * 0.015 + dawnFactor * 0.01;
+  ambientGain.gain.linearRampToValueAtTime(targetVol, audioCtx.currentTime + 1);
+  
+  if (ambientOsc) {
+    const freq = 60 + Math.sin(time * Math.PI * 2) * 20;
+    ambientOsc.frequency.linearRampToValueAtTime(freq, audioCtx.currentTime + 2);
+  }
+}
+
+// ─── Rendering ───
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerpColor(c1, c2, t) {
+  const r1 = parseInt(c1.slice(1,3), 16), g1 = parseInt(c1.slice(3,5), 16), b1 = parseInt(c1.slice(5,7), 16);
+  const r2 = parseInt(c2.slice(1,3), 16), g2 = parseInt(c2.slice(3,5), 16), b2 = parseInt(c2.slice(5,7), 16);
+  const r = Math.round(lerp(r1, r2, t)), g = Math.round(lerp(g1, g2, t)), b = Math.round(lerp(b1, b2, t));
+  return `rgb(${r},${g},${b})`;
+}
+
+function getTimeColorStops() {
+  const sc = seasonColors[season];
+  const t = time % 1;
+  // Map time to gradient stops
+  if (t < 0.25) return [sc.sky[0], sc.sky[1]]; // night
+  if (t < 0.35) return [sc.sky[0], sc.sky[1], sc.sky[2]]; // dawn
+  if (t < 0.5) return [sc.sky[2], sc.sky[3]]; // morning
+  if (t < 0.65) return [sc.sky[3], sc.sky[3]]; // noon (use last)
+  if (t < 0.75) return [sc.sky[3], sc.sky[2]]; // dusk
+  return [sc.sky[2], sc.sky[0]]; // night
+}
+
+function getSkyGradient() {
+  const stops = getTimeColorStops();
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  stops.forEach((color, i) => {
+    grad.addColorStop(i / (stops.length - 1), color);
+  });
+  return grad;
+}
+
+function getGroundColor() {
+  const sc = seasonColors[season];
+  const t = time % 1;
+  // Mix between night ground and day ground
+  const nightDark = '#0a1a0a';
+  const mix = t < 0.25 ? 1 : t < 0.35 ? 1 - (t - 0.25) / 0.1 : t < 0.65 ? 0 : t < 0.75 ? (t - 0.65) / 0.1 : 1;
+  return lerpColor(sc.ground, nightDark, mix * 0.7);
+}
+
+function drawSky() {
+  ctx.fillStyle = getSkyGradient();
+  ctx.fillRect(0, 0, W, H);
+  
+  // Sun/Moon
+  const t = time % 1;
+  const sunAngle = (t - 0.25) * Math.PI; // rises at 0.25, sets at 0.75
+  const sunX = W * 0.5 + Math.cos(sunAngle) * W * 0.4;
+  const sunY = H * 0.7 - Math.sin(sunAngle) * H * 0.5;
+  
+  if (t > 0.2 && t < 0.8) {
+    // Sun
+    const sunAlpha = t < 0.3 ? (t - 0.2) / 0.1 : t > 0.7 ? (0.8 - t) / 0.1 : 1;
+    ctx.save();
+    ctx.globalAlpha = sunAlpha;
+    const sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 60);
+    sunGrad.addColorStop(0, 'rgba(255, 240, 200, 1)');
+    sunGrad.addColorStop(0.1, 'rgba(255, 220, 150, 0.8)');
+    sunGrad.addColorStop(0.4, 'rgba(255, 180, 80, 0.3)');
+    sunGrad.addColorStop(1, 'rgba(255, 150, 50, 0)');
+    ctx.fillStyle = sunGrad;
+    ctx.fillRect(sunX - 80, sunY - 80, 160, 160);
+    ctx.restore();
+  } else {
+    // Moon
+    const moonAngle = (t < 0.25 ? t + 0.75 : t - 0.25) * Math.PI;
+    const moonX = W * 0.5 + Math.cos(moonAngle) * W * 0.35;
+    const moonY = H * 0.6 - Math.sin(moonAngle) * H * 0.4;
+    
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    const moonGrad = ctx.createRadialGradient(moonX, moonY, 0, moonX, moonY, 25);
+    moonGrad.addColorStop(0, 'rgba(220, 230, 255, 1)');
+    moonGrad.addColorStop(0.7, 'rgba(200, 210, 240, 0.5)');
+    moonGrad.addColorStop(1, 'rgba(180, 190, 220, 0)');
+    ctx.fillStyle = moonGrad;
+    ctx.fillRect(moonX - 30, moonY - 30, 60, 60);
+    
+    // Moon halo
+    const haloGrad = ctx.createRadialGradient(moonX, moonY, 25, moonX, moonY, 80);
+    haloGrad.addColorStop(0, 'rgba(200, 210, 240, 0.15)');
+    haloGrad.addColorStop(1, 'rgba(200, 210, 240, 0)');
+    ctx.fillStyle = haloGrad;
+    ctx.fillRect(moonX - 80, moonY - 80, 160, 160);
+    ctx.restore();
+  }
+}
+
+function drawStars() {
+  const t = time % 1;
+  const starAlpha = t < 0.2 ? 1 : t < 0.3 ? 1 - (t - 0.2) / 0.1 : t > 0.75 ? (t - 0.75) / 0.05 : 0;
+  if (starAlpha <= 0) return;
+  
+  ctx.save();
+  ctx.globalAlpha = starAlpha;
+  stars.forEach(star => {
+    star.twinkle += star.speed;
+    const twinkleAlpha = 0.5 + Math.sin(star.twinkle) * 0.5;
+    ctx.fillStyle = `rgba(255, 255, 240, ${twinkleAlpha})`;
+    ctx.beginPath();
+    ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+function drawClouds() {
+  const t = time % 1;
+  const cloudAlpha = t > 0.25 && t < 0.7 ? 0.3 : 0.05;
+  if (cloudAlpha <= 0) return;
+  
+  ctx.save();
+  ctx.globalAlpha = cloudAlpha;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+  
+  clouds.forEach(cloud => {
+    cloud.x += cloud.speed * 0.3;
+    if (cloud.x > W + cloud.width) cloud.x = -cloud.width;
+    
+    ctx.beginPath();
+    ctx.ellipse(cloud.x, cloud.y, cloud.width / 2, cloud.height / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cloud.x - cloud.width * 0.2, cloud.y + 5, cloud.width * 0.3, cloud.height * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cloud.x + cloud.width * 0.2, cloud.y + 3, cloud.width * 0.35, cloud.height * 0.35, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+function drawTree(tree) {
+  const sway = Math.sin(time * 10 + tree.phase) * tree.swayAmount;
+  
+  ctx.save();
+  ctx.translate(tree.x, H);
+  
+  // Trunk
+  ctx.strokeStyle = '#2a1a0a';
+  ctx.lineWidth = tree.width * 0.15;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(sway * 50, -tree.height * 0.5, sway * 80, -tree.height);
+  ctx.stroke();
+  
+  if (tree.type === 'deciduous') {
+    // Canopy — layered circles
+    const sc = seasonColors[season];
+    const leafColor = sc.leaves[Math.floor(Math.random() * 4)];
+    const canopyY = -tree.height;
+    const canopySize = tree.width * 0.8;
+    
+    ctx.fillStyle = leafColor;
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    ctx.arc(sway * 80, canopyY, canopySize * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(sway * 80 - canopySize * 0.3, canopyY + canopySize * 0.2, canopySize * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(sway * 80 + canopySize * 0.3, canopyY + canopySize * 0.2, canopySize * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  } else {
+    // Pine — triangle layers
+    ctx.fillStyle = season === 2 ? '#4a6a2a' : '#1a3a1a';
+    const topX = sway * 80;
+    const topY = -tree.height;
+    
+    for (let i = 0; i < 3; i++) {
+      const layerY = topY + i * tree.height * 0.2;
+      const layerWidth = tree.width * (1 - i * 0.25);
+      ctx.beginPath();
+      ctx.moveTo(topX, topY - i * 10);
+      ctx.lineTo(topX - layerWidth / 2, layerY);
+      ctx.lineTo(topX + layerWidth / 2, layerY);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  
+  ctx.restore();
+}
+
+function drawGround() {
+  const groundY = H * 0.85;
+  const groundGrad = ctx.createLinearGradient(0, groundY, 0, H);
+  groundGrad.addColorStop(0, getGroundColor());
+  groundGrad.addColorStop(1, '#050a05');
+  ctx.fillStyle = groundGrad;
+  ctx.fillRect(0, groundY, W, H - groundY);
+  
+  // Grass tufts
+  ctx.strokeStyle = getGroundColor();
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 8) {
+    const h = 3 + Math.sin(x * 0.1 + time * 5) * 2;
+    ctx.beginPath();
+    ctx.moveTo(x, groundY);
+    ctx.lineTo(x + 1, groundY - h);
+    ctx.stroke();
+  }
+}
+
+function drawFireflies() {
+  const nightFactor = time < 0.2 || time > 0.75 ? 1 : time < 0.35 ? 1 - (time - 0.2) / 0.15 : time > 0.65 ? (time - 0.75) / 0.15 : 0;
+  if (nightFactor <= 0) return;
+  
+  ctx.save();
+  fireflies.forEach(ff => {
+    ff.phase += 0.03;
+    ff.brightness = 0.3 + Math.sin(ff.phase) * 0.3 + 0.3;
+    
+    // Attract to mouse at night
+    if (nightFactor > 0.5) {
+      const dx = mouseX - ff.x;
+      const dy = mouseY - ff.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 200 && dist > 5) {
+        ff.vx += (dx / dist) * 0.02;
+        ff.vy += (dy / dist) * 0.02;
+      }
+    }
+    
+    ff.x += ff.vx;
+    ff.y += ff.vy;
+    ff.vx *= 0.99;
+    ff.vy *= 0.99;
+    
+    // Bounds
+    if (ff.x < 0) ff.x = W;
+    if (ff.x > W) ff.x = 0;
+    if (ff.y < H * 0.5) ff.vy += 0.01;
+    if (ff.y > H * 0.9) ff.vy -= 0.01;
+    
+    // Draw
+    ctx.save();
+    ctx.globalAlpha = ff.brightness * nightFactor;
+    const glow = ctx.createRadialGradient(ff.x, ff.y, 0, ff.x, ff.y, 8);
+    glow.addColorStop(0, 'rgba(200, 255, 100, 0.8)');
+    glow.addColorStop(0.5, 'rgba(150, 255, 50, 0.3)');
+    glow.addColorStop(1, 'rgba(100, 255, 0, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(ff.x - 8, ff.y - 8, 16, 16);
+    ctx.restore();
+  });
+  ctx.restore();
+}
+
+function drawBirds() {
+  birds.forEach((bird, idx) => {
+    bird.wingPhase += bird.wingSpeed;
+    bird.x += bird.vx;
+    bird.y += bird.vy;
+    bird.life -= bird.decay;
+    
+    // Slight upward drift
+    bird.vy -= 0.005;
+    
+    // Trail
+    bird.trail.push({ x: bird.x, y: bird.y, life: 1 });
+    if (bird.trail.length > 20) bird.trail.shift();
+    bird.trail.forEach(t => t.life -= 0.05);
+    
+    // Call periodically
+    bird.callTimer++;
+    if (bird.callTimer > bird.callInterval && Math.random() < 0.3) {
+      playBirdCall(bird.type);
+      bird.callTimer = 0;
+      bird.callInterval = 60 + Math.random() * 120;
+    }
+    
+    // Draw trail
+    ctx.save();
+    bird.trail.forEach((t, i) => {
+      if (t.life <= 0) return;
+      ctx.globalAlpha = t.life * 0.2 * bird.life;
+      ctx.fillStyle = bird.type.color;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, 2 * t.life, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    
+    // Draw bird
+    ctx.globalAlpha = bird.life;
+    const wingFlap = Math.sin(bird.wingPhase) * bird.type.wingSpan * 0.5;
+    
+    ctx.strokeStyle = bird.type.color;
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round';
+    
+    // Body
+    ctx.beginPath();
+    ctx.moveTo(bird.x - bird.type.wingSpan * 0.5, bird.y + wingFlap * 0.3);
+    ctx.lineTo(bird.x + bird.type.wingSpan * 0.5, bird.y + wingFlap * 0.3);
+    ctx.stroke();
+    
+    // Wings
+    ctx.beginPath();
+    ctx.moveTo(bird.x, bird.y);
+    ctx.lineTo(bird.x - bird.type.wingSpan * 0.4, bird.y - Math.abs(wingFlap));
+    ctx.moveTo(bird.x, bird.y);
+    ctx.lineTo(bird.x + bird.type.wingSpan * 0.4, bird.y - Math.abs(wingFlap));
+    ctx.stroke();
+    
+    ctx.restore();
+    
+    // Remove dead birds
+    if (bird.life <= 0 || bird.x < -50 || bird.x > W + 50 || bird.y < -50 || bird.y > H + 50) {
+      birds.splice(idx, 1);
+    }
+  });
+}
+
+function drawShootingStars() {
+  shootingStars.forEach((ss, idx) => {
+    ss.x += ss.vx;
+    ss.y += ss.vy;
+    ss.life -= 0.02;
+    
+    const grad = ctx.createLinearGradient(ss.x, ss.y, ss.x - ss.vx * ss.length * 0.1, ss.y - ss.vy * ss.length * 0.1);
+    grad.addColorStop(0, `rgba(255, 255, 255, ${ss.life})`);
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(ss.x, ss.y);
+    ctx.lineTo(ss.x - ss.vx * ss.length * 0.1, ss.y - ss.vy * ss.length * 0.1);
+    ctx.stroke();
+    
+    if (ss.life <= 0 || ss.x > W + 50 || ss.y > H + 50) {
+      shootingStars.splice(idx, 1);
+    }
+  });
+}
+
+function drawCursor() {
+  // Custom cursor — small crosshair
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(mouseX, mouseY, 6, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(mouseX - 10, mouseY);
+  ctx.lineTo(mouseX - 3, mouseY);
+  ctx.moveTo(mouseX + 3, mouseY);
+  ctx.lineTo(mouseX + 10, mouseY);
+  ctx.moveTo(mouseX, mouseY - 10);
+  ctx.lineTo(mouseX, mouseY - 3);
+  ctx.moveTo(mouseX, mouseY + 3);
+  ctx.lineTo(mouseX, mouseY + 10);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawClickRipple() {
+  if (!clicked) return;
+  clicked = false;
+  
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(clickX, clickY, 20, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ─── Main Loop ───
+let frameCount = 0;
+function draw() {
+  if (!paused) {
+    time += timeSpeed;
+    if (time > 1) time -= 1;
+  }
+  
+  frameCount++;
+  
+  // Clear
+  ctx.clearRect(0, 0, W, H);
+  
+  // Draw layers
+  drawSky();
+  drawStars();
+  drawClouds();
+  drawShootingStars();
+  maybeSpawnShootingStar();
+  
+  // Trees
+  trees.forEach(tree => drawTree(tree));
+  
+  // Ground
+  drawGround();
+  
+  // Birds
+  drawBirds();
+  
+  // Fireflies
+  drawFireflies();
+  
+  // Click ripple
+  drawClickRipple();
+  
+  // Cursor
+  drawCursor();
+  
+  // UI updates
+  const hour = Math.floor(time * 24);
+  const minute = Math.floor((time * 24 - hour) * 60);
+  const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+  const tDisplay = document.getElementById('time-display');
+  tDisplay.textContent = `${timeStr} · ${seasonNames[season]} · ${paused ? '⏸ paused' : '▶ live'}`;
+  
+  // Ambient audio
+  if (frameCount % 60 === 0) updateAmbient();
+  
+  requestAnimationFrame(draw);
+}
+
+// ─── Input ───
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  
+  if (!instructionsHidden) {
+    document.getElementById('instructions').classList.add('hidden');
+    instructionsHidden = true;
+  }
+});
+
+canvas.addEventListener('click', e => {
+  initAudio();
+  startAmbient();
+  clicked = true;
+  clickX = e.clientX;
+  clickY = e.clientY;
+  spawnBird(e.clientX, e.clientY);
+});
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  initAudio();
+  startAmbient();
+  const touch = e.touches[0];
+  clicked = true;
+  clickX = touch.clientX;
+  clickY = touch.clientY;
+  mouseX = touch.clientX;
+  mouseY = touch.clientY;
+  spawnBird(touch.clientX, touch.clientY);
+  
+  if (!instructionsHidden) {
+    document.getElementById('instructions').classList.add('hidden');
+    instructionsHidden = true;
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    paused = !paused;
+  } else if (e.key >= '1' && e.key <= '4') {
+    season = parseInt(e.key) - 1;
+  } else if (e.code === 'KeyS') {
+    // Save screenshot (triggers browser download hint)
+    const link = document.createElement('a');
+    link.download = 'dawn-chorus.png';
+    link.href = canvas.toDataURL();
+    link.click();
+  }
+});
+
+// Start
+draw();
+</script>
+</body>
+</html>
