@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aurora Loom</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: -apple-system, system-ui, sans-serif;
+    color: #fff;
+  }
+  canvas { display: block; cursor: crosshair; }
+  .info {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    background: rgba(0,0,0,0.6);
+    padding: 12px 18px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1);
+    max-width: 280px;
+  }
+  .info h1 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+    background: linear-gradient(90deg, #00ffaa, #00aaff, #ff00ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .info p {
+    color: #aaa;
+    font-size: 0.78rem;
+  }
+  .stats {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(0,0,0,0.6);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    color: #666;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div class="info">
+  <h1>Aurora Loom</h1>
+  <p>Move your mouse to weave light through the northern sky. Click to pulse. Space to change palette.</p>
+</div>
+<div class="stats" id="stats">strands: 0 | particles: 0</div>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const stats = document.getElementById('stats');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const mouse = { x: W / 2, y: H / 2, active: false };
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => mouse.active = false);
+canvas.addEventListener('click', () => {
+  pulseActive = 1.0;
+  pulseX = mouse.x;
+  pulseY = mouse.y;
+});
+
+let pulseActive = 0;
+let pulseX = W/2, pulseY = H/2;
+
+const palettes = [
+  { name: 'Arctic', colors: ['#00ffaa', '#00ddff', '#0099ff', '#6633ff', '#cc33ff'] },
+  { name: 'Ember', colors: ['#ff6633', '#ff3366', '#ff00aa', '#ff6633', '#ffaa00'] },
+  { name: 'Deep', colors: ['#0033ff', '#0066ff', '#00ccff', '#00ffcc', '#00ff66'] },
+  { name: 'Aurora', colors: ['#00ff88', '#00ffcc', '#00ccff', '#6633ff', '#ff33cc'] },
+  { name: 'Monochrome', colors: ['#ffffff', '#cccccc', '#999999', '#666666', '#ffffff'] }
+];
+let paletteIdx = 0;
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    paletteIdx = (paletteIdx + 1) % palettes.length;
+    console.log('Palette:', palettes[paletteIdx].name);
+  }
+});
+
+class Strand {
+  constructor(x, y, phase) {
+    this.baseX = x;
+    this.baseY = y;
+    this.x = x;
+    this.y = y;
+    this.phase = phase;
+    this.speed = 0.3 + Math.random() * 0.7;
+    this.amplitude = 30 + Math.random() * 80;
+    this.frequency = 0.002 + Math.random() * 0.003;
+    this.thickness = 0.5 + Math.random() * 1.5;
+    this.opacity = 0.1 + Math.random() * 0.4;
+    this.colorIdx = Math.floor(Math.random() * 5);
+    this.length = 80 + Math.random() * 200;
+    this.offset = Math.random() * 1000;
+  }
+
+  update(t) {
+    const wave = Math.sin(t * this.speed * 0.001 + this.phase + this.offset) * this.amplitude;
+    const wave2 = Math.cos(t * this.speed * 0.0007 + this.phase * 1.5) * this.amplitude * 0.5;
+
+    this.x = this.baseX + wave;
+    this.y = this.baseY + wave2;
+
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const influence = Math.max(0, 1 - dist / 250);
+      this.x += dx * influence * 0.15;
+      this.y += dy * influence * 0.15;
+    }
+
+    if (pulseActive > 0) {
+      const dx = this.x - pulseX;
+      const dy = this.y - pulseY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const ripple = Math.sin(dist * 0.02 - t * 0.01) * pulseActive * 50;
+      const influence = Math.max(0, 1 - dist / 300);
+      this.x += (dx / (dist + 1)) * ripple * influence;
+      this.y += (dy / (dist + 1)) * ripple * influence;
+    }
+  }
+
+  draw(ctx, t) {
+    const palette = palettes[paletteIdx].colors;
+    const color = palette[this.colorIdx];
+    const alpha = this.opacity * (0.7 + 0.3 * Math.sin(t * 0.001 + this.phase));
+
+    const segments = 20;
+    const segLen = this.length / segments;
+
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y);
+
+    for (let i = 1; i <= segments; i++) {
+      const segT = i / segments;
+      const falloff = 1 - segT;
+      const wave = Math.sin(t * this.speed * 0.0015 + this.phase + i * 0.3 + this.offset) * this.amplitude * falloff * 0.3;
+      const px = this.x + wave + Math.cos(t * 0.0005 + this.phase) * falloff * 20;
+      const py = this.y + i * segLen * 0.5;
+      ctx.lineTo(px, py);
+    }
+
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = this.thickness;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+}
+
+class Particle {
+  constructor() {
+    this.reset();
+  }
+
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.vx = (Math.random() - 0.5) * 0.5;
+    this.vy = -0.2 - Math.random() * 0.8;
+    this.size = 1 + Math.random() * 2;
+    this.opacity = 0.2 + Math.random() * 0.5;
+    this.life = 0;
+    this.maxLife = 200 + Math.random() * 300;
+    this.colorIdx = Math.floor(Math.random() * 5);
+  }
+
+  update(t) {
+    const palette = palettes[paletteIdx].colors;
+    const color = palette[this.colorIdx];
+
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life++;
+
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 150) {
+        this.vx += (dx / dist) * 0.05;
+        this.vy += (dy / dist) * 0.05;
+      }
+    }
+
+    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    if (speed > 2) {
+      this.vx *= 0.98;
+      this.vy *= 0.98;
+    }
+
+    if (this.life > this.maxLife || this.y < -20 || this.x < -20 || this.x > W + 20) {
+      this.reset();
+      this.y = H + 10;
+    }
+
+    const lifeFade = 1 - (this.life / this.maxLife);
+    const alpha = this.opacity * lifeFade;
+
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = alpha;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+const strands = [];
+const particles = [];
+const NUM_STRANDS = 60;
+const NUM_PARTICLES = 120;
+
+for (let i = 0; i < NUM_STRANDS; i++) {
+  strands.push(new Strand(
+    (W / NUM_STRANDS) * i + Math.random() * 40,
+    H * 0.3 + Math.random() * H * 0.5,
+    (Math.PI * 2 / NUM_STRANDS) * i
+  ));
+}
+
+for (let i = 0; i < NUM_PARTICLES; i++) {
+  particles.push(new Particle());
+}
+
+let lastTime = 0;
+function animate(t) {
+  const dt = t - lastTime;
+  lastTime = t;
+
+  ctx.fillStyle = 'rgba(0, 0, 2, 0.15)';
+  ctx.fillRect(0, 0, W, H);
+
+  strands.forEach(s => {
+    s.update(t);
+    s.draw(ctx, t);
+  });
+
+  particles.forEach(p => p.update(t));
+
+  if (pulseActive > 0) {
+    pulseActive *= 0.95;
+    if (pulseActive < 0.01) pulseActive = 0;
+  }
+
+  if (Math.floor(t / 5000) !== Math.floor((t - dt) / 5000)) {
+    stats.textContent = `strands: ${strands.length} | particles: ${particles.length} | palette: ${palettes[paletteIdx].name}`;
+  }
+
+  requestAnimationFrame(animate);
+}
+
+stats.textContent = `strands: ${strands.length} | particles: ${particles.length} | palette: ${palettes[paletteIdx].name}`;
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
