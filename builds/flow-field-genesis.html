@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flow Field Genesis</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #aaa;
+  }
+  canvas {
+    display: block;
+    cursor: crosshair;
+  }
+  #ui {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    background: rgba(10, 10, 15, 0.85);
+    padding: 16px 20px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.08);
+    font-size: 12px;
+    backdrop-filter: blur(10px);
+    max-width: 280px;
+  }
+  #ui h2 {
+    font-size: 13px;
+    margin-bottom: 10px;
+    color: #e0e0e0;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  #ui .stat {
+    margin: 4px 0;
+    color: #888;
+  }
+  #ui .stat span { color: #ccc; }
+  #ui .controls {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  #ui .controls label {
+    display: block;
+    margin: 6px 0 3px;
+    font-size: 11px;
+    color: #777;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  #ui input[type="range"] {
+    width: 100%;
+    accent-color: #6af;
+    margin-bottom: 2px;
+  }
+  #ui button {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: #ccc;
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    margin: 4px 4px 4px 0;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+  }
+  #ui button:hover {
+    background: rgba(255,255,255,0.12);
+    border-color: rgba(255,255,255,0.25);
+    color: #fff;
+  }
+  #ui .hint {
+    margin-top: 10px;
+    font-size: 10px;
+    color: #555;
+    font-style: italic;
+  }
+  .color-dot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h2>◈ Flow Field Genesis</h2>
+  <div class="stat">Particles: <span id="pCount">0</span></div>
+  <div class="stat">FPS: <span id="fps">0</span></div>
+  <div class="stat">Mode: <span id="mode">Flow</span></div>
+  <div class="controls">
+    <label>Turbulence</label>
+    <input type="range" id="turbulence" min="0.001" max="0.04" step="0.001" value="0.008">
+    <label>Speed</label>
+    <input type="range" id="speed" min="0.2" max="5" step="0.1" value="1.5">
+    <label>Trail Fade</label>
+    <input type="range" id="fade" min="0.01" max="0.15" step="0.005" value="0.04">
+    <label>Color Palette</label>
+    <button onclick="setPalette('aurora')" title="Aurora"><span class="color-dot" style="background:linear-gradient(135deg,#0ff,#f0f)"></span>Aurora</button>
+    <button onclick="setPalette('ember')" title="Ember"><span class="color-dot" style="background:linear-gradient(135deg,#f80,#f00)"></span>Ember</button>
+    <button onclick="setPalette('ocean')" title="Ocean"><span class="color-dot" style="background:linear-gradient(135deg,#06c,#0ff)"></span>Ocean</button>
+    <button onclick="setPalette('neon')" title="Neon"><span class="color-dot" style="background:linear-gradient(135deg,#f0f,#0f0)"></span>Neon</button>
+    <button onclick="setPalette('mono')" title="Mono"><span class="color-dot" style="background:linear-gradient(135deg,#fff,#333)"></span>Mono</button>
+    <div style="margin-top:8px">
+      <button onclick="resetField()">⟳ Reset</button>
+      <button onclick="toggleMode()">◎ Mode</button>
+      <button onclick="saveImage()">⬇ Save</button>
+    </div>
+  </div>
+  <div class="hint">Click to attract · Space to pause</div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+let particles = [];
+let mouse = { x: -9999, y: -9999, active: false };
+let time = 0;
+let paused = false;
+let mode = 0; // 0 = flow, 1 = orbit, 2 = chaos
+const MODES = ['Flow', 'Orbit', 'Chaos'];
+const MAX_PARTICLES = 3000;
+
+// Palettes
+const palettes = {
+  aurora: [[0,255,255],[0,200,255],[128,0,255],[255,0,255],[0,255,200]],
+  ember:  [[255,160,0],[255,100,0],[255,60,0],[255,200,50],[200,0,0]],
+  ocean:  [[0,80,200],[0,150,255],[0,200,220],[50,255,255],[0,100,180]],
+  neon:   [[255,0,255],[0,255,0],[255,0,128],[0,255,255],[255,255,0]],
+  mono:   [[220,220,220],[180,180,180],[140,140,140],[200,200,200],[160,160,160]]
+};
+let palette = palettes.aurora;
+let paletteName = 'aurora';
+
+// Simplex-like noise (simplified)
+function noise(x, y, t) {
+  const s = Math.sin(x * 0.01 + t) * Math.cos(y * 0.01 - t * 0.7) * Math.sin((x + y) * 0.005 + t * 0.5);
+  const s2 = Math.cos(x * 0.02 - t * 0.3) * Math.sin(y * 0.015 + t * 0.4);
+  return (s + s2) * 0.5;
+}
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, W, H);
+}
+
+class Particle {
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.vx = 0; this.vy = 0;
+    this.life = 0;
+    this.maxLife = 200 + Math.random() * 400;
+    this.color = palette[Math.floor(Math.random() * palette.length)];
+    this.size = 0.5 + Math.random() * 1.5;
+    this.history = [];
+  }
+  update(turb, spd, t) {
+    let angle;
+    if (mode === 0) {
+      angle = noise(this.x, this.y, t) * Math.PI * 4;
+    } else if (mode === 1) {
+      const cx = W/2, cy = H/2;
+      const dx = this.x - cx, dy = this.y - cy;
+      const dist = Math.sqrt(dx*dx + dy*dy) + 0.001;
+      angle = Math.atan2(dy, dx) + Math.PI/2 + noise(this.x * 0.02, this.y * 0.02, t) * 1.5;
+      // Pull toward center
+      this.vx += (cx - this.x) * 0.00005;
+      this.vy += (cy - this.y) * 0.00005;
+    } else {
+      angle = noise(this.x * 0.03, this.y * 0.03, t * 2) * Math.PI * 6 + t * 3;
+    }
+    this.vx += Math.cos(angle) * turb;
+    this.vy += Math.sin(angle) * turb;
+    // Mouse attraction
+    if (mouse.active) {
+      const dx = mouse.x - this.x, dy = mouse.y - this.y;
+      const d = Math.sqrt(dx*dx + dy*dy) + 1;
+      if (d < 200) {
+        const force = (200 - d) / 200 * 0.3;
+        this.vx += (dx / d) * force;
+        this.vy += (dy / d) * force;
+      }
+    }
+    // Damping
+    this.vx *= 0.98; this.vy *= 0.98;
+    // Speed limit
+    const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
+    const maxSpeed = spd * 2;
+    if (speed > maxSpeed) {
+      this.vx = (this.vx / speed) * maxSpeed;
+      this.vy = (this.vy / speed) * maxSpeed;
+    }
+    const nx = this.x + this.vx * spd;
+    const ny = this.y + this.vy * spd;
+    this.history.push({x: this.x, y: this.y});
+    if (this.history.length > 6) this.history.shift();
+    this.x = nx; this.y = ny;
+    this.life++;
+    if (this.life > this.maxLife || nx < -50 || nx > W+50 || ny < -50 || ny > H+50) {
+      this.reset();
+    }
+  }
+  draw(ctx) {
+    const alpha = Math.min(1, this.life / 30) * Math.min(1, (this.maxLife - this.life) / 60) * 0.7;
+    const [r, g, b] = this.color;
+    if (this.history.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(this.history[0].x, this.history[0].y);
+      for (let i = 1; i < this.history.length; i++) {
+        ctx.lineTo(this.history[i].x, this.history[i].y);
+      }
+      ctx.lineTo(this.x, this.y);
+      ctx.strokeStyle = `rgba(${r},${g},${b},${alpha * 0.5})`;
+      ctx.lineWidth = this.size * 0.7;
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * 0.6, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+    ctx.fill();
+  }
+}
+
+function init() {
+  resize();
+  particles = [];
+  for (let i = 0; i < MAX_PARTICLES; i++) {
+    particles.push(new Particle());
+  }
+}
+
+function setPalette(name) {
+  paletteName = name;
+  palette = palettes[name];
+  document.getElementById('mode').textContent = MODES[mode];
+}
+
+function resetField() {
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, W, H);
+  particles.forEach(p => p.reset());
+}
+
+function toggleMode() {
+  mode = (mode + 1) % MODES.length;
+  document.getElementById('mode').textContent = MODES[mode];
+}
+
+function saveImage() {
+  const link = document.createElement('a');
+  link.download = `flow-field-${Date.now()}.png`;
+  link.href = canvas.toDataURL();
+  link.click();
+}
+
+let lastTime = performance.now();
+let frameCount = 0;
+let fpsDisplay = 0;
+let fpsTimer = 0;
+
+function animate(now) {
+  if (!paused) {
+    const dt = (now - lastTime) / 1000;
+    lastTime = now;
+    time += dt;
+    // FPS
+    frameCount++;
+    fpsTimer += dt;
+    if (fpsTimer >= 0.5) {
+      fpsDisplay = Math.round(frameCount / fpsTimer);
+      frameCount = 0; fpsTimer = 0;
+      document.getElementById('fps').textContent = fpsDisplay;
+      document.getElementById('pCount').textContent = particles.length;
+    }
+    // Fade trail
+    const fadeVal = parseFloat(document.getElementById('fade').value);
+    ctx.fillStyle = `rgba(10,10,15,${fadeVal})`;
+    ctx.fillRect(0, 0, W, H);
+    // Update & draw
+    const turb = parseFloat(document.getElementById('turbulence').value);
+    const spd = parseFloat(document.getElementById('speed').value);
+    for (const p of particles) {
+      p.update(turb, spd, time);
+      p.draw(ctx);
+    }
+    // Mouse glow
+    if (mouse.active) {
+      const grd = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 150);
+      grd.addColorStop(0, 'rgba(255,255,255,0.03)');
+      grd.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = grd;
+      ctx.fillRect(mouse.x - 150, mouse.y - 150, 300, 300);
+    }
+  }
+  requestAnimationFrame(animate);
+}
+
+// Events
+window.addEventListener('resize', resize);
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('mousedown', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+});
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); paused = !paused; }
+});
+
+init();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
