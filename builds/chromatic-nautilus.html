@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chromatic Nautilus — Generative Spiral</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #030308;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    cursor: crosshair;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0; left: 0;
+  }
+  .controls {
+    position: fixed;
+    bottom: 1.2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.6rem 1rem;
+    background: rgba(8, 8, 20, 0.75);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 999px;
+    z-index: 10;
+    align-items: center;
+    font-size: 0.75rem;
+    color: #888;
+    letter-spacing: 0.05em;
+  }
+  .controls button {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #ccc;
+    padding: 0.4rem 0.7rem;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+    transition: all 0.2s;
+  }
+  .controls button:hover { background: rgba(255,255,255,0.14); color: #fff; }
+  .controls .sep { width: 1px; height: 16px; background: rgba(255,255,255,0.08); margin: 0 0.3rem; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div class="controls">
+  <span>CHROMATIC NAUTILUS</span>
+  <div class="sep"></div>
+  <button id="btnMode">MODE: GROW</button>
+  <button id="btnPalette">PALETTE</button>
+  <button id="btnBurst">BURST</button>
+  <button id="btnClear">CLEAR</button>
+  <button id="btnSave">SAVE</button>
+  <div class="sep"></div>
+  <span id="stats">0 shells</span>
+</div>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H, DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ---- State ----
+const mouse = { x: W / 2, y: H / 2, active: false };
+let shells = [];
+let particles = [];
+let time = 0;
+let mode = 'grow'; // grow | breathe | drift | bloom
+let paletteIdx = 0;
+
+// ---- Palettes ----
+const palettes = [
+  { name: 'Aurora',   colors: ['#00f0ff', '#00ff9d', '#a0ff00', '#ff00e5', '#7b2fff', '#00c8ff'] },
+  { name: 'Ember',    colors: ['#ff4d00', '#ff9500', '#ffcc00', '#ff0044', '#ff6600', '#ffe0a0'] },
+  { name: 'Deep',     colors: ['#0a2463', '#1e5f74', '#3e92cc', '#ffd670', '#dac0a3', '#a7b49e'] },
+  { name: 'Violet',   colors: ['#7b2fff', '#c850c0', '#ff6ec7', '#b388ff', '#e040fb', '#ff80ab'] },
+  { name: 'Mono',     colors: ['#ffffff', '#c8c8c8', '#989898', '#686868', '#383838', '#e8e8e8'] },
+  { name: 'Toxic',    colors: ['#39ff14', '#00ff88', '#adff02', '#00ffcc', '#76ff7a', '#ccff00'] },
+];
+
+function palette() { return palettes[paletteIdx % palettes.length].colors; }
+
+// ---- Utilities ----
+const TAU = Math.PI * 2;
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5)); // ~2.39996 rad
+
+function rand(a, b) { return a + Math.random() * (b - a); }
+function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
+
+// ---- Shell class ----
+class Shell {
+  constructor(x, y, hueBase) {
+    this.x = x;
+    this.y = y;
+    this.angle = rand(0, TAU);
+    this.growth = 0;
+    this.maxGrowth = rand(0.5, 1);
+    this.speed = rand(0.003, 0.012);
+    this.spiralTightness = rand(0.6, 1.4);
+    this.points = [];
+    this.maxPoints = Math.floor(rand(80, 280));
+    this.hueBase = hueBase !== undefined ? hueBase : rand(0, 360);
+    this.rotSpeed = rand(-0.0003, 0.0003);
+    this.driftX = rand(-0.15, 0.15);
+    this.driftY = rand(-0.15, 0.15);
+    this.scale = rand(0.6, 1.6);
+    this.life = 1;
+    this.decay = rand(0.0001, 0.0004);
+    this.paused = false;
+  }
+
+  update() {
+    if (this.paused) return;
+    this.angle += this.rotSpeed;
+    this.x += this.driftX;
+    this.y += this.driftY;
+
+    if (mode === 'grow') {
+      this.growth = Math.min(this.growth + this.speed, this.maxGrowth);
+      if (this.growth >= this.maxGrowth && this.points.length < this.maxPoints) {
+        this.points.push(this.createPoint());
+      }
+    } else if (mode === 'breathe') {
+      this.growth = 0.5 + 0.5 * Math.sin(time * 0.0008 + this.hueBase);
+      if (this.points.length < this.maxPoints && Math.random() < 0.08) {
+        this.points.push(this.createPoint());
+      }
+    } else if (mode === 'drift') {
+      this.growth = this.maxGrowth;
+      if (this.points.length < this.maxPoints) {
+        this.points.push(this.createPoint());
+      }
+    } else if (mode === 'bloom') {
+      this.growth = Math.min(this.growth + this.speed * 1.6, this.maxGrowth);
+      if (this.growth >= this.maxGrowth && this.points.length < this.maxPoints) {
+        for (let i = 0; i < 4; i++) this.points.push(this.createPoint());
+      }
+    }
+
+    this.life -= this.decay;
+    // update particles
+    for (let p of this.points) {
+      p.angle += p.angSpeed;
+      p.r += p.dr;
+      if (mode === 'drift') {
+        p.r += Math.sin(time * 0.001 + p.hue) * 0.02;
+      }
+    }
+  }
+
+  createPoint() {
+    const idx = this.points.length;
+    const spiralR = Math.sqrt(idx) * this.spiralTightness * this.scale * 3.5;
+    const theta = idx * GOLDEN_ANGLE + this.angle;
+    const col = palette()[idx % palette().length];
+    return {
+      r: spiralR,
+      theta: theta,
+      angSpeed: rand(-0.0004, 0.0004),
+      dr: rand(-0.03, 0.03),
+      size: rand(0.6, 2.4),
+      hue: (this.hueBase + idx * 3.7) % 360,
+      color: col,
+      alpha: rand(0.35, 1),
+      life: 1,
+      twinkleSpeed: rand(0.001, 0.004),
+      twinkleOffset: rand(0, TAU),
+    };
+  }
+
+  draw(ctx) {
+    if (this.life <= 0) return;
+    const cx = this.x + Math.sin(time * 0.0005 + this.hueBase) * 12;
+    const cy = this.y + Math.cos(time * 0.0006 + this.hueBase) * 12;
+
+    // Glowing center
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 18);
+    glow.addColorStop(0, 'rgba(255,255,255,0.35)');
+    glow.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 18, 0, TAU);
+    ctx.fill();
+
+    // Draw spiral points
+    for (let p of this.points) {
+      const twinkle = 0.5 + 0.5 * Math.sin(time * p.twinkleSpeed + p.twinkleOffset);
+      const a = p.alpha * this.life * (0.55 + 0.45 * twinkle);
+      if (a <= 0.01) continue;
+      const px = cx + Math.cos(p.theta) * p.r * this.growth;
+      const py = cy + Math.sin(p.theta) * p.r * this.growth;
+      const sz = p.size * (0.7 + 0.3 * twinkle);
+
+      ctx.globalAlpha = a;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(px, py, sz, 0, TAU);
+      ctx.fill();
+
+      // connection filaments between nearby points
+      for (let q of this.points) {
+        if (q === p) continue;
+        const d = dist(
+          cx + Math.cos(p.theta) * p.r * this.growth,
+          cy + Math.sin(p.theta) * p.r * this.growth,
+          cx + Math.cos(q.theta) * q.r * this.growth,
+          cy + Math.sin(q.theta) * q.r * this.growth
+        );
+        if (d < 22) {
+          ctx.strokeStyle = p.color;
+          ctx.lineWidth = 0.2;
+          ctx.globalAlpha = a * 0.18 * (1 - d / 22);
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(p.theta) * p.r * this.growth, cy + Math.sin(p.theta) * p.r * this.growth);
+          ctx.lineTo(cx + Math.cos(q.theta) * q.r * this.growth, cy + Math.sin(q.theta) * q.r * this.growth);
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  containsPoint(px, py) {
+    return dist(this.x, this.y, px, py) < 40;
+  }
+}
+
+// ---- Burst particles ----
+class BurstParticle {
+  constructor(x, y, color) {
+    this.x = x; this.y = y;
+    const a = rand(0, TAU);
+    const s = rand(0.3, 3.5);
+    this.vx = Math.cos(a) * s;
+    this.vy = Math.sin(a) * s;
+    this.life = 1;
+    this.decay = rand(0.005, 0.025);
+    this.size = rand(0.4, 2);
+    this.color = color;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vx *= 0.995;
+    this.vy *= 0.995;
+    this.life -= this.decay;
+  }
+  draw(ctx) {
+    if (this.life <= 0) return;
+    ctx.globalAlpha = this.life * 0.85;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, TAU);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ---- Stars background ----
+const stars = Array.from({ length: 180 }, () => ({
+  x: rand(0, 1), y: rand(0, 1),
+  r: rand(0.15, 0.9),
+  tw: rand(0.0003, 0.002),
+  to: rand(0, TAU),
+}));
+
+function drawStars() {
+  for (const s of stars) {
+    const tw = 0.4 + 0.6 * Math.sin(time * s.tw + s.to);
+    ctx.globalAlpha = tw * 0.7;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(s.x * W, s.y * H, s.r, 0, TAU);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---- Initial seeds ----
+for (let i = 0; i < 4; i++) {
+  shells.push(new Shell(rand(W * 0.2, W * 0.8), rand(H * 0.2, H * 0.8)));
+}
+
+// ---- Interactions ----
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+  // Attract nearest shell slightly
+  for (const s of shells) {
+    const d = dist(s.x, s.y, mouse.x, mouse.y);
+    if (d < 180) {
+      const force = (180 - d) / 180 * 0.025;
+      s.x += (mouse.x - s.x) * force;
+      s.y += (mouse.y - s.y) * force;
+    }
+  }
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+
+canvas.addEventListener('click', e => {
+  const cx = e.clientX, cy = e.clientY;
+  if (mode === 'bloom') {
+    shells.push(new Shell(cx, cy));
+  } else {
+    // burst nearby shells
+    for (const s of shells) {
+      if (s.containsPoint(cx, cy)) {
+        s.points = [];
+        s.growth = 0;
+        s.maxGrowth = rand(0.5, 1);
+        for (let i = 0; i < 12; i++) {
+          particles.push(new BurstParticle(s.x, s.y, palette()[i % palette().length]));
+        }
+      }
+    }
+    // always spawn a tiny burst
+    for (let i = 0; i < 8; i++) {
+      particles.push(new BurstParticle(cx, cy, palette()[i % palette().length]));
+    }
+  }
+});
+
+// Buttons
+document.getElementById('btnMode').addEventListener('click', () => {
+  const modes = ['grow', 'breathe', 'drift', 'bloom'];
+  const idx = (modes.indexOf(mode) + 1) % modes.length;
+  mode = modes[idx];
+  document.getElementById('btnMode').textContent = 'MODE: ' + mode.toUpperCase();
+});
+document.getElementById('btnPalette').addEventListener('click', () => {
+  paletteIdx = (paletteIdx + 1) % palettes.length;
+  // recolor all points
+  for (const s of shells) {
+    for (let i = 0; i < s.points.length; i++) {
+      s.points[i].color = palette()[i % palette().length];
+    }
+  }
+});
+document.getElementById('btnBurst').addEventListener('click', () => {
+  for (const s of shells) {
+    s.points = [];
+    s.growth = 0;
+    s.maxGrowth = rand(0.5, 1);
+    for (let i = 0; i < 20; i++) {
+      particles.push(new BurstParticle(s.x, s.y, palette()[i % palette().length]));
+    }
+  }
+});
+document.getElementById('btnClear').addEventListener('click', () => {
+  shells = [];
+  particles = [];
+});
+document.getElementById('btnSave').addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = 'chromatic-nautilus-' + Date.now() + '.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+// ---- Loop ----
+function frame(ts) {
+  time = ts || 0;
+  ctx.globalAlpha = 1;
+
+  // Fade background for trails
+  ctx.fillStyle = 'rgba(3, 3, 8, 0.12)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  if (Math.floor(time / 800) !== Math.floor((time - 16) / 800)) {
+    drawStars();
+  }
+
+  // Update & draw shells
+  for (const s of shells) s.update();
+  for (const s of shells) s.draw(ctx);
+
+  // Remove dead shells
+  shells = shells.filter(s => s.life > 0);
+
+  // Auto-seed in bloom mode
+  if (mode === 'bloom' && shells.length < 18 && Math.random() < 0.003) {
+    shells.push(new Shell(rand(0, W), rand(0, H)));
+  }
+
+  // Particles
+  for (const p of particles) p.update();
+  for (const p of particles) p.draw(ctx);
+  particles = particles.filter(p => p.life > 0);
+
+  // Mouse glow
+  if (mouse.active) {
+    const mg = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 90);
+    mg.addColorStop(0, 'rgba(255,255,255,0.04)');
+    mg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = mg;
+    ctx.beginPath();
+    ctx.arc(mouse.x, mouse.y, 90, 0, TAU);
+    ctx.fill();
+  }
+
+  // Stats
+  const total = shells.reduce((n, s) => n + s.points.length, 0) + particles.length;
+  document.getElementById('stats').textContent = shells.length + ' shells · ' + total + ' points';
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
