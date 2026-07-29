@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aether Flow — Generative Cosmic Field</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000010;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+      cursor: crosshair;
+    }
+    canvas { display: block; }
+    #controls {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      z-index: 10;
+      opacity: 0.7;
+      transition: opacity 0.3s;
+    }
+    #controls:hover { opacity: 1; }
+    .btn {
+      background: rgba(10, 10, 40, 0.8);
+      border: 1px solid rgba(100, 140, 255, 0.4);
+      color: rgba(180, 210, 255, 0.9);
+      padding: 8px 18px;
+      cursor: pointer;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      border-radius: 4px;
+      backdrop-filter: blur(8px);
+      transition: all 0.2s;
+      letter-spacing: 0.5px;
+    }
+    .btn:hover {
+      border-color: rgba(150, 180, 255, 0.8);
+      color: #fff;
+      background: rgba(20, 30, 80, 0.9);
+      box-shadow: 0 0 15px rgba(80, 120, 255, 0.3);
+    }
+    #info {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(120, 150, 200, 0.5);
+      font-size: 11px;
+      letter-spacing: 1px;
+      z-index: 10;
+      pointer-events: none;
+    }
+    #hue-indicator {
+      position: fixed;
+      top: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(150, 180, 220, 0.6);
+      font-size: 11px;
+      letter-spacing: 1px;
+      z-index: 10;
+      pointer-events: none;
+      font-family: 'Courier New', monospace;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <button class="btn" onclick="regenerate()">⟳ Regenerate</button>
+    <button class="btn" onclick="clearField()">✕ Clear</button>
+    <button class="btn" onclick="togglePause()">❚❚ Pause</button>
+    <button class="btn" onclick="cycleMode()">◈ Mode</button>
+    <button class="btn" onclick="saveFrame()">⬇ Save</button>
+  </div>
+  <div id="hue-indicator">Hue: 0°</div>
+  <div id="info">CLICK to attract · SCROLL to shift hue · HOLD to repel</div>
+  <canvas id="canvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let W, H;
+    let particles = [];
+    let paused = false;
+    let mode = 0;
+    const modeNames = ['Cosmic Flow', 'Vortex', 'Neural Web'];
+    let globalHue = 0;
+    let hueShiftSpeed = 0.15;
+    const MAX_PARTICLES = 2000;
+
+    // Simplex-like noise
+    function noise(x, y, t) {
+      return Math.sin(x * 0.01 + t) * Math.cos(y * 0.01 + t * 0.7)
+           + Math.sin((x + y) * 0.005 + t * 1.3) * 0.5
+           + Math.cos(x * 0.02 - y * 0.015 + t * 0.5) * 0.3;
+    }
+
+    class Particle {
+      constructor() {
+        this.reset();
+        this.x = Math.random() * W;
+        this.y = Math.random() * H;
+      }
+      reset() {
+        this.x = Math.random() * W;
+        this.y = Math.random() * H;
+        this.vx = 0;
+        this.vy = 0;
+        this.life = 0;
+        this.maxLife = 200 + Math.random() * 400;
+        this.speed = 0.3 + Math.random() * 1.2;
+        this.hueOffset = Math.random() * 40 - 20;
+        this.size = 0.5 + Math.random() * 1.5;
+      }
+      update(t, mx, my, mouseDown) {
+        this.life++;
+        if (this.life > this.maxLife) this.reset();
+
+        let angle;
+        const n = noise(this.x, this.y, t);
+        
+        if (mode === 0) {
+          angle = n * Math.PI * 4;
+        } else if (mode === 1) {
+          const dx = W / 2 - this.x;
+          const dy = H / 2 - this.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) + 1;
+          angle = Math.atan2(dy, dx) + n * 2 + dist * 0.003;
+        } else {
+          angle = Math.atan2(Math.cos(n * 3), Math.sin(n * 3));
+        }
+
+        this.vx += Math.cos(angle) * 0.3;
+        this.vy += Math.sin(angle) * 0.3;
+
+        // Mouse interaction
+        if (mx !== undefined && my !== undefined) {
+          const dx = mx - this.x;
+          const dy = my - this.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) + 1;
+          const force = Math.min(200 / dist, 3);
+          if (mouseDown) {
+            this.vx -= (dx / dist) * force * 2;
+            this.vy -= (dy / dist) * force * 2;
+          } else {
+            this.vx += (dx / dist) * force * 0.3;
+            this.vy += (dy / dist) * force * 0.3;
+          }
+        }
+
+        this.vx *= 0.92;
+        this.vy *= 0.92;
+        const mag = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+        if (mag > this.speed * 3) {
+          this.vx = (this.vx / mag) * this.speed * 3;
+          this.vy = (this.vy / mag) * this.speed * 3;
+        }
+
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // Wrap
+        if (this.x < 0) this.x += W;
+        if (this.x > W) this.x -= W;
+        if (this.y < 0) this.y += H;
+        if (this.y > H) this.y -= H;
+      }
+      draw(t) {
+        const lifeRatio = this.life / this.maxLife;
+        const fadeIn = Math.min(this.life / 30, 1);
+        const fadeOut = Math.max(1 - (this.life - this.maxLife + 50) / 50, 0);
+        const alpha = fadeIn * (this.life > this.maxLife - 50 ? fadeOut : 1);
+        const hue = (globalHue + this.hueOffset + lifeRatio * 60) % 360;
+        const lightness = 50 + Math.sin(this.life * 0.05) * 15;
+        
+        ctx.fillStyle = `hsla(${hue}, 80%, ${lightness}%, ${alpha * 0.7})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * (0.5 + lifeRatio * 0.5), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    let mx, my, mouseDown = false;
+    let time = 0;
+    let lastTrails = [];
+
+    function init() {
+      W = canvas.width = window.innerWidth;
+      H = canvas.height = window.innerHeight;
+      particles = [];
+      for (let i = 0; i < MAX_PARTICLES; i++) {
+        particles.push(new Particle());
+      }
+      // Fade background
+      ctx.fillStyle = 'rgba(0, 0, 10, 1)';
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    function animate() {
+      if (!paused) {
+        time += 0.005;
+        globalHue = (globalHue + hueShiftSpeed) % 360;
+        document.getElementById('hue-indicator').textContent = 
+          `Hue: ${Math.round(globalHue)}° · ${modeNames[mode]}`;
+
+        // Subtle fade for trail effect
+        ctx.fillStyle = 'rgba(0, 0, 10, 0.04)';
+        ctx.fillRect(0, 0, W, H);
+
+        for (let p of particles) {
+          p.update(time, mx, my, mouseDown);
+          p.draw(time);
+        }
+      }
+      requestAnimationFrame(animate);
+    }
+
+    function regenerate() {
+      particles = [];
+      for (let i = 0; i < MAX_PARTICLES; i++) {
+        particles.push(new Particle());
+      }
+      ctx.fillStyle = 'rgba(0, 0, 10, 1)';
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    function clearField() {
+      ctx.fillStyle = 'rgba(0, 0, 10, 1)';
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    function togglePause() {
+      paused = !paused;
+    }
+
+    function cycleMode() {
+      mode = (mode + 1) % 3;
+    }
+
+    function saveFrame() {
+      const link = document.createElement('a');
+      link.download = `aether-flow-${Date.now()}.png`;
+      link.href = canvas.toDataURL();
+      link.click();
+    }
+
+    canvas.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+    canvas.addEventListener('mousedown', () => { mouseDown = true; });
+    canvas.addEventListener('mouseup', () => { mouseDown = false; });
+    canvas.addEventListener('mouseleave', () => { mx = undefined; my = undefined; mouseDown = false; });
+    canvas.addEventListener('wheel', e => {
+      hueShiftSpeed = Math.max(0.02, Math.min(1, hueShiftSpeed + (e.deltaY > 0 ? 0.02 : -0.02)));
+      e.preventDefault();
+    }, { passive: false });
+
+    // Touch support
+    canvas.addEventListener('touchmove', e => {
+      e.preventDefault();
+      mx = e.touches[0].clientX;
+      my = e.touches[0].clientY;
+    }, { passive: false });
+    canvas.addEventListener('touchstart', e => {
+      e.preventDefault();
+      mx = e.touches[0].clientX;
+      my = e.touches[0].clientY;
+      mouseDown = true;
+    });
+    canvas.addEventListener('touchend', () => { mouseDown = false; mx = undefined; my = undefined; });
+
+    window.addEventListener('resize', () => {
+      W = canvas.width = window.innerWidth;
+      H = canvas.height = window.innerHeight;
+    });
+
+    init();
+    animate();
+  </script>
+</body>
+</html>
