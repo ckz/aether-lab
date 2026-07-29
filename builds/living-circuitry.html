@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Living Circuitry</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #07070d;
+    color: #e6e6f0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-x: hidden;
+  }
+  header {
+    text-align: center;
+    padding: 2.5rem 1.5rem 1.5rem;
+    max-width: 680px;
+  }
+  header h1 {
+    font-size: 2rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.5rem;
+  }
+  header p {
+    color: #777;
+    line-height: 1.6;
+    font-size: 0.95rem;
+  }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: center;
+    padding: 0 1.5rem 1.5rem;
+  }
+  .controls button {
+    background: #13131f;
+    color: #e6e6f0;
+    border: 1px solid #2a2a40;
+    padding: 0.6rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+  }
+  .controls button:hover {
+    background: #1c1c2e;
+    border-color: #4a4a6a;
+  }
+  .controls button:active {
+    transform: translateY(1px);
+  }
+  .controls button.active {
+    background: #1f1f35;
+    border-color: #6e6e9a;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    max-width: 1100px;
+    margin: 0 auto 2rem;
+    border-top: 1px solid #1a1a2e;
+    border-bottom: 1px solid #1a1a2e;
+    background: radial-gradient(ellipse at top, #0f0f1a 0%, #07070d 70%);
+  }
+  .hint {
+    color: #555;
+    font-size: 0.8rem;
+    margin-bottom: 2rem;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Living Circuitry</h1>
+  <p>An organic circuit board that breathes, pulses, and rewires itself. Move your mouse to disturb the field. Click to inject a surge. Switch modes below.</p>
+</header>
+
+<div class="controls">
+  <button id="modePulse" class="active">Pulse</button>
+  <button id="modeStorm">Storm</button>
+  <button id="modeZen">Zen</button>
+  <button id="actionInject">Inject Surge</button>
+  <button id="actionRewire">Rewire</button>
+</div>
+
+<canvas id="stage"></canvas>
+<div class="hint">move = bend field · click = surge · spacebar = rewire</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.max(window.devicePixelRatio || 1, 1);
+
+  let W = 0;
+  let H = 0;
+  let mouse = { x: -9999, y: -9999, active: false };
+  let mode = 'pulse'; // pulse | storm | zen
+  let nodes = [];
+  let wires = [];
+  let pulses = [];
+  let time = 0;
+  let last = performance.now();
+  let rewireQueued = false;
+
+  const COLORS = {
+    pulse:  { bg: '#07070d', glow: '#00ffa3', wire: '#1a3a30', node: '#80ffd4' },
+    storm:  { bg: '#0b000d', glow: '#ff3fa3', wire: '#3a1a2e', node: '#ffa3d0' },
+    zen:    { bg: '#04060d', glow: '#3fa8ff', wire: '#14233a', node: '#a3d4ff' }
+  };
+
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+    const targetW = Math.min(rect.width || 1100, 1100);
+    const targetH = Math.min(window.innerHeight * 0.72, 720);
+    W = targetW;
+    H = targetH;
+    canvas.style.width = targetW + 'px';
+    canvas.style.height = targetH + 'px';
+    canvas.width = Math.floor(targetW * dpr);
+    canvas.height = Math.floor(targetH * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function rand(a, b) { return Math.random() * (b - a) + a; }
+
+  class Node {
+    constructor(x, y) {
+      this.x = x || rand(40, W - 40);
+      this.y = y || rand(40, H - 40);
+      this.vx = rand(-0.2, 0.2);
+      this.vy = rand(-0.2, 0.2);
+      this.radius = rand(2, 5);
+      this.phase = rand(0, Math.PI * 2);
+      this.speed = rand(0.4, 1.1);
+      this.charge = rand(0, 1);
+      this.pulseEnergy = 0;
+    }
+
+    update(dt) {
+      const col = COLORS[mode];
+
+      // ambient drift
+      const breath = Math.sin(time * 0.001 * this.speed + this.phase);
+      this.vx += Math.cos(this.phase) * 0.015 * dt;
+      this.vy += Math.sin(this.phase) * 0.015 * dt;
+
+      // mouse disturbance
+      if (mouse.active) {
+        const dx = this.x - mouse.x;
+        const dy = this.y - mouse.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        if (dist < 220) {
+          const force = (220 - dist) / 220;
+          this.vx += (dx / dist) * force * 0.6 * dt;
+          this.vy += (dy / dist) * force * 0.6 * dt;
+          this.charge = Math.min(1, this.charge + force * 0.3);
+        }
+      }
+
+      // mode behavior
+      if (mode === 'storm') {
+        this.vx += rand(-0.15, 0.15) * dt;
+        this.vy += rand(-0.15, 0.15) * dt;
+      } else if (mode === 'zen') {
+        this.vx *= 0.995;
+        this.vy *= 0.995;
+      }
+
+      // damping
+      const damping = mode === 'zen' ? 0.97 : 0.94;
+      this.vx *= damping;
+      this.vy *= damping;
+
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+
+      // gentle bounds
+      const pad = 30;
+      if (this.x < pad) this.vx += 0.05;
+      if (this.x > W - pad) this.vx -= 0.05;
+      if (this.y < pad) this.vy += 0.05;
+      if (this.y > H - pad) this.vy -= 0.05;
+
+      // charge decay
+      this.charge += (0.15 - this.charge) * 0.02 * dt;
+      this.charge = Math.max(0, Math.min(1, this.charge));
+
+      // pulse energy decay
+      this.pulseEnergy *= Math.pow(0.02, dt / 60);
+    }
+
+    draw() {
+      const col = COLORS[mode];
+      const glow = this.pulseEnergy || this.charge;
+      if (glow < 0.01) return;
+
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius + glow * 6, 0, Math.PI * 2);
+      ctx.fillStyle = col.glow;
+      ctx.globalAlpha = glow * 0.25;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+      ctx.fillStyle = col.node;
+      ctx.globalAlpha = 0.3 + glow * 0.7;
+      ctx.fill();
+
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  class Wire {
+    constructor(a, b) {
+      this.a = a;
+      this.b = b;
+      this.energy = 0;
+      this.direction = 1;
+      this.flowPos = 0;
+      this.flowSpeed = rand(0.005, 0.025);
+    }
+
+    update(dt) {
+      // energy from connected node charges
+      const base = (this.a.charge + this.b.charge) * 0.5;
+      this.energy += (base - this.energy) * 0.1 * dt;
+
+      // flow animation
+      this.flowPos += this.flowSpeed * this.direction * dt;
+      if (this.flowPos > 1) { this.flowPos = 1; this.direction = -1; }
+      if (this.flowPos < 0) { this.flowPos = 0; this.direction = 1; }
+
+      // extra energy from incoming pulses
+      for (let i = pulses.length - 1; i >= 0; i--) {
+        const p = pulses[i];
+        if (p.wire === this) {
+          this.energy = Math.min(1, this.energy + p.life * 0.8);
+          p.life -= 0.02 * dt;
+          if (p.life <= 0) pulses.splice(i, 1);
+        }
+      }
+    }
+
+    draw() {
+      const col = COLORS[mode];
+      const energy = this.energy;
+
+      ctx.beginPath();
+      ctx.moveTo(this.a.x, this.a.y);
+      ctx.lineTo(this.b.x, this.b.y);
+      ctx.strokeStyle = col.wire;
+      ctx.globalAlpha = 0.35 + energy * 0.6;
+      ctx.lineWidth = 0.5 + energy * 1.2;
+      ctx.stroke();
+
+      // traveling pulse dot
+      if (energy > 0.05) {
+        const px = this.a.x + (this.b.x - this.a.x) * this.flowPos;
+        const py = this.a.y + (this.b.y - this.a.y) * this.flowPos;
+        ctx.beginPath();
+        ctx.arc(px, py, 1 + energy * 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = col.glow;
+        ctx.globalAlpha = energy * 0.9;
+        ctx.fill();
+      }
+
+      ctx.globalAlpha = 1;
+    }
+
+    midpoint() {
+      return {
+        x: (this.a.x + this.b.x) / 2,
+        y: (this.a.y + this.b.y) / 2
+      };
+    }
+  }
+
+  function buildTopology() {
+    nodes = [];
+    wires = [];
+    pulses = [];
+    const count = Math.floor(rand(55, 90));
+    for (let i = 0; i < count; i++) nodes.push(new Node());
+
+    // connect nearest-ish neighbors with some randomness
+    for (let i = 0; i < nodes.length; i++) {
+      const sorted = nodes
+        .map((n, idx) => ({ idx, d: Math.hypot(n.x - nodes[i].x, n.y - nodes[i].y) }))
+        .filter(o => o.idx !== i)
+        .sort((a, b) => a.d - b.d);
+
+      const connections = Math.floor(rand(1, 3));
+      for (let k = 0; k < Math.min(connections, sorted.length); k++) {
+        const j = sorted[k].idx;
+        // avoid duplicate wires
+        if (!wires.find(w => (w.a === nodes[i] && w.b === nodes[j]) || (w.a === nodes[j] && w.b === nodes[i]))) {
+          wires.push(new Wire(nodes[i], nodes[j]));
+        }
+      }
+    }
+
+    // ensure connectivity: bridge disconnected clusters
+    const visited = new Set();
+    const stack = [0];
+    visited.add(0);
+    while (stack.length) {
+      const cur = stack.pop();
+      const neighbors = wires.filter(w => w.a === nodes[cur] || w.b === nodes[cur]);
+      for (const w of neighbors) {
+        const other = w.a === nodes[cur] ? w.b : w.a;
+        const idx = nodes.indexOf(other);
+        if (!visited.has(idx)) {
+          visited.add(idx);
+          stack.push(idx);
+        }
+      }
+    }
+    if (visited.size < nodes.length) {
+      for (let i = 1; i < nodes.length; i++) {
+        if (!visited.has(i)) {
+          const j = Array.from(visited)[Math.floor(Math.random() * visited.size)];
+          wires.push(new Wire(nodes[i], nodes[j]));
+          visited.add(i);
+        }
+      }
+    }
+  }
+
+  function injectSurge() {
+    const center = mouse.active ? { x: mouse.x, y: mouse.y } : { x: W / 2, y: H / 2 };
+    // boost nodes near center
+    nodes.forEach(n => {
+      const d = Math.hypot(n.x - center.x, n.y - center.y);
+      if (d < 250) {
+        const force = (250 - d) / 250;
+        n.charge = Math.min(1, n.charge + force);
+        n.pulseEnergy = Math.min(1, n.pulseEnergy + force * 1.2);
+        const angle = Math.atan2(n.y - center.y, n.x - center.x);
+        n.vx += Math.cos(angle) * force * 4;
+        n.vy += Math.sin(angle) * force * 4;
+      }
+    });
+    // send pulses through nearby wires
+    wires.forEach(w => {
+      const mid = w.midpoint();
+      const d = Math.hypot(mid.x - center.x, mid.y - center.y);
+      if (d < 300) {
+        pulses.push({ wire: w, life: rand(0.4, 1) });
+      }
+    });
+  }
+
+  function drawBackground() {
+    const col = COLORS[mode];
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = col.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // subtle ambient vignette
+    const grad = ctx.createRadialGradient(W / 2, H / 2, W * 0.2, W / 2, H / 2, W * 0.75);
+    grad.addColorStop(0, 'rgba(255,255,255,0.02)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function loop(now) {
+    let dt = (now - last) / 16.667;
+    if (dt <= 0) dt = 1;
+    if (dt > 3) dt = 3;
+    last = now;
+    time += dt * 16.667;
+
+    if (rewireQueued) {
+      rewireQueued = false;
+      buildTopology();
+    }
+
+    // update
+    nodes.forEach(n => n.update(dt));
+    wires.forEach(w => w.update(dt));
+
+    // auto-inject occasional pulses in storm mode
+    if (mode === 'storm' && Math.random() < 0.03 * dt) {
+      const randomWire = wires[Math.floor(Math.random() * wires.length)];
+      if (randomWire) pulses.push({ wire: randomWire, life: rand(0.2, 0.8) });
+    }
+
+    // draw
+    drawBackground();
+
+    // connection filaments
+    ctx.globalAlpha = 1;
+    wires.forEach(w => w.draw());
+
+    // pulse dots (free-floating)
+    ctx.fillStyle = COLORS[mode].glow;
+    pulses.forEach(p => {
+      const mid = p.wire.midpoint();
+      ctx.globalAlpha = p.life * 0.9;
+      ctx.beginPath();
+      ctx.arc(mid.x, mid.y, 1.2 + p.life * 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // nodes
+    nodes.forEach(n => n.draw());
+
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(loop);
+  }
+
+  function init() {
+    resize();
+    buildTopology();
+    last = performance.now();
+    requestAnimationFrame(loop);
+  }
+
+  // events
+  window.addEventListener('resize', () => {
+    resize();
+    buildTopology();
+  });
+
+  canvas.addEventListener('pointermove', e => {
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - rect.left;
+    mouse.y = e.clientY - rect.top;
+    mouse.active = true;
+  });
+  canvas.addEventListener('pointerleave', () => { mouse.active = false; });
+  canvas.addEventListener('pointerdown', e => {
+    if (e.button === 0) {
+      mouse.x = e.offsetX;
+      mouse.y = e.offsetY;
+      injectSurge();
+    }
+  });
+
+  document.getElementById('modePulse').addEventListener('click', e => setMode('pulse', e.target));
+  document.getElementById('modeStorm').addEventListener('click', e => setMode('storm', e.target));
+  document.getElementById('modeZen').addEventListener('click', e => setMode('zen', e.target));
+  document.getElementById('actionInject').addEventListener('click', injectSurge);
+  document.getElementById('actionRewire').addEventListener('click', () => { rewireQueued = true; });
+
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); rewireQueued = true; }
+  });
+
+  function setMode(m, btn) {
+    mode = m;
+    document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+
+  init();
+})();
+</script>
+
+</body>
+</html>
