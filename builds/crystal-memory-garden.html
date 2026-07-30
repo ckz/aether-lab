@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crystal Memory Garden</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+  canvas { display: block; }
+  #ui {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.6); font-size: 12px; text-align: center;
+    pointer-events: none; text-shadow: 0 0 10px rgba(100,200,255,0.3);
+    letter-spacing: 2px; transition: opacity 3s;
+  }
+  #count {
+    position: fixed; bottom: 16px; right: 20px;
+    color: rgba(255,255,255,0.3); font-size: 11px;
+    pointer-events: none; font-family: 'Courier New', monospace;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">CLICK TO PLANT CRYSTALS · DRAG TO RESONATE · SPACE TO BLOOM</div>
+<div id="count">CRYSTALS: 0</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Audio context for crystal tones
+let audioCtx = null;
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+function playTone(freq, duration = 1.5, type = 'sine', vol = 0.03) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  const filter = audioCtx.createBiquadFilter();
+  osc.type = type;
+  osc.frequency.value = freq;
+  filter.type = 'lowpass';
+  filter.frequency.value = freq * 3;
+  gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+// Crystal structure
+class Crystal {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.birth = Date.now();
+    this.age = 0;
+    this.maxAge = 30000 + Math.random() * 20000;
+    this.growing = true;
+    this.growProgress = 0;
+    this.growSpeed = 0.003 + Math.random() * 0.004;
+    this.points = [];
+    this.facets = [];
+    this.branches = [];
+    this.size = 20 + Math.random() * 60;
+    this.hue = 180 + Math.random() * 120; // cyan to violet
+    this.saturation = 60 + Math.random() * 30;
+    this.lightness = 50 + Math.random() * 25;
+    this.opacity = 0;
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    this.pulseSpeed = 0.5 + Math.random() * 1;
+    this.energy = 1;
+    this.toneFreq = 200 + Math.random() * 600;
+    this.branchAngle = (Math.random() - 0.5) * 0.8;
+    this.segments = 3 + Math.floor(Math.random() * 5);
+    this.generateGeometry();
+  }
+
+  generateGeometry() {
+    // Main crystal shape - hexagonal-ish with variation
+    const mainPoints = this.segments;
+    for (let i = 0; i < mainPoints; i++) {
+      const angle = (i / mainPoints) * Math.PI * 2;
+      const dist = this.size * (0.7 + Math.random() * 0.3);
+      this.points.push({
+        x: Math.cos(angle) * dist,
+        y: Math.sin(angle) * dist * (0.4 + Math.random() * 0.6),
+        glow: Math.random()
+      });
+    }
+    // Inner facets
+    for (let i = 0; i < this.segments; i++) {
+      this.facets.push({
+        angle: (i / mainPoints) * Math.PI * 2,
+        length: this.size * (0.3 + Math.random() * 0.4),
+        hueShift: Math.random() * 30 - 15
+      });
+    }
+    // Branching tips
+    for (let i = 0; i < 3 + Math.floor(Math.random() * 4); i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = this.size * (0.5 + Math.random() * 0.5);
+      this.branches.push({
+        x: Math.cos(angle) * dist,
+        y: Math.sin(angle) * dist * 0.5,
+        length: 10 + Math.random() * 25,
+        angle: angle + this.branchAngle,
+        subBranches: []
+      });
+      // Sub-branches
+      const numSub = 1 + Math.floor(Math.random() * 2);
+      for (let j = 0; j < numSub; j++) {
+        this.branches[this.branches.length - 1].subBranches.push({
+          offset: (Math.random() - 0.5) * 0.8,
+          length: 5 + Math.random() * 15
+        });
+      }
+    }
+  }
+
+  update(dt, crystals, mouse) {
+    this.age += dt;
+    if (this.growing) {
+      this.growProgress = Math.min(1, this.growProgress + this.growSpeed);
+      if (this.growProgress >= 1) this.growing = false;
+    }
+    this.opacity = Math.min(1, this.age / 1000);
+    this.pulsePhase += this.pulseSpeed * dt * 0.001;
+    
+    // Resonance with nearby crystals
+    for (const other of crystals) {
+      if (other === this) continue;
+      const dx = other.x - this.x;
+      const dy = other.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 200) {
+        const influence = (1 - dist / 200) * 0.5;
+        this.energy += influence * Math.sin(this.pulsePhase) * 0.01;
+        this.energy = Math.max(0.3, Math.min(1.5, this.energy));
+      }
+    }
+    
+    // Mouse influence
+    if (mouse.x !== null) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 150) {
+        this.energy += (1 - dist / 150) * 0.02;
+        this.energy = Math.min(1.5, this.energy);
+      }
+    }
+    
+    // Fade out old crystals
+    if (this.age > this.maxAge - 3000) {
+      this.opacity = Math.max(0, (this.maxAge - this.age) / 3000);
+    }
+  }
+
+  draw(ctx, time) {
+    if (this.opacity <= 0) return;
+    const progress = this.easeOutCubic(this.growProgress);
+    const pulse = 1 + Math.sin(this.pulsePhase) * 0.05 * this.energy;
+    const alpha = this.opacity * (0.6 + this.energy * 0.4);
+    
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.branchAngle * progress);
+    ctx.scale(progress * pulse, progress * pulse);
+    ctx.globalAlpha = alpha;
+    
+    // Outer glow
+    const glowGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, this.size * 2);
+    glowGrad.addColorStop(0, `hsla(${this.hue}, ${this.saturation}%, ${this.lightness}%, 0.15)`);
+    glowGrad.addColorStop(1, `hsla(${this.hue}, ${this.saturation}%, ${this.lightness}%, 0)`);
+    ctx.fillStyle = glowGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, this.size * 2, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Main crystal body
+    ctx.beginPath();
+    for (let i = 0; i < this.points.length; i++) {
+      const p = this.points[i];
+      const glow = Math.sin(time * 0.001 + p.glow * 10) * 0.3 + 0.7;
+      const x = p.x * glow;
+      const y = p.y * glow;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    const bodyGrad = ctx.createLinearGradient(-this.size, -this.size, this.size, this.size);
+    bodyGrad.addColorStop(0, `hsla(${this.hue}, ${this.saturation}%, ${this.lightness + 15}%, 0.7)`);
+    bodyGrad.addColorStop(1, `hsla(${this.hue + 30}, ${this.saturation}%, ${this.lightness - 10}%, 0.5)`);
+    ctx.fillStyle = bodyGrad;
+    ctx.fill();
+    ctx.strokeStyle = `hsla(${this.hue}, ${this.saturation}%, ${this.lightness + 20}%, 0.8)`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    
+    // Facets
+    for (const facet of this.facets) {
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      const fx = Math.cos(facet.angle) * facet.length * progress;
+      const fy = Math.sin(facet.angle) * facet.length * 0.5 * progress;
+      ctx.lineTo(fx, fy);
+      ctx.strokeStyle = `hsla(${this.hue + facet.hueShift}, ${this.saturation}%, ${this.lightness + 10}%, 0.4)`;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+    
+    // Branches
+    for (const branch of this.branches) {
+      ctx.beginPath();
+      ctx.moveTo(branch.x * 0.3, branch.y * 0.3);
+      const ex = branch.x + Math.cos(branch.angle) * branch.length * progress;
+      const ey = branch.y + Math.sin(branch.angle) * branch.length * 0.5 * progress;
+      ctx.lineTo(ex, ey);
+      ctx.strokeStyle = `hsla(${this.hue + 15}, ${this.saturation}%, ${this.lightness + 5}%, 0.6)`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      
+      // Sub-branches
+      for (const sub of branch.subBranches) {
+        ctx.beginPath();
+        ctx.moveTo(ex, ey);
+        const sx = ex + Math.cos(branch.angle + sub.offset) * sub.length * progress;
+        const sy = ey + Math.sin(branch.angle + sub.offset) * sub.length * 0.5 * progress;
+        ctx.lineTo(sx, sy);
+        ctx.strokeStyle = `hsla(${this.hue + 25}, ${this.saturation}%, ${this.lightness}%, 0.4)`;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+      
+      // Branch tip glow
+      ctx.beginPath();
+      ctx.arc(ex, ey, 2 * this.energy, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${this.hue}, ${this.saturation}%, ${this.lightness + 20}%, ${0.6 * this.energy})`;
+      ctx.fill();
+    }
+    
+    // Core glow
+    const coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, 8 * this.energy);
+    coreGrad.addColorStop(0, `hsla(${this.hue}, ${this.saturation}%, ${this.lightness + 25}%, ${0.8 * this.energy})`);
+    coreGrad.addColorStop(1, `hsla(${this.hue}, ${this.saturation}%, ${this.lightness}%, 0)`);
+    ctx.fillStyle = coreGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, 8 * this.energy, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.restore();
+  }
+
+  easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3);
+  }
+
+  isDead() {
+    return this.age > this.maxAge;
+  }
+}
+
+// Particle for resonance trails
+class Particle {
+  constructor(x, y, hue) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 2;
+    this.vy = (Math.random() - 0.5) * 2;
+    this.life = 1;
+    this.decay = 0.01 + Math.random() * 0.02;
+    this.hue = hue + Math.random() * 20 - 10;
+    this.size = 1 + Math.random() * 2;
+  }
+
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+    this.life -= this.decay;
+  }
+
+  draw(ctx) {
+    ctx.fillStyle = `hsla(${this.hue}, 70%, 70%, ${this.life * 0.6})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Connection filaments
+class Filament {
+  constructor(crystalA, crystalB) {
+    this.a = crystalA;
+    this.b = crystalB;
+    this.life = 1;
+    this.decay = 0.002;
+  }
+
+  update() {
+    this.life -= this.decay;
+  }
+
+  draw(ctx, time) {
+    if (this.life <= 0) return;
+    const midX = (this.a.x + this.b.x) / 2;
+    const midY = (this.a.y + this.b.y) / 2;
+    const wave = Math.sin(time * 0.002 + this.a.x * 0.01) * 10;
+    
+    ctx.beginPath();
+    ctx.moveTo(this.a.x, this.a.y);
+    ctx.quadraticCurveTo(midX + wave, midY + wave, this.b.x, this.b.y);
+    ctx.strokeStyle = `hsla(${(this.a.hue + this.b.hue) / 2}, 60%, 70%, ${this.life * 0.15})`;
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+  }
+}
+
+// State
+let crystals = [];
+let particles = [];
+let filaments = [];
+let mouse = { x: null, y: null, down: false };
+let lastTime = Date.now();
+let bloomQueued = false;
+let uiEl = document.getElementById('ui');
+let countEl = document.getElementById('count');
+let uiTimeout;
+
+// Events
+canvas.addEventListener('mousedown', (e) => {
+  mouse.down = true;
+  initAudio();
+  plantCrystal(e.clientX, e.clientY);
+  hideUI();
+});
+
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  if (mouse.down) {
+    if (Math.random() < 0.3) spawnParticles(e.clientX, e.clientY, 2);
+  }
+});
+
+canvas.addEventListener('mouseleave', () => {
+  mouse.x = null;
+  mouse.y = null;
+  mouse.down = false;
+});
+
+canvas.addEventListener('click', (e) => {
+  initAudio();
+  plantCrystal(e.clientX, e.clientY);
+  hideUI();
+});
+
+// Touch support
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  initAudio();
+  const t = e.touches[0];
+  plantCrystal(t.clientX, t.clientY);
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  hideUI();
+});
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  if (Math.random() < 0.3) spawnParticles(t.clientX, t.clientY, 2);
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    bloomQueued = true;
+  }
+});
+
+function plantCrystal(x, y) {
+  const crystal = new Crystal(x, y);
+  crystals.push(crystal);
+  playTone(crystal.toneFreq, 2, 'sine', 0.04);
+  playTone(crystal.toneFreq * 1.5, 1.5, 'triangle', 0.02);
+  spawnParticles(x, y, 20, crystal.hue);
+  
+  // Connect to nearby crystals
+  for (const other of crystals) {
+    if (other === crystal) return;
+    const dx = other.x - x;
+    const dy = other.y - y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 200) {
+      filaments.push(new Filament(crystal, other));
+    }
+  }
+}
+
+function spawnParticles(x, y, count, hue = 200) {
+  for (let i = 0; i < count; i++) {
+    particles.push(new Particle(x, y, hue));
+  }
+}
+
+function bloomAll() {
+  for (const crystal of crystals) {
+    crystal.energy = 1.5;
+    crystal.toneFreq *= 1.2;
+    spawnParticles(crystal.x, crystal.y, 30, crystal.hue);
+  }
+  // Play harmonic chord
+  if (crystals.length > 0) {
+    const baseFreq = crystals[0].toneFreq;
+    playTone(baseFreq, 3, 'sine', 0.05);
+    playTone(baseFreq * 1.25, 2.5, 'triangle', 0.03);
+    playTone(baseFreq * 1.5, 2, 'sine', 0.03);
+    playTone(baseFreq * 2, 1.5, 'triangle', 0.02);
+  }
+}
+
+function hideUI() {
+  uiEl.style.opacity = '0';
+  clearTimeout(uiTimeout);
+}
+
+function showUI() {
+  uiEl.style.opacity = '1';
+}
+
+// Ambient spawning
+let ambientTimer = 0;
+function ambientSpawn(dt) {
+  ambientTimer += dt;
+  if (ambientTimer > 3000 && crystals.length < 15) {
+    ambientTimer = 0;
+    const x = Math.random() * W;
+    const y = Math.random() * H;
+    plantCrystal(x, y);
+  }
+}
+
+// Main loop
+function animate() {
+  const now = Date.now();
+  const dt = now - lastTime;
+  lastTime = now;
+  const time = now;
+  
+  // Clear with fade
+  ctx.fillStyle = 'rgba(5, 5, 15, 0.15)';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Handle bloom
+  if (bloomQueued) {
+    bloomQueued = false;
+    bloomAll();
+  }
+  
+  // Ambient
+  ambientSpawn(dt);
+  
+  // Update and draw filaments
+  filaments = filaments.filter(f => f.life > 0);
+  for (const f of filaments) {
+    f.update();
+    f.draw(ctx, time);
+  }
+  
+  // Update and draw crystals
+  crystals = crystals.filter(c => !c.isDead());
+  for (const crystal of crystals) {
+    crystal.update(dt, crystals, mouse);
+    crystal.draw(ctx, time);
+  }
+  
+  // Update and draw particles
+  particles = particles.filter(p => p.life > 0);
+  for (const p of particles) {
+    p.update();
+    p.draw(ctx);
+  }
+  
+  // Mouse glow when dragging
+  if (mouse.x !== null && mouse.down) {
+    const glowGrad = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 80);
+    glowGrad.addColorStop(0, 'rgba(100, 200, 255, 0.1)');
+    glowGrad.addColorStop(1, 'rgba(100, 200, 255, 0)');
+    ctx.fillStyle = glowGrad;
+    ctx.beginPath();
+    ctx.arc(mouse.x, mouse.y, 80, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Update count
+  countEl.textContent = `CRYSTALS: ${crystals.length}`;
+  
+  requestAnimationFrame(animate);
+}
+
+// Fade UI after 5s
+setTimeout(() => {
+  if (crystals.length === 0) uiEl.style.opacity = '1';
+}, 5000);
+
+animate();
+</script>
+</body>
+</html>
