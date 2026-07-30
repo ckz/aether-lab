@@ -1,0 +1,258 @@
+#!/usr/bin/env bash
+# code-archaeology — discover the age of every file in your codebase
+# Usage: code-archaeology [path] [--ancient] [--recent] [--json]
+# Example: code-archaeology . --ancient
+
+set -euo pipefail
+
+NOW_EPOCH=$(date +%s)
+NOW_YEAR=$(date +%Y)
+PATH_INPUT="${1:-.}"
+MODE="all"
+JSON=false
+
+# Parse args
+shift $(( $# > 0 ? 1 : 0 )) 2>/dev/null || true
+for arg in "$@"; do
+  case "$arg" in
+    --ancient) MODE="ancient" ;;
+    --recent)  MODE="recent" ;;
+    --json)    JSON=true ;;
+  esac
+done
+
+if [ ! -d "$PATH_INPUT" ]; then
+  echo "Error: '$PATH_INPUT' is not a directory" >&2
+  exit 1
+fi
+
+ARCHIVE_YEARS=300
+MEDIEVAL_YEARS=100
+ANCIENT_YEARS=30
+OLD_YEARS=10
+RECENT_DAYS=30
+
+# Find all tracked files, skip binary-heavy dirs
+mapfile -t FILES < <(find "$PATH_INPUT" -type f \
+  ! -path '*/node_modules/*' \
+  ! -path '*/.git/*' \
+  ! -path '*/dist/*' \
+  ! -path '*/build/*' \
+  ! -path '*/.next/*' \
+  ! -path '*/vendor/*' \
+  ! -path '*/.venv/*' \
+  ! -path '*/venv/*' \
+  ! -path '*/.cache/*' \
+  ! -path '*/__pycache__/*' \
+  ! -path '*.lock' \
+  ! -name '*.png' \
+  ! -name '*.jpg' \
+  ! -name '*.jpeg' \
+  ! -name '*.gif' \
+  ! -name '*.webp' \
+  ! -name '*.ico' \
+  ! -name '*.pdf' \
+  ! -name '*.zip' \
+  ! -name '*.tar*' \
+  ! -name '*.gz' \
+  2>/dev/null | head -500)
+
+TOTAL=${#FILES[@]}
+if [ "$TOTAL" -eq 0 ]; then
+  echo "No files found in '$PATH_INPUT'" >&2
+  exit 1
+fi
+
+# Collect ages
+declare -a AGES=()
+declare -a AGE_LABELS=()
+declare -a AGE_COLORS=()
+declare -a AGE_FILES=()
+ARCHIVE=0
+MEDIEVAL=0
+ANCIENT=0
+OLD=0
+MATURE=0
+FRESH=0
+NEWBORN=0
+TOTAL_AGE_DAYS=0
+
+for f in "${FILES[@]}"; do
+  if [ -f "$f" ]; then
+    # Try git first, fall back to filesystem mtime
+    if git -C "$PATH_INPUT" ls-files --error-unmatch "$f" &>/dev/null 2>&1; then
+      AGE_SEC=$(git -C "$PATH_INPUT" log -1 --format="%ct" -- "$f" 2>/dev/null || echo "$NOW_EPOCH")
+    else
+      AGE_SEC=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || echo "$NOW_EPOCH")
+    fi
+    AGE_DAYS=$(( (NOW_EPOCH - AGE_SEC) / 86400 ))
+    AGES+=("$AGE_DAYS")
+    AGE_FILES+=("$f")
+    TOTAL_AGE_DAYS=$((TOTAL_AGE_DAYS + AGE_DAYS))
+
+    if [ "$AGE_DAYS" -gt "$ARCHIVE_YEARS" ]; then
+      AGE_LABELS+=("📜 ARCHIVE")
+      AGE_COLORS+=("\033[2m")
+      ARCHIVE=$((ARCHIVE + 1))
+    elif [ "$AGE_DAYS" -gt "$MEDIEVAL_YEARS" ]; then
+      AGE_LABELS+=("🏛️  MEDIEVAL")
+      AGE_COLORS+=("\033[35m")
+      MEDIEVAL=$((MEDIEVAL + 1))
+    elif [ "$AGE_DAYS" -gt "$ANCIENT_YEARS" ]; then
+      AGE_LABELS+=("🏺 ANCIENT")
+      AGE_COLORS+=("\033[31m")
+      ANCIENT=$((ANCIENT + 1))
+    elif [ "$AGE_DAYS" -gt "$OLD_YEARS" ]; then
+      AGE_LABELS+=("🌲 VETERAN")
+      AGE_COLORS+=("\033[33m")
+      OLD=$((OLD + 1))
+    elif [ "$AGE_DAYS" -gt "$RECENT_DAYS" ]; then
+      AGE_LABELS+=("🌿 MATURE")
+      AGE_COLORS+=("\033[36m")
+      MATURE=$((MATURE + 1))
+    elif [ "$AGE_DAYS" -gt 0 ]; then
+      AGE_LABELS+=("🌱 FRESH")
+      AGE_COLORS+=("\033[32m")
+      FRESH=$((FRESH + 1))
+    else
+      AGE_LABELS+=("✨ NEWBORN")
+      AGE_COLORS+=("\033[1;37m")
+      NEWBORN=$((NEWBORN + 1))
+    fi
+  fi
+done
+
+AVG_DAYS=$((TOTAL_AGE_DAYS / TOTAL))
+
+# Filter for modes
+if $JSON; then
+  echo "{"
+  echo "  \"project\": \"$(basename "$(cd "$PATH_INPUT" && pwd)")\","
+  echo "  \"files_scanned\": $TOTAL,"
+  echo "  \"avg_age_days\": $AVG_DAYS,"
+  echo "  \"periods\": {"
+  echo "    \"archive\": $ARCHIVE,"
+  echo "    \"medieval\": $MEDIEVAL,"
+  echo "    \"ancient\": $ANCIENT,"
+  echo "    \"veteran\": $OLD,"
+  echo "    \"mature\": $MATURE,"
+  echo "    \"fresh\": $FRESH,"
+  echo "    \"newborn\": $NEWBORN"
+  echo "  },"
+  echo "  \"files\": ["
+  for i in "${!AGES[@]}"; do
+    AGE=${AGES[$i]}
+    F=${AGE_FILES[$i]}
+    printf '    {"file": "%s", "age_days": %d, "period": "%s"}' "$F" "$AGE" "${AGE_LABELS[$i]}"
+    [ "$i" -lt $(( ${#AGES[@]} - 1 )) ] && echo "," || echo ""
+  done
+  echo "  ]"
+  echo "}"
+  exit 0
+fi
+
+# Header
+echo ""
+echo "  ╔═══════════════════════════════════════════════════════════╗"
+printf "  ║  🏛️  CODE ARCHAEOLOGY — %-34s ║\n" "$(basename "$(cd "$PATH_INPUT" && pwd)")"
+echo "  ╚═══════════════════════════════════════════════════════════╝"
+echo ""
+printf "  📂 Files scanned:    %d\n" "$TOTAL"
+printf "  📊 Average file age: %d days (%d years)\n" "$AVG_DAYS" "$((AVG_DAYS / 365))"
+echo ""
+echo "  ┌─ Time Periods ──────────────────────────────────────────┐"
+
+if $JSON; then :; fi  # already handled
+
+periods=(
+  "📜 ARCHIVE|$ARCHIVE|300+|files older than 300 years (prehistoric code)"
+  "🏛️  MEDIEVAL|$MEDIEVAL|100-300|century-scale survivors"
+  "🏺 ANCIENT|$ANCIENT|30-100|decades-old, survived rewrites"
+  "🌲 VETERAN|$OLD|10-30|seasoned, battle-tested"
+  "🌿 MATURE|$MATURE|1-10|settled, no longer new"
+  "🌱 FRESH|$FRESH|0-1|born this month"
+  "✨ NEWBORN|$NEWBORN|0|committed today"
+)
+
+for p in "${periods[@]}"; do
+  IFS='|' read -r label count _ desc <<< "$p"
+  printf "  │  %-14s %3d  %-40s │\n" "$label" "$count" "$desc"
+done
+echo "  └─────────────────────────────────────────────────────────┘"
+echo ""
+
+# Show files by period
+if [ "$MODE" = "all" ] || [ "$MODE" = "ancient" ]; then
+  echo "  📜 ARCHIVE & MEDIEVAL FILES (100+ days):"
+  echo "  ──────────────────────────────────────────────────────────"
+  for i in "${!AGES[@]}"; do
+    AGE=${AGES[$i]}
+    if [ "$AGE" -gt 100 ]; then
+      F=${AGE_FILES[$i]}
+      REL="${F#"$PATH_INPUT"/}"
+      YEARS=$((AGE / 365))
+      DAYS_REM=$((AGE % 365))
+      if [ "$YEARS" -gt 0 ]; then
+        AGE_STR="${YEARS}y ${DAYS_REM}d"
+      else
+        AGE_STR="${AGE}d"
+      fi
+      printf "  %b  %-40s %s%b\n" "${AGE_COLORS[$i]}" "$REL" "(${AGE_STR})" "\033[0m"
+    fi
+  done
+  echo ""
+fi
+
+if [ "$MODE" = "all" ] || [ "$MODE" = "recent" ]; then
+  echo "  ✨ NEWBORN & FRESH FILES (≤30 days):"
+  echo "  ──────────────────────────────────────────────────────────"
+  for i in "${!AGES[@]}"; do
+    AGE=${AGES[$i]}
+    if [ "$AGE" -le 30 ]; then
+      F=${AGE_FILES[$i]}
+      REL="${F#"$PATH_INPUT"/}"
+      printf "  %b  %-40s %s%d ago%b\n" "${AGE_COLORS[$i]}" "$REL" "(" "$AGE" "d)" "\033[0m"
+    fi
+  done
+  echo ""
+fi
+
+# ASCII bar chart of age distribution
+echo "  📊 Age Distribution:"
+echo "  ──────────────────────────────────────────────────────────"
+MAX_COUNT=$ARCHIVE
+for c in $MEDIEVAL $ANCIENT $OLD $MATURE $FRESH $NEWBORN; do
+  [ "$c" -gt "$MAX_COUNT" ] && MAX_COUNT=$c
+done
+[ "$MAX_COUNT" -lt 1 ] && MAX_COUNT=1
+
+BAR_WIDTH=40
+LABELS=("📜Archive" "🏛️Medieval" "🏺Ancient" "🌲Veteran" "🌿Mature" "🌱Fresh" "✨Newborn")
+COUNTS=($ARCHIVE $MEDIEVAL $ANCIENT $OLD $MATURE $FRESH $NEWBORN)
+for i in "${!LABELS[@]}"; do
+  C=${COUNTS[$i]}
+  if [ "$MAX_COUNT" -gt 0 ]; then
+    BAR_LEN=$(( C * BAR_WIDTH / MAX_COUNT ))
+  else
+    BAR_LEN=0
+  fi
+  BAR=$(printf '█%.0s' $(seq 1 "$BAR_LEN") 2>/dev/null || printf '%*s' "$BAR_LEN" '' | tr ' ' '█')
+  printf "  %-10s │%s│ %d\n" "${LABELS[$i]}" "$BAR" "$C"
+done
+echo ""
+
+# Oracle verdict
+VERDICT=""
+if [ "$ARCHIVE" -gt 0 ] || [ "$MEDIEVAL" -gt 0 ]; then
+  VERDICT="This is an archaeological site. Some files have outlasted empires. Treat them with reverence — and suspicion."
+elif [ "$OLD" -gt "$FRESH" ]; then
+  VERDICT="A mature codebase. The veterans run this place. Respect the old guard."
+elif [ "$FRESH" -gt "$OLD" ]; then
+  VERDICT="Young and restless. Everything's brand new. Watch for growing pains."
+else
+  VERDICT="Balanced ecosystem. Old roots, new shoots. Healthy."
+fi
+
+echo "  🔮 Oracle:"
+echo "  \"$VERDICT\""
+echo ""
