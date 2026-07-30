@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phantom Circuitry</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #05050f;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+  cursor: crosshair;
+  user-select: none;
+}
+#bg-canvas, #main-canvas {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw; height: 100vh;
+}
+#bg-canvas { z-index: 0; }
+#main-canvas { z-index: 1; }
+#ui {
+  position: fixed;
+  top: 20px; left: 20px;
+  z-index: 10;
+  color: #4af0c8;
+  font-size: 11px;
+  pointer-events: none;
+  text-shadow: 0 0 10px rgba(74, 240, 200, 0.6);
+  line-height: 1.8;
+  opacity: 0.85;
+}
+#title {
+  position: fixed;
+  top: 20px;
+  right: 24px;
+  z-index: 10;
+  text-align: right;
+  pointer-events: none;
+  opacity: 0.55;
+}
+#title h1 {
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 6px;
+  color: #4af0c8;
+  text-shadow: 0 0 12px rgba(74, 240, 200, 0.5);
+}
+#title p {
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: #2a8a7a;
+  margin-top: 4px;
+}
+#controls {
+  position: fixed;
+  bottom: 20px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  gap: 8px;
+  background: rgba(5, 5, 15, 0.7);
+  border: 1px solid rgba(74, 240, 200, 0.12);
+  border-radius: 20px;
+  padding: 7px 16px;
+  backdrop-filter: blur(8px);
+}
+.ctrl-btn {
+  background: none;
+  border: 1px solid rgba(74, 240, 200, 0.2);
+  color: #4af0c8;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  padding: 5px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  letter-spacing: 1.5px;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.ctrl-btn:hover {
+  background: rgba(74, 240, 200, 0.08);
+  border-color: rgba(74, 240, 200, 0.5);
+  box-shadow: 0 0 12px rgba(74, 240, 200, 0.15);
+}
+.ctrl-btn.active {
+  background: rgba(74, 240, 200, 0.12);
+  border-color: #4af0c8;
+  box-shadow: 0 0 10px rgba(74, 240, 200, 0.2);
+}
+.palette-row {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.palette-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.15);
+  transition: transform 0.2s;
+}
+.palette-dot:hover { transform: scale(1.5); }
+</style>
+</head>
+<body>
+<canvas id="bg-canvas"></canvas>
+<canvas id="main-canvas"></canvas>
+<div id="ui">
+  <div>NODES: <span id="node-count">0</span></div>
+  <div>TRACES: <span id="trace-count">0</span></div>
+  <div>PULSES: <span id="pulse-count">0</span></div>
+  <div>ENERGY: <span id="energy">0.00</span></div>
+  <div>PALETTE: <span id="palette-name">VOID</span></div>
+</div>
+<div id="title">
+  <h1>PHANTOM CIRCUITRY</h1>
+  <p>CLICK TO PLANT · HOLD TO GROW</p>
+</div>
+<div id="controls">
+  <button class="ctrl-btn active" id="btn-pulse">PULSE</button>
+  <button class="ctrl-btn active" id="btn-grow">GROW</button>
+  <button class="ctrl-btn" id="btn-clear">CLEAR</button>
+  <button class="ctrl-btn" id="btn-save">SAVE</button>
+  <div class="palette-row">
+    <div class="palette-dot" data-p="0" style="background:#4af0c8"></div>
+    <div class="palette-dot" data-p="1" style="background:#ff6b9d"></div>
+    <div class="palette-dot" data-p="2" style="background:#ffb347"></div>
+    <div class="palette-dot" data-p="3" style="background:#a78bfa"></div>
+    <div class="palette-dot" data-p="4" style="background:#f0f4ff"></div>
+    <div class="palette-dot" data-p="5" style="background:#ff4466"></div>
+  </div>
+</div>
+
+<script>
+const bgC = document.getElementById('bg-canvas');
+const mc  = document.getElementById('main-canvas');
+const bgX = bgC.getContext('2d');
+const mx  = mc.getContext('2d');
+let W, H;
+
+function resize() {
+  W = bgC.width  = mc.width  = window.innerWidth;
+  H = bgC.height = mc.height = window.innerHeight;
+  drawBg();
+}
+window.addEventListener('resize', resize);
+
+// ── Palette system ──────────────────────────────────────────────────────────
+const PALETTES = [
+  { name:'VOID',   nodes:['#4af0c8','#2dd4a8','#0fa'], bg:'#08082a', trace:'#4af0c8', dim:'rgba(74,240,200,0.04)', glow:'rgba(74,240,200,0.35)' },
+  { name:'NEON',   nodes:['#ff6b9d','#c084fc','#60a5fa'], bg:'#180a1e', trace:'#ff6b9d', dim:'rgba(255,107,157,0.04)', glow:'rgba(255,107,157,0.35)' },
+  { name:'EMBER',  nodes:['#ffb347','#ff8c00','#ff4500'], bg:'#1a0a02', trace:'#ffb347', dim:'rgba(255,179,71,0.04)',  glow:'rgba(255,179,71,0.35)' },
+  { name:'VOX',    nodes:['#a78bfa','#c084fc','#818cf8'], bg:'#0e0a1e', trace:'#a78bfa', dim:'rgba(167,139,250,0.04)', glow:'rgba(167,139,250,0.35)' },
+  { name:'GHOST',  nodes:['#e8f0ff','#c8d8f8','#a0b8e8'], bg:'#06060e', trace:'#d0ddf8', dim:'rgba(208,221,248,0.04)',glow:'rgba(208,221,248,0.3)' },
+  { name:'CRIMSON',nodes:['#ff4466','#ff6b88','#cc2244'], bg:'#1a0508', trace:'#ff4466', dim:'rgba(255,68,102,0.04)',  glow:'rgba(255,68,102,0.35)' },
+];
+let palIdx = 0;
+function P() { return PALETTES[palIdx]; }
+
+// ── State ───────────────────────────────────────────────────────────────────
+const MAX_NODES = 180;
+const MAX_TRACES = 400;
+const MAX_PARTICLES = 300;
+
+let nodes = [];
+let traces = [];
+let pulses = [];
+let particles = [];
+let mouse = { x: -9999, y: -9999, down: false };
+let stats = { nodes: 0, traces: 0, pulses: 0, energy: 0 };
+let doPulse = true;
+let doGrow  = true;
+let frame = 0;
+
+// ── Background grid ─────────────────────────────────────────────────────────
+function drawBg() {
+  const p = P();
+  bgX.fillStyle = p.bg;
+  bgX.fillRect(0, 0, W, H);
+  bgX.strokeStyle = p.dim;
+  bgX.lineWidth = 1;
+  const gs = 50;
+  for (let x = 0; x < W; x += gs) {
+    bgX.beginPath(); bgX.moveTo(x, 0); bgX.lineTo(x, H); bgX.stroke();
+  }
+  for (let y = 0; y < H; y += gs) {
+    bgX.beginPath(); bgX.moveTo(0, y); bgX.lineTo(W, y); bgX.stroke();
+  }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function rand(a, b) { return a + Math.random() * (b - a); }
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function hexRgb(h) {
+  const v = parseInt(h.slice(1), 16);
+  return [(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff];
+}
+
+// ── Node creation ───────────────────────────────────────────────────────────
+function addNode(x, y, energy = 1) {
+  if (nodes.length >= MAX_NODES) {
+    nodes.sort((a, b) => a.energy - b.energy);
+    nodes.shift();
+  }
+  const p = P();
+  const node = {
+    x, y, energy,
+    baseR: rand(3, 6),
+    r: 0,
+    color: pick(p.nodes),
+    phase: rand(0, Math.PI * 2),
+    pulseT: rand(0, 220),
+    born: frame,
+    connects: [],
+    maxConns: Math.floor(rand(2, 5)),
+    lastOutgoing: 0,
+  };
+  nodes.push(node);
+
+  // Cluster snap
+  const cluster = nodes.filter(n => n !== node && dist(n, node) < 90);
+  if (cluster.length > 0) {
+    const cx = cluster.reduce((s, n) => s + n.x, 0) / cluster.length;
+    const cy = cluster.reduce((s, n) => s + n.y, 0) / cluster.length;
+    node.x = lerp(node.x, cx, 0.55);
+    node.y = lerp(node.y, cy, 0.55);
+  }
+
+  // Auto-connect to nearby
+  const nearby = nodes.filter(n => n !== node && dist(n, node) < 130)
+                      .sort((a, b) => dist(a, node) - dist(b, node));
+  for (const n of nearby) {
+    if (node.connects.length >= node.maxConns) break;
+    if (n.connects.length >= n.maxConns) continue;
+    const already = traces.some(t =>
+      (t.a === node && t.b === n) || (t.a === n && t.b === node));
+    if (!already) {
+      traces.push({ a: node, b: n, energy: 0, progress: 0, born: frame });
+      node.connects.push(n);
+      n.connects.push(node);
+    }
+  }
+
+  // Burst particles
+  for (let i = 0; i < 14; i++) {
+    const a = rand(0, Math.PI * 2);
+    particles.push({
+      x: node.x, y: node.y,
+      vx: Math.cos(a) * rand(1, 5),
+      vy: Math.sin(a) * rand(1, 5),
+      life: 1, decay: rand(0.012, 0.04),
+      size: rand(0.8, 2.5),
+      color: node.color,
+    });
+  }
+}
+
+// ── Pulse ring ───────────────────────────────────────────────────────────────
+function emitPulse(src, strength = 1) {
+  if (!doPulse) return;
+  if (pulses.length >= 60) pulses.shift();
+  pulses.push({
+    x: src.x, y: src.y,
+    r: 6, maxR: rand(120, 280) * strength,
+    life: 1, decay: rand(0.008, 0.025),
+    color: src.color,
+    speed: rand(2.5, 5) * strength,
+  });
+
+  // Cascade to connected nodes
+  for (const conn of src.connects) {
+    if (Math.random() < 0.35 * strength && frame - src.lastOutgoing > 18) {
+      src.lastOutgoing = frame;
+      conn.energy = Math.min(1.8, conn.energy + 0.5 * strength);
+      conn.pulseT = 0;
+      const t = traces.find(tr => (tr.a === src && tr.b === conn) || (tr.a === conn && tr.b === src));
+      if (t) { t.energy = 1; t.progress = 0; }
+      setTimeout(() => emitPulse(conn, strength * 0.6), rand(60, 180));
+    }
+  }
+}
+
+// ── Update ───────────────────────────────────────────────────────────────────
+function update() {
+  frame++;
+
+  // Grow auto-seed
+  if (doGrow && frame % 70 === 0 && nodes.length < MAX_NODES * 0.85) {
+    const edge = ['top','right','bottom','left'][Math.floor(Math.random()*4)];
+    let x, y;
+    if (edge === 'top')    { x = rand(0, W); y = rand(-30, 30); }
+    if (edge === 'right')  { x = rand(W-30, W+30); y = rand(0, H); }
+    if (edge === 'bottom') { x = rand(0, W); y = rand(H-30, H+30); }
+    if (edge === 'left')   { x = rand(-30, 30); y = rand(0, H); }
+    addNode(x, y, rand(0.4, 0.9));
+  }
+
+  // Nodes drift
+  for (const n of nodes) {
+    n.phase += 0.012;
+    n.r = n.baseR + Math.sin(n.phase) * 1.1 + n.energy * 3;
+    n.x += rand(-0.25, 0.25);
+    n.y += rand(-0.25, 0.25);
+    n.x = Math.max(20, Math.min(W - 20, n.x));
+    n.y = Math.max(20, Math.min(H - 20, n.y));
+    n.energy *= 0.993;
+    n.pulseT++;
+  }
+
+  // Mouse attract
+  if (mouse.down) {
+    for (const n of nodes) {
+      const d = Math.hypot(mouse.x - n.x, mouse.y - n.y);
+      if (d < 220 && d > 1) {
+        const f = 0.035 / (d * 0.04 + 1);
+        n.x += (mouse.x - n.x) * f;
+        n.y += (mouse.y - n.y) * f;
+        n.energy = Math.min(1.4, n.energy + 0.012);
+        if (Math.random() < 0.08) emitPulse(n, 0.2);
+      }
+    }
+  }
+
+  // Spawn particles near mouse when down
+  if (mouse.down && frame % 2 === 0) {
+    for (let i = 0; i < 2; i++) {
+      particles.push({
+        x: mouse.x + rand(-8, 8), y: mouse.y + rand(-8, 8),
+        vx: rand(-1.5, 1.5), vy: rand(-1.5, 1.5),
+        life: 1, decay: rand(0.015, 0.045),
+        size: rand(0.6, 2), color: P().trace,
+      });
+    }
+  }
+
+  // Pulse propagation
+  for (const t of traces) {
+    if (t.progress < 1) {
+      t.progress = Math.min(1, t.progress + 0.018);
+      if (t.progress >= 1 && t.energy > 0.5) {
+        t.b.energy = Math.min(1.5, t.b.energy + t.energy * 0.35);
+        t.b.pulseT = 0;
+        if (Math.random() < 0.5 && doPulse) emitPulse(t.b, t.energy * 0.5);
+        t.energy = 0;
+      }
+    }
+  }
+
+  // Pulse rings
+  for (const p of pulses) {
+    p.r += p.speed;
+    p.life -= p.decay;
+  }
+
+  // Particles
+  for (const p of particles) {
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= 0.985; p.vy *= 0.985;
+    p.life -= p.decay;
+  }
+
+  // Trim dead
+  for (let i = pulses.length - 1; i >= 0; i--) {
+    if (pulses[i].life <= 0 || pulses[i].r > pulses[i].maxR) pulses.splice(i, 1);
+  }
+  for (let i = particles.length - 1; i >= 0; i--) {
+    if (particles[i].life <= 0) particles.splice(i, 1);
+  }
+  while (traces.length > MAX_TRACES) traces.shift();
+  while (particles.length > MAX_PARTICLES) particles.shift();
+
+  // Stats
+  stats.nodes   = nodes.length;
+  stats.traces  = traces.length;
+  stats.pulses  = pulses.length;
+  stats.energy  = nodes.reduce((s, n) => s + n.energy, 0) / Math.max(nodes.length, 1);
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function draw() {
+  mx.clearRect(0, 0, W, H);
+  const p = P();
+
+  // ── Pulse rings ──
+  for (const pulse of pulses) {
+    const [r, g, b] = hexRgb(pulse.color);
+    mx.beginPath();
+    mx.arc(pulse.x, pulse.y, pulse.r, 0, Math.PI * 2);
+    mx.strokeStyle = `rgba(${r},${g},${b},${pulse.life * 0.7})`;
+    mx.lineWidth = 1.2;
+    mx.shadowColor = `rgba(${r},${g},${b},0.8)`;
+    mx.shadowBlur = 18;
+    mx.stroke();
+    mx.shadowBlur = 0;
+  }
+
+  // ── Traces ──
+  for (const t of traces) {
+    const a = t.a, b = t.b;
+    const progress = t.progress;
+    const energy = t.energy;
+    const [r, g, bl] = hexRgb(p.trace);
+    const alpha = 0.08 + energy * 0.55;
+
+    mx.beginPath();
+    mx.moveTo(a.x, a.y);
+
+    // Slight curve
+    const mx2 = (a.x + b.x) / 2 + (a.y - b.y) * 0.08;
+    const my2 = (a.y + b.y) / 2 + (b.x - a.x) * 0.08;
+    mx.quadraticCurveTo(mx2, my2, b.x, b.y);
+
+    // Pulse along trace
+    if (progress < 1 && energy > 0.2) {
+      const t2 = progress;
+      const px = (1-t2)*(1-t2)*a.x + 2*(1-t2)*t2*mx2 + t2*t2*b.x;
+      const py = (1-t2)*(1-t2)*a.y + 2*(1-t2)*t2*my2 + t2*t2*b.y;
+      mx.setLineDash([6, 4]);
+      mx.lineDashOffset = -frame * 0.4;
+    } else {
+      mx.setLineDash([]);
+    }
+
+    mx.strokeStyle = `rgba(${r},${g},${bl},${alpha})`;
+    mx.lineWidth = 0.7 + energy * 1.8;
+    mx.shadowColor = `rgba(${r},${g},${bl},0.6)`;
+    mx.shadowBlur = 6 + energy * 10;
+    mx.stroke();
+    mx.shadowBlur = 0;
+    mx.setLineDash([]);
+  }
+
+  // ── Particles ──
+  for (const pt of particles) {
+    const [r, g, b] = hexRgb(pt.color);
+    mx.beginPath();
+    mx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+    mx.fillStyle = `rgba(${r},${g},${b},${pt.life * 0.75})`;
+    mx.shadowColor = `rgba(${r},${g},${b},0.9)`;
+    mx.shadowBlur = 6;
+    mx.fill();
+    mx.shadowBlur = 0;
+  }
+
+  // ── Nodes ──
+  for (const n of nodes) {
+    const [r, g, b] = hexRgb(n.color);
+    const glow  = 0.55 + n.energy * 0.45;
+    const alpha = 0.8  + n.energy * 0.2;
+    const rr = n.r + n.energy * 2.5;
+
+    // Outer aura
+    const aura = mx.createRadialGradient(n.x, n.y, 0, n.x, n.y, rr * 4);
+    aura.addColorStop(0, `rgba(${r},${g},${b},${glow * 0.35})`);
+    aura.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    mx.beginPath();
+    mx.arc(n.x, n.y, rr * 4, 0, Math.PI * 2);
+    mx.fillStyle = aura;
+    mx.fill();
+
+    // Core glow
+    const core = mx.createRadialGradient(n.x, n.y, 0, n.x, n.y, rr * 1.8);
+    core.addColorStop(0, `rgba(${r},${g},${b},${alpha})`);
+    core.addColorStop(0.55, `rgba(${r},${g},${b},${alpha * 0.5})`);
+    core.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    mx.beginPath();
+    mx.arc(n.x, n.y, rr * 1.8, 0, Math.PI * 2);
+    mx.fillStyle = core;
+    mx.shadowColor = `rgba(${r},${g},${b},0.95)`;
+    mx.shadowBlur = 12 + n.energy * 18;
+    mx.fill();
+    mx.shadowBlur = 0;
+
+    // Center dot
+    mx.beginPath();
+    mx.arc(n.x, n.y, rr * 0.55, 0, Math.PI * 2);
+    mx.fillStyle = `rgba(255,255,255,${alpha})`;
+    mx.fill();
+  }
+
+  // ── Mouse glow ──
+  if (mouse.x > 0 && mouse.y > 0) {
+    const [r, g, b] = hexRgb(p.trace);
+    const mg = mx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 130);
+    mg.addColorStop(0, `rgba(${r},${g},${b},0.1)`);
+    mg.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    mx.beginPath();
+    mx.arc(mouse.x, mouse.y, 130, 0, Math.PI * 2);
+    mx.fillStyle = mg;
+    mx.fill();
+
+    // Cursor dot
+    mx.beginPath();
+    mx.arc(mouse.x, mouse.y, 3, 0, Math.PI * 2);
+    mx.fillStyle = p.trace;
+    mx.shadowColor = p.glow;
+    mx.shadowBlur = 15;
+    mx.fill();
+    mx.shadowBlur = 0;
+  }
+
+  // ── Vignette ──
+  const vig = mx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.28, W/2, H/2, Math.max(W,H)*0.75);
+  vig.addColorStop(0, 'transparent');
+  vig.addColorStop(1, 'rgba(5,5,15,0.7)');
+  mx.fillStyle = vig;
+  mx.fillRect(0, 0, W, H);
+
+  // ── HUD stats ──
+  document.getElementById('node-count').textContent  = stats.nodes;
+  document.getElementById('trace-count').textContent = stats.traces;
+  document.getElementById('pulse-count').textContent = stats.pulses;
+  document.getElementById('energy').textContent      = stats.energy.toFixed(2);
+  document.getElementById('palette-name').textContent = p.name;
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ── Input ────────────────────────────────────────────────────────────────────
+mc.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+mc.addEventListener('mousedown', e => {
+  if (e.button === 0) {
+    mouse.down = true;
+    addNode(e.clientX, e.clientY, 1);
+    emitPulse(nodes[nodes.length - 1], 1);
+  }
+  if (e.button === 2) {
+    pulses = [];
+    traces = [];
+    particles = [];
+    nodes.forEach(n => { n.connects = []; });
+  }
+});
+mc.addEventListener('mouseup',   () => { mouse.down = false; });
+mc.addEventListener('mouseleave',() => { mouse.x = -9999; mouse.y = -9999; mouse.down = false; });
+mc.addEventListener('contextmenu', e => e.preventDefault());
+
+// Touch
+mc.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+  mouse.down = true;
+  addNode(t.clientX, t.clientY, 1);
+  emitPulse(nodes[nodes.length - 1], 1);
+}, { passive: false });
+mc.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+}, { passive: false });
+mc.addEventListener('touchend', () => { mouse.down = false; });
+
+// ── Controls ─────────────────────────────────────────────────────────────────
+const btnPulse = document.getElementById('btn-pulse');
+const btnGrow  = document.getElementById('btn-grow');
+btnPulse.addEventListener('click', () => {
+  doPulse = !doPulse;
+  btnPulse.classList.toggle('active', doPulse);
+});
+btnGrow.addEventListener('click', () => {
+  doGrow = !doGrow;
+  btnGrow.classList.toggle('active', doGrow);
+});
+document.getElementById('btn-clear').addEventListener('click', () => {
+  nodes = []; traces = []; pulses = []; particles = [];
+  drawBg();
+});
+document.getElementById('btn-save').addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = `phantom-circuitry-${Date.now()}.png`;
+  link.href = mc.toDataURL('image/png');
+  link.click();
+});
+
+// Palette
+document.querySelectorAll('.palette-dot').forEach(dot => {
+  dot.addEventListener('click', () => {
+    palIdx = parseInt(dot.dataset.p);
+    drawBg();
+    document.querySelectorAll('.palette-dot').forEach(d => d.style.transform = '');
+    dot.style.transform = 'scale(1.5)';
+  });
+});
+
+// Keyboard
+window.addEventListener('keydown', e => {
+  if (e.key === ' ') {
+    e.preventDefault();
+    palIdx = (palIdx + 1) % PALETTES.length;
+    drawBg();
+  }
+  if (e.key === 'c' || e.key === 'C') {
+    nodes = []; traces = []; pulses = []; particles = [];
+    drawBg();
+  }
+  if (e.key === 's' || e.key === 'S') {
+    const link = document.createElement('a');
+    link.download = `phantom-circuitry-${Date.now()}.png`;
+    link.href = mc.toDataURL('image/png');
+    link.click();
+  }
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+resize();
+// Seed initial cluster
+const cx = W / 2, cy = H / 2;
+for (let i = 0; i < 10; i++) {
+  addNode(cx + rand(-120, 120), cy + rand(-120, 120), rand(0.5, 1));
+}
+// Initial pulse
+setTimeout(() => { nodes.forEach(n => emitPulse(n, 0.6)); }, 500);
+loop();
+</script>
+</body>
+</html>
