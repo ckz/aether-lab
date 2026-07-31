@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quantum Foam — Virtual Particle Sea</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    cursor: crosshair;
+  }
+
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+  }
+
+  .controls {
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    background: rgba(0,0,0,0.7);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    color: #888;
+    font-size: 0.75rem;
+    z-index: 10;
+    backdrop-filter: blur(10px);
+    line-height: 1.6;
+  }
+
+  .controls .stat {
+    color: #aaa;
+  }
+
+  .controls .stat span {
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .controls .hint {
+    margin-top: 0.4rem;
+    color: #666;
+    font-size: 0.7rem;
+  }
+
+  .controls .title {
+    color: #fff;
+    font-weight: 600;
+    margin-bottom: 0.3rem;
+    font-size: 0.8rem;
+    letter-spacing: 0.05em;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div class="controls">
+  <div class="title">⚛️ QUANTUM FOAM</div>
+  <div class="stat">Pairs: <span id="pairs">0</span></div>
+  <div class="stat">Events/s: <span id="events">0</span></div>
+  <div class="stat">Palette: <span id="paletteName">Vacuum</span></div>
+  <div class="hint">Move mouse = measurement field<br>Click = collapse burst<br>Space = cycle palette</div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Palettes: [particle color, anti-particle color, annihilate flash, background tint]
+const palettes = [
+  { name: 'Vacuum', particle: '#aaccff', antiparticle: '#ffaacc', flash: '#ffffff', bg: '#020208', glow: 'rgba(170,204,255,0.15)' },
+  { name: 'Hawking', particle: '#ff6b35', antiparticle: '#ff9f1c', flash: '#ffeb3b', bg: '#0a0200', glow: 'rgba(255,107,53,0.15)' },
+  { name: 'Chandrasekhar', particle: '#e0e0ff', antiparticle: '#a0a0ff', flash: '#ffffff', bg: '#020208', glow: 'rgba(200,200,255,0.12)' },
+  { name: 'Friedmann', particle: '#ff69b4', antiparticle: '#00ffff', flash: '#ffffff', bg: '#050008', glow: 'rgba(255,105,180,0.12)' },
+  { name: 'Lemaître', particle: '#ff4444', antiparticle: '#4444ff', flash: '#ffaa00', bg: '#080000', glow: 'rgba(255,68,68,0.12)' },
+  { name: 'Planck', particle: '#ffffff', antiparticle: '#888888', flash: '#ffffff', bg: '#000000', glow: 'rgba(255,255,255,0.08)' },
+];
+
+let currentPalette = 0;
+
+const pairs = [];
+const MAX_PAIRS = 300;
+const FLASHES = [];
+
+let mouseX = -1000, mouseY = -1000;
+let mouseActive = false;
+let eventsThisSecond = 0;
+let eventsDisplay = 0;
+
+// Particle pair class
+class Pair {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.age = 0;
+    this.lifetime = 60 + Math.random() * 120; // frames
+    
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 0.3 + Math.random() * 1.5;
+    const p = palettes[currentPalette];
+    
+    this.particle = {
+      x: x, y: y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      color: p.particle,
+      size: 1 + Math.random() * 2.5,
+      phase: Math.random() * Math.PI * 2,
+    };
+    
+    this.antiparticle = {
+      x: x, y: y,
+      vx: -Math.cos(angle) * speed * (0.7 + Math.random() * 0.6),
+      vy: -Math.sin(angle) * speed * (0.7 + Math.random() * 0.6),
+      color: p.antiparticle,
+      size: 1 + Math.random() * 2.5,
+      phase: Math.random() * Math.PI * 2,
+    };
+    
+    this.alive = true;
+    this.measured = false;
+  }
+  
+  update() {
+    if (!this.alive) return;
+    this.age++;
+    
+    // Fade out near end of life
+    const lifeRatio = this.age / this.lifetime;
+    this.opacity = lifeRatio < 0.7 ? 1 : 1 - (lifeRatio - 0.7) / 0.3;
+    
+    if (this.age >= this.lifetime) {
+      this.annihilate();
+      return;
+    }
+    
+    // Mouse measurement field suppresses foam
+    if (mouseActive) {
+      const dx1 = this.particle.x - mouseX;
+      const dy1 = this.particle.y - mouseY;
+      const dist1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+      if (dist1 < 150) {
+        const force = (150 - dist1) / 150 * 0.15;
+        this.particle.vx += (dx1 / dist1) * force;
+        this.particle.vy += (dy1 / dist1) * force;
+      }
+      const dx2 = this.antiparticle.x - mouseX;
+      const dy2 = this.antiparticle.y - mouseY;
+      const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+      if (dist2 < 150) {
+        const force = (150 - dist2) / 150 * 0.15;
+        this.antiparticle.vx += (dx2 / dist2) * force;
+        this.antiparticle.vy += (dy2 / dist2) * force;
+      }
+    }
+    
+    // Slight deceleration
+    this.particle.vx *= 0.998;
+    this.particle.vy *= 0.998;
+    this.antiparticle.vx *= 0.998;
+    this.antiparticle.vy *= 0.998;
+    
+    // Add slight random walk (quantum jitter)
+    this.particle.vx += (Math.random() - 0.5) * 0.05;
+    this.particle.vy += (Math.random() - 0.5) * 0.05;
+    this.antiparticle.vx += (Math.random() - 0.5) * 0.05;
+    this.antiparticle.vy += (Math.random() - 0.5) * 0.05;
+    
+    this.particle.x += this.particle.vx;
+    this.particle.y += this.particle.vy;
+    this.antiparticle.x += this.antiparticle.vx;
+    this.antiparticle.y += this.antiparticle.vy;
+    
+    // Pulse size
+    this.particle.phase += 0.08;
+    this.antiparticle.phase += 0.08;
+    this.particle.currentSize = this.particle.size * (0.8 + 0.4 * Math.sin(this.particle.phase));
+    this.antiparticle.currentSize = this.antiparticle.size * (0.8 + 0.4 * Math.sin(this.antiparticle.phase));
+  }
+  
+  annihilate() {
+    this.alive = false;
+    const mx = (this.particle.x + this.antiparticle.x) / 2;
+    const my = (this.particle.y + this.antiparticle.y) / 2;
+    FLASHES.push({ x: mx, y: my, radius: 0, maxRadius: 8 + Math.random() * 12, alpha: 1, color: palettes[currentPalette].flash });
+    eventsThisSecond++;
+  }
+  
+  draw(ctx) {
+    if (!this.alive) return;
+    const alpha = this.opacity || 1;
+    
+    // Glow
+    ctx.globalAlpha = alpha * 0.3;
+    ctx.fillStyle = this.particle.color;
+    ctx.beginPath();
+    ctx.arc(this.particle.x, this.particle.y, this.particle.currentSize * 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = this.antiparticle.color;
+    ctx.beginPath();
+    ctx.arc(this.antiparticle.x, this.antiparticle.y, this.antiparticle.currentSize * 3, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Core
+    ctx.globalAlpha = alpha * 0.9;
+    ctx.fillStyle = this.particle.color;
+    ctx.beginPath();
+    ctx.arc(this.particle.x, this.particle.y, this.particle.currentSize, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = this.antiparticle.color;
+    ctx.beginPath();
+    ctx.arc(this.antiparticle.x, this.antiparticle.y, this.antiparticle.currentSize, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.globalAlpha = 1;
+  }
+}
+
+// Background vacuum pair creation
+function spawnVacuumPairs() {
+  if (pairs.length < MAX_PAIRS && Math.random() < 0.15) {
+    const x = Math.random() * W;
+    const y = Math.random() * H;
+    pairs.push(new Pair(x, y));
+    eventsThisSecond++;
+  }
+}
+
+// Mouse burst
+function measurementBurst(x, y) {
+  const burstRadius = 180;
+  const burstForce = 6;
+  
+  // Collapse nearby pairs
+  for (let i = pairs.length - 1; i >= 0; i--) {
+    const p = pairs[i];
+    if (!p.alive) continue;
+    
+    const dx1 = p.particle.x - x;
+    const dy1 = p.particle.y - y;
+    const dist1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+    const dx2 = p.antiparticle.x - x;
+    const dy2 = p.antiparticle.y - y;
+    const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+    
+    if (dist1 < burstRadius || dist2 < burstRadius) {
+      // Collapse toward center then annihilate
+      const cx = (p.particle.x + p.antiparticle.x) / 2;
+      const cy = (p.particle.y + p.antiparticle.y) / 2;
+      p.particle.x = cx;
+      p.particle.y = cy;
+      p.antiparticle.x = cx;
+      p.antiparticle.y = cy;
+      p.lifetime = Math.min(p.lifetime, p.age + 5);
+      eventsThisSecond++;
+    } else {
+      // Push outward
+      if (dist1 < burstRadius * 1.5) {
+        const force = burstForce * (1 - dist1 / (burstRadius * 1.5));
+        p.particle.vx += (dx1 / dist1) * force;
+        p.particle.vy += (dy1 / dist1) * force;
+      }
+      if (dist2 < burstRadius * 1.5) {
+        const force = burstForce * (1 - dist2 / (burstRadius * 1.5));
+        p.antiparticle.vx += (dx2 / dist2) * force;
+        p.antiparticle.vy += (dy2 / dist2) * force;
+      }
+    }
+  }
+  
+  // Big flash
+  FLASHES.push({ x, y, radius: 0, maxRadius: 60 + Math.random() * 40, alpha: 0.8, color: palettes[currentPalette].flash });
+}
+
+// Mouse events
+canvas.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  mouseActive = true;
+});
+
+canvas.addEventListener('mouseleave', () => {
+  mouseActive = false;
+});
+
+canvas.addEventListener('click', (e) => {
+  measurementBurst(e.clientX, e.clientY);
+});
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  mouseX = e.touches[0].clientX;
+  mouseY = e.touches[0].clientY;
+  mouseActive = true;
+}, { passive: false });
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  mouseX = e.touches[0].clientX;
+  mouseY = e.touches[0].clientY;
+  mouseActive = true;
+  measurementBurst(mouseX, mouseY);
+}, { passive: false });
+
+canvas.addEventListener('touchend', () => {
+  mouseActive = false;
+});
+
+// Keyboard
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    currentPalette = (currentPalette + 1) % palettes.length;
+    document.getElementById('paletteName').textContent = palettes[currentPalette].name;
+  }
+});
+
+// Draw measurement field indicator
+function drawMeasurementField() {
+  if (!mouseActive) return;
+  const p = palettes[currentPalette];
+  
+  // Outer ring
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(mouseX, mouseY, 150, 0, Math.PI * 2);
+  ctx.stroke();
+  
+  // Inner glow
+  const grad = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 150);
+  grad.addColorStop(0, p.glow);
+  grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(mouseX, mouseY, 150, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// Draw flashes
+function drawFlashes() {
+  for (let i = FLASHES.length - 1; i >= 0; i--) {
+    const f = FLASHES[i];
+    f.radius += 1.5;
+    f.alpha -= 0.04;
+    
+    if (f.alpha <= 0) {
+      FLASHES.splice(i, 1);
+      continue;
+    }
+    
+    ctx.globalAlpha = f.alpha * 0.6;
+    ctx.fillStyle = f.color;
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, f.radius, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.globalAlpha = f.alpha * 0.3;
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, f.radius * 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Stats
+let lastSecond = Date.now();
+function updateStats() {
+  const now = Date.now();
+  if (now - lastSecond >= 1000) {
+    eventsDisplay = eventsThisSecond;
+    eventsThisSecond = 0;
+    lastSecond = now;
+  }
+  
+  document.getElementById('pairs').textContent = pairs.filter(p => p.alive).length;
+  document.getElementById('events').textContent = eventsDisplay;
+}
+
+// Main loop
+function loop() {
+  // Fade background (creates trails)
+  ctx.fillStyle = palettes[currentPalette].bg;
+  ctx.globalAlpha = 0.15;
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 1;
+  
+  // Spawn vacuum pairs
+  spawnVacuumPairs();
+  
+  // Update and draw pairs
+  for (let i = pairs.length - 1; i >= 0; i--) {
+    pairs[i].update();
+    if (!pairs[i].alive) {
+      pairs.splice(i, 1);
+    } else {
+      pairs[i].draw(ctx);
+    }
+  }
+  
+  // Draw flashes
+  drawFlashes();
+  
+  // Measurement field
+  drawMeasurementField();
+  
+  // Stats
+  updateStats();
+  
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+
+</body>
+</html>
