@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kaleidoscope Prism — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #050508;
+    color: #e0e0e0;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  canvas {
+    display: block;
+    cursor: crosshair;
+    position: fixed;
+    top: 0;
+    left: 0;
+  }
+
+  .ui {
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 0.5rem;
+    z-index: 10;
+    background: rgba(10, 10, 20, 0.85);
+    padding: 0.75rem 1rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+  }
+
+  .ui button {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #e0e0e0;
+    padding: 0.5rem 0.9rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.2s;
+    font-family: inherit;
+    letter-spacing: 0.03em;
+  }
+
+  .ui button:hover {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.35);
+    transform: translateY(-1px);
+  }
+
+  .ui button.active {
+    background: rgba(120, 180, 255, 0.25);
+    border-color: rgba(120, 180, 255, 0.5);
+    color: #fff;
+    box-shadow: 0 0 12px rgba(120, 180, 255, 0.3);
+  }
+
+  .ui .slider-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0 0.5rem;
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .ui .slider-group:first-of-type {
+    border-left: none;
+  }
+
+  .ui label {
+    font-size: 0.7rem;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+
+  .ui input[type="range"] {
+    width: 70px;
+    accent-color: #78b4ff;
+  }
+
+  .hint {
+    position: fixed;
+    top: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.4);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    pointer-events: none;
+    transition: opacity 1.5s;
+    z-index: 10;
+  }
+
+  .hint.fading { opacity: 0; }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div class="hint" id="hint">click &amp; drag to paint with light</div>
+
+<div class="ui">
+  <button id="btnSegments" data-segments="8">8 Seg</button>
+  <button id="btnPalette" data-palette="0">Prism</button>
+  <div class="slider-group">
+    <label>Trail</label>
+    <input type="range" id="sliderTrail" min="1" max="40" value="18">
+  </div>
+  <div class="slider-group">
+    <label>Mirror</label>
+    <input type="range" id="sliderMirror" min="0" max="8" value="4">
+  </div>
+  <button id="btnClear">Clear</button>
+  <button id="btnSave">Save PNG</button>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const hint = document.getElementById('hint');
+
+  let W, H, cx, cy;
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+    cx = W / 2;
+    cy = H / 2;
+  }
+  resize();
+  window.addEventListener('resize', () => {
+    resize();
+    ctx.fillStyle = '#050508';
+    ctx.fillRect(0, 0, W, H);
+  });
+
+  // State
+  let segments = 8;
+  let paletteIndex = 0;
+  let trailDecay = 0.018;
+  let mirrorMode = 4;
+  let isDrawing = false;
+  let mouseX = cx, mouseY = cy;
+  let prevX = cx, prevY = cy;
+  let hue = Math.random() * 360;
+  let time = 0;
+  let particles = [];
+
+  // Palettes: each has a base hue and a spread
+  const palettes = [
+    { name: 'Prism', base: 0, spread: 360, saturation: 85, lightness: 60 },
+    { name: 'Aurora', base: 120, spread: 120, saturation: 75, lightness: 55 },
+    { name: 'Ember', base: 0, spread: 50, saturation: 90, lightness: 55 },
+    { name: 'Ocean', base: 200, spread: 60, saturation: 80, lightness: 55 },
+    { name: 'Violet', base: 260, spread: 50, saturation: 70, lightness: 60 },
+    { name: 'Mono', base: 0, spread: 0, saturation: 0, lightness: 70 },
+    { name: 'Neon', base: 300, spread: 180, saturation: 100, lightness: 60 },
+  ];
+
+  const buttons = {
+    segments: document.getElementById('btnSegments'),
+    palette: document.getElementById('btnPalette'),
+    clear: document.getElementById('btnClear'),
+    save: document.getElementById('btnSave'),
+  };
+  const sliderTrail = document.getElementById('sliderTrail');
+  const sliderMirror = document.getElementById('sliderMirror');
+
+  function updateUI() {
+    buttons.segments.textContent = `${segments} Seg`;
+    buttons.segments.dataset.segments = segments;
+    buttons.palette.textContent = palettes[paletteIndex].name;
+    buttons.palette.dataset.palette = paletteIndex;
+    trailDecay = sliderTrail.value / 1000;
+    mirrorMode = parseInt(sliderMirror.value, 10);
+  }
+  updateUI();
+
+  buttons.segments.addEventListener('click', () => {
+    segments = segments >= 24 ? 3 : segments + 1;
+    updateUI();
+  });
+
+  buttons.palette.addEventListener('click', () => {
+    paletteIndex = (paletteIndex + 1) % palettes.length;
+    updateUI();
+  });
+
+  buttons.clear.addEventListener('click', () => {
+    ctx.fillStyle = '#050508';
+    ctx.fillRect(0, 0, W, H);
+    particles = [];
+  });
+
+  buttons.save.addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = `kaleidoscope-${Date.now()}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
+
+  sliderTrail.addEventListener('input', updateUI);
+  sliderMirror.addEventListener('input', updateUI);
+
+  // Mouse / touch
+  function getPos(e) {
+    if (e.touches && e.touches.length) {
+      return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+    return { x: e.clientX, y: e.clientY };
+  }
+
+  function startDraw(e) {
+    isDrawing = true;
+    const pos = getPos(e);
+    mouseX = prevX = pos.x;
+    mouseY = prevY = pos.y;
+    hint.classList.add('fading');
+  }
+
+  function moveDraw(e) {
+    const pos = getPos(e);
+    prevX = mouseX;
+    prevY = mouseY;
+    mouseX = pos.x;
+    mouseY = pos.y;
+  }
+
+  function endDraw() {
+    isDrawing = false;
+  }
+
+  canvas.addEventListener('mousedown', startDraw);
+  canvas.addEventListener('mousemove', moveDraw);
+  canvas.addEventListener('mouseup', endDraw);
+  canvas.addEventListener('mouseleave', endDraw);
+  canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDraw(e); }, { passive: false });
+  canvas.addEventListener('touchmove', (e) => { e.preventDefault(); moveDraw(e); }, { passive: false });
+  canvas.addEventListener('touchend', endDraw);
+
+  // Particle class
+  class Particle {
+    constructor(x, y, h, s, l, life) {
+      this.x = x;
+      this.y = y;
+      this.h = h;
+      this.s = s;
+      this.l = l;
+      this.life = life || 1;
+      this.decay = 0.003 + Math.random() * 0.012;
+      this.vx = (Math.random() - 0.5) * 1.2;
+      this.vy = (Math.random() - 0.5) * 1.2;
+      this.size = 1.5 + Math.random() * 3;
+    }
+    update() {
+      this.x += this.vx;
+      this.y += this.vy;
+      this.life -= this.decay;
+      this.size *= 0.995;
+    }
+    draw(ctx) {
+      if (this.life <= 0) return;
+      ctx.globalAlpha = this.life * 0.8;
+      ctx.fillStyle = `hsl(${this.h}, ${this.s}%, ${this.l}%)`;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function polar(x, y, originX, originY) {
+    const dx = x - originX;
+    const dy = y - originY;
+    return { r: Math.sqrt(dx * dx + dy * dy), angle: Math.atan2(dy, dx) };
+  }
+
+  function drawSymmetricLine(x1, y1, x2, y2) {
+    const pal = palettes[paletteIndex];
+    const angleStep = (Math.PI * 2) / segments;
+    const mirrorSteps = mirrorMode;
+
+    for (let s = 0; s < segments; s++) {
+      const baseAngle = s * angleStep + time * 0.0002;
+      
+      // Main segment
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(baseAngle);
+      ctx.beginPath();
+      ctx.moveTo(x1 - cx, y1 - cy);
+      ctx.lineTo(x2 - cx, y2 - cy);
+      ctx.strokeStyle = `hsla(${hue + s * (pal.spread / segments)}, ${pal.saturation}%, ${pal.lightness}%, 0.6)`;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.restore();
+
+      // Mirror within segment
+      for (let m = 1; m <= mirrorSteps; m++) {
+        const mirrorAngle = baseAngle + (m * angleStep / (mirrorSteps + 1));
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(mirrorAngle);
+        ctx.beginPath();
+        ctx.moveTo(x1 - cx, y1 - cy);
+        ctx.lineTo(x2 - cx, y2 - cy);
+        ctx.strokeStyle = `hsla(${hue + s * (pal.spread / segments) + m * 15}, ${pal.saturation}%, ${pal.lightness}%, 0.35)`;
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+
+  function emitParticles(x, y, count) {
+    const pal = palettes[paletteIndex];
+    for (let i = 0; i < count; i++) {
+      const h = (hue + Math.random() * pal.spread) % 360;
+      const s = pal.saturation + (Math.random() - 0.5) * 20;
+      const l = pal.lightness + (Math.random() - 0.5) * 20;
+      particles.push(new Particle(
+        x + (Math.random() - 0.5) * 20,
+        y + (Math.random() - 0.5) * 20,
+        h, s, l
+      ));
+    }
+  }
+
+  function animate() {
+    time++;
+
+    // Trail fade
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = trailDecay;
+    ctx.fillStyle = '#050508';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Draw
+    if (isDrawing) {
+      hue = (hue + 0.8) % 360;
+      drawSymmetricLine(prevX, prevY, mouseX, mouseY);
+      emitParticles(mouseX, mouseY, 3);
+      prevX = mouseX;
+      prevY = mouseY;
+    }
+
+    // Update and draw particles
+    particles = particles.filter(p => p.life > 0);
+    for (const p of particles) {
+      p.update();
+      // Draw particle with symmetry
+      const pal = palettes[paletteIndex];
+      const angleStep = (Math.PI * 2) / segments;
+      for (let s = 0; s < segments; s++) {
+        const baseAngle = s * angleStep + time * 0.0002;
+        const px = cx + (p.x - cx) * Math.cos(baseAngle) - (p.y - cy) * Math.sin(baseAngle);
+        const py = cy + (p.x - cx) * Math.sin(baseAngle) + (p.y - cy) * Math.cos(baseAngle);
+        ctx.globalAlpha = p.life * 0.6;
+        ctx.fillStyle = `hsl(${p.h + s * (pal.spread / segments)}, ${p.s}%, ${p.l}%)`;
+        ctx.beginPath();
+        ctx.arc(px, py, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Center glow
+    const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.min(W, H) * 0.35);
+    gradient.addColorStop(0, `hsla(${hue}, 60%, 50%, 0.03)`);
+    gradient.addColorStop(1, 'transparent');
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+
+    // Cap particles
+    if (particles.length > 1500) {
+      particles = particles.slice(-1200);
+    }
+
+    requestAnimationFrame(animate);
+  }
+
+  // Initial fill
+  ctx.fillStyle = '#050508';
+  ctx.fillRect(0, 0, W, H);
+
+  // Auto-fade hint
+  setTimeout(() => hint.classList.add('fading'), 6000);
+
+  animate();
+})();
+</script>
+</body>
+</html>
