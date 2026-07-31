@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aether Loom</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #0a0a0f; font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas { display: block; position: fixed; top: 0; left: 0; }
+  #ui {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 10px; align-items: center; z-index: 10;
+    background: rgba(10, 10, 20, 0.6); backdrop-filter: blur(8px);
+    padding: 8px 18px; border-radius: 30px; border: 1px solid rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.55); font-size: 11px; letter-spacing: 0.5px;
+    user-select: none; transition: opacity 0.8s;
+  }
+  #ui:hover { opacity: 1; }
+  .sep { color: rgba(255,255,255,0.15); }
+  .key {
+    background: rgba(255,255,255,0.08); padding: 2px 7px; border-radius: 4px;
+    color: rgba(255,255,255,0.7); font-size: 10px; border: 1px solid rgba(255,255,255,0.1);
+  }
+  #title {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.12); font-size: 13px; letter-spacing: 6px;
+    text-transform: uppercase; z-index: 10; user-select: none;
+    transition: opacity 2s;
+  }
+  #palette-name {
+    position: fixed; top: 20px; right: 24px;
+    color: rgba(255,255,255,0.25); font-size: 10px; letter-spacing: 2px;
+    z-index: 10; user-select: none; text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="title">Aether Loom</div>
+<div id="palette-name"></div>
+<div id="ui">
+  <span><span class="key">Move</span> weave</span>
+  <span class="sep">·</span>
+  <span><span class="key">Click</span> burst</span>
+  <span class="sep">·</span>
+  <span><span class="key">Hold</span> attract</span>
+  <span class="sep">·</span>
+  <span><span class="key">Space</span> palette</span>
+  <span class="sep">·</span>
+  <span><span class="key">R</span> clear</span>
+  <span class="sep">·</span>
+  <span><span class="key">S</span> save</span>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Palettes ---
+const PALETTES = [
+  { name: 'Aurora',  bg: '#06080f', colors: ['#00ffc8','#00a8ff','#a855f7','#ff6b9d','#00ff88','#7df9ff'] },
+  { name: 'Ember',   bg: '#0f0806', colors: ['#ff6a00','#ffaa00','#ff3d00','#ffcc44','#ff8800','#ffdd88'] },
+  { name: 'Ocean',   bg: '#040a10', colors: ['#0077be','#00b4d8','#48cae4','#90e0ef','#023e8a','#00ffff'] },
+  { name: 'Violet',  bg: '#0a0612', colors: ['#8b5cf6','#a78bfa','#c084fc','#e879f9','#7c3aed','#d946ef'] },
+  { name: 'Mono',    bg: '#080808', colors: ['#ffffff','#cccccc','#999999','#666666','#bbbbbb','#eeeeee'] },
+  { name: 'Neon',    bg: '#0a0008', colors: ['#ff00ff','#00ffff','#ff0080','#80ff00','#ffff00','#ff4400'] },
+  { name: 'Forest',  bg: '#040c06', colors: ['#22c55e','#4ade80','#86efac','#16a34a','#bbf7d0','#a3e635'] },
+];
+let paletteIdx = 0;
+function palette() { return PALETTES[paletteIdx]; }
+
+// --- Threads ---
+const THREAD_COUNT = 90;
+const CONNECTION_DIST = 140;
+const MOUSE_INFLUENCE = 180;
+const MOUSE_HOLD_RADIUS = 250;
+
+class Thread {
+  constructor() { this.reset(true); }
+  reset(initial = false) {
+    const p = palette().colors;
+    this.x = initial ? Math.random() * W : Math.random() * W;
+    this.y = initial ? Math.random() * H : -20;
+    this.vx = (Math.random() - 0.5) * 0.4;
+    this.vy = Math.random() * 0.3 + 0.2;
+    this.size = Math.random() * 2 + 1;
+    this.color = p[Math.floor(Math.random() * p.length)];
+    this.phase = Math.random() * Math.PI * 2;
+    this.phaseSpeed = 0.005 + Math.random() * 0.015;
+    this.wobbleAmp = 0.3 + Math.random() * 0.7;
+    this.wobbleFreq = 0.003 + Math.random() * 0.005;
+    this.brightness = 0.4 + Math.random() * 0.6;
+    this.life = 1;
+    this.trail = [];
+    this.trailMax = 8 + Math.floor(Math.random() * 12);
+  }
+  update(mx, my, mouseDown, time) {
+    this.phase += this.phaseSpeed;
+    this.x += Math.sin(time * this.wobbleFreq + this.phase) * this.wobbleAmp;
+    this.y += this.vy;
+    this.x += this.vx;
+
+    // Mouse weaving
+    if (mx !== null) {
+      const dx = mx - this.x, dy = my - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < MOUSE_INFLUENCE) {
+        const force = (1 - dist / MOUSE_INFLUENCE) * 0.6;
+        this.vx += (dx / dist) * force * 0.15;
+        this.vy += (dy / dist) * force * 0.08;
+      }
+      if (mouseDown && dist < MOUSE_HOLD_RADIUS) {
+        const pull = (1 - dist / MOUSE_HOLD_RADIUS) * 0.3;
+        this.vx += (dx / dist) * pull;
+        this.vy += (dy / dist) * pull;
+      }
+    }
+
+    // Damping
+    this.vx *= 0.995;
+    this.vy *= 0.995;
+    // Gentle downward drift
+    this.vy += 0.002;
+
+    // Bounds
+    if (this.x < -50) this.x = W + 50;
+    if (this.x > W + 50) this.x = -50;
+    if (this.y > H + 60) this.reset(false), this.y = -10;
+
+    // Trail
+    this.trail.unshift({ x: this.x, y: this.y });
+    if (this.trail.length > this.trailMax) this.trail.pop();
+  }
+}
+
+// --- Burst particles ---
+class Burst {
+  constructor(x, y, color) {
+    this.x = x; this.y = y;
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 4;
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed;
+    this.life = 1;
+    this.decay = 0.008 + Math.random() * 0.015;
+    this.size = 1 + Math.random() * 2.5;
+    this.color = color;
+  }
+  update() {
+    this.x += this.vx; this.y += this.vy;
+    this.vx *= 0.97; this.vy *= 0.97;
+    this.vy += 0.02;
+    this.life -= this.decay;
+  }
+  draw() {
+    ctx.save();
+    ctx.globalAlpha = this.life * 0.8;
+    ctx.fillStyle = this.color;
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// --- Init ---
+let threads = Array.from({ length: THREAD_COUNT }, () => new Thread());
+let bursts = [];
+let mouseX = null, mouseY = null, mouseDown = false;
+let time = 0;
+
+// --- Events ---
+canvas.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
+canvas.addEventListener('mousedown', e => {
+  if (e.button === 0) {
+    mouseDown = true;
+    spawnBurst(e.clientX, e.clientY, 30);
+  }
+});
+canvas.addEventListener('mouseup', () => mouseDown = false);
+canvas.addEventListener('mouseleave', () => { mouseX = null; mouseY = null; mouseDown = false; });
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouseX = t.clientX; mouseY = t.clientY; mouseDown = true;
+  spawnBurst(t.clientX, t.clientY, 25);
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouseX = t.clientX; mouseY = t.clientY;
+}, { passive: false });
+canvas.addEventListener('touchend', () => mouseDown = false);
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    paletteIdx = (paletteIdx + 1) % PALETTES.length;
+    updatePaletteColors();
+    document.getElementById('palette-name').textContent = palette().name;
+    setTimeout(() => document.getElementById('palette-name').textContent = '', 2000);
+  }
+  if (e.code === 'KeyR') { threads = Array.from({ length: THREAD_COUNT }, () => new Thread()); bursts = []; }
+  if (e.code === 'KeyS') savePNG();
+});
+
+function spawnBurst(x, y, count) {
+  const p = palette().colors;
+  for (let i = 0; i < count; i++) {
+    bursts.push(new Burst(x, y, p[Math.floor(Math.random() * p.length)]));
+  }
+}
+
+function updatePaletteColors() {
+  const p = palette().colors;
+  threads.forEach(t => { t.color = p[Math.floor(Math.random() * p.length)]; });
+}
+
+function savePNG() {
+  const link = document.createElement('a');
+  link.download = 'aether-loom-' + Date.now() + '.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+// --- Draw ---
+function draw() {
+  time++;
+  const p = palette();
+
+  // Fade trail
+  ctx.fillStyle = p.bg;
+  ctx.globalAlpha = 0.18;
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 1;
+
+  // Update threads
+  threads.forEach(t => t.update(mouseX, mouseY, mouseDown, time));
+
+  // Draw connections
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < threads.length; i++) {
+    for (let j = i + 1; j < threads.length; j++) {
+      const dx = threads[i].x - threads[j].x;
+      const dy = threads[i].y - threads[j].y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < CONNECTION_DIST) {
+        const alpha = (1 - dist / CONNECTION_DIST) * 0.25;
+        ctx.strokeStyle = threads[i].color;
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.moveTo(threads[i].x, threads[i].y);
+        ctx.lineTo(threads[j].x, threads[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Draw mouse glow
+  if (mouseX !== null) {
+    const grad = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, MOUSE_INFLUENCE);
+    const mc = p.colors[0];
+    grad.addColorStop(0, mc + '18');
+    grad.addColorStop(1, mc + '00');
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(mouseX, mouseY, MOUSE_INFLUENCE, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Draw threads
+  threads.forEach(t => {
+    // Trail
+    if (t.trail.length > 1) {
+      ctx.strokeStyle = t.color;
+      ctx.lineWidth = t.size * 0.5;
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = t.brightness * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(t.trail[0].x, t.trail[0].y);
+      for (let k = 1; k < t.trail.length; k++) {
+        ctx.lineTo(t.trail[k].x, t.trail[k].y);
+      }
+      ctx.stroke();
+    }
+    // Head
+    ctx.globalAlpha = t.brightness;
+    ctx.fillStyle = t.color;
+    ctx.shadowColor = t.color;
+    ctx.shadowBlur = 15;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, t.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  });
+
+  // Update & draw bursts
+  bursts = bursts.filter(b => b.life > 0);
+  bursts.forEach(b => { b.update(); b.draw(); });
+
+  ctx.globalAlpha = 1;
+
+  // Vignette
+  const vig = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.3, W/2, H/2, Math.max(W,H)*0.7);
+  vig.addColorStop(0, 'transparent');
+  vig.addColorStop(1, p.bg + 'aa');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W, H);
+
+  requestAnimationFrame(draw);
+}
+
+// Start with full fade-in
+ctx.fillStyle = palette().bg;
+ctx.fillRect(0, 0, W, H);
+document.getElementById('palette-name').textContent = palette().name;
+setTimeout(() => document.getElementById('palette-name').textContent = '', 2500);
+draw();
+</script>
+</body>
+</html>
