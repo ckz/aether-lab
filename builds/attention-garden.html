@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Attention Garden</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { 
+    width: 100%; height: 100%; overflow: hidden; 
+    background: #0a0a12; font-family: 'Georgia', serif;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.7); font-size: 13px; letter-spacing: 2px;
+    text-align: center; pointer-events: none; text-transform: uppercase;
+    transition: opacity 3s;
+  }
+  #title {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font-size: 11px; letter-spacing: 3px;
+    text-align: center; pointer-events: none;
+  }
+  #stats {
+    position: fixed; top: 20px; right: 24px;
+    color: rgba(255,255,255,0.4); font-size: 11px; letter-spacing: 1px;
+    text-align: right; pointer-events: none; font-family: monospace;
+  }
+  .hint {
+    animation: fadeHint 6s forwards;
+    animation-delay: 4s;
+  }
+  @keyframes fadeHint {
+    to { opacity: 0; }
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="ui" class="hint">click to plant · hold to water · watch them grow</div>
+<div id="stats"></div>
+<div id="title">THE ATTENTION GARDEN</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const ui = document.getElementById('ui');
+const stats = document.getElementById('stats');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Time of day cycle (5 min full cycle)
+const CYCLE_DURATION = 300000; // 5 minutes
+let cycleTime = 0;
+
+// Palettes for different times
+const palettes = {
+  dawn:   { sky: ['#1a0a2e','#2d1b4e','#4a2c6e'], ground: '#0d0d1a', flower: ['#ff9ecd','#ffb3d9','#ffc8e5','#ffe0f0','#ff85b8'], stem: '#3d5a3d', vine: '#4a6b4a', butterfly: '#ffd700' },
+  morning:{ sky: ['#0a1628','#1a2d4a','#2a4060'], ground: '#0d1218', flower: ['#ff6b9d','#ff8cb3','#ffb3d0','#c44dff','#e080ff'], stem: '#4a7a4a', vine: '#5a8a5a', butterfly: '#ffeb3b' },
+  midday: { sky: ['#0d1f3c','#1a3a5c','#2a5070'], ground: '#0d1418', flower: ['#ff4081','#ff6090','#ff80aa','#ff4081','#e04070'], stem: '#3d6d3d', vine: '#4d7d4d', butterfly: '#ffeb3b' },
+  sunset: { sky: ['#2e0a1a','#4e1a2d','#6e2a3d'], ground: '#0d0d14', flower: ['#ff7043','#ff9060','#ffb088','#ff5722','#ff8a65'], stem: '#5a4a3d', vine: '#6b5a4a', butterfly: '#ffab40' },
+  dusk:   { sky: ['#1a0a2e','#2d1b4e','#3d2a5e'], ground: '#0a0a14', flower: ['#b388ff','#ce93d8','#e1bee7','#9c7cff','#b39ddb'], stem: '#3d5a4d', vine: '#4d6a5d', butterfly: '#b388ff' },
+  night:  { sky: ['#050510','#0a0a1a','#0d0d24'], ground: '#080812', flower: ['#80d8ff','#a0e8ff','#c0f0ff','#40c0ff','#60d8ff'], stem: '#2d4a3d', vine: '#3d5a4d', butterfly: '#e0e0ff' }
+};
+
+function getPalette() {
+  const phase = (cycleTime % CYCLE_DURATION) / CYCLE_DURATION;
+  const keys = Object.keys(palettes);
+  const idx = Math.floor(phase * keys.length) % keys.length;
+  return palettes[keys[idx]];
+}
+
+// Flower class
+class Flower {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.age = 0;
+    this.maxAge = 400 + Math.random() * 300; // frames
+    this.growDuration = 120 + Math.random() * 80;
+    this.bloomTime = 0;
+    this.stemHeight = 30 + Math.random() * 50;
+    this.stemCurve = (Math.random() - 0.5) * 40;
+    this.petalCount = 5 + Math.floor(Math.random() * 4);
+    this.petalSize = 0;
+    this.maxPetalSize = 8 + Math.random() * 14;
+    this.color = null;
+    this.centerColor = '#fff8e1';
+    this.swayOffset = Math.random() * Math.PI * 2;
+    this.swaySpeed = 0.01 + Math.random() * 0.01;
+    this.watered = 0;
+    this.alive = true;
+    this.opacity = 1;
+    this.vines = [];
+    this.hasVine = Math.random() < 0.3;
+    this.vineLength = 0;
+    this.maxVineLength = 20 + Math.random() * 30;
+    
+    // Procedural color based on position + time
+    const hue = (x / W * 120 + y / H * 60 + cycleTime * 0.01) % 360;
+    this.hue = hue;
+  }
+  
+  update(palette, flowers) {
+    this.age++;
+    const growth = Math.min(1, this.age / this.growDuration);
+    this.petalSize = this.maxPetalSize * this.easeOutElastic(growth);
+    
+    if (this.age > this.growDuration && this.bloomTime === 0) {
+      this.bloomTime = this.age;
+    }
+    
+    // Check for nearby flowers for vine connections
+    if (this.hasVine && this.vineLength < this.maxVineLength && this.age > 60) {
+      this.vineLength += 0.3;
+      for (const other of flowers) {
+        if (other === this || !other.alive) continue;
+        const dx = other.x - this.x;
+        const dy = other.y - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 80 && this.vines.length < 3) {
+          // Check if vine already exists
+          const exists = this.vines.some(v => v.target === other);
+          if (!exists) {
+            this.vines.push({ target: other, progress: 0 });
+          }
+        }
+      }
+    }
+    
+    // Update vine progress
+    for (const vine of this.vines) {
+      vine.progress = Math.min(1, vine.progress + 0.005);
+    }
+    
+    // Wilt and die
+    if (this.age > this.maxAge) {
+      this.opacity -= 0.003;
+      if (this.opacity <= 0) {
+        this.alive = false;
+        this.opacity = 0;
+      }
+    }
+    
+    return this.alive;
+  }
+  
+  easeOutElastic(t) {
+    if (t === 0 || t === 1) return t;
+    return Math.pow(2, -10 * t) * Math.sin((t - 1) * (2 * Math.PI) / 0.4) + 1;
+  }
+  
+  draw(ctx, palette) {
+    if (!this.alive && this.opacity <= 0) return;
+    
+    ctx.save();
+    ctx.globalAlpha = this.opacity;
+    
+    const sway = Math.sin(this.age * this.swaySpeed + this.swayOffset) * 3;
+    const baseX = this.x + sway;
+    const baseY = this.y;
+    
+    // Draw vines to nearby flowers
+    for (const vine of this.vines) {
+      if (vine.target.opacity <= 0) continue;
+      ctx.beginPath();
+      ctx.moveTo(baseX, baseY - this.stemHeight * this.petalSize / this.maxPetalSize);
+      const tx = vine.target.x + Math.sin(vine.target.age * vine.target.swaySpeed + vine.target.swayOffset) * 3;
+      const ty = vine.target.y - vine.target.stemHeight * vine.target.petalSize / vine.target.maxPetalSize;
+      const cpx = (baseX + tx) / 2 + (Math.random() - 0.5) * 10;
+      const cpy = (baseY + ty) / 2 - 20;
+      ctx.quadraticCurveTo(cpx, cpy, tx, ty);
+      ctx.strokeStyle = palette.vine + '60';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      
+      // Tiny leaves on vines
+      if (Math.random() < 0.02) {
+        const t = vine.progress;
+        const lx = (1-t)*(1-t)*baseX + 2*(1-t)*t*cpx + t*t*tx;
+        const ly = (1-t)*(1-t)*baseY + 2*(1-t)*t*cpy + t*t*ty;
+        ctx.fillStyle = palette.vine + 'aa';
+        ctx.beginPath();
+        ctx.arc(lx, ly, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    
+    // Stem
+    const stemProgress = Math.min(1, this.petalSize / this.maxPetalSize);
+    const stemH = this.stemHeight * stemProgress;
+    ctx.beginPath();
+    ctx.moveTo(baseX, baseY);
+    ctx.quadraticCurveTo(baseX + this.stemCurve * stemProgress * 0.5, baseY - stemH * 0.6, baseX + this.stemCurve * stemProgress * 0.3, baseY - stemH);
+    ctx.strokeStyle = palette.stem + Math.floor(this.opacity * 200).toString(16).padStart(2, '0');
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // Leaves on stem
+    if (stemProgress > 0.5) {
+      for (let i = 0; i < 2; i++) {
+        const t = 0.3 + i * 0.25;
+        const lx = baseX + this.stemCurve * stemProgress * t;
+        const ly = baseY - stemH * t;
+        ctx.fillStyle = palette.stem + 'aa';
+        ctx.beginPath();
+        ctx.ellipse(lx + (i === 0 ? -6 : 6), ly, 5, 2.5, (i === 0 ? -0.5 : 0.5), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    
+    // Flower head
+    const headX = baseX + this.stemCurve * stemProgress * 0.3;
+    const headY = baseY - stemH;
+    
+    if (stemProgress > 0.1) {
+      // Petals
+      const petalHue = this.hue;
+      for (let i = 0; i < this.petalCount; i++) {
+        const angle = (i / this.petalCount) * Math.PI * 2 + this.age * 0.005;
+        const px = headX + Math.cos(angle) * this.petalSize * 0.7;
+        const py = headY + Math.sin(angle) * this.petalSize * 0.7;
+        
+        // Petal glow
+        const glow = ctx.createRadialGradient(px, py, 0, px, py, this.petalSize);
+        glow.addColorStop(0, `hsla(${petalHue}, 80%, 70%, ${this.opacity * 0.9})`);
+        glow.addColorStop(0.5, `hsla(${petalHue + 20}, 70%, 60%, ${this.opacity * 0.6})`);
+        glow.addColorStop(1, `hsla(${petalHue + 40}, 60%, 50%, 0)`);
+        
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(px, py, this.petalSize, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Petal outline
+        ctx.strokeStyle = `hsla(${petalHue}, 70%, 65%, ${this.opacity * 0.4})`;
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.arc(px, py, this.petalSize * 0.8, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      
+      // Center
+      const centerGlow = ctx.createRadialGradient(headX, headY, 0, headX, headY, this.petalSize * 0.5);
+      centerGlow.addColorStop(0, `rgba(255, 250, 220, ${this.opacity})`);
+      centerGlow.addColorStop(1, `rgba(255, 220, 150, 0)`);
+      ctx.fillStyle = centerGlow;
+      ctx.beginPath();
+      ctx.arc(headX, headY, this.petalSize * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    ctx.restore();
+  }
+}
+
+// Butterfly particle
+class Butterfly {
+  constructor() {
+    this.reset();
+  }
+  
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.vx = (Math.random() - 0.5) * 0.5;
+    this.vy = (Math.random() - 0.5) * 0.5;
+    this.size = 2 + Math.random() * 3;
+    this.wingPhase = Math.random() * Math.PI * 2;
+    this.wingSpeed = 0.1 + Math.random() * 0.1;
+    this.life = 300 + Math.random() * 500;
+    this.age = 0;
+    this.hue = Math.random() * 60 + 30; // warm hues
+  }
+  
+  update(flowers) {
+    this.age++;
+    this.wingPhase += this.wingSpeed;
+    
+    // Wander toward nearest flower
+    let nearest = null;
+    let nearestDist = Infinity;
+    for (const f of flowers) {
+      if (!f.alive || f.opacity < 0.3) continue;
+      const dx = f.x - this.x;
+      const dy = f.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = f;
+      }
+    }
+    
+    if (nearest && nearestDist < 200) {
+      const dx = nearest.x - this.x;
+      const dy = nearest.y - this.y;
+      const force = 0.02;
+      this.vx += (dx / nearestDist) * force;
+      this.vy += (dy / nearestDist) * force;
+    }
+    
+    // Add wander
+    this.vx += (Math.random() - 0.5) * 0.05;
+    this.vy += (Math.random() - 0.5) * 0.05;
+    
+    // Damping
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+    
+    this.x += this.vx;
+    this.y += this.vy;
+    
+    // Wrap
+    if (this.x < 0) this.x = W;
+    if (this.x > W) this.x = 0;
+    if (this.y < 0) this.y = H;
+    if (this.y > H) this.y = 0;
+    
+    return this.age < this.life;
+  }
+  
+  draw(ctx, palette) {
+    const wingFlap = Math.sin(this.wingPhase) * 0.7 + 0.3;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(Math.atan2(this.vy, this.vx) + Math.PI / 2);
+    
+    ctx.fillStyle = `hsla(${this.hue}, 70%, 70%, 0.7)`;
+    ctx.beginPath();
+    ctx.ellipse(-this.size * 0.3, 0, this.size * 0.5, this.size * wingFlap, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(this.size * 0.3, 0, this.size * 0.5, this.size * wingFlap, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Glow
+    ctx.fillStyle = `hsla(${this.hue}, 80%, 80%, 0.3)`;
+    ctx.beginPath();
+    ctx.arc(0, 0, this.size * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.restore();
+  }
+}
+
+// Firefly particle (ambient)
+class Firefly {
+  constructor() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.size = 1 + Math.random() * 1.5;
+    this.phase = Math.random() * Math.PI * 2;
+    this.speed = 0.2 + Math.random() * 0.3;
+    this.drift = (Math.random() - 0.5) * 0.3;
+    this.hue = 40 + Math.random() * 40;
+  }
+  
+  update() {
+    this.phase += 0.03;
+    this.y -= this.speed * 0.3;
+    this.x += Math.sin(this.phase) * this.drift;
+    if (this.y < -10) { this.y = H + 10; this.x = Math.random() * W; }
+    if (this.x < -10) this.x = W + 10;
+    if (this.x > W + 10) this.x = -10;
+  }
+  
+  draw(ctx) {
+    const brightness = (Math.sin(this.phase) + 1) / 2;
+    ctx.fillStyle = `hsla(${this.hue}, 80%, 70%, ${brightness * 0.6})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Glow
+    const glow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size * 4);
+    glow.addColorStop(0, `hsla(${this.hue}, 80%, 70%, ${brightness * 0.2})`);
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// State
+let flowers = [];
+let butterflies = [];
+let fireflies = [];
+let mouse = { x: W / 2, y: H / 2, down: false, downTime: 0 };
+let lastFrame = performance.now();
+
+// Initialize ambient fireflies
+for (let i = 0; i < 30; i++) {
+  fireflies.push(new Firefly());
+}
+
+// Initialize butterflies
+for (let i = 0; i < 5; i++) {
+  butterflies.push(new Butterfly());
+}
+
+// Event listeners
+canvas.addEventListener('mousedown', (e) => {
+  mouse.down = true;
+  mouse.downTime = performance.now();
+  plantFlower(e.clientX, e.clientY);
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+
+canvas.addEventListener('mouseup', () => {
+  mouse.down = false;
+});
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  mouse.down = true;
+  mouse.downTime = performance.now();
+  const touch = e.touches[0];
+  mouse.x = touch.clientX;
+  mouse.y = touch.clientY;
+  plantFlower(touch.clientX, touch.clientY);
+});
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const touch = e.touches[0];
+  mouse.x = touch.clientX;
+  mouse.y = touch.clientY;
+});
+
+canvas.addEventListener('touchend', () => {
+  mouse.down = false;
+});
+
+function plantFlower(x, y) {
+  const flower = new Flower(x, y);
+  flowers.push(flower);
+  
+  // Limit flowers
+  if (flowers.length > 80) {
+    flowers = flowers.filter(f => f.age < f.maxAge - 60);
+  }
+  
+  // Spawn particles on plant
+  for (let i = 0; i < 12; i++) {
+    sparkParticles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 2,
+      vy: (Math.random() - 0.5) * 2 - 1,
+      life: 30 + Math.random() * 20,
+      age: 0,
+      size: 1 + Math.random() * 2,
+      hue: flower.hue
+    });
+  }
+}
+
+let sparkParticles = [];
+
+// Animation loop
+function animate(now) {
+  const dt = now - lastFrame;
+  lastFrame = now;
+  cycleTime += dt;
+  
+  const palette = getPalette();
+  
+  // Watering effect
+  if (mouse.down) {
+    const holdTime = (now - mouse.downTime) / 1000;
+    if (holdTime > 0.5) {
+      // Water nearby flowers
+      for (const f of flowers) {
+        if (!f.alive) continue;
+        const dx = f.x - mouse.x;
+        const dy = f.y - mouse.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 100) {
+          f.watered = Math.min(5, f.watered + 0.1);
+          f.maxAge += 0.5;
+        }
+      }
+      
+      // Water particles
+      for (let i = 0; i < 2; i++) {
+        sparkParticles.push({
+          x: mouse.x + (Math.random() - 0.5) * 40,
+          y: mouse.y + (Math.random() - 0.5) * 40,
+          vx: (Math.random() - 0.5) * 0.5,
+          vy: -0.5 - Math.random() * 0.5,
+          life: 40,
+          age: 0,
+          size: 1.5,
+          hue: 180 + Math.random() * 40
+        });
+      }
+    }
+  }
+  
+  // Clear with fade
+  ctx.fillStyle = palette.ground + 'f0';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Draw ground gradient
+  const groundGrad = ctx.createLinearGradient(0, H * 0.7, 0, H);
+  groundGrad.addColorStop(0, palette.ground + '00');
+  groundGrad.addColorStop(1, palette.ground + '40');
+  ctx.fillStyle = groundGrad;
+  ctx.fillRect(0, H * 0.7, W, H * 0.3);
+  
+  // Draw ambient glow at horizon
+  const horizonGlow = ctx.createRadialGradient(W / 2, H, 0, W / 2, H, H * 0.6);
+  const skyColor = palette.sky[palette.sky.length - 1];
+  horizonGlow.addColorStop(0, skyColor + '15');
+  horizonGlow.addColorStop(1, 'transparent');
+  ctx.fillStyle = horizonGlow;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Update and draw fireflies
+  for (const f of fireflies) {
+    f.update();
+    f.draw(ctx);
+  }
+  
+  // Update and draw spark particles
+  sparkParticles = sparkParticles.filter(p => {
+    p.age++;
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.02;
+    p.life--;
+    const alpha = p.life / 60;
+    ctx.fillStyle = `hsla(${p.hue}, 70%, 70%, ${alpha * 0.6})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
+    ctx.fill();
+    return p.life > 0;
+  });
+  
+  // Update and draw flowers
+  flowers = flowers.filter(f => {
+    const alive = f.update(palette, flowers);
+    f.draw(ctx, palette);
+    return alive;
+  });
+  
+  // Update and draw butterflies
+  butterflies = butterflies.filter(b => {
+    const alive = b.update(flowers);
+    b.draw(ctx, palette);
+    return alive;
+  });
+  
+  // Spawn new butterflies occasionally
+  if (Math.random() < 0.003 && butterflies.length < 8 && flowers.length > 3) {
+    butterflies.push(new Butterfly());
+  }
+  
+  // Mouse glow
+  if (mouse.x > 0 && mouse.y > 0) {
+    const mouseGlow = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 60);
+    mouseGlow.addColorStop(0, 'rgba(255, 255, 255, 0.03)');
+    mouseGlow.addColorStop(1, 'transparent');
+    ctx.fillStyle = mouseGlow;
+    ctx.beginPath();
+    ctx.arc(mouse.x, mouse.y, 60, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Update stats
+  stats.textContent = `${flowers.length} flowers\n${butterflies.length} butterflies`;
+  
+  requestAnimationFrame(animate);
+}
+
+// Fade UI after 8s
+setTimeout(() => {
+  ui.style.opacity = '0';
+}, 8000);
+
+// Start
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
