@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosmic Flow Fields — Generative Art</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #000;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+  color: #fff;
+}
+canvas {
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+}
+#overlay {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 24px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.85));
+  z-index: 10;
+  pointer-events: none;
+}
+h1 {
+  font-size: 1.2rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  background: linear-gradient(90deg, #00f5ff, #ff00e5, #ffff00);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+p {
+  font-size: 0.75rem;
+  opacity: 0.6;
+  letter-spacing: 0.15em;
+}
+#controls {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 20;
+  display: flex;
+  gap: 8px;
+}
+button {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  transition: all 0.3s;
+  border-radius: 2px;
+}
+button:hover {
+  background: rgba(255,255,255,0.2);
+  border-color: rgba(255,255,255,0.5);
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="controls">
+  <button onclick="reset()">↻ Regenerate</button>
+  <button onclick="togglePause()">⏸ Pause</button>
+</div>
+<div id="overlay">
+  <h1>Cosmic Flow Fields</h1>
+  <p>generative art — particles follow invisible vector fields — no two renders are alike</p>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+let particles = [];
+let animationId;
+let paused = false;
+let flowField;
+const COLS = 80;
+const ROWS = 60;
+let time = 0;
+let palette;
+let noiseOffset;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', () => { resize(); init(); });
+resize();
+
+// Color palettes - each evokes a different cosmic mood
+const palettes = [
+  { name: 'nebula', colors: ['#00f5ff', '#ff00e5', '#7b2fff', '#ff6b35', '#ffdd00'], bg: '#000010' },
+  { name: 'aurora', colors: ['#00ff87', '#60efff', '#0061ff', '#a855f7', '#ec4899'], bg: '#000a05' },
+  { name: 'solar', colors: ['#ff4500', '#ff8c00', '#ffd700', '#ff6347', '#ffffff'], bg: '#0a0000' },
+  { name: 'abyss', colors: ['#1e3a5f', '#00b4d8', '#90e0ef', '#caf0f8', '#48cae4'], bg: '#000510' },
+  { name: 'void', colors: ['#e0aaff', '#c77dff', '#9d4edd', '#7b2cbf', '#5a189a'], bg: '#05000a' },
+  { name: 'emerald', colors: ['#00ff41', '#00d4aa', '#00b4d8', '#48bb78', '#38b000'], bg: '#000a05' },
+];
+
+// Simplex-like noise using sin combination
+function noise(x, y, z) {
+  const X = Math.floor(x), Y = Math.floor(y), Z = Math.floor(z);
+  x -= X; y -= Y; z -= Z;
+  const u = x * x * (3 - 2 * x);
+  const v = y * y * (3 - 2 * y);
+  const w = z * z * (3 - 2 * z);
+  
+  function n(x, y, z) {
+    return Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453;
+  }
+  
+  const a = n(X, Y, Z);
+  const b = n(X+1, Y, Z);
+  const c = n(X, Y+1, Z);
+  const d = n(X+1, Y+1, Z);
+  const e = n(X, Y, Z+1);
+  const f = n(X+1, Y, Z+1);
+  const g = n(X, Y+1, Z+1);
+  const h = n(X+1, Y+1, Z+1);
+  
+  const i1 = a + (b-a)*u;
+  const i2 = c + (d-c)*u;
+  const i3 = e + (f-e)*u;
+  const i4 = g + (h-g)*u;
+  
+  const j1 = i1 + (i2-i1)*v;
+  const j2 = i3 + (i4-i3)*v;
+  
+  return j1 + (j2-j1)*w;
+}
+
+function getFlowAngle(x, y, t) {
+  const scale = 0.04;
+  const n1 = noise(x * scale, y * scale, t * 0.3);
+  const n2 = noise(x * scale + 100, y * scale + 100, t * 0.2);
+  return n1 * Math.PI * 4 + n2 * Math.PI * 2;
+}
+
+class Particle {
+  constructor() {
+    this.reset();
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+  }
+  
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.prevX = this.x;
+    this.prevY = this.y;
+    this.speed = 0.5 + Math.random() * 2.5;
+    this.life = 0;
+    this.maxLife = 100 + Math.random() * 300;
+    this.color = palette.colors[Math.floor(Math.random() * palette.colors.length)];
+    this.size = 0.5 + Math.random() * 2;
+  }
+  
+  update() {
+    this.prevX = this.x;
+    this.prevY = this.y;
+    
+    const angle = getFlowAngle(this.x, this.y, time);
+    this.x += Math.cos(angle) * this.speed;
+    this.y += Math.sin(angle) * this.speed;
+    
+    this.life++;
+    
+    // Wrap around
+    let wrapped = false;
+    if (this.x < 0) { this.x = W; this.prevX = this.x; wrapped = true; }
+    if (this.x > W) { this.x = 0; this.prevX = this.x; wrapped = true; }
+    if (this.y < 0) { this.y = H; this.prevY = this.y; wrapped = true; }
+    if (this.y > H) { this.y = 0; this.prevY = this.y; wrapped = true; }
+    
+    if (this.life > this.maxLife || wrapped) {
+      this.reset();
+    }
+  }
+  
+  draw() {
+    const alpha = Math.min(1, this.life / 20) * Math.min(1, (this.maxLife - this.life) / 50) * 0.7;
+    ctx.strokeStyle = this.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+    ctx.lineWidth = this.size;
+    ctx.beginPath();
+    ctx.moveTo(this.prevX, this.prevY);
+    ctx.lineTo(this.x, this.y);
+    ctx.stroke();
+  }
+}
+
+function init() {
+  palette = palettes[Math.floor(Math.random() * palettes.length)];
+  noiseOffset = Math.random() * 1000;
+  time = 0;
+  
+  // Fill background
+  ctx.fillStyle = palette.bg;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Create particles
+  const count = Math.min(3000, Math.floor((W * H) / 800));
+  particles = [];
+  for (let i = 0; i < count; i++) {
+    particles.push(new Particle());
+  }
+}
+
+function animate() {
+  if (!paused) {
+    // Subtle fade for trails
+    ctx.fillStyle = palette.bg + '0d';
+    ctx.fillRect(0, 0, W, H);
+    
+    time += 0.008;
+    
+    for (const p of particles) {
+      p.update();
+      p.draw();
+    }
+  }
+  animationId = requestAnimationFrame(animate);
+}
+
+function reset() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  init();
+}
+
+function togglePause() {
+  paused = !paused;
+}
+
+init();
+animate();
+</script>
+</body>
+</html>
