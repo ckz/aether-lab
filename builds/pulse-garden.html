@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pulse Garden — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #05060f;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    cursor: crosshair;
+    user-select: none;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 1.25rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 0.5rem;
+    z-index: 10;
+  }
+  .btn {
+    background: rgba(10, 10, 25, 0.7);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #aaa;
+    padding: 0.45rem 0.9rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+  }
+  .btn:hover { background: rgba(30, 30, 60, 0.8); color: #fff; border-color: rgba(255,255,255,0.2); }
+  .btn.active { background: rgba(60, 60, 120, 0.6); color: #fff; border-color: rgba(255,255,255,0.3); }
+  #stats {
+    position: fixed;
+    bottom: 1.25rem;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.25);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-align: center;
+    pointer-events: none;
+  }
+  #hint {
+    position: fixed;
+    bottom: 2.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.3);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-align: center;
+    pointer-events: none;
+    transition: opacity 2s ease;
+  }
+</style>
+</head>
+<body>
+<canvas id="garden"></canvas>
+<div id="ui">
+  <button class="btn" id="btnPalette" title="Space">Palette</button>
+  <button class="btn" id="btnWind" title="W">Wind</button>
+  <button class="btn" id="btnPause" title="P">Pause</button>
+  <button class="btn" id="btnClear" title="R">Clear</button>
+  <button class="btn" id="btnSave" title="S">Save</button>
+</div>
+<div id="hint">Click to plant • Hold to grow • Scroll to shift time</div>
+<div id="stats">pulse garden — 0 flowers</div>
+
+<script>
+const canvas = document.getElementById('garden');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = innerWidth; H = canvas.height = innerHeight; }
+resize();
+addEventListener('resize', resize);
+
+// --- Time of day system ---
+const TIMES = ['Dawn', 'Morning', 'Midday', 'Sunset', 'Dusk', 'Night', 'Midnight', 'PreDawn'];
+const PALETTES = [
+  { sky: [[255,200,220],[180,210,240]], ground: '#1a1510', flower: ['#ff8fa3','#ffb3c6','#ffd6e0','#fff0f3'], spore: '#ffa0b0', star: '#ffe0e8', ambient: '#2a1a20', groundGlow: 'rgba(255,140,160,0.04)' },
+  { sky: [[200,230,200],[240,245,220]], ground: '#141a12', flower: ['#ff6b9d','#c44569','#f8a5c2','#ff9ff3'], spore: '#ff8fab', star: '#ffe0f0', ambient: '#1a1218', groundGlow: 'rgba(255,107,157,0.04)' },
+  { sky: [[240,245,220],[200,230,200]], ground: '#141a12', flower: ['#7bed9f','#2ed573','#26de81','#20bf6b'], spore: '#7ef0a0', star: '#d0ffe0', ambient: '#101a10', groundGlow: 'rgba(46,213,115,0.04)' },
+  { sky: [[255,180,140],[255,100,80]], ground: '#1a1410', flower: ['#ff6348','#ff4757','#ff6b81','#ffa502'], spore: '#ff7060', star: '#ffe0d0', ambient: '#201010', groundGlow: 'rgba(255,99,72,0.04)' },
+  { sky: [[40,30,80],[10,10,30]], ground: '#0a0a14', flower: ['#a29bfe','#6c5ce7','#fd79a8','#e84393'], spore: '#b8a0ff', star: '#d0d0ff', ambient: '#08081a', groundGlow: 'rgba(108,92,231,0.05)' },
+  { sky: [[10,15,40],[2,3,10]], ground: '#050508', flower: ['#74b9ff','#0984e3','#00cec9','#81ecec'], spore: '#60c0ff', star: '#ffffff', ambient: '#020208', groundGlow: 'rgba(116,185,255,0.04)' },
+  { sky: [[5,5,15],[0,0,5]], ground: '#030305', flower: ['#dfe6e9','#b2bec3','#636e72','#2d3436'], spore: '#ffffff', star: '#ffffff', ambient: '#000000', groundGlow: 'rgba(255,255,255,0.02)' },
+  { sky: [[30,25,50],[10,8,20]], ground: '#0a0810', flower: ['#fd79a8','#e84393','#6c5ce7','#a29bfe'], spore: '#c080f0', star: '#e0d0ff', ambient: '#0a0818', groundGlow: 'rgba(162,155,254,0.04)' }
+];
+let paletteIdx = 0;
+let timePhase = 0; // 0-1 over cycle
+const CYCLE_DURATION = 300; // seconds for full 8-phase cycle
+let timeAccum = 0;
+let paused = false;
+let windMode = 0; // 0=gentle, 1=variable, 2=storm
+const WIND_NAMES = ['Breeze', 'Variable', 'Storm'];
+
+// --- State ---
+let flowers = [];
+let spores = [];
+let particles = [];
+let stars = [];
+let butterflies = [];
+let ripples = [];
+let mouse = { x: W/2, y: H/2, down: false, held: false, holdTime: 0 };
+let lastTime = performance.now();
+
+// --- Starfield ---
+function initStars() {
+  stars = [];
+  for (let i = 0; i < 400; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H * 0.75,
+      r: Math.random() * 1.4 + 0.3,
+      twinkle: Math.random() * Math.PI * 2,
+      speed: Math.random() * 0.02 + 0.005
+    });
+  }
+}
+initStars();
+
+// --- Butterfly ---
+function spawnButterfly(x, y) {
+  butterflies.push({
+    x: x || Math.random() * W,
+    y: y || Math.random() * H * 0.6,
+    vx: (Math.random() - 0.5) * 1.5,
+    vy: (Math.random() - 0.5) * 1,
+    wingPhase: Math.random() * Math.PI * 2,
+    target: null,
+    wanderTimer: Math.random() * 200 + 100,
+    size: Math.random() * 4 + 3
+  });
+}
+for (let i = 0; i < 6; i++) spawnButterfly();
+
+// --- Flower ---
+function createFlower(x, y) {
+  const pal = PALETTES[paletteIdx];
+  const colorIdx = Math.floor(Math.random() * pal.flower.length);
+  const type = Math.random(); // 0-0.4=flower, 0.4-0.7=tree, 0.7-0.9=bush, 0.9-1=starflower
+  let size, petals, stemLen;
+  if (type < 0.4) { size = Math.random() * 12 + 8; petals = Math.floor(Math.random() * 3) + 4; stemLen = Math.random() * 40 + 20; }
+  else if (type < 0.7) { size = Math.random() * 20 + 15; petals = 0; stemLen = Math.random() * 80 + 40; }
+  else if (type < 0.9) { size = Math.random() * 14 + 10; petals = Math.floor(Math.random() * 2) + 3; stemLen = Math.random() * 25 + 10; }
+  else { size = Math.random() * 8 + 5; petals = 6; stemLen = Math.random() * 30 + 15; }
+  
+  return {
+    x, y,
+    color: pal.flower[colorIdx],
+    size, petals, stemLen,
+    age: 0,
+    maxAge: Math.random() * 400 + 300,
+    pulsePhase: Math.random() * Math.PI * 2,
+    pulseSpeed: Math.random() * 0.02 + 0.015,
+    sporeTimer: 0,
+    sporeInterval: Math.random() * 120 + 80,
+    swayPhase: Math.random() * Math.PI * 2,
+    swayAmp: Math.random() * 0.015 + 0.005,
+    type
+  };
+}
+
+// --- Helpers ---
+function hexToRgb(hex) {
+  const v = parseInt(hex.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerpColor(c1, c2, t) { return [lerp(c1[0],c2[0],t), lerp(c1[1],c2[1],t), lerp(c1[2],c2[2],t)]; }
+
+function getSkyColor(t) {
+  const pal = PALETTES[paletteIdx];
+  const phase = timePhase * (pal.sky.length - 1);
+  const idx = Math.floor(phase) % (pal.sky.length - 1);
+  const frac = phase - idx;
+  return lerpColor(pal.sky[idx], pal.sky[Math.min(idx+1, pal.sky.length-1)], frac);
+}
+
+function update(dt) {
+  if (paused) return;
+  timeAccum += dt;
+  if (timeAccum > CYCLE_DURATION) timeAccum -= CYCLE_DURATION;
+  timePhase = timeAccum / CYCLE_DURATION;
+  
+  // Mouse hold growth
+  if (mouse.down) {
+    mouse.holdTime += dt;
+    if (mouse.holdTime > 30 && flowers.length < 60 && Math.random() < 0.3) {
+      flowers.push(createFlower(mouse.x + (Math.random()-0.5)*20, mouse.y + (Math.random()-0.5)*20));
+    }
+  }
+  
+  // Wind
+  let windX = 0;
+  if (windMode === 0) windX = Math.sin(timeAccum * 0.3) * 0.2;
+  else if (windMode === 1) windX = Math.sin(timeAccum * 0.7) * 0.5 + Math.sin(timeAccum * 1.3) * 0.3;
+  else windX = Math.sin(timeAccum * 2.1) * 1.2 + Math.cos(timeAccum * 3.3) * 0.8;
+  
+  // Update flowers
+  for (let f of flowers) {
+    f.age += dt * 0.05;
+    f.pulsePhase += f.pulseSpeed;
+    f.swayPhase += f.swayAmp;
+    f.sporeTimer += dt * 0.05;
+    
+    // Emit spores
+    if (f.sporeTimer > f.sporeInterval && spores.length < 300 && f.age < f.maxAge * 0.8) {
+      f.sporeTimer = 0;
+      const pal = PALETTES[paletteIdx];
+      for (let i = 0; i < 2; i++) {
+        spores.push({
+          x: f.x, y: f.y - f.stemLen * 0.5,
+          vx: (Math.random() - 0.5) * 0.8 + windX * 2,
+          vy: -Math.random() * 0.5 - 0.2,
+          life: 1,
+          decay: Math.random() * 0.003 + 0.002,
+          size: Math.random() * 2 + 1,
+          color: pal.spore,
+          canRoot: Math.random() < 0.08 // 8% chance to grow new flower
+        });
+      }
+    }
+    
+    // Remove dead
+    if (f.age > f.maxAge) f.dead = true;
+  }
+  flowers = flowers.filter(f => !f.dead);
+  
+  // Auto-spawn if empty
+  if (flowers.length === 0 && Math.random() < 0.01) {
+    const fx = Math.random() * W;
+    const fy = H * 0.55 + Math.random() * H * 0.35;
+    flowers.push(createFlower(fx, fy));
+  }
+  
+  // Update spores
+  for (let s of spores) {
+    s.x += s.vx + windX * 0.3;
+    s.y += s.vy;
+    s.vy += 0.002; // slight float up
+    s.life -= s.decay;
+    s.vx += (Math.random() - 0.5) * 0.05; // Brownian drift
+    
+    // Root chance
+    if (s.canRoot && s.life > 0.5 && flowers.length < 60 && s.y > H * 0.45 && s.y < H * 0.95) {
+      if (Math.random() < 0.005) {
+        flowers.push(createFlower(s.x, s.y));
+        s.life = 0;
+      }
+    }
+  }
+  spores = spores.filter(s => s.life > 0);
+  
+  // Update particles
+  for (let p of particles) {
+    p.x += p.vx + windX * 0.2;
+    p.y += p.vy;
+    p.life -= p.decay;
+    p.vx *= 0.99;
+    p.vy *= 0.99;
+  }
+  particles = particles.filter(p => p.life > 0);
+  
+  // Update ripples
+  for (let r of ripples) {
+    r.radius += r.speed;
+    r.life -= 0.015;
+  }
+  ripples = ripples.filter(r => r.life > 0);
+  
+  // Update butterflies
+  for (let b of butterflies) {
+    b.wingPhase += 0.15;
+    b.wanderTimer--;
+    if (b.wanderTimer <= 0) {
+      b.target = { x: Math.random() * W, y: Math.random() * H * 0.6 };
+      b.wanderTimer = Math.random() * 300 + 150;
+    }
+    if (b.target) {
+      const dx = b.target.x - b.x, dy = b.target.y - b.y;
+      const d = Math.sqrt(dx*dx + dy*dy);
+      if (d > 5) { b.vx += (dx/d) * 0.03; b.vy += (dy/d) * 0.03; }
+      else b.target = null;
+    }
+    b.vx += (Math.random() - 0.5) * 0.05;
+    b.vy += (Math.random() - 0.5) * 0.05;
+    b.vx *= 0.98; b.vy *= 0.98;
+    b.x += b.vx; b.y += b.vy;
+    if (b.x < 0) b.x = W; if (b.x > W) b.x = 0;
+    if (b.y < 0) b.y = H * 0.6; if (b.y > H * 0.6) b.y = 0;
+  }
+  
+  // Update stars
+  for (let s of stars) { s.twinkle += s.speed; }
+}
+
+function drawFlower(f) {
+  const alpha = f.age < 5 ? f.age / 5 : (f.age > f.maxAge - 20 ? Math.max(0, (f.maxAge - f.age) / 20) : 1);
+  const pulse = 1 + Math.sin(f.pulsePhase) * 0.15;
+  const sway = Math.sin(f.swayPhase) * f.stemLen * f.swayAmp;
+  const rgb = hexToRgb(f.color);
+  const groundY = H * 0.78;
+  
+  // Stem
+  ctx.beginPath();
+  ctx.moveTo(f.x, groundY);
+  ctx.quadraticCurveTo(f.x + sway * 0.5, groundY - f.stemLen * 0.6, f.x + sway, groundY - f.stemLen);
+  ctx.strokeStyle = `rgba(${40+Math.floor(f.age*0.1)}, ${80+Math.floor(f.age*0.2)}, 40, ${alpha * 0.5})`;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  
+  if (f.type < 0.4) {
+    // Flower with petals
+    const fx = f.x + sway, fy = groundY - f.stemLen;
+    for (let i = 0; i < f.petals; i++) {
+      const angle = (i / f.petals) * Math.PI * 2 + f.pulsePhase * 0.2;
+      const px = fx + Math.cos(angle) * f.size * pulse;
+      const py = fy + Math.sin(angle) * f.size * pulse;
+      ctx.beginPath();
+      ctx.arc(px, py, f.size * 0.55, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha * 0.7})`;
+      ctx.fill();
+    }
+    // Center
+    ctx.beginPath();
+    ctx.arc(fx, fy, f.size * 0.3 * pulse, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,220,${alpha * 0.9})`;
+    ctx.fill();
+    // Glow
+    const grd = ctx.createRadialGradient(fx, fy, 0, fx, fy, f.size * 2);
+    grd.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha * 0.3})`);
+    grd.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`);
+    ctx.beginPath();
+    ctx.arc(fx, fy, f.size * 2, 0, Math.PI * 2);
+    ctx.fillStyle = grd;
+    ctx.fill();
+  } else if (f.type < 0.7) {
+    // Tree/bush - multiple small clusters
+    const tx = f.x + sway, ty = groundY - f.stemLen;
+    for (let i = 0; i < 8; i++) {
+      const ox = (Math.sin(i * 2.4 + f.pulsePhase) * f.size * 0.7);
+      const oy = (Math.cos(i * 1.8 + f.pulsePhase) * f.size * 0.5);
+      ctx.beginPath();
+      ctx.arc(tx + ox, ty + oy, f.size * 0.4, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha * 0.6})`;
+      ctx.fill();
+    }
+    const grd = ctx.createRadialGradient(tx, ty, 0, tx, ty, f.size * 1.5);
+    grd.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha * 0.2})`);
+    grd.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`);
+    ctx.beginPath(); ctx.arc(tx, ty, f.size * 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = grd; ctx.fill();
+  } else if (f.type < 0.9) {
+    // Starflower - crystalline petals
+    const fx = f.x + sway, fy = groundY - f.stemLen;
+    for (let i = 0; i < f.petals; i++) {
+      const angle = (i / f.petals) * Math.PI * 2;
+      const len = f.size * pulse * (0.8 + Math.sin(f.pulsePhase + i) * 0.3);
+      ctx.beginPath();
+      ctx.moveTo(fx, fy);
+      ctx.lineTo(fx + Math.cos(angle) * len, fy + Math.sin(angle) * len);
+      ctx.strokeStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha * 0.8})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(fx, fy, f.size * 0.25 * pulse, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${alpha * 0.9})`; ctx.fill();
+  } else {
+    // Mushroom - dome cap
+    const tx = f.x + sway, ty = groundY - f.stemLen;
+    ctx.beginPath();
+    ctx.arc(tx, ty, f.size * pulse, Math.PI, 0);
+    ctx.fillStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha * 0.8})`;
+    ctx.fill();
+    ctx.fillStyle = `rgba(${rgb[0]+30},${rgb[1]+30},${rgb[2]+30},${alpha * 0.4})`;
+    ctx.fillRect(tx - 1.5, ty, 3, f.stemLen * 0.6);
+    // spots
+    for (let i = 0; i < 3; i++) {
+      const sa = Math.random() * Math.PI;
+      const sr = Math.random() * f.size * 0.5;
+      ctx.beginPath();
+      ctx.arc(tx + Math.cos(sa) * sr, ty - Math.sin(sa) * sr * 0.5, 2, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${alpha * 0.5})`;
+      ctx.fill();
+    }
+  }
+}
+
+function drawButterfly(b) {
+  const wing = Math.abs(Math.sin(b.wingPhase)) * 0.8 + 0.2;
+  const hue = (timeAccum * 10 + b.x * 0.1) % 360;
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.rotate(Math.atan2(b.vy, b.vx));
+  // Left wing
+  ctx.beginPath();
+  ctx.ellipse(-b.size * 0.5, 0, b.size * wing, b.size * 0.6, -0.3, 0, Math.PI * 2);
+  ctx.fillStyle = `hsla(${hue}, 70%, 65%, 0.5)`;
+  ctx.fill();
+  // Right wing
+  ctx.beginPath();
+  ctx.ellipse(b.size * 0.5, 0, b.size * wing, b.size * 0.6, 0.3, 0, Math.PI * 2);
+  ctx.fill();
+  // Body
+  ctx.beginPath();
+  ctx.ellipse(0, 0, b.size * 0.2, b.size * 0.4, 0, 0, Math.PI * 2);
+  ctx.fillStyle = `hsla(${hue}, 20%, 30%, 0.8)`;
+  ctx.fill();
+  ctx.restore();
+}
+
+function draw() {
+  const sky = getSkyColor(timePhase);
+  const groundY = H * 0.78;
+  
+  // Sky gradient
+  const skyGrd = ctx.createLinearGradient(0, 0, 0, groundY);
+  skyGrd.addColorStop(0, `rgb(${sky[0]},${sky[1]},${sky[2]})`);
+  const horizonColor = sky.map(c => Math.floor(c * 1.1));
+  skyGrd.addColorStop(1, `rgb(${Math.min(255,horizonColor[0])},${Math.min(255,horizonColor[1])},${Math.min(255,horizonColor[2])})`);
+  ctx.fillStyle = skyGrd;
+  ctx.fillRect(0, 0, W, groundY);
+  
+  // Stars (more visible at night)
+  const nightAlpha = timePhase > 0.6 ? (timePhase - 0.6) / 0.4 : (timePhase < 0.1 ? 1 - timePhase / 0.1 : 0);
+  const dawnAlpha = timePhase > 0.75 ? (1 - timePhase) / 0.15 : (timePhase < 0.05 ? timePhase / 0.05 : 0);
+  const starAlpha = Math.max(nightAlpha, dawnAlpha) * 0.8;
+  if (starAlpha > 0.01) {
+    for (let s of stars) {
+      const twinkle = 0.5 + Math.sin(s.twinkle) * 0.5;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y * (groundY / (H * 0.75)), s.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${starAlpha * twinkle})`;
+      ctx.fill();
+    }
+  }
+  
+  // Ground
+  ctx.fillStyle = PALETTES[paletteIdx].ground;
+  ctx.fillRect(0, groundY, W, H - groundY);
+  // Ground glow
+  ctx.fillStyle = PALETTES[paletteIdx].groundGlow;
+  ctx.fillRect(0, groundY - 40, W, 80);
+  // Ground line
+  ctx.beginPath();
+  ctx.moveTo(0, groundY);
+  for (let x = 0; x < W; x += 20) {
+    ctx.lineTo(x + 10, groundY + Math.sin(x * 0.05 + timeAccum * 0.2) * 3);
+  }
+  ctx.lineTo(W, groundY);
+  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  
+  // Ripples
+  for (let r of ripples) {
+    ctx.beginPath();
+    ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(${r.rgb[0]},${r.rgb[1]},${r.rgb[2]},${r.life * 0.3})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  
+  // Flowers
+  for (let f of flowers) drawFlower(f);
+  
+  // Spores
+  for (let s of spores) {
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    const srgb = hexToRgb(s.color);
+    ctx.fillStyle = `rgba(${srgb[0]},${srgb[1]},${srgb[2]},${s.life * 0.6})`;
+    ctx.fill();
+    // tiny glow
+    const sg = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.size * 3);
+    sg.addColorStop(0, `rgba(${srgb[0]},${srgb[1]},${srgb[2]},${s.life * 0.2})`);
+    sg.addColorStop(1, `rgba(${srgb[0]},${srgb[1]},${srgb[2]},0)`);
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.size * 3, 0, Math.PI * 2);
+    ctx.fillStyle = sg; ctx.fill();
+  }
+  
+  // Particles (sparkles)
+  for (let p of particles) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${p.rgb[0]},${p.rgb[1]},${p.rgb[2]},${p.life * 0.8})`;
+    ctx.fill();
+  }
+  
+  // Butterflies
+  for (let b of butterflies) drawButterfly(b);
+  
+  // Cursor glow when down
+  if (mouse.down || mouse.held) {
+    const pal = PALETTES[paletteIdx];
+    const rgb = hexToRgb(pal.flower[0]);
+    const grd = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 60);
+    grd.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.15)`);
+    grd.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0)`);
+    ctx.beginPath(); ctx.arc(mouse.x, mouse.y, 60, 0, Math.PI * 2);
+    ctx.fillStyle = grd; ctx.fill();
+  }
+}
+
+function loop(now) {
+  const dt = Math.min((now - lastTime) / 16.67, 3); // normalize to ~60fps
+  lastTime = now;
+  update(dt);
+  draw();
+  document.getElementById('stats').textContent = `pulse garden — ${flowers.length} flowers · ${spores.length} spores`;
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// --- Input ---
+canvas.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+canvas.addEventListener('mousedown', e => {
+  e.preventDefault();
+  mouse.down = true; mouse.held = true; mouse.holdTime = 0;
+  mouse.x = e.clientX; mouse.y = e.clientY;
+  if (flowers.length < 60) flowers.push(createFlower(mouse.x, mouse.y));
+  ripples.push({ x: mouse.x, y: mouse.y, radius: 0, speed: 1.5, life: 1, rgb: hexToRgb(PALETTES[paletteIdx].flower[0]) });
+  // Sparkle particles
+  for (let i = 0; i < 12; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = Math.random() * 2 + 0.5;
+    particles.push({
+      x: mouse.x, y: mouse.y,
+      vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+      life: 1, decay: Math.random() * 0.02 + 0.01,
+      size: Math.random() * 2 + 1,
+      rgb: hexToRgb(PALETTES[paletteIdx].flower[Math.floor(Math.random()*PALETTES[paletteIdx].flower.length)])
+    });
+  }
+});
+canvas.addEventListener('mouseup', () => { mouse.down = false; });
+canvas.addEventListener('mouseleave', () => { mouse.down = false; mouse.held = false; });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// Touch support
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+  mouse.down = true; mouse.held = true; mouse.holdTime = 0;
+  if (flowers.length < 60) flowers.push(createFlower(mouse.x, mouse.y));
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+});
+canvas.addEventListener('touchend', () => { mouse.down = false; });
+
+// Scroll to shift time
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  timeAccum += e.deltaY * 0.05;
+  if (timeAccum > CYCLE_DURATION) timeAccum -= CYCLE_DURATION;
+  if (timeAccum < 0) timeAccum += CYCLE_DURATION;
+  timePhase = timeAccum / CYCLE_DURATION;
+}, { passive: false });
+
+// Keyboard
+addEventListener('keydown', e => {
+  const key = e.key.toLowerCase();
+  if (key === ' ' || key === 'space') { e.preventDefault(); paletteIdx = (paletteIdx + 1) % PALETTES.length; }
+  if (key === 'p') paused = !paused;
+  if (key === 'r') { flowers = []; spores = []; particles = []; ripples = []; }
+  if (key === 's') {
+    const link = document.createElement('a');
+    link.download = 'pulse-garden.png';
+    link.href = canvas.toDataURL();
+    link.click();
+  }
+  if (key === 'w') windMode = (windMode + 1) % 3;
+});
+
+// UI buttons
+document.getElementById('btnPalette').addEventListener('click', () => paletteIdx = (paletteIdx + 1) % PALETTES.length);
+document.getElementById('btnWind').addEventListener('click', () => {
+  windMode = (windMode + 1) % 3;
+  document.getElementById('btnWind').textContent = WIND_NAMES[windMode];
+});
+document.getElementById('btnPause').addEventListener('click', () => { paused = !paused; document.getElementById('btnPause').textContent = paused ? 'Play' : 'Pause'; });
+document.getElementById('btnClear').addEventListener('click', () => { flowers = []; spores = []; particles = []; ripples = []; });
+document.getElementById('btnSave').addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = 'pulse-garden.png';
+  link.href = canvas.toDataURL();
+  link.click();
+});
+
+// Hide hint after first click
+canvas.addEventListener('click', () => {
+  const hint = document.getElementById('hint');
+  if (hint.style.opacity !== '0') hint.style.opacity = '0';
+}, { once: true });
+</script>
+</body>
+</html>
