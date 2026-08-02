@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thought Nebula</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #05050f;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    color: #e0e0e0;
+  }
+  canvas { display: block; }
+  
+  #ui {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    padding: 1.5rem;
+    pointer-events: none;
+    z-index: 10;
+  }
+  
+  #title {
+    font-size: 1.4rem;
+    font-weight: 300;
+    letter-spacing: 0.2em;
+    color: rgba(255, 255, 255, 0.85);
+    text-shadow: 0 0 20px rgba(120, 180, 255, 0.5);
+    text-align: center;
+    margin-bottom: 0.5rem;
+  }
+  
+  #subtitle {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.4);
+    text-align: center;
+    letter-spacing: 0.1em;
+  }
+  
+  #stats {
+    position: fixed;
+    bottom: 1rem;
+    left: 1rem;
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.3);
+    font-family: 'Courier New', monospace;
+    z-index: 10;
+  }
+  
+  #hint {
+    position: fixed;
+    bottom: 1rem;
+    right: 1rem;
+    font-size: 0.7rem;
+    color: rgba(255, 255, 255, 0.2);
+    text-align: right;
+    z-index: 10;
+  }
+  
+  #recent {
+    position: fixed;
+    bottom: 3rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 1.5rem;
+    color: rgba(255, 255, 255, 0.6);
+    text-shadow: 0 0 30px currentColor;
+    z-index: 10;
+    pointer-events: none;
+    transition: opacity 0.5s;
+    letter-spacing: 0.3em;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div id="ui">
+  <div id="title">THOUGHT NEBULA</div>
+  <div id="subtitle">Every keystroke becomes light — type something beautiful</div>
+</div>
+
+<div id="stats"></div>
+<div id="hint">A E I O U = burst<br>C D F G H J K L M N P Q R S T V W X Y Z = stream<br>0 1 2 3 4 5 6 7 8 9 = attract<br>! @ # $ % ^ & * = chaos<br>Space = clear</div>
+<div id="recent"></div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Particle pools
+const particles = [];
+const MAX = 2000;
+
+class Particle {
+  constructor(x, y, vx, vy, hue, size, life, type) {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.hue = hue;
+    this.size = size;
+    this.life = life;
+    this.maxLife = life;
+    this.type = type; // 'burst', 'stream', 'attract', 'chaos', 'float'
+    this.phase = Math.random() * Math.PI * 2;
+    this.omega = 0.02 + Math.random() * 0.04;
+  }
+  
+  update(mouse) {
+    this.life--;
+    this.phase += this.omega;
+    
+    const fade = this.life / this.maxLife;
+    const alpha = fade * 0.8;
+    
+    // Type-specific behaviors
+    if (this.type === 'burst') {
+      this.vx *= 0.98;
+      this.vy *= 0.98;
+      this.size *= 0.995;
+    } else if (this.type === 'stream') {
+      this.vy += 0.03; // drift down
+      this.vx += Math.sin(this.phase) * 0.1;
+      this.vx *= 0.99;
+    } else if (this.type === 'attract') {
+      if (mouse.x !== null) {
+        const dx = mouse.x - this.x;
+        const dy = mouse.y - this.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < 300 && d > 1) {
+          this.vx += (dx / d) * 0.3;
+          this.vy += (dy / d) * 0.3;
+        }
+      }
+      this.vx *= 0.97;
+      this.vy *= 0.97;
+    } else if (this.type === 'chaos') {
+      this.vx += (Math.random() - 0.5) * 2;
+      this.vy += (Math.random() - 0.5) * 2;
+      this.vx *= 0.96;
+      this.vy *= 0.96;
+    } else if (this.type === 'float') {
+      this.vx += Math.sin(this.phase * 0.7) * 0.05;
+      this.vy += Math.cos(this.phase * 0.5) * 0.05;
+      this.vx *= 0.99;
+      this.vy *= 0.99;
+    }
+    
+    this.x += this.vx;
+    this.y += this.vy;
+    
+    return this.life > 0 && this.x > -50 && this.x < W + 50 && this.y > -50 && this.y < H + 50;
+  }
+  
+  draw(ctx) {
+    const fade = this.life / this.maxLife;
+    const alpha = fade * 0.7;
+    const glow = fade * this.size * 2;
+    
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${this.hue}, 80%, 60%, ${alpha})`;
+    ctx.fill();
+    
+    // Glow
+    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, glow);
+    grad.addColorStop(0, `hsla(${this.hue}, 90%, 70%, ${alpha * 0.5})`);
+    grad.addColorStop(1, `hsla(${this.hue}, 90%, 70%, 0)`);
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, glow, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+  }
+}
+
+// State
+let hueShift = 0;
+const mouse = { x: null, y: null };
+let recentChar = '';
+let recentTimeout = null;
+
+// Background nebula blobs
+const blobs = [];
+for (let i = 0; i < 5; i++) {
+  blobs.push({
+    x: Math.random() * W,
+    y: Math.random() * H,
+    vx: (Math.random() - 0.5) * 0.2,
+    vy: (Math.random() - 0.5) * 0.2,
+    hue: Math.random() * 360,
+    size: 100 + Math.random() * 200,
+    phase: Math.random() * Math.PI * 2,
+    omega: 0.003 + Math.random() * 0.005
+  });
+}
+
+function spawnParticles(x, y, char) {
+  const isVowel = /[aeiouAEIOU]/.test(char);
+  const isNumber = /[0-9]/.test(char);
+  const isSymbol = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(char);
+  
+  let hue = hueShift + (char.charCodeAt(0) * 7) % 360;
+  let type, count, sizeMin, sizeMax, lifeMin, lifeMax;
+  
+  if (char === ' ') {
+    // Clear particles on space
+    particles.length = 0;
+    return;
+  }
+  
+  if (isVowel) {
+    // Burst outward
+    type = 'burst';
+    count = 40 + Math.random() * 30;
+    sizeMin = 1.5;
+    sizeMax = 4;
+    lifeMin = 60;
+    lifeMax = 150;
+  } else if (isNumber) {
+    // Attract toward mouse
+    type = 'attract';
+    count = 20;
+    sizeMin = 2;
+    sizeMax = 3;
+    lifeMin = 100;
+    lifeMax = 200;
+  } else if (isSymbol) {
+    // Chaotic scatter
+    type = 'chaos';
+    count = 50 + Math.random() * 30;
+    sizeMin = 1;
+    sizeMax = 3;
+    lifeMin = 40;
+    lifeMax = 100;
+  } else {
+    // Stream downward
+    type = 'stream';
+    count = 25 + Math.random() * 15;
+    sizeMin = 1.5;
+    sizeMax = 3.5;
+    lifeMin = 80;
+    lifeMax = 180;
+  }
+  
+  for (let i = 0; i < count && particles.length < MAX; i++) {
+    let vx, vy;
+    
+    if (type === 'burst') {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 2 + Math.random() * 5;
+      vx = Math.cos(angle) * speed;
+      vy = Math.sin(angle) * speed;
+    } else if (type === 'stream') {
+      vx = (Math.random() - 0.5) * 2;
+      vy = 1 + Math.random() * 2;
+    } else if (type === 'attract') {
+      vx = (Math.random() - 0.5) * 3;
+      vy = (Math.random() - 0.5) * 3;
+    } else if (type === 'chaos') {
+      vx = (Math.random() - 0.5) * 6;
+      vy = (Math.random() - 0.5) * 6;
+    }
+    
+    const size = sizeMin + Math.random() * (sizeMax - sizeMin);
+    const life = lifeMin + Math.random() * (lifeMax - lifeMin);
+    
+    particles.push(new Particle(x, y, vx, vy, hue, size, life, type));
+  }
+  
+  hueShift = (hueShift + 15) % 360;
+}
+
+// Connection lines
+function drawConnections(ctx) {
+  const maxDist = 60;
+  const maxDistSq = maxDist * maxDist;
+  
+  for (let i = 0; i < particles.length; i++) {
+    for (let j = i + 1; j < particles.length; j++) {
+      const dx = particles[i].x - particles[j].x;
+      const dy = particles[i].y - particles[j].y;
+      const dSq = dx * dx + dy * dy;
+      
+      if (dSq < maxDistSq) {
+        const fade = (particles[i].life / particles[i].maxLife + particles[j].life / particles[j].maxLife) / 2;
+        const alpha = (1 - dSq / maxDistSq) * fade * 0.15;
+        
+        ctx.beginPath();
+        ctx.moveTo(particles[i].x, particles[i].y);
+        ctx.lineTo(particles[j].x, particles[j].y);
+        ctx.strokeStyle = `hsla(${(particles[i].hue + particles[j].hue) / 2}, 70%, 60%, ${alpha})`;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+// Main loop
+let lastTime = 0;
+let frameCount = 0;
+
+function animate(time) {
+  const dt = time - lastTime;
+  lastTime = time;
+  frameCount++;
+  
+  // Fade background
+  ctx.fillStyle = 'rgba(5, 5, 15, 0.08)';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Draw nebula blobs
+  blobs.forEach(blob => {
+    blob.phase += blob.omega;
+    blob.x += Math.sin(blob.phase * 0.7) * 0.3;
+    blob.y += Math.cos(blob.phase * 0.5) * 0.2;
+    
+    if (blob.x < -200) blob.x = W + 200;
+    if (blob.x > W + 200) blob.x = -200;
+    if (blob.y < -200) blob.y = H + 200;
+    if (blob.y > H + 200) blob.y = -200;
+    
+    const grad = ctx.createRadialGradient(blob.x, blob.y, 0, blob.x, blob.y, blob.size);
+    const alpha = 0.015 + Math.sin(blob.phase) * 0.005;
+    grad.addColorStop(0, `hsla(${blob.hue}, 70%, 50%, ${alpha})`);
+    grad.addColorStop(1, `hsla(${blob.hue}, 70%, 50%, 0)`);
+    ctx.beginPath();
+    ctx.arc(blob.x, blob.y, blob.size, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+  });
+  
+  // Draw connections
+  drawConnections(ctx);
+  
+  // Update and draw particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    if (!particles[i].update(mouse)) {
+      particles.splice(i, 1);
+    } else {
+      particles[i].draw(ctx);
+    }
+  }
+  
+  // Stats
+  if (frameCount % 30 === 0) {
+    document.getElementById('stats').textContent = `particles: ${particles.length} | hue: ${Math.round(hueShift)}°`;
+  }
+  
+  requestAnimationFrame(animate);
+}
+
+// Input
+window.addEventListener('keydown', (e) => {
+  const char = e.key;
+  
+  if (char === ' ') {
+    spawnParticles(W / 2, H / 2, ' ');
+    return;
+  }
+  
+  if (char.length === 1) {
+    // Show the character
+    const recentEl = document.getElementById('recent');
+    recentEl.textContent = char;
+    recentEl.style.opacity = '1';
+    recentEl.style.color = `hsl(${(hueShift + char.charCodeAt(0) * 7) % 360}, 80%, 70%)`;
+    
+    clearTimeout(recentTimeout);
+    recentTimeout = setTimeout(() => {
+      recentEl.style.opacity = '0';
+    }, 800);
+    
+    // Spawn at a random position with some clustering
+    const cx = W / 2 + (Math.random() - 0.5) * 400;
+    const cy = H / 2 + (Math.random() - 0.5) * 300;
+    spawnParticles(cx, cy, char);
+  }
+});
+
+window.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+
+window.addEventListener('click', (e) => {
+  // Click to burst neutral particles
+  for (let i = 0; i < 15 && particles.length < MAX; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 3;
+    particles.push(new Particle(
+      e.clientX, e.clientY,
+      Math.cos(angle) * speed,
+      Math.sin(angle) * speed,
+      hueShift + Math.random() * 60,
+      1 + Math.random() * 2,
+      60 + Math.random() * 60,
+      'float'
+    ));
+  }
+});
+
+// Touch support
+window.addEventListener('touchmove', (e) => {
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+});
+
+window.addEventListener('touchend', () => {
+  mouse.x = null;
+  mouse.y = null;
+});
+
+// Start
+requestAnimationFrame(animate);
+</script>
+
+</body>
+</html>
