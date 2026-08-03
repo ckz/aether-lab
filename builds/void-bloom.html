@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Void Bloom — Impossible Flowers in Deep Space</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; cursor: none; }
+  canvas { display: block; }
+  #ui {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font: 11px/1.6 'Courier New', monospace;
+    text-align: center; pointer-events: none; letter-spacing: 0.5px;
+    transition: opacity 3s;
+  }
+  #title {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.25); font: 13px/1.4 'Courier New', monospace;
+    letter-spacing: 4px; text-transform: uppercase; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="ui">CLICK — plant a seed &nbsp;|&nbsp; HOLD — irradiate &nbsp;|&nbsp; SPACE — clear &nbsp;|&nbsp; 1-5 — palette</div>
+<div id="title">✦ Void Bloom ✦</div>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Palettes ───────────────────────────────────────────────────────────────
+const palettes = {
+  biolum:  { bg: [2, 4, 12],   colors: ['#00ffc8','#00a8ff','#7bff6b','#b266ff','#00d4ff','#ff6bff','#88ffcc'] },
+  nebula:  { bg: [8, 2, 16],   colors: ['#ff2d95','#9b59ff','#ff6ec7','#4a0e8f','#ff9ecd','#c44dff','#7c3aed'] },
+  ember:   { bg: [14, 3, 2],   colors: ['#ff6b35','#ffaa00','#ff3d00','#ffc107','#ff8a65','#ffe082','#ff5722'] },
+  frost:   { bg: [2, 8, 18],   colors: ['#a8e6ff','#d4f1ff','#80deea','#b2ebf2','#e0f7fa','#84ffff','#4dd0e1'] },
+  void:    { bg: [0, 0, 0],    colors: ['#ffffff','#aaaaaa','#666666','#dddddd','#999999','#cccccc','#eeeeee'] }
+};
+let pal = palettes.biolum;
+let palKeys = Object.keys(palettes);
+let palIdx = 0;
+
+window.addEventListener('keydown', e => {
+  if (e.key >= '1' && e.key <= '5') {
+    palIdx = parseInt(e.key) - 1;
+    pal = palettes[palKeys[palIdx]];
+  }
+  if (e.key === ' ') { flowers = []; spores = []; stars = []; initStars(); e.preventDefault(); }
+});
+
+// ─── Stars ──────────────────────────────────────────────────────────────────
+let stars = [];
+function initStars() {
+  stars = [];
+  for (let i = 0; i < 300; i++) {
+    stars.push({
+      x: Math.random() * W, y: Math.random() * H,
+      r: Math.random() * 1.2 + 0.2,
+      twinkle: Math.random() * Math.PI * 2,
+      speed: Math.random() * 0.02 + 0.005,
+      bright: Math.random() * 0.5 + 0.5
+    });
+  }
+}
+initStars();
+
+// ─── Dust clouds ────────────────────────────────────────────────────────────
+let dusts = [];
+function initDust() {
+  dusts = [];
+  for (let i = 0; i < 20; i++) {
+    dusts.push({
+      x: Math.random() * W, y: Math.random() * H,
+      r: Math.random() * 200 + 80,
+      vx: (Math.random() - 0.5) * 0.15,
+      vy: (Math.random() - 0.5) * 0.1,
+      color: pal.colors[Math.floor(Math.random() * pal.colors.length)],
+      alpha: Math.random() * 0.03 + 0.01
+    });
+  }
+}
+initDust();
+
+// ─── Flowers ────────────────────────────────────────────────────────────────
+let flowers = [];
+
+class Flower {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.stems = [];
+    this.age = 0;
+    this.maxAge = 800 + Math.random() * 600;
+    this.color = pal.colors[Math.floor(Math.random() * pal.colors.length)];
+    this.growSpeed = 0.4 + Math.random() * 0.6;
+    this.bloomed = false;
+    this.bloomTime = 0;
+    this.petals = Math.floor(Math.random() * 4) + 4; // 4-7 petals
+    this.petalShape = Math.floor(Math.random() * 3); // 0: round, 1: spiky, 2: heart
+    this.stemCount = Math.floor(Math.random() * 3) + 1;
+    this.rotation = Math.random() * Math.PI * 2;
+    this.rotSpeed = (Math.random() - 0.5) * 0.003;
+    this.height = 60 + Math.random() * 120;
+    this.branchAngle = (Math.random() - 0.5) * 0.6;
+    this.alive = true;
+    this.decayStart = this.maxAge - 200;
+    this.pulsePhase = Math.random() * Math.PI * 2;
+
+    // Generate stem points
+    for (let s = 0; s < this.stemCount; s++) {
+      let pts = [];
+      let sx = x + (Math.random() - 0.5) * 30;
+      let sy = y;
+      let segments = 12 + Math.floor(Math.random() * 8);
+      for (let i = 0; i <= segments; i++) {
+        let t = i / segments;
+        let sway = Math.sin(t * 3 + Math.random()) * (15 + s * 8) * t;
+        pts.push({ x: sx + sway, y: sy - t * this.height, t });
+      }
+      this.stems.push(pts);
+    }
+
+    // Spore particles
+    this.spores = [];
+    this.sporeTimer = 0;
+  }
+
+  update() {
+    this.age++;
+    this.rotation += this.rotSpeed;
+    this.pulsePhase += 0.03;
+
+    if (this.age > this.decayStart) {
+      this.alive = false;
+    }
+
+    // Emit spores
+    this.sporeTimer++;
+    if (this.alive && this.sporeTimer > 8) {
+      this.sporeTimer = 0;
+      const tip = this.stems[0][this.stems[0].length - 1];
+      if (tip && Math.random() < 0.3) {
+        this.spores.push({
+          x: tip.x + (Math.random() - 0.5) * 10,
+          y: tip.y,
+          vx: (Math.random() - 0.5) * 0.5,
+          vy: -Math.random() * 0.8 - 0.2,
+          life: 200, maxLife: 200,
+          r: Math.random() * 2 + 1,
+          color: this.color
+        });
+      }
+    }
+
+    for (let sp of this.spores) {
+      sp.x += sp.vx + Math.sin(sp.age * 0.02) * 0.3;
+      sp.y += sp.vy;
+      sp.vy -= 0.003; // float up
+      sp.life--;
+      sp.age = sp.maxLife - sp.life;
+    }
+    this.spores = this.spores.filter(s => s.life > 0);
+  }
+
+  draw(ctx) {
+    const fade = this.alive ? 1 : Math.max(0, (this.age - this.decayStart) / 200);
+    if (fade <= 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = fade;
+
+    const bloomProgress = Math.min(1, this.age / 60);
+    const pulse = 1 + Math.sin(this.pulsePhase) * 0.04;
+
+    // Draw stems
+    for (let stem of this.stems) {
+      ctx.beginPath();
+      ctx.moveTo(stem[0].x, stem[0].y);
+      for (let i = 1; i < stem.length; i++) {
+        ctx.lineTo(stem[i].x, stem[i].y);
+      }
+      ctx.strokeStyle = `rgba(60, 180, 120, ${0.4 * fade})`;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+
+    // Draw flowers at stem tips
+    for (let stem of this.stems) {
+      const tip = stem[stem.length - 1];
+      const bx = tip.x, by = tip.y;
+      const size = (25 + Math.random() * 0.5) * bloomProgress * pulse;
+
+      // Glow
+      const grd = ctx.createRadialGradient(bx, by, 0, bx, by, size * 3);
+      grd.addColorStop(0, this.color + '60');
+      grd.addColorStop(1, this.color + '00');
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(bx, by, size * 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Petals
+      ctx.save();
+      ctx.translate(bx, by);
+      ctx.rotate(this.rotation);
+      for (let p = 0; p < this.petals; p++) {
+        const angle = (p / this.petals) * Math.PI * 2;
+        ctx.save();
+        ctx.rotate(angle);
+        ctx.beginPath();
+        if (this.petalShape === 0) {
+          // Round petal
+          ctx.ellipse(0, -size * 0.7, size * 0.35, size * 0.8, 0, 0, Math.PI * 2);
+        } else if (this.petalShape === 1) {
+          // Spiky petal
+          ctx.moveTo(0, 0);
+          ctx.quadraticCurveTo(size * 0.5, -size * 0.5, size * 0.15, -size);
+          ctx.quadraticCurveTo(-size * 0.15, -size * 0.5, 0, 0);
+        } else {
+          // Heart-like petal
+          ctx.moveTo(0, -size * 0.3);
+          ctx.bezierCurveTo(size * 0.6, -size * 0.8, size * 0.6, -size * 0.2, 0, -size);
+          ctx.bezierCurveTo(-size * 0.6, -size * 0.2, -size * 0.6, -size * 0.8, 0, -size * 0.3);
+        }
+        ctx.fillStyle = this.color + Math.floor(180 * fade).toString(16).padStart(2,'0');
+        ctx.fill();
+        ctx.restore();
+      }
+      // Center
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.2, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,220,${0.9 * fade})`;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Draw spores
+    for (let sp of this.spores) {
+      const a = (sp.life / sp.maxLife) * 0.7 * fade;
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y, sp.r, 0, Math.PI * 2);
+      ctx.fillStyle = sp.color + Math.floor(a * 255).toString(16).padStart(2,'0');
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+}
+
+// ─── Burst particles ────────────────────────────────────────────────────────
+let bursts = [];
+class Burst {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.particles = [];
+    for (let i = 0; i < 40; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 2.5 + 0.5;
+      this.particles.push({
+        x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        life: 60 + Math.random() * 40, maxLife: 100,
+        r: Math.random() * 2 + 0.5,
+        color: pal.colors[Math.floor(Math.random() * pal.colors.length)]
+      });
+    }
+  }
+  update() {
+    for (let p of this.particles) {
+      p.x += p.vx; p.y += p.vy;
+      p.vx *= 0.97; p.vy *= 0.97;
+      p.life--;
+    }
+    this.particles = this.particles.filter(p => p.life > 0);
+  }
+  draw(ctx) {
+    for (let p of this.particles) {
+      const a = (p.life / p.maxLife);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * a, 0, Math.PI * 2);
+      ctx.fillStyle = p.color + Math.floor(a * 200).toString(16).padStart(2,'0');
+      ctx.fill();
+    }
+  }
+  get dead() { return this.particles.length === 0; }
+}
+
+// ─── Mouse ──────────────────────────────────────────────────────────────────
+let mx = W/2, my = H/2, mouseDown = false, mouseActive = false;
+let holdTimer = 0;
+
+canvas.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; mouseActive = true; });
+canvas.addEventListener('mousedown', e => {
+  if (e.button === 0) { mouseDown = true; holdTimer = 0; plantSeed(mx, my); }
+});
+canvas.addEventListener('mouseup', () => { mouseDown = false; });
+canvas.addEventListener('mouseleave', () => { mouseDown = false; mouseActive = false; });
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0]; mx = t.clientX; my = t.clientY; mouseActive = true;
+  mouseDown = true; holdTimer = 0; plantSeed(mx, my);
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0]; mx = t.clientX; my = t.clientY;
+}, { passive: false });
+canvas.addEventListener('touchend', () => { mouseDown = false; });
+
+function plantSeed(x, y) {
+  flowers.push(new Flower(x, y));
+  bursts.push(new Burst(x, y));
+  if (flowers.length > 40) flowers.shift();
+}
+
+// ─── Shooting stars ─────────────────────────────────────────────────────────
+let shooters = [];
+function maybeSpawnShooter() {
+  if (Math.random() < 0.003) {
+    shooters.push({
+      x: Math.random() * W, y: 0,
+      vx: (Math.random() - 0.3) * 4, vy: Math.random() * 3 + 2,
+      life: 60, tail: []
+    });
+  }
+}
+
+// ─── Main loop ──────────────────────────────────────────────────────────────
+let frame = 0;
+function loop() {
+  frame++;
+  const [br, bg, bb] = pal.bg;
+
+  // Fade (creates trail ghosting)
+  ctx.fillStyle = `rgba(${br},${bg},${bb},0.12)`;
+  ctx.fillRect(0, 0, W, H);
+
+  // Dust clouds
+  for (let d of dusts) {
+    d.x += d.vx; d.y += d.vy;
+    if (d.x < -d.r) d.x = W + d.r;
+    if (d.x > W + d.r) d.x = -d.r;
+    if (d.y < -d.r) d.y = H + d.r;
+    if (d.y > H + d.r) d.y = -d.r;
+    const grd = ctx.createRadialGradient(d.x, d.y, 0, d.x, d.y, d.r);
+    grd.addColorStop(0, d.color + '15');
+    grd.addColorStop(1, d.color + '00');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Stars
+  for (let s of stars) {
+    s.twinkle += s.speed;
+    const a = (Math.sin(s.twinkle) * 0.5 + 0.5) * s.bright;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(200,220,255,${a})`;
+    ctx.fill();
+  }
+
+  // Shooting stars
+  maybeSpawnShooter();
+  for (let sh of shooters) {
+    sh.x += sh.vx; sh.y += sh.vy; sh.life--;
+    sh.tail.push({ x: sh.x, y: sh.y });
+    if (sh.tail.length > 20) sh.tail.shift();
+    if (sh.tail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(sh.tail[0].x, sh.tail[0].y);
+      for (let i = 1; i < sh.tail.length; i++) {
+        ctx.lineTo(sh.tail[i].x, sh.tail[i].y);
+      }
+      const a = sh.life / 60;
+      ctx.strokeStyle = `rgba(255,255,255,${a})`;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+  }
+  shooters = shooters.filter(s => s.life > 0);
+
+  // Flowers
+  for (let f of flowers) { f.update(); f.draw(ctx); }
+  flowers = flowers.filter(f => f.age < f.maxAge);
+
+  // Bursts
+  for (let b of bursts) { b.update(); b.draw(ctx); }
+  bursts = bursts.filter(b => !b.dead);
+
+  // Mouse hold → irradiate (emit spores from cursor)
+  if (mouseDown) {
+    holdTimer++;
+    for (let i = 0; i < 3; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 1.5 + 0.3;
+      bursts.push({
+        x: mx, y: my,
+        particles: [{
+          x: mx, y: my,
+          vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+          life: 40, maxLife: 40,
+          r: Math.random() * 1.5 + 0.5,
+          color: pal.colors[Math.floor(Math.random() * pal.colors.length)]
+        }]
+      });
+    }
+    // Spawn tiny flower on hold
+    if (holdTimer > 30 && holdTimer % 20 === 0) {
+      const fx = mx + (Math.random() - 0.5) * 100;
+      const fy = my + (Math.random() - 0.5) * 100;
+      const baby = new Flower(fx, fy);
+      baby.height *= 0.4;
+      baby.maxAge = 300;
+      flowers.push(baby);
+      if (flowers.length > 40) flowers.shift();
+    }
+  }
+
+  // Cursor glow
+  const cGrd = ctx.createRadialGradient(mx, my, 0, mx, my, 40);
+  cGrd.addColorStop(0, 'rgba(255,255,255,0.15)');
+  cGrd.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = cGrd;
+  ctx.beginPath();
+  ctx.arc(mx, my, 40, 0, Math.PI * 2);
+  ctx.fill();
+
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
