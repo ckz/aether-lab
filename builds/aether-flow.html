@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aether Flow — Generative Art</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #info {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    color: rgba(255,255,255,0.6);
+    font-size: 12px;
+    z-index: 10;
+    pointer-events: none;
+    letter-spacing: 1px;
+  }
+  #info h1 {
+    font-size: 18px;
+    font-weight: normal;
+    margin-bottom: 8px;
+    color: rgba(255,255,255,0.9);
+    letter-spacing: 3px;
+  }
+  #controls {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    color: rgba(255,255,255,0.5);
+    font-size: 11px;
+    z-index: 10;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="info">
+  <h1>AETHER FLOW</h1>
+  <div>Generative particle field</div>
+  <div id="stats"></div>
+</div>
+<div id="controls">
+  [ CLICK to spawn burst ] &nbsp; [ MOVE to attract ] &nbsp; [ SPACE to toggle mode ]
+</div>
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const stats = document.getElementById('stats');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Mouse
+const mouse = { x: W/2, y: H/2, active: false };
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => mouse.active = false);
+canvas.addEventListener('click', e => {
+  for (let i = 0; i < 80; i++) {
+    particles.push(new Particle(e.clientX, e.clientY, true));
+  }
+});
+
+// Space to toggle
+let mode = 0;
+const modes = ['flow', 'orbit', 'bloom'];
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    mode = (mode + 1) % modes.length;
+  }
+});
+
+// Color palettes
+const palettes = [
+  ['#0affff', '#ff00aa', '#ffff00', '#00ff88', '#ff6600'],
+  ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe'],
+  ['#00c9ff', '#92fe9d', '#fddb92', '#ff6b6b', '#c471f5'],
+  ['#ffecd2', '#fcb69f', '#a1c4fd', '#c2e9fb', '#d4fc79']
+];
+let palette = palettes[0];
+
+// Particle class
+class Particle {
+  constructor(x, y, burst = false) {
+    this.x = x || Math.random() * W;
+    this.y = y || Math.random() * H;
+    this.vx = (Math.random() - 0.5) * (burst ? 8 : 1);
+    this.vy = (Math.random() - 0.5) * (burst ? 8 : 1);
+    this.life = 1;
+    this.decay = 0.001 + Math.random() * 0.003;
+    this.size = 1 + Math.random() * 2.5;
+    this.color = palette[Math.floor(Math.random() * palette.length)];
+    this.angle = Math.random() * Math.PI * 2;
+    this.speed = 0.3 + Math.random() * 1.5;
+    this.wobble = Math.random() * Math.PI * 2;
+    this.wobbleSpeed = 0.02 + Math.random() * 0.04;
+  }
+
+  update() {
+    const currentMode = modes[mode];
+    
+    if (currentMode === 'flow') {
+      // Perlin-like flow field
+      const scale = 0.003;
+      const angle = Math.sin(this.x * scale) * Math.cos(this.y * scale) * Math.PI * 2;
+      this.vx += Math.cos(angle) * 0.15;
+      this.vy += Math.sin(angle) * 0.15;
+      
+      // Mouse attraction
+      if (mouse.active) {
+        const dx = mouse.x - this.x;
+        const dy = mouse.y - this.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 200) {
+          const force = (200 - dist) / 200 * 0.5;
+          this.vx += (dx / dist) * force;
+          this.vy += (dy / dist) * force;
+        }
+      }
+    } else if (currentMode === 'orbit') {
+      // Orbit around center or mouse
+      const cx = mouse.active ? mouse.x : W/2;
+      const cy = mouse.active ? mouse.y : H/2;
+      const dx = this.x - cx;
+      const dy = this.y - cy;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const angle = Math.atan2(dy, dx) + 0.02;
+      this.vx += Math.cos(angle + Math.PI/2) * 0.3 - dx * 0.0001;
+      this.vy += Math.sin(angle + Math.PI/2) * 0.3 - dy * 0.0001;
+    } else if (currentMode === 'bloom') {
+      // Bloom outward from center
+      const dx = this.x - W/2;
+      const dy = this.y - H/2;
+      const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+      this.vx += (dx / dist) * 0.1 + (Math.random() - 0.5) * 0.3;
+      this.vy += (dy / dist) * 0.1 + (Math.random() - 0.5) * 0.3;
+    }
+
+    // Damping
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+    
+    this.x += this.vx;
+    this.y += this.vy;
+    
+    // Wrap edges
+    if (this.x < 0) this.x = W;
+    if (this.x > W) this.x = 0;
+    if (this.y < 0) this.y = H;
+    if (this.y > H) this.y = 0;
+    
+    this.life -= this.decay;
+    this.wobble += this.wobbleSpeed;
+  }
+
+  draw() {
+    const alpha = this.life * 0.8;
+    ctx.fillStyle = this.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+    ctx.beginPath();
+    const s = this.size * (0.5 + Math.sin(this.wobble) * 0.3);
+    ctx.arc(this.x, this.y, s, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Trail
+    ctx.strokeStyle = this.color + Math.floor(alpha * 100).toString(16).padStart(2, '0');
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y);
+    ctx.lineTo(this.x - this.vx * 3, this.y - this.vy * 3);
+    ctx.stroke();
+  }
+}
+
+// Particles
+let particles = [];
+const MAX_PARTICLES = 600;
+
+// Init
+for (let i = 0; i < 200; i++) {
+  particles.push(new Particle());
+}
+
+// Background fade
+ctx.fillStyle = 'rgba(10, 10, 15, 0.15)';
+ctx.fillRect(0, 0, W, H);
+
+// Animation
+let frame = 0;
+function animate() {
+  // Semi-transparent background for trails
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.08)';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Update and draw particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update();
+    particles[i].draw();
+    
+    if (particles[i].life <= 0) {
+      particles.splice(i, 1);
+    }
+  }
+  
+  // Maintain particle count
+  while (particles.length < 150) {
+    particles.push(new Particle());
+  }
+  
+  // Limit max
+  while (particles.length > MAX_PARTICLES) {
+    particles.shift();
+  }
+  
+  // Cycle palette occasionally
+  frame++;
+  if (frame % 600 === 0) {
+    palette = palettes[Math.floor(Math.random() * palettes.length)];
+    particles.forEach(p => {
+      if (Math.random() < 0.3) {
+        p.color = palette[Math.floor(Math.random() * palette.length)];
+      }
+    });
+  }
+  
+  // Stats
+  if (frame % 30 === 0) {
+    stats.innerHTML = `mode: ${modes[mode]}<br>particles: ${particles.length}`;
+  }
+  
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>
