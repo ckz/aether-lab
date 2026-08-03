@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+#
+# git-unchanged — find files untouched for ages
+#
+# Usage:
+#   git-unchanged                 # files unchanged 365+ days
+#   git-unchanged 90              # files unchanged 90+ days
+#   git-unchanged --ancient       # alias for --days 365
+#   git-unchanged --recent --days 30  # recently changed files
+#   git-unchanged --json          # JSON output
+#   git-unchanged /path/to/repo   # scan specific path
+#
+# Zero dependencies. Pure bash + git.
+#
+
+set -euo pipefail
+
+VERSION="1.0.0"
+DAYS=365
+RECENT_MODE=0
+JSON_MODE=0
+REPO_PATH="."
+LIMIT=100
+
+# ─── Colors ───
+if [[ -t 1 ]]; then
+  R='\033[0;31m' Y='\033[0;33m' G='\033[0;32m' C='\033[0;36m'
+  B='\033[1m' D='\033[0;2m' N='\033[0m'
+else
+  R='' Y='' G='' C='' B='' D='' N=''
+fi
+
+usage() {
+  cat <<EOF
+${B}git-unchanged${N} v${VERSION} — find files untouched for ages
+
+${C}Usage:${N}
+  git-unchanged [OPTIONS] [PATH]
+
+${C}Options:${N}
+  -d, --days DAYS       Age threshold in days (default: 365)
+  -a, --ancient         Alias for --days 365
+      --recent          Show recently-changed files instead
+  -j, --json            JSON output
+  -n, --limit N         Max results (default: $LIMIT)
+  -h, --help            Show this help
+
+${C}Examples:${N}
+  git-unchanged                  # files unchanged 1+ year
+  git-unchanged 90               # files unchanged 90+ days
+  git-unchanged --ancient        # same as default
+  git-unchanged --recent --days 30  # changed in last 30 days
+  git-unchanged --json           # pipe to jq
+EOF
+  exit 0
+}
+
+# ─── Parse args ───
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -d|--days)    DAYS="$2"; shift 2 ;;
+    -a|--ancient) DAYS=365; shift ;;
+    --recent)     RECENT_MODE=1; shift ;;
+    -j|--json)    JSON_MODE=1; shift ;;
+    -n|--limit)   LIMIT="$2"; shift 2 ;;
+    -h|--help)    usage ;;
+    -*)           echo "Unknown option: $1" >&2; exit 1 ;;
+    *)            REPO_PATH="$1"; shift ;;
+  esac
+done
+
+# ─── Check we're in a git repo ───
+if ! git -C "$REPO_PATH" rev-parse --git-dir >/dev/null 2>&1; then
+  echo "Error: not a git repository: $REPO_PATH" >&2
+  exit 1
+fi
+
+REPO_NAME=$(basename "$REPO_PATH")
+TOTAL=$(git -C "$REPO_PATH" ls-files | wc -l | tr -d ' ')
+
+# ─── Single-pass: get last-commit epoch for every tracked file ───
+declare -A FILE_EPOCH
+declare -A FILE_HAS_COMMIT
+EPOCH=0
+
+# Use a single git log call with --name-only
+while IFS= read -r line; do
+  if [[ "$line" =~ ^---[[:space:]]*[a-f0-9]+[[:space:]]+([0-9]+) ]]; then
+    EPOCH="${BASH_REMATCH[1]}"
+  elif [[ -n "$line" ]]; then
+    # It's a filename (after the --- separator)
+    if [[ -z "${FILE_EPOCH[$line]+x}" ]] || [[ $EPOCH -gt "${FILE_EPOCH[$line]}" ]]; then
+      FILE_EPOCH[$line]="$EPOCH"
+    fi
+    FILE_HAS_COMMIT[$line]=1
+  fi
+done < <(git -C "$REPO_PATH" log --name-only --format="---%H %at" --all 2>/dev/null)
+
+NOW=$(date +%s)
+NOW_DATE=$(date "+%Y-%m-%d")
+
+# ─── Build entries list ───
+ENTRIES=()
+while IFS= read -r f; do
+  [[ -f "$REPO_PATH/$f" ]] || continue
+  LAST="${FILE_EPOCH[$f]:-0}"
+  [[ "$LAST" -gt 0 ]] || continue
+  AGE=$(( (NOW - LAST) / 86400 ))
+  DATE_STR=$(date -d "@$LAST" "+%Y-%m-%d" 2>/dev/null || date -r "$LAST" "+%Y-%m-%d" 2>/dev/null || echo "unknown")
+  SIZE=$(stat -c%s "$REPO_PATH/$f" 2>/dev/null || stat -f%z "$REPO_PATH/$f" 2>/dev/null || echo "0")
+  echo "${AGE}|${DATE_STR}|${SIZE}|${f}"
+done < <(git -C "$REPO_PATH" ls-files) > /tmp/git-unchanged-entries-$$.txt
+
+if [[ $RECENT_MODE -eq 1 ]]; then
+  sort -t'|' -n -k1,1 /tmp/git-unchanged-entries-$$.txt > /tmp/git-unchanged-sorted-$$.txt
+  mapfile -t ENTRIES < /tmp/git-unchanged-sorted-$$.txt
+  # Filter recent
+  FILTERED=()
+  for e in "${ENTRIES[@]}"; do
+    IFS='|' read -r AGE _rest <<< "$e"
+    if [[ $AGE -le $DAYS ]]; then
+      FILTERED+=("$e")
+    fi
+  done
+  ENTRIES=("${FILTERED[@]}")
+  LABEL="recent"
+else
+  sort -t'|' -n -k1,1 /tmp/git-unchanged-entries-$$.txt > /tmp/git-unchanged-sorted-$$.txt
+  mapfile -t ENTRIES < /tmp/git-unchanged-sorted-$$.txt
+  LABEL="unchanged"
+fi
+
+rm -f /tmp/git-unchanged-entries-$$.txt /tmp/git-unchanged-sorted-$$.txt
+
+COUNT=${#ENTRIES[@]}
+
+# ─── Output ───
+if [[ $JSON_MODE -eq 1 ]]; then
+  echo "{"
+  echo "  \"repo\": \"$REPO_NAME\","
+  echo "  \"threshold_days\": $DAYS,"
+  echo "  \"mode\": \"$LABEL\","
+  echo "  \"total_files\": $TOTAL,"
+  echo "  \"matching\": $COUNT,"
+  echo "  \"files\": ["
+  for i in "${!ENTRIES[@]}"; do
+    IFS='|' read -r AGE DATE SIZE PATH <<< "${ENTRIES[$i]}"
+    COMMA=","
+    [[ $i -eq $((COUNT-1)) ]] && COMMA=""
+    echo "    {\"path\": \"$PATH\", \"age_days\": $AGE, \"last_modified\": \"$DATE\", \"size\": $SIZE }$COMMA"
+  done
+  echo "  ]"
+  echo "}"
+else
+  if [[ $RECENT_MODE -eq 1 ]]; then
+    echo -e "${B}🔥 Recently changed${N} (last ${DAYS}d) in ${C}$REPO_NAME${N} — ${COUNT}/${TOTAL} files"
+  else
+    echo -e "${B}🕰️  Unchanged for ${DAYS}+ days${N} in ${C}$REPO_NAME${N} — ${COUNT}/${TOTAL} files"
+  fi
+  echo ""
+  printf "${D}%-10s %-14s %10s  %s${N}\n" "AGE" "LAST MODIFIED" "SIZE" "FILE"
+  printf "${D}%-10s %-14s %10s  %s${N}\n" "----------" "--------------" "----------" "----"
+
+  for entry in "${ENTRIES[@]:0:$LIMIT}"; do
+    IFS='|' read -r AGE DATE SIZE PATH <<< "$entry"
+
+    if [[ $AGE -gt 1825 ]]; then
+      AGE_COL="${R}${AGE}d${N}"
+    elif [[ $AGE -gt 730 ]]; then
+      AGE_COL="${Y}${AGE}d${N}"
+    elif [[ $AGE -gt 365 ]]; then
+      AGE_COL="${Y}${AGE}d${N}"
+    else
+      AGE_COL="${G}${AGE}d${N}"
+    fi
+
+    if [[ $SIZE -gt 1048576 ]]; then
+      SIZE_HR="$(( SIZE / 1048576 ))MB"
+    elif [[ $SIZE -gt 1024 ]]; then
+      SIZE_HR="$(( SIZE / 1024 ))KB"
+    else
+      SIZE_HR="${SIZE}B"
+    fi
+
+    printf "%-10s %-14s %10s  %s\n" "$AGE_COL" "$DATE" "$SIZE_HR" "$PATH"
+  done
+
+  echo ""
+  if [[ $COUNT -gt 0 ]]; then
+    ANCIENT=0 OLD=0
+    for e in "${ENTRIES[@]}"; do
+      IFS='|' read -r AGE _ <<< "$e"
+      [[ $AGE -gt 1825 ]] && ((ANCIENT++)) || true
+      [[ $AGE -gt 730 && $AGE -le 1825 ]] && ((OLD++)) || true
+    done
+    [[ $ANCIENT -gt 0 ]] && echo -e "  ${R}${ANCIENT} files${N} are 5+ years old — digital fossils"
+    [[ $OLD -gt 0 ]] && echo -e "  ${Y}${OLD} files${N} are 2–5 years old — worth a revisit"
+    if [[ $ANCIENT -eq 0 && $OLD -eq 0 ]]; then
+      echo -e "  ${G}Nothing ancient here${N} — your repo is relatively fresh"
+    fi
+  else
+    echo -e "  ${G}Nothing matches${N} — everything's been touched recently!"
+  fi
+fi

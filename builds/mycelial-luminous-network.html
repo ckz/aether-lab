@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mycelial Luminous Network</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #aaffaa;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  .controls {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    background: rgba(10, 10, 20, 0.85);
+    padding: 16px 20px;
+    border-radius: 12px;
+    border: 1px solid rgba(170, 255, 170, 0.15);
+    backdrop-filter: blur(10px);
+    z-index: 10;
+    min-width: 220px;
+  }
+  .controls h2 {
+    font-size: 14px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    color: #88ff88;
+    text-shadow: 0 0 10px rgba(136,255,136,0.5);
+  }
+  .controls button {
+    display: block;
+    width: 100%;
+    margin: 6px 0;
+    padding: 8px 12px;
+    background: rgba(170,255,170,0.06);
+    border: 1px solid rgba(170,255,170,0.2);
+    color: #aaffaa;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    letter-spacing: 1px;
+    transition: all 0.3s;
+  }
+  .controls button:hover {
+    background: rgba(170,255,170,0.15);
+    border-color: rgba(170,255,170,0.5);
+    text-shadow: 0 0 8px rgba(170,255,170,0.6);
+  }
+  .stats {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    font-size: 11px;
+    color: rgba(170,255,170,0.4);
+    letter-spacing: 1px;
+    z-index: 10;
+  }
+  .hint {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    font-size: 11px;
+    color: rgba(170,255,170,0.3);
+    letter-spacing: 1px;
+    text-align: right;
+    z-index: 10;
+    line-height: 1.8;
+  }
+  .title-overlay {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
+    z-index: 5;
+    opacity: 0.6;
+    transition: opacity 2s;
+  }
+  .title-overlay h1 {
+    font-size: 28px;
+    letter-spacing: 8px;
+    color: #88ff88;
+    text-shadow: 0 0 30px rgba(136,255,136,0.4);
+    font-weight: normal;
+  }
+  .title-overlay p {
+    font-size: 12px;
+    letter-spacing: 4px;
+    margin-top: 8px;
+    color: rgba(170,255,170,0.5);
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div class="title-overlay" id="titleOverlay">
+  <h1>MYCELIAL NETWORK</h1>
+  <p>click to plant spores</p>
+</div>
+
+<div class="controls">
+  <h2>◈ Controls</h2>
+  <button onclick="burstSpores()">⊕ Burst Spores</button>
+  <button onclick="toggleGrowth()">◈ Toggle Growth</button>
+  <button onclick="cyclePalette()">◉ Cycle Palette</button>
+  <button onclick="clearNetwork()">⌦ Clear Network</button>
+  <button onclick="saveImage()">⬇ Save PNG</button>
+</div>
+
+<div class="stats" id="stats">nodes: 0 | threads: 0</div>
+<div class="hint">click: plant spore<br>drag: grow threads<br>space: pause<br>g: glow mode</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// State
+let growing = true;
+let glowMode = true;
+let paused = false;
+let mouse = { x: W/2, y: H/2, down: false, clicked: false };
+let nodes = [];
+let threads = [];
+let spores = [];
+let particles = [];
+let frame = 0;
+
+// Palettes
+const palettes = [
+  { name: 'Forest',    glow: [50,200,80],   thread: [30,120,50],   spore: [100,255,120], bg: [5,10,8] },
+  { name: 'Ocean',     glow: [50,150,255],  thread: [20,80,150],   spore: [100,200,255], bg: [5,8,15] },
+  { name: 'Ember',     glow: [255,150,50],  thread: [150,80,20],   spore: [255,200,100], bg: [15,8,5] },
+  { name: 'Violet',    glow: [180,100,255], thread: [80,40,150],   spore: [200,150,255], bg: [10,5,15] },
+  { name: 'Ghost',     glow: [200,220,255], thread: [100,120,150], spore: [220,240,255], bg: [8,8,12] },
+];
+let paletteIdx = 0;
+function pal() { return palettes[paletteIdx]; }
+
+// Simplex-like noise
+function noise(x, y, t) {
+  return Math.sin(x * 0.01 + t) * Math.cos(y * 0.012 - t * 0.7) +
+         Math.sin((x + y) * 0.007 + t * 0.5) * 0.5 +
+         Math.cos(x * 0.02 - y * 0.015 + t * 0.3) * 0.3;
+}
+
+// Node class
+class Node {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.ox = x;
+    this.oy = y;
+    this.vx = 0;
+    this.vy = 0;
+    this.radius = 2 + Math.random() * 4;
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    this.pulseSpeed = 0.02 + Math.random() * 0.03;
+    this.energy = 0;
+    this.age = 0;
+    this.maxAge = 800 + Math.random() * 1200;
+    this.connections = [];
+    this.growing = true;
+    this.sporeReady = false;
+    this.sporeTimer = 200 + Math.random() * 400;
+  }
+
+  update() {
+    if (paused) return;
+    this.age++;
+    this.pulsePhase += this.pulseSpeed;
+    this.energy *= 0.97;
+
+    // Organic drift
+    const n = noise(this.x, this.y, frame * 0.005);
+    this.vx += Math.cos(n * Math.PI * 2) * 0.08;
+    this.vy += Math.sin(n * Math.PI * 2) * 0.08;
+
+    // Return toward origin gently
+    this.vx += (this.ox - this.x) * 0.0002;
+    this.vy += (this.oy - this.y) * 0.0002;
+
+    // Mouse influence
+    const dx = mouse.x - this.x;
+    const dy = mouse.y - this.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 150) {
+      const force = (150 - dist) / 150;
+      if (mouse.down) {
+        this.vx += dx * force * 0.003;
+        this.vy += dy * force * 0.003;
+      } else {
+        this.vx -= dx * force * 0.002;
+        this.vy -= dy * force * 0.002;
+      }
+    }
+
+    // Damping
+    this.vx *= 0.92;
+    this.vy *= 0.92;
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Boundaries
+    const margin = 50;
+    if (this.x < margin) this.vx += 0.3;
+    if (this.x > W - margin) this.vx -= 0.3;
+    if (this.y < margin) this.vy += 0.3;
+    if (this.y > H - margin) this.vy -= 0.3;
+
+    // Spore spawning
+    if (this.sporeReady && growing && this.age > 100) {
+      this.sporeTimer--;
+      if (this.sporeTimer <= 0) {
+        this.sporeReady = false;
+        this.sporeTimer = 300 + Math.random() * 500;
+        if (nodes.length < 600) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = 40 + Math.random() * 80;
+          spores.push(new Spore(
+            this.x + Math.cos(angle) * dist,
+            this.y + Math.sin(angle) * dist,
+            this
+          ));
+        }
+      }
+    }
+
+    if (this.energy > 0.5) this.sporeReady = true;
+  }
+
+  draw() {
+    const p = pal();
+    const pulse = Math.sin(this.pulsePhase) * 0.5 + 0.5;
+    const r = this.radius * (1 + pulse * 0.4);
+    const alpha = Math.min(1, this.energy * 2 + 0.3) * (1 - this.age / this.maxAge);
+
+    // Outer glow
+    const glowR = r * (3 + this.energy * 4);
+    const grd = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, glowR);
+    grd.addColorStop(0, `rgba(${p.glow[0]},${p.glow[1]},${p.glow[2]},${alpha * 0.4})`);
+    grd.addColorStop(1, `rgba(${p.glow[0]},${p.glow[1]},${p.glow[2]},0)`);
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, glowR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Core
+    ctx.fillStyle = `rgba(${p.spore[0]},${p.spore[1]},${p.spore[2]},${alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Bright center
+    ctx.fillStyle = `rgba(255,255,255,${alpha * 0.7})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Thread class — growing filament between nodes
+class Thread {
+  constructor(from, to) {
+    this.from = from;
+    this.to = to;
+    this.progress = 0;
+    this.growSpeed = 0.02 + Math.random() * 0.03;
+    this.wobble = Math.random() * 20;
+    this.wobbleSpeed = 0.01 + Math.random() * 0.02;
+    this.opacity = 0;
+    this.maxOpacity = 0.15 + Math.random() * 0.35;
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    this.energy = 0;
+    this.dead = false;
+  }
+
+  update() {
+    if (paused) return;
+    if (growing && this.progress < 1) {
+      this.progress += this.growSpeed * 0.3;
+      if (this.progress > 1) this.progress = 1;
+    }
+    this.opacity += (this.maxOpacity - this.opacity) * 0.05;
+    this.energy *= 0.95;
+    this.pulsePhase += 0.02;
+  }
+
+  draw() {
+    if (this.progress <= 0) return;
+    const p = pal();
+    const fx = this.from.x, fy = this.from.y;
+    const tx = this.to.x, ty = this.to.y;
+    const t = this.progress;
+    const pulse = Math.sin(this.pulsePhase) * 0.3 + 0.7;
+    const alpha = this.opacity * pulse * (1 + this.energy * 3);
+
+    // Draw curved filament
+    const mx = (fx + tx) / 2 + Math.sin(frame * this.wobbleSpeed) * this.wobble;
+    const my = (fy + ty) / 2 + Math.cos(frame * this.wobbleSpeed) * this.wobble;
+
+    const ex = fx + (mx - fx) * t + (tx - mx) * t;
+    const ey = fy + (my - fy) * t + (ty - my) * t;
+
+    // Main thread line
+    ctx.strokeStyle = `rgba(${p.thread[0]},${p.thread[1]},${p.thread[2]},${alpha})`;
+    ctx.lineWidth = 1 + this.energy * 3;
+    ctx.beginPath();
+    ctx.moveTo(fx, fy);
+    if (t < 1) {
+      ctx.quadraticCurveTo(mx, my, ex, ey);
+    } else {
+      ctx.quadraticCurveTo(mx, my, tx, ty);
+    }
+    ctx.stroke();
+
+    // Glow
+    if (glowMode && this.energy > 0.1) {
+      ctx.strokeStyle = `rgba(${p.glow[0]},${p.glow[1]},${p.glow[2]},${alpha * 0.3})`;
+      ctx.lineWidth = 3 + this.energy * 6;
+      ctx.beginPath();
+      ctx.moveTo(fx, fy);
+      if (t < 1) {
+        ctx.quadraticCurveTo(mx, my, ex, ey);
+      } else {
+        ctx.quadraticCurveTo(mx, my, tx, ty);
+      }
+      ctx.stroke();
+    }
+  }
+}
+
+// Spore class — floating luminous particles
+class Spore {
+  constructor(x, y, parent) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 1.5;
+    this.vy = (Math.random() - 0.5) * 1.5;
+    this.radius = 1 + Math.random() * 2.5;
+    this.life = 1;
+    this.decay = 0.002 + Math.random() * 0.004;
+    this.parent = parent;
+    this.hue = Math.random();
+    this.wobblePhase = Math.random() * Math.PI * 2;
+  }
+
+  update() {
+    if (paused) return;
+    this.wobblePhase += 0.03;
+    this.vx += Math.sin(this.wobblePhase) * 0.05;
+    this.vy += Math.cos(this.wobblePhase * 0.7) * 0.05 - 0.01;
+    this.vx *= 0.99;
+    this.vy *= 0.99;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= this.decay;
+
+    // Chance to become a node
+    if (this.life < 0.3 && Math.random() < 0.005 && nodes.length < 600) {
+      this.life = 0;
+      const newNode = new Node(this.x, this.y);
+      newNode.energy = 0.8;
+      newNode.pulseSpeed = 0.04;
+      nodes.push(newNode);
+      if (this.parent) {
+        threads.push(new Thread(this.parent, newNode));
+      }
+    }
+  }
+
+  draw() {
+    const p = pal();
+    const alpha = this.life * 0.8;
+    const glowR = this.radius * 5;
+
+    const grd = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, glowR);
+    grd.addColorStop(0, `rgba(${p.spore[0]},${p.spore[1]},${p.spore[2]},${alpha * 0.5})`);
+    grd.addColorStop(1, `rgba(${p.spore[0]},${p.spore[1]},${p.spore[2]},0)`);
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, glowR, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = `rgba(${p.spore[0]},${p.spore[1]},${p.spore[2]},${alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Burst particle
+class BurstParticle {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 6;
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed;
+    this.life = 1;
+    this.decay = 0.015 + Math.random() * 0.02;
+    this.radius = 1 + Math.random() * 3;
+  }
+
+  update() {
+    if (paused) return;
+    this.vx *= 0.96;
+    this.vy *= 0.96;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= this.decay;
+  }
+
+  draw() {
+    const p = pal();
+    const alpha = this.life;
+    ctx.fillStyle = `rgba(${p.spore[0]},${p.spore[1]},${p.spore[2]},${alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius * this.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Seed initial mycelium
+function seedNetwork() {
+  const cx = W / 2, cy = H / 2;
+  const root = new Node(cx, cy);
+  root.energy = 1;
+  root.maxAge = 99999;
+  nodes.push(root);
+
+  // Grow initial branching
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2 + Math.random() * 0.3;
+    const dist = 80 + Math.random() * 120;
+    const node = new Node(cx + Math.cos(angle) * dist, cy + Math.sin(angle) * dist);
+    node.energy = 0.6;
+    nodes.push(node);
+    threads.push(new Thread(root, node));
+  }
+
+  // Secondary branching
+  for (let i = 0; i < 20; i++) {
+    const parent = nodes[1 + Math.floor(Math.random() * 8)];
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 50 + Math.random() * 100;
+    const node = new Node(parent.x + Math.cos(angle) * dist, parent.y + Math.sin(angle) * dist);
+    nodes.push(node);
+    threads.push(new Thread(parent, node));
+  }
+}
+
+// Find nearest node
+function findNearest(x, y, maxDist = 80) {
+  let nearest = null;
+  let minDist = maxDist;
+  for (const node of nodes) {
+    const dx = node.x - x;
+    const dy = node.y - y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d < minDist) {
+      minDist = d;
+      nearest = node;
+    }
+  }
+  return nearest;
+}
+
+// Plant a spore
+function plantSpore(x, y) {
+  const existing = findNearest(x, y, 60);
+  if (existing) {
+    existing.energy = 1;
+    existing.sporeReady = true;
+    existing.maxAge = 99999;
+    // Burst from existing node
+    for (let i = 0; i < 15; i++) {
+      particles.push(new BurstParticle(existing.x, existing.y));
+    }
+  } else if (nodes.length < 600) {
+    const node = new Node(x, y);
+    node.energy = 1;
+    nodes.push(node);
+    // Connect to nearest existing node
+    let nearest = null, minD = 150;
+    for (const n of nodes) {
+      if (n === node) continue;
+      const dx = n.x - x, dy = n.y - y;
+      const d = Math.sqrt(dx*dx + dy*dy);
+      if (d < minD) { minD = d; nearest = n; }
+    }
+    if (nearest) threads.push(new Thread(nearest, node));
+    // Spawn spores
+    for (let i = 0; i < 10; i++) {
+      spores.push(new Spore(x + (Math.random()-0.5)*30, y + (Math.random()-0.5)*30, node));
+    }
+  }
+}
+
+// Auto-grow threads between nearby nodes
+function growThreads() {
+  if (!growing || nodes.length < 2) return;
+  // Occasionally connect nearby unconnected nodes
+  if (Math.random() < 0.1 && threads.length < 300) {
+    const a = nodes[Math.floor(Math.random() * nodes.length)];
+    const b = nodes[Math.floor(Math.random() * nodes.length)];
+    if (a !== b) {
+      const dx = a.x - b.x, dy = a.y - b.y;
+      const d = Math.sqrt(dx*dx + dy*dy);
+      if (d < 120 && d > 20) {
+        // Check not already connected
+        const exists = threads.some(t =>
+          (t.from === a && t.to === b) || (t.from === b && t.to === a)
+        );
+        if (!exists) {
+          threads.push(new Thread(a, b));
+        }
+      }
+    }
+  }
+}
+
+// Control functions
+function burstSpores() {
+  for (let i = 0; i < 40; i++) {
+    const x = Math.random() * W;
+    const y = Math.random() * H;
+    spores.push(new Spore(x, y, null));
+  }
+  for (let i = 0; i < 60; i++) {
+    particles.push(new BurstParticle(W/2 + (Math.random()-0.5)*200, H/2 + (Math.random()-0.5)*200));
+  }
+}
+
+function toggleGrowth() {
+  growing = !growing;
+}
+
+function cyclePalette() {
+  paletteIdx = (paletteIdx + 1) % palettes.length;
+}
+
+function clearNetwork() {
+  nodes = [];
+  threads = [];
+  spores = [];
+  particles = [];
+  seedNetwork();
+}
+
+function saveImage() {
+  const link = document.createElement('a');
+  link.download = 'mycelial-network.png';
+  link.href = canvas.toDataURL();
+  link.click();
+}
+
+// Mouse events
+canvas.addEventListener('mousedown', e => {
+  mouse.down = true;
+  mouse.clicked = true;
+  plantSpore(e.clientX, e.clientY);
+});
+canvas.addEventListener('mouseup', () => { mouse.down = false; });
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  if (mouse.down && Math.random() < 0.3) {
+    plantSpore(e.clientX, e.clientY);
+  }
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  mouse.down = true;
+  mouse.clicked = true;
+  plantSpore(t.clientX, t.clientY);
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  if (Math.random() < 0.3) plantSpore(t.clientX, t.clientY);
+}, { passive: false });
+canvas.addEventListener('touchend', () => { mouse.down = false; });
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); paused = !paused; }
+  if (e.key === 'g' || e.key === 'G') glowMode = !glowMode;
+  if (e.key === 'b' || e.key === 'B') burstSpores();
+  if (e.key === 'c' || e.key === 'C') clearNetwork();
+  if (e.key === 'p' || e.key === 'P') cyclePalette();
+});
+
+// Init
+seedNetwork();
+
+// Hide title after a few seconds
+setTimeout(() => {
+  document.getElementById('titleOverlay').style.opacity = '0';
+}, 5000);
+
+// Main loop
+function animate() {
+  requestAnimationFrame(animate);
+
+  // Fade background for trails
+  const bg = pal().bg;
+  ctx.fillStyle = `rgba(${bg[0]},${bg[1]},${bg[2]},0.12)`;
+  ctx.fillRect(0, 0, W, H);
+
+  if (!paused) {
+    frame++;
+    growThreads();
+
+    // Update & draw threads
+    for (const thread of threads) {
+      thread.update();
+      thread.draw();
+    }
+
+    // Update & draw nodes
+    for (const node of nodes) {
+      node.update();
+      node.draw();
+    }
+
+    // Update & draw spores
+    for (let i = spores.length - 1; i >= 0; i--) {
+      spores[i].update();
+      spores[i].draw();
+      if (spores[i].life <= 0) spores.splice(i, 1);
+    }
+
+    // Update & draw burst particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      particles[i].update();
+      particles[i].draw();
+      if (particles[i].life <= 0) particles.splice(i, 1);
+    }
+  }
+
+  // Ambient spores
+  if (growing && !paused && Math.random() < 0.03) {
+    spores.push(new Spore(
+      Math.random() * W,
+      Math.random() * H,
+      nodes[Math.floor(Math.random() * nodes.length)]
+    ));
+  }
+
+  // Stats
+  document.getElementById('stats').textContent =
+    `nodes: ${nodes.length} | threads: ${threads.length} | spores: ${spores.length} | palette: ${pal().name}`;
+}
+
+animate();
+</script>
+</body>
+</html>
