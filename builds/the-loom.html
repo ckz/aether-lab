@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Loom ✦</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #06060c;
+    color: #c8c0d8;
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+    user-select: none;
+  }
+
+  header {
+    text-align: center;
+    padding: 2rem 1rem 0.5rem;
+  }
+  header h1 {
+    font-size: 1.8rem;
+    font-weight: 300;
+    letter-spacing: 0.35em;
+    color: #c8b8e8;
+    text-transform: uppercase;
+  }
+  header h1 span { color: #a898d8; font-weight: 500; }
+  header p {
+    color: #55506a;
+    font-size: 0.75rem;
+    margin-top: 0.4rem;
+    letter-spacing: 0.1em;
+  }
+
+  #loom-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 1rem;
+  }
+  canvas {
+    display: block;
+    border-radius: 8px;
+    cursor: crosshair;
+    box-shadow: 0 0 40px rgba(120, 100, 200, 0.08), 0 0 80px rgba(80, 60, 160, 0.04);
+  }
+
+  .controls {
+    display: flex;
+    justify-content: center;
+    gap: 2.5rem;
+    padding: 1.2rem 1rem 2rem;
+    flex-wrap: wrap;
+  }
+  .ctrl-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .ctrl-group label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #605888;
+    white-space: nowrap;
+  }
+  .ctrl-group button {
+    background: transparent;
+    border: 1px solid #22203a;
+    color: #8878b8;
+    padding: 0.3rem 0.7rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.7rem;
+    font-family: inherit;
+    letter-spacing: 0.05em;
+    transition: all 0.2s;
+  }
+  .ctrl-group button:hover { border-color: #4840a0; color: #b8a8f0; }
+  .ctrl-group button.active {
+    background: #181438;
+    border-color: #7060d0;
+    color: #d0c0ff;
+    box-shadow: 0 0 10px rgba(100, 80, 200, 0.2);
+  }
+
+  .help {
+    text-align: center;
+    font-size: 0.65rem;
+    color: #33304a;
+    letter-spacing: 0.08em;
+    padding-bottom: 2rem;
+    line-height: 2;
+  }
+  .help kbd {
+    background: #12102a;
+    border: 1px solid #252040;
+    border-radius: 3px;
+    padding: 0.1rem 0.35rem;
+    font-size: 0.62rem;
+    color: #7060a8;
+  }
+
+  #thread-counter {
+    text-align: center;
+    font-size: 0.65rem;
+    color: #33304a;
+    letter-spacing: 0.08em;
+    padding-bottom: 1rem;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>✦ The <span>Loom</span> ✦</h1>
+  <p>a generative textile weaving machine</p>
+</header>
+
+<div id="loom-wrap">
+  <canvas id="loom"></canvas>
+</div>
+
+<div class="controls">
+  <div class="ctrl-group">
+    <label>Weave</label>
+    <button id="m-plain" class="active" onclick="setMode('plain')">Plain</button>
+    <button id="m-twill" onclick="setMode('twill')">Twill</button>
+    <button id="m-basket" onclick="setMode('basket')">Basket</button>
+    <button id="m-satin" onclick="setMode('satin')">Satin</button>
+  </div>
+  <div class="ctrl-group">
+    <label>Threads</label>
+    <button onclick="randomizeColors()">Recolor</button>
+    <button onclick="clearWeave()">Clear</button>
+    <button onclick="fillWeave()">Fill</button>
+  </div>
+</div>
+
+<div id="thread-counter">warp: 2 · weft: 2 · crossings: 4</div>
+
+<div class="help">
+  <kbd>drag</kbd> place weft threads &nbsp;·&nbsp;
+  <kbd>Shift+drag</kbd> place warp threads &nbsp;·&nbsp;
+  <kbd>right-click drag</kbd> remove threads &nbsp;·&nbsp;
+  <kbd>Space</kbd> fill all &nbsp;·&nbsp;
+  <kbd>C</kbd> clear &nbsp;·&nbsp;
+  <kbd>R</kbd> recolor
+</div>
+
+<script>
+// ─── Canvas Setup ───────────────────────────────────────────────────────────
+const canvas = document.getElementById('loom');
+const ctx = canvas.getContext('2d');
+const W = canvas.width = Math.min(window.innerWidth - 32, 900);
+const H = canvas.height = Math.min(window.innerHeight - 260, 620);
+const PAD = 72;  // margin for thread labels
+
+const weaveL = PAD + 16;
+const weaveT = PAD;
+const weaveW = W - PAD * 2 - 16;
+const weaveH = H - PAD * 2 - 8;
+
+// ─── State ──────────────────────────────────────────────────────────────────
+const warpColors = [];
+const weftColors = [];
+const warpSet = new Set([0]);   // which warp thread indices are placed
+const weftSet = new Set([0]);   // which weft thread indices are placed
+let mode = 'plain';
+const NUM_WARP = 2;
+const NUM_WEFT = 2;
+
+let mouse = { x: -999, y: -999, on: false };
+let dragging = false;
+let dragShift = false;
+let dragRight = false;
+let time = 0;
+let animId;
+
+// ─── Color Palettes ─────────────────────────────────────────────────────────
+const warpPalette = [
+  '#6B7FD7','#C9A96E','#D4726A','#5BA88C','#9B6ED0',
+  '#D49B6A','#6AACB5','#C47DA0','#7AAD5B','#B8A050',
+  '#5B8EC4','#C4748A','#6EC4A4','#A07AD4','#C4A05B'
+];
+const weftPalette = [
+  '#A078D8','#78C8B0','#D4A878','#7898D4','#B8C878',
+  '#D47898','#78B4D4','#C8A048','#88C878','#9878C8',
+  '#C88868','#68B8B8','#D4B868','#7888D4','#A8C868'
+];
+
+function rndColor(pal) {
+  return pal[Math.floor(Math.random() * pal.length)];
+}
+function randomizeColors() {
+  warpColors.length = 0;
+  weftColors.length = 0;
+  for (let i = 0; i < NUM_WARP; i++) warpColors.push(rndColor(warpPalette));
+  for (let i = 0; i < NUM_WEFT; i++) weftColors.push(rndColor(weftPalette));
+}
+randomizeColors();
+
+// ─── Weave Pattern ──────────────────────────────────────────────────────────
+function getCell(w, f) {
+  switch (mode) {
+    case 'twill':  return ((w + f) % 2 === 0) ? 'warp' : 'weft';
+    case 'basket': return ((Math.floor(w/2) + Math.floor(f/2)) % 2 === 0) ? 'warp' : 'weft';
+    case 'satin':  return ((w * 2 + f) % 3 === 0) ? 'warp' : 'weft';
+    default:       return ((w + f) % 2 === 0) ? 'warp' : 'weft';
+  }
+}
+
+// ─── Thread Spacing ─────────────────────────────────────────────────────────
+function getWarpX(i) {
+  if (warpSet.size <= 1) return weaveL + weaveW * (i + 0.5) / Math.max(NUM_WARP, 2);
+  const placed = [...warpSet].sort((a, b) => a - b);
+  const idx = placed.indexOf(i);
+  if (idx >= 0) {
+    const frac = placed.length > 1 ? idx / (placed.length - 1) : 0.5;
+    return weaveL + weaveW * frac;
+  }
+  return weaveL + weaveW * (i + 0.5) / NUM_WARP;
+}
+
+function getWeftY(j) {
+  if (weftSet.size <= 1) return weaveT + weaveH * (j + 0.5) / Math.max(NUM_WEFT, 2);
+  const placed = [...weftSet].sort((a, b) => a - b);
+  const idx = placed.indexOf(j);
+  if (idx >= 0) {
+    const frac = placed.length > 1 ? idx / (placed.length - 1) : 0.5;
+    return weaveT + weaveH * frac;
+  }
+  return weaveT + weaveH * (j + 0.5) / NUM_WEFT;
+}
+
+function threadActive(w, f) {
+  return warpSet.has(w) && weftSet.has(f);
+}
+
+// ─── Drawing Helpers ─────────────────────────────────────────────────────────
+function hexToRgb(hex) {
+  const v = parseInt(hex.slice(1), 16);
+  return { r: (v >> 16) & 0xff, g: (v >> 8) & 0xff, b: v & 0xff };
+}
+
+function glowDraw(fn) {
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  fn();
+}
+
+function drawWarpThread(i, alpha = 1) {
+  if (!warpSet.has(i)) return;
+  const x = getWarpX(i);
+  const rgb = hexToRgb(warpColors[i]);
+  const breathe = 1 + Math.sin(time * 0.6 + i * 1.3) * 0.04;
+
+  ctx.save();
+  ctx.shadowColor = warpColors[i];
+  ctx.shadowBlur = 10 * breathe;
+  ctx.strokeStyle = warpColors[i];
+  ctx.globalAlpha = alpha;
+  ctx.lineWidth = 3.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x, weaveT - 6);
+  ctx.lineTo(x, weaveT + weaveH + 6);
+  ctx.stroke();
+  ctx.restore();
+
+  // highlight edge
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.5;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1;
+  ctx.shadowColor = warpColors[i];
+  ctx.shadowBlur = 6;
+  ctx.beginPath();
+  ctx.moveTo(x, weaveT - 6);
+  ctx.lineTo(x, weaveT + weaveH + 6);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawWeftThread(j, alpha = 1) {
+  if (!weftSet.has(j)) return;
+  const y = getWeftY(j);
+  const rgb = hexToRgb(weftColors[j]);
+  const breathe = 1 + Math.sin(time * 0.6 + j * 1.7 + 1) * 0.04;
+
+  ctx.save();
+  ctx.shadowColor = weftColors[j];
+  ctx.shadowBlur = 10 * breathe;
+  ctx.strokeStyle = weftColors[j];
+  ctx.globalAlpha = alpha;
+  ctx.lineWidth = 3.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(weaveL - 6, y);
+  ctx.lineTo(weaveL + weaveW + 6, y);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.5;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1;
+  ctx.shadowColor = weftColors[j];
+  ctx.shadowBlur = 6;
+  ctx.beginPath();
+  ctx.moveTo(weaveL - 6, y);
+  ctx.lineTo(weaveL + weaveW + 6, y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawCell(w, f) {
+  if (!threadActive(w, f)) return;
+  const wx = getWarpX(w);
+  const wy = getWeftY(f);
+  const onTop = getCell(w, f) === 'warp';
+  const topColor = onTop ? warpColors[w] : weftColors[f];
+  const botColor = onTop ? weftColors[f] : warpColors[w];
+  const topRgb = hexToRgb(topColor);
+  const botRgb = hexToRgb(botColor);
+  const sp = 14; // half thread spacing
+
+  // Bottom thread arc (darker, passes UNDER)
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.strokeStyle = botColor;
+  ctx.lineWidth = 2.8;
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.beginPath();
+  if (onTop) {
+    // weft under warp — curve down then up
+    ctx.moveTo(wx - sp, wy);
+    ctx.bezierCurveTo(wx - sp * 0.4, wy + sp * 0.7, wx + sp * 0.4, wy + sp * 0.7, wx + sp, wy);
+  } else {
+    // warp under weft — curve down then up
+    ctx.moveTo(wx, wy - sp);
+    ctx.bezierCurveTo(wx + sp * 0.7, wy - sp * 0.4, wx + sp * 0.7, wy + sp * 0.4, wx, wy + sp);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // Top thread (on top — brighter, wider, with glow)
+  ctx.save();
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = topColor;
+  ctx.lineWidth = 3.5;
+  ctx.shadowColor = topColor;
+  ctx.shadowBlur = 7;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  if (onTop) {
+    ctx.moveTo(wx - sp, wy);
+    ctx.bezierCurveTo(wx - sp * 0.4, wy - sp * 0.55, wx + sp * 0.4, wy - sp * 0.55, wx + sp, wy);
+  } else {
+    ctx.moveTo(wx, wy - sp);
+    ctx.bezierCurveTo(wx - sp * 0.55, wy - sp * 0.4, wx - sp * 0.55, wy + sp * 0.4, wx, wy + sp);
+  }
+  ctx.stroke();
+  // bright specular highlight
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  ctx.lineWidth = 1;
+  ctx.shadowBlur = 0;
+  ctx.shadowColor = 'transparent';
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ─── Render ──────────────────────────────────────────────────────────────────
+function drawFabric() {
+  const warpArr = [...warpSet].sort((a, b) => a - b);
+  const weftArr = [...weftSet].sort((a, b) => a - b);
+
+  // Draw active cells
+  for (const f of weftArr) {
+    for (const w of warpArr) {
+      drawCell(w, f);
+    }
+  }
+
+  // Draw threads on top
+  for (const w of warpArr) drawWarpThread(w);
+  for (const f of weftArr) drawWeftThread(f);
+}
+
+function drawFrame() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Deep fabric background
+  const bgGrad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, W * 0.7);
+  bgGrad.addColorStop(0, '#0c0a18');
+  bgGrad.addColorStop(1, '#06040e');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Fabric weave area
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(weaveL - 10, weaveT - 10, weaveW + 20, weaveH + 20, 4);
+  ctx.fillStyle = 'rgba(8, 6, 18, 0.85)';
+  ctx.shadowColor = 'rgba(80, 60, 180, 0.12)';
+  ctx.shadowBlur = 30;
+  ctx.fill();
+  ctx.restore();
+
+  // Grid guide dots (subtle)
+  ctx.save();
+  ctx.globalAlpha = 0.08;
+  ctx.fillStyle = '#7868b8';
+  const step = 28;
+  for (let x = weaveL; x <= weaveL + weaveW; x += step) {
+    for (let y = weaveT; y <= weaveT + weaveH; y += step) {
+      ctx.beginPath();
+      ctx.arc(x, y, 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+
+  drawFabric();
+
+  // Warp/weft labels
+  ctx.save();
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const warpArr = [...warpSet].sort((a, b) => a - b);
+  const weftArr = [...weftSet].sort((a, b) => a - b);
+  for (const w of warpArr) {
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = warpColors[w];
+    ctx.fillText(`W${w + 1}`, getWarpX(w), weaveT - 22);
+  }
+  for (const f of weftArr) {
+    ctx.globalAlpha = 0.4;
+    ctx.fillStyle = weftColors[f];
+    ctx.fillText(`F${f + 1}`, weaveL - 18, getWeftY(f));
+  }
+  ctx.restore();
+
+  // Thread legends
+  drawLegends();
+}
+
+function drawLegends() {
+  const warpArr = [...warpSet].sort((a, b) => a - b);
+  const weftArr = [...weftSet].sort((a, b) => a - b);
+
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.font = '8.5px monospace';
+
+  // Warp legend (left strip)
+  for (const w of warpArr) {
+    const x = weaveL - 28;
+    const y = getWarpX(w);
+    ctx.fillStyle = warpColors[w];
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Weft legend (top strip)
+  for (const f of weftArr) {
+    const y = weaveT - 14;
+    const x = getWeftY(f);
+    ctx.fillStyle = weftColors[f];
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ─── Hover Glow ──────────────────────────────────────────────────────────────
+function drawHoverGlow() {
+  if (!mouse.on) return;
+  const warpArr = [...warpSet].sort((a, b) => a - b);
+  const weftArr = [...weftSet].sort((a, b) => a - b);
+  const warpIdx = warpArr.find(w => Math.abs(getWarpX(w) - mouse.x) < 18);
+  const weftIdx = weftArr.find(f => Math.abs(getWeftY(f) - mouse.y) < 18);
+
+  if (warpIdx !== undefined && mouse.y >= weaveT && mouse.y <= weaveT + weaveH) {
+    const x = getWarpX(warpIdx);
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = warpColors[warpIdx];
+    ctx.fillRect(x - 7, weaveT, 14, weaveH);
+    ctx.restore();
+  }
+  if (weftIdx !== undefined && mouse.x >= weaveL && mouse.x <= weaveL + weaveW) {
+    const y = getWeftY(weftIdx);
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = weftColors[weftIdx];
+    ctx.fillRect(weaveL, y - 7, weaveW, 14);
+    ctx.restore();
+  }
+}
+
+// ─── Animation ───────────────────────────────────────────────────────────────
+function animate() {
+  time += 0.018;
+  drawFrame();
+  animId = requestAnimationFrame(animate);
+}
+
+// ─── Input ───────────────────────────────────────────────────────────────────
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  mouse.x = (e.clientX - r.left) * (W / r.width);
+  mouse.y = (e.clientY - r.top) * (H / r.height);
+  mouse.on = true;
+  if (dragging) {
+    if (dragRight) {
+      removeThreadsNear(mouse.x, mouse.y);
+    } else if (dragShift) {
+      addWarpNear(mouse.x);
+    } else {
+      addWeftNear(mouse.y);
+    }
+  }
+});
+
+canvas.addEventListener('mousedown', e => {
+  dragging = true;
+  dragShift = e.shiftKey;
+  dragRight = e.button === 2;
+  if (dragRight) {
+    removeThreadsNear(mouse.x, mouse.y);
+  } else if (dragShift) {
+    addWarpNear(mouse.x);
+  } else {
+    addWeftNear(mouse.y);
+  }
+});
+
+canvas.addEventListener('mouseup', () => { dragging = false; });
+canvas.addEventListener('mouseleave', () => { mouse.on = false; dragging = false; });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// Touch support
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0], r = canvas.getBoundingClientRect();
+  mouse.x = (t.clientX - r.left) * (W / r.width);
+  mouse.y = (t.clientY - r.top) * (H / r.height);
+  mouse.on = true;
+  dragging = true;
+  addWeftNear(mouse.y);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0], r = canvas.getBoundingClientRect();
+  mouse.x = (t.clientX - r.left) * (W / r.width);
+  mouse.y = (t.clientY - r.top) * (H / r.height);
+  mouse.on = true;
+  if (dragging) addWeftNear(mouse.y);
+}, { passive: false });
+
+canvas.addEventListener('touchend', () => { dragging = false; });
+
+// ─── Thread Placement ────────────────────────────────────────────────────────
+function addWeftNear(y) {
+  const best = findClosestIndex(y, getWeftY.bind);
+  const placed = [...weftSet];
+  if (!weftSet.has(best)) {
+    weftSet.add(best);
+    if (!weftColors[best]) weftColors[best] = rndColor(weftPalette);
+    updateCounter();
+  }
+}
+
+function addWarpNear(x) {
+  const best = findClosestIndex(x, getWarpX.bind);
+  if (!warpSet.has(best)) {
+    warpSet.add(best);
+    if (!warpColors[best]) warpColors[best] = rndColor(warpPalette);
+    updateCounter();
+  }
+}
+
+function removeThreadsNear(x, y) {
+  let removed = false;
+  for (const w of warpSet) {
+    if (Math.abs(getWarpX(w) - x) < 16) { warpSet.delete(w); removed = true; }
+  }
+  for (const f of weftSet) {
+    if (Math.abs(getWeftY(f) - y) < 16) { weftSet.delete(f); removed = true; }
+  }
+  if (removed) updateCounter();
+}
+
+function findClosestIndex(val, fn) {
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < (fn === getWarpX ? NUM_WARP : NUM_WEFT); i++) {
+    const d = Math.abs(fn(i) - val);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+
+function updateCounter() {
+  const wc = warpSet.size, fc = weftSet.size;
+  document.getElementById('thread-counter').textContent =
+    `warp: ${wc} · weft: ${fc} · crossings: ${wc * fc}`;
+}
+
+// ─── Controls ────────────────────────────────────────────────────────────────
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('[id^="m-"]').forEach(b => b.classList.remove('active'));
+  document.getElementById('m-' + m)?.classList.add('active');
+}
+
+function clearWeave() {
+  warpSet.clear();
+  weftSet.clear();
+  warpSet.add(0);
+  weftSet.add(0);
+  updateCounter();
+}
+
+function fillWeave() {
+  for (let i = 0; i < NUM_WARP; i++) warpSet.add(i);
+  for (let j = 0; j < NUM_WEFT; j++) weftSet.add(j);
+  updateCounter();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.code === 'Space') { e.preventDefault(); fillWeave(); }
+  if (e.code === 'KeyC') clearWeave();
+  if (e.code === 'KeyR') randomizeColors();
+});
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+fillWeave();
+setMode('plain');
+animate();
+
+// Share URL state (optional — mode as query param)
+const params = new URLSearchParams(window.location.search);
+if (params.has('m')) setMode(params.get('m'));
+</script>
+</body>
+</html>
