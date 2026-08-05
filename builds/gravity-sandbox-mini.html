@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Gravity Sandbox — Mini Edition</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: radial-gradient(ellipse at top, #1a1020, #05040a 60%);
+      color: #e8e6f0;
+      font: 14px/1.4 ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      background: linear-gradient(180deg, rgba(0,0,0,.35), rgba(0,0,0,0));
+      position: relative;
+      z-index: 5;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      color: #ffffff;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 8px 10px;
+      border-radius: 999px;
+      backdrop-filter: blur(6px);
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    label {
+      color: #a09caa;
+      font-size: 11px;
+      letter-spacing: 0.3px;
+    }
+
+    input[type="range"] {
+      accent-color: #ff8a55;
+      cursor: pointer;
+    }
+
+    button {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      color: #ffffff;
+      padding: 7px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      font: inherit;
+      transition: transform .08s ease, background .2s ease;
+    }
+    button:hover { background: rgba(255, 255, 255, 0.15); }
+    button:active { transform: scale(.97); }
+    button.active { background: rgba(255, 138, 85, 0.25); border-color: rgba(255, 138, 85, 0.6); }
+
+    canvas {
+      flex: 1;
+      width: 100%;
+      display: block;
+      cursor: none;
+    }
+
+    .hint {
+      padding: 10px 18px;
+      color: #a09caa;
+      font-size: 11px;
+      letter-spacing: 0.2px;
+      background: linear-gradient(0deg, rgba(0,0,0,.4), rgba(0,0,0,0));
+    }
+
+    .hidden { display: none; }
+
+    .save-flash {
+      position: fixed;
+      right: 14px;
+      bottom: 14px;
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #ffffff;
+      padding: 8px 10px;
+      border-radius: 12px;
+      backdrop-filter: blur(8px);
+      transform: translateY(8px);
+      opacity: 0;
+      transition: all .25s ease;
+      z-index: 10;
+    }
+    .save-flash.show { transform: translateY(0); opacity: 1; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🌍 Gravity Sandbox — Mini</h1>
+
+  <div class="pill controls">
+    <label>Mode</label>
+    <button id="modeAttract" class="active">Attract</button>
+    <button id="modeRepel">Repel</button>
+    <button id="modeVortex">Vortex</button>
+  </div>
+
+  <div class="pill controls">
+    <label>Force</label>
+    <input id="force" type="range" min="0.1" max="2.4" step="0.1" value="0.9" />
+  </div>
+
+  <div class="pill controls">
+    <label>Trail</label>
+    <input id="trail" type="range" min="0.02" max="0.35" step="0.01" value="0.12" />
+  </div>
+
+  <div class="pill controls">
+    <label>Count</label>
+    <input id="count" type="range" min="400" max="2400" step="100" value="1200" />
+  </div>
+
+  <button id="clearBtn">Clear</button>
+  <button id="saveBtn">Save PNG</button>
+</header>
+
+<canvas id="stage"></canvas>
+<div class="hint">
+  Click & drag to paint gravity. Right-click = repel override. Space = pause. C = cycle palette. S = save PNG.
+</div>
+<div id="saveFlash" class="save-flash">Saved ✓</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+
+  const PALETTES = [
+    {
+      name: 'ember',
+      bg: 'rgba(18, 10, 8, 0.12)',
+      colors: ['#ff6b4a', '#ff9f43', '#ffc048', '#ff4d4d', '#ff8a55'],
+    },
+    {
+      name: 'arctic',
+      bg: 'rgba(10, 16, 26, 0.12)',
+      colors: ['#7ec8e3', '#a0d2db', '#d4f1f9', '#5aa9c6', '#caf0f8'],
+    },
+    {
+      name: 'neon',
+      bg: 'rgba(14, 8, 18, 0.12)',
+      colors: ['#ff2a6d', '#05d9e8', '#d1f7ff', '#7b2dff', '#ff5df7'],
+    },
+    {
+      name: 'forest',
+      bg: 'rgba(10, 16, 10, 0.12)',
+      colors: ['#6abe5c', '#cfe87c', '#2f5c28', '#ffd56b', '#a8dda0'],
+    },
+    {
+      name: 'golden',
+      bg: 'rgba(22, 16, 6, 0.12)',
+      colors: ['#ffcf48', '#ff9f1c', '#ffbf69', '#cbf3f0', '#ffc864'],
+    },
+    {
+      name: 'void',
+      bg: 'rgba(6, 4, 12, 0.12)',
+      colors: ['#9b8fff', '#ff8ad8', '#6af0ff', '#d2a3ff', '#a0e8ff'],
+    },
+  ];
+
+  const state = {
+    paletteIndex: 0,
+    mode: 'attract', // attract | repel | vortex
+    force: 0.9,
+    trail: 0.12,
+    particleCount: 1200,
+    paused: false,
+    mouseDown: false,
+    rightDown: false,
+    mouseX: 0,
+    mouseY: 0,
+    pmouseX: 0,
+    pmouseY: 0,
+    width: 0,
+    height: 0,
+    dpr: 1,
+  };
+
+  let particles = [];
+  let palette = PALETTES[0];
+  let raf = 0;
+
+  const q = (sel) => document.querySelector(sel);
+  const qa = (sel) => document.querySelectorAll(sel);
+
+  function resize() {
+    state.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const r = canvas.getBoundingClientRect();
+    state.width = r.width;
+    state.height = r.height;
+    canvas.width = Math.floor(r.width * state.dpr);
+    canvas.height = Math.floor(r.height * state.dpr);
+    ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
+  }
+
+  function random(min, max) {
+    return Math.random() * (max - min) + min;
+  }
+
+  function makeParticle(x, y) {
+    const color = palette.colors[Math.floor(random(0, palette.colors.length))];
+    return {
+      x: x ?? random(0, state.width),
+      y: y ?? random(0, state.height),
+      vx: random(-0.4, 0.4),
+      vy: random(-0.4, 0.4),
+      color,
+      life: random(0.6, 1),
+      size: random(0.7, 2.1),
+    };
+  }
+
+  function syncParticleCount() {
+    while (particles.length < state.particleCount) particles.push(makeParticle());
+    if (particles.length > state.particleCount) particles.length = state.particleCount;
+  }
+
+  function setPalette(index) {
+    state.paletteIndex = ((index % PALETTES.length) + PALETTES.length) % PALETTES.length;
+    palette = PALETTES[state.paletteIndex];
+    for (const p of particles) {
+      p.color = palette.colors[Math.floor(random(0, palette.colors.length))];
+    }
+  }
+
+  function reset() {
+    ctx.fillStyle = '#05040a';
+    ctx.fillRect(0, 0, state.width, state.height);
+    particles = [];
+    syncParticleCount();
+  }
+
+  function applyGravity(p) {
+    const dx = state.mouseX - p.x;
+    const dy = state.mouseY - p.y;
+    const distSq = dx * dx + dy * dy + 0.0001;
+    const dist = Math.sqrt(distSq);
+    const strength = (state.force * 180) / (distSq + 400);
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    let fx = 0;
+    let fy = 0;
+
+    if (state.mode === 'attract') {
+      fx = nx * strength;
+      fy = ny * strength;
+    } else if (state.mode === 'repel') {
+      fx = -nx * strength;
+      fy = -ny * strength;
+    } else if (state.mode === 'vortex') {
+      fx = -ny * strength * 0.9 + nx * strength * 0.35;
+      fy = nx * strength * 0.9 + ny * strength * 0.35;
+    }
+
+    // right-click overrides with repulsion regardless of mode
+    if (state.rightDown) {
+      fx = -nx * strength * 1.1;
+      fy = -ny * strength * 1.1;
+    }
+
+    p.vx += fx;
+    p.vy += fy;
+  }
+
+  function step() {
+    for (const p of particles) {
+      if (!state.paused) {
+        if (state.mouseDown || state.rightDown) applyGravity(p);
+
+        p.vx += random(-0.08, 0.08);
+        p.vy += random(-0.08, 0.08);
+        p.vx *= 0.985;
+        p.vy *= 0.985;
+
+        const speed = Math.hypot(p.vx, p.vy);
+        const maxSpeed = 4.5;
+        if (speed > maxSpeed) {
+          p.vx = (p.vx / speed) * maxSpeed;
+          p.vy = (p.vy / speed) * maxSpeed;
+        }
+
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.x < -60) p.x = state.width + 60;
+        if (p.x > state.width + 60) p.x = -60;
+        if (p.y < -60) p.y = state.height + 60;
+        if (p.y > state.height + 60) p.y = -60;
+      }
+    }
+  }
+
+  function draw() {
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = palette.bg;
+    ctx.fillRect(0, 0, state.width, state.height);
+
+    ctx.globalCompositeOperation = 'lighter';
+
+    for (const p of particles) {
+      const speed = Math.hypot(p.vx, p.vy);
+      const glow = Math.min(speed * 0.9, 1.2);
+
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size + glow * 1.4, 0, Math.PI * 2);
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = 0.35 + glow * 0.5;
+      ctx.fill();
+
+      if (speed > 0.7) {
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x - p.vx * 3.2, p.y - p.vy * 3.2);
+        ctx.strokeStyle = p.color;
+        ctx.globalAlpha = 0.25 + glow * 0.35;
+        ctx.lineWidth = 0.6;
+        ctx.stroke();
+      }
+    }
+
+    if (state.mouseDown || state.rightDown) {
+      ctx.beginPath();
+      ctx.arc(state.mouseX, state.mouseY, 6, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.globalAlpha = 0.08;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(state.mouseX, state.mouseY, 22, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ffffff';
+      ctx.globalAlpha = 0.14;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  function loop() {
+    step();
+    draw();
+    raf = requestAnimationFrame(loop);
+  }
+
+  function savePNG() {
+    const link = document.createElement('a');
+    link.download = `gravity-sandbox-mini-${Date.now()}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    const flash = document.getElementById('saveFlash');
+    flash.classList.add('show');
+    setTimeout(() => flash.classList.remove('show'), 1800);
+  }
+
+  // Controls
+  const modeButtons = {
+    attract: q('#modeAttract'),
+    repel: q('#modeRepel'),
+    vortex: q('#modeVortex'),
+  };
+
+  function setMode(mode) {
+    state.mode = mode;
+    qa('header button').forEach((b) => b.classList.remove('active'));
+    modeButtons[mode]?.classList.add('active');
+  }
+
+  q('#modeAttract').addEventListener('click', () => setMode('attract'));
+  q('#modeRepel').addEventListener('click', () => setMode('repel'));
+  q('#modeVortex').addEventListener('click', () => setMode('vortex'));
+
+  q('#force').addEventListener('input', (e) => {
+    state.force = parseFloat(e.target.value);
+  });
+  q('#trail').addEventListener('input', (e) => {
+    state.trail = parseFloat(e.target.value);
+    palette.bg = palette.bg.replace(/[\d.]+\)$/, `${state.trail})`);
+  });
+  q('#count').addEventListener('input', (e) => {
+    state.particleCount = parseInt(e.target.value, 10);
+    syncParticleCount();
+  });
+  q('#clearBtn').addEventListener('click', reset);
+  q('#saveBtn').addEventListener('click', savePNG);
+
+  // Pointer
+  function setPointer(x, y) {
+    state.pmouseX = state.mouseX;
+    state.pmouseY = state.mouseY;
+    state.mouseX = x;
+    state.mouseY = y;
+  }
+
+  canvas.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    state.mouseDown = true;
+    if (e.button === 2) state.rightDown = true;
+    setPointer(e.offsetX, e.offsetY);
+  });
+  canvas.addEventListener('mousemove', (e) => {
+    setPointer(e.offsetX, e.offsetY);
+  });
+  window.addEventListener('mouseup', () => {
+    state.mouseDown = false;
+    state.rightDown = false;
+  });
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    state.mouseDown = true;
+    const t = e.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    setPointer(t.clientX - rect.left, t.clientY - rect.top);
+  }, { passive: false });
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    const t = e.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    setPointer(t.clientX - rect.left, t.clientY - rect.top);
+  }, { passive: false });
+  canvas.addEventListener('touchend', () => {
+    state.mouseDown = false;
+    state.rightDown = false;
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === ' ') { e.preventDefault(); state.paused = !state.paused; }
+    if (e.key.toLowerCase() === 'c') setPalette(state.paletteIndex + 1);
+    if (e.key.toLowerCase() === 's' && !e.metaKey && !e.ctrlKey) savePNG();
+  });
+
+  window.addEventListener('resize', () => {
+    resize();
+    syncParticleCount();
+  });
+
+  resize();
+  setPalette(0);
+  setMode('attract');
+  syncParticleCount();
+  loop();
+})();
+</script>
+</body>
+</html>
