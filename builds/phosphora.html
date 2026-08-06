@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phosphora</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+canvas { display: block; }
+
+#overlay {
+  position: fixed; inset: 0;
+  background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.55) 100%);
+  pointer-events: none; z-index: 1;
+}
+
+#ui {
+  position: fixed; top: 20px; left: 20px; z-index: 10;
+  color: rgba(255,255,255,0.75);
+  font-size: 11px; line-height: 1.9;
+  transition: opacity 0.8s;
+  text-shadow: 0 0 8px rgba(100,200,255,0.4);
+}
+#ui .title { font-size: 13px; letter-spacing: 0.5em; margin-bottom: 6px; opacity: 0.6; }
+#ui .sep { height: 1px; background: rgba(255,255,255,0.08); margin: 6px 0; }
+#ui kbd {
+  display: inline-block; padding: 1px 6px;
+  border: 1px solid rgba(255,255,255,0.18); border-radius: 3px;
+  font-size: 10px; color: rgba(255,255,255,0.5);
+}
+
+#intro {
+  position: fixed; inset: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: center;
+  background: #000;
+  transition: opacity 2.5s ease;
+}
+#intro h1 {
+  font-size: clamp(28px, 5vw, 56px); letter-spacing: 1em;
+  color: rgba(100, 220, 255, 0.85);
+  text-shadow: 0 0 40px rgba(100, 220, 255, 0.6),
+               0 0 80px rgba(100, 220, 255, 0.25);
+  animation: introPulse 2.5s ease-in-out infinite;
+  padding-left: 1em;
+}
+@keyframes introPulse {
+  0%, 100% { opacity: 0.7; text-shadow: 0 0 40px rgba(100,220,255,0.6), 0 0 80px rgba(100,220,255,0.25); }
+  50% { opacity: 1; text-shadow: 0 0 60px rgba(100,220,255,0.9), 0 0 120px rgba(100,220,255,0.4); }
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="overlay"></div>
+
+<div id="ui">
+  <div class="title">PHOSPHORA</div>
+  <div id="modeDisplay">Mode: <span id="modeLabel">Drift</span></div>
+  <div id="paletteDisplay">Palette: <span id="paletteLabel">Cyan</span></div>
+  <div id="particleDisplay">Particles: <span id="particleLabel">0</span></div>
+  <div class="sep"></div>
+  <div><kbd>SPACE</kbd> Cycle mode</div>
+  <div><kbd>C</kbd> Cycle palette</div>
+  <div><kbd>M</kbd> Toggle controls</div>
+  <div><kbd>H</kbd> Toggle help</div>
+  <div class="sep"></div>
+  <div>Drift · Attract · Repel · Vortex</div>
+  <div><kbd>Click</kbd> Pulse · <kbd>Shift+Click</kbd> Burst</div>
+</div>
+
+<div id="intro"><h1>PHOSPHORA</h1></div>
+
+<script>
+// ============================================================
+//  PHOSPHORA  ·  Bioluminescent Particle Constellation
+//  500 particles · Glowing filaments · 4 modes · 5 palettes
+// ============================================================
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W = canvas.width = window.innerWidth;
+let H = canvas.height = window.innerHeight;
+
+// ── State ────────────────────────────────────────────────────
+let frame = 0;
+let mx = W / 2, my = H / 2;          // mouse
+let mDown = false, mShift = false;
+let galaxy = null;
+
+const CONNECT_DIST = 115;
+const MOUSE_DIST   = 200;
+const SPAWN_TOTAL  = 500;
+
+let mode = 0;          // 0 drift  1 attract  2 repel  3 vortex
+let palIdx = 0;
+let showUI = true;
+
+const PALETTES = [
+  {
+    bg:     [1,   3,   9  ],
+    parts:  [[80, 230,255],[120,255,230],[60, 180,255],[180,255,240],[100,200,255]],
+    conn:   [30,  90, 160],
+    glow:   [0,   90, 160],
+    name:   'Cyan'
+  },
+  {
+    bg:     [4,   9,   4  ],
+    parts:  [[80, 255,130],[50, 220,90 ],[140,255,170],[90, 255,100],[200,255,220]],
+    conn:   [20, 100,  40],
+    glow:   [0,  100,  30],
+    name:   'Emerald'
+  },
+  {
+    bg:     [7,   3,  14 ],
+    parts:  [[160, 90,255],[200,130,255],[120, 60,255],[220,170,255],[90,  40,200]],
+    conn:   [80,  30, 150],
+    glow:   [60,   0, 120],
+    name:   'Violet'
+  },
+  {
+    bg:     [12,  5,   2 ],
+    parts:  [[255,130, 50],[255, 90, 30],[255,180, 70],[255,160,100],[200, 60, 20]],
+    conn:   [160,  55,  15],
+    glow:   [130,  30,   0],
+    name:   'Ember'
+  },
+  {
+    bg:     [6,   4,  12 ],
+    parts:  [[255, 80,160],[255,130,200],[200, 50,140],[255,180,220],[180, 30,100]],
+    conn:   [150,  20,  80],
+    glow:   [100,   0,  60],
+    name:   'Rose'
+  }
+];
+
+const MODES = ['Drift', 'Attract', 'Repel', 'Vortex'];
+
+const pal = () => PALETTES[palIdx];
+
+// ── Utilities ────────────────────────────────────────────────
+const rand  = (a, b) => Math.random() * (b - a) + a;
+const dist  = (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1);
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const lerp  = (a, b, t)  => a + (b - a) * t;
+const lerpC = (a, b, t)  => a.map((v, i) => lerp(v, b[i], t));
+
+function rgba(c, a) {
+  return `rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`;
+}
+
+// ── Particle ─────────────────────────────────────────────────
+class Particle {
+  constructor(x, y) {
+    this.x  = x ?? rand(0, W);
+    this.y  = y ?? rand(0, H);
+    this.vx = rand(-0.4, 0.4);
+    this.vy = rand(-0.4, 0.4);
+    this.r  = rand(1.2, 3.8);
+    const cp = pal().parts;
+    this.color = [...cp[Math.floor(rand(0, cp.length))]];
+    this.pulse = rand(0, Math.PI * 2);
+    this.pSpeed= rand(0.012, 0.04);
+    this.wander= rand(0.0008, 0.003);
+    this.wAngle= rand(0, Math.PI * 2);
+    this.age = 0;
+  }
+
+  update() {
+    this.age++;
+    this.pulse += this.pSpeed;
+
+    const mdx = mx - this.x;
+    const mdy = my - this.y;
+    const md  = Math.hypot(mdx, mdy);
+
+    if (md < MOUSE_DIST && md > 0.1) {
+      const t = (1 - md / MOUSE_DIST);
+      const nx = mdx / md, ny = mdy / md;
+
+      if      (mode === 1) { const f = t * 0.55;  this.vx += nx * f; this.vy += ny * f; }
+      else if (mode === 2) { const f = t * 0.75;  this.vx -= nx * f; this.vy -= ny * f; }
+      else if (mode === 3) {
+        const tx = -ny, ty = nx;
+        const f = t * 0.45;
+        this.vx += (tx * f - nx * 0.04);
+        this.vy += (ty * f - ny * 0.04);
+      }
+    }
+
+    // wander
+    this.wAngle += rand(-this.wander, this.wander);
+    this.vx += Math.cos(this.wAngle) * 0.018;
+    this.vy += Math.sin(this.wAngle) * 0.018;
+
+    // friction
+    const maxV = mode === 0 ? 0.85 : 1.6;
+    const sp = Math.hypot(this.vx, this.vy);
+    if (sp > maxV) { this.vx *= 0.97; this.vy *= 0.97; }
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // wrap
+    const m = 25;
+    if (this.x < -m) this.x = W + m;
+    else if (this.x > W + m) this.x = -m;
+    if (this.y < -m) this.y = H + m;
+    else if (this.y > H + m) this.y = -m;
+  }
+
+  draw() {
+    const p = 0.5 + 0.5 * Math.sin(this.pulse);
+    const gr = this.r * 10 * p;
+
+    const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, gr);
+    g.addColorStop(0,   rgba(this.color, 0.95 * p));
+    g.addColorStop(0.25,rgba(this.color, 0.45 * p));
+    g.addColorStop(0.6, rgba(this.color, 0.08 * p));
+    g.addColorStop(1,   'transparent');
+
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, gr, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+
+    // core
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r * (0.55 + 0.45 * p), 0, Math.PI * 2);
+    ctx.fillStyle = rgba(this.color, 0.85 + 0.15 * p);
+    ctx.fill();
+  }
+}
+
+// ── Galaxy ───────────────────────────────────────────────────
+class Galaxy {
+  constructor() {
+    this.particles = [];
+    this.poolTimer = 0;
+    this.spawned   = 0;
+  }
+
+  update() {
+    // pool fill
+    if (this.spawned < SPAWN_TOTAL) {
+      this.poolTimer++;
+      if (this.poolTimer % 2 === 0) {
+        // initial burst: spread from center with outward velocity
+        const cx = W / 2 + rand(-60, 60);
+        const cy = H / 2 + rand(-60, 60);
+        const a  = rand(0, Math.PI * 2);
+        const p  = new Particle(cx, cy);
+        p.vx = Math.cos(a) * rand(0.5, 2.5);
+        p.vy = Math.sin(a) * rand(0.5, 2.5);
+        this.particles.push(p);
+        this.spawned++;
+      }
+    }
+
+    for (const p of this.particles) p.update();
+    this.drawConnections();
+    for (const p of this.particles) p.draw();
+  }
+
+  drawConnections() {
+    const P = pal();
+    const parts = this.particles;
+    const n = parts.length;
+
+    ctx.lineWidth = 0.55;
+
+    for (let i = 0; i < n; i++) {
+      const a = parts[i];
+      for (let j = i + 1; j < n; j++) {
+        const b = parts[j];
+        const d = dist(a.x, a.y, b.x, b.y);
+        if (d < CONNECT_DIST) {
+          const t  = 1 - d / CONNECT_DIST;
+          const ap = t * t * 0.22;
+          const cc = lerpC(P.conn, P.glow, t);
+
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.strokeStyle = rgba(cc, ap);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
+  count() { return this.particles.length; }
+}
+
+// ── Pulse Ring ───────────────────────────────────────────────
+const pulses = [];
+
+class Pulse {
+  constructor(x, y, big) {
+    this.x = x; this.y = y;
+    this.r = 0;
+    this.maxR = big ? 340 : 170;
+    this.life = 1;
+    this.decay = big ? 0.008 : 0.016;
+    this.big = big;
+  }
+  update() {
+    this.r += this.big ? 5.5 : 3;
+    this.life -= this.decay;
+    if (this.life > 0) this.draw();
+  }
+  draw() {
+    const P = pal();
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.strokeStyle = rgba(lerpC(P.conn, [255,255,255], 0.4), this.life * 0.55);
+    ctx.lineWidth = 1.2 * this.life;
+    ctx.stroke();
+    if (this.big) {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.r * 0.55, 0, Math.PI * 2);
+      ctx.strokeStyle = rgba(P.parts[0], this.life * 0.3);
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+    }
+  }
+  dead() { return this.life <= 0; }
+}
+
+function spawnPulse(x, y, big = false) {
+  pulses.push(new Pulse(x, y, big));
+  if (big) {
+    // shockwave pushes nearby particles
+    for (const p of galaxy.particles) {
+      const dx = p.x - x, dy = p.y - y;
+      const d  = Math.hypot(dx, dy);
+      if (d < 280 && d > 0.1) {
+        const f = (1 - d / 280) * 8;
+        p.vx += (dx / d) * f;
+        p.vy += (dy / d) * f;
+      }
+    }
+  } else {
+    for (const p of galaxy.particles) {
+      const dx = p.x - x, dy = p.y - y;
+      const d  = Math.hypot(dx, dy);
+      if (d < 150 && d > 0.1) {
+        const f = (1 - d / 150) * 3;
+        p.vx += (dx / d) * f;
+        p.vy += (dy / d) * f;
+      }
+    }
+  }
+}
+
+// ── Stars ────────────────────────────────────────────────────
+const stars = Array.from({ length: 180 }, () => ({
+  x: rand(0, 1), y: rand(0, 1),
+  r: rand(0.3, 1.1), tw: rand(0, Math.PI * 2), ts: rand(0.006, 0.025)
+}));
+
+function drawStars() {
+  for (const s of stars) {
+    s.tw += s.ts;
+    const a = 0.25 + 0.4 * Math.abs(Math.sin(s.tw));
+    ctx.beginPath();
+    ctx.arc(s.x * W, s.y * H, s.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(200,220,255,${a})`;
+    ctx.fill();
+  }
+}
+
+// ── Vignette ─────────────────────────────────────────────────
+function drawVignette() {
+  const g = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.25, W/2, H/2, Math.max(W,H)*0.75);
+  g.addColorStop(0, 'transparent');
+  g.addColorStop(1, 'rgba(0,0,0,0.45)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ── Mouse aura ───────────────────────────────────────────────
+function drawMouseAura() {
+  if (mx === 0 && my === 0) return;
+  const P = pal();
+  const g = ctx.createRadialGradient(mx, my, 0, mx, my, MOUSE_DIST * 0.55);
+  g.addColorStop(0,   rgba(P.parts[0], 0.07));
+  g.addColorStop(0.5, rgba(P.conn,   0.03));
+  g.addColorStop(1,   'transparent');
+  ctx.beginPath();
+  ctx.arc(mx, my, MOUSE_DIST * 0.55, 0, Math.PI * 2);
+  ctx.fillStyle = g;
+  ctx.fill();
+}
+
+// ── UI ───────────────────────────────────────────────────────
+function updateUI() {
+  if (!galaxy) return;
+  document.getElementById('modeLabel').textContent    = MODES[mode];
+  document.getElementById('paletteLabel').textContent = pal().name;
+  document.getElementById('particleLabel').textContent = galaxy.count();
+}
+
+// ── Animation ────────────────────────────────────────────────
+function animate() {
+  frame++;
+
+  // trail
+  const bg = pal().bg;
+  ctx.fillStyle = `rgba(${bg[0]},${bg[1]},${bg[2]},0.18)`;
+  ctx.fillRect(0, 0, W, H);
+
+  // stars every other frame for subtle twinkle
+  if (frame % 2 === 0) drawStars();
+
+  drawMouseAura();
+
+  // pulses
+  for (let i = pulses.length - 1; i >= 0; i--) {
+    pulses[i].update();
+    if (pulses[i].dead()) pulses.splice(i, 1);
+  }
+
+  galaxy.update();
+
+  // subtle vignette pulse
+  if (frame % 120 === 0) drawVignette();
+
+  requestAnimationFrame(animate);
+}
+
+// ── Events ───────────────────────────────────────────────────
+canvas.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+
+canvas.addEventListener('mousedown', e => {
+  e.preventDefault();
+  mDown = true; mShift = e.shiftKey;
+  spawnPulse(e.clientX, e.clientY, e.shiftKey);
+});
+
+canvas.addEventListener('mouseup',    () => { mDown = false; mShift = false; });
+canvas.addEventListener('mouseleave', () => { mDown = false; mx = 0; my = 0; });
+
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// touch
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mx = t.clientX; my = t.clientY;
+  spawnPulse(mx, my, false);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mx = e.touches[0].clientX;
+  my = e.touches[0].clientY;
+}, { passive: false });
+
+window.addEventListener('resize', () => {
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+});
+
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space')      { e.preventDefault(); mode = (mode + 1) % 4; updateUI(); }
+  if (e.key  === 'c' || e.key === 'C') { palIdx = (palIdx + 1) % PALETTES.length; updateUI(); }
+  if (e.key  === 'm' || e.key === 'M') { showUI = !showUI; document.getElementById('ui').style.opacity = showUI ? '1' : '0'; }
+  if (e.key  === 'h' || e.key === 'H') {
+    const u = document.getElementById('ui');
+    u.style.opacity = u.style.opacity === '0' ? '1' : '0';
+  }
+  // number keys 1-5 for palettes
+  if (e.key >= '1' && e.key <= '5') { palIdx = +e.key - 1; updateUI; }
+});
+
+// ── Boot ─────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  galaxy = new Galaxy();
+
+  // intro
+  setTimeout(() => {
+    const intro = document.getElementById('intro');
+    intro.style.opacity = '0';
+    setTimeout(() => intro.remove(), 2600);
+  }, 3200);
+
+  updateUI();
+
+  // start animation immediately — particles will burst from center
+  animate();
+
+  // strobing color intro while particles spawn
+  let ci = 0;
+  const introColors = ['rgba(100,220,255,0.85)', 'rgba(100,255,200,0.85)',
+                       'rgba(180,100,255,0.85)', 'rgba(255,140,60,0.85)',
+                       'rgba(255,80,160,0.85)'];
+  const introInterval = setInterval(() => {
+    ci = (ci + 1) % introColors.length;
+    const h1 = document.querySelector('#intro h1');
+    if (h1) h1.style.color = introColors[ci];
+  }, 420);
+
+  setTimeout(() => clearInterval(introInterval), 3500);
+});
+</script>
+</body>
+</html>
