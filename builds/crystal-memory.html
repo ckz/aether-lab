@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crystal Memory</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #05050a;
+    color: #e0e0e0;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+  }
+
+  .controls {
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 0.5rem;
+    z-index: 10;
+    background: rgba(10, 10, 20, 0.8);
+    backdrop-filter: blur(10px);
+    padding: 0.5rem 1rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .controls button {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #ccc;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  .controls button:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #fff;
+  }
+
+  .controls button.active {
+    background: rgba(100, 180, 255, 0.2);
+    border-color: rgba(100, 180, 255, 0.5);
+    color: #fff;
+  }
+
+  .info {
+    position: fixed;
+    bottom: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.75rem;
+    color: #555;
+    text-align: center;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .title-overlay {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.5rem;
+    font-weight: 200;
+    letter-spacing: 0.3em;
+    color: rgba(255, 255, 255, 0.15);
+    pointer-events: none;
+    z-index: 5;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div class="title-overlay" id="title">Crystal Memory</div>
+
+<div class="controls">
+  <button id="btn-palette" title="Cycle palette">🎨 Palette</button>
+  <button id="btn-grow" class="active" title="Auto-grow crystals">🌱 Grow</button>
+  <button id="btn-flow" class="active" title="Toggle particle flow">✨ Flow</button>
+  <button id="btn-burst" title="Burst particles">💥 Burst</button>
+  <button id="btn-clear" title="Clear canvas">🗑 Clear</button>
+  <button id="btn-save" title="Save as PNG">📷 Save</button>
+</div>
+
+<div class="info">
+  Click to plant crystals &middot; Move to attract particles &middot; Space to pause
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── State ──
+let paused = false;
+let autoGrow = true;
+let showFlow = true;
+let mouse = { x: W / 2, y: H / 2, active: false };
+let crystals = [];
+let flowParticles = [];
+let connections = [];
+let frameCount = 0;
+
+// ── Palettes ──
+const palettes = [
+  { name: 'Arctic',  bg: '#05050a', crystal: '#4fc3f7', glow: 'rgba(79,195,247,', particle: '#b3e5fc', accent: '#e1f5fe' },
+  { name: 'Ember',   bg: '#0a0505', crystal: '#ff7043', glow: 'rgba(255,112,67,', particle: '#ffab91', accent: '#fbe9e7' },
+  { name: 'Aurora',  bg: '#050a05', crystal: '#69f0ae', glow: 'rgba(105,240,174,', particle: '#b9f6ca', accent: '#e8f5e9' },
+  { name: 'Violet',  bg: '#08050a', crystal: '#ce93d8', glow: 'rgba(206,147,216,', particle: '#f3e5f5', accent: '#f8bbd0' },
+  { name: 'Gold',    bg: '#0a0805', crystal: '#ffd54f', glow: 'rgba(255,213,79,', particle: '#ffe082', accent: '#fff8e1' },
+  { name: 'Phantom', bg: '#050508', crystal: '#b0bec5', glow: 'rgba(176,190,197,', particle: '#eceff1', accent: '#cfd8dc' },
+];
+let paletteIndex = 0;
+let palette = palettes[0];
+
+// ── Crystal Class ──
+class Crystal {
+  constructor(x, y, size = 1) {
+    this.x = x;
+    this.y = y;
+    this.size = size || (3 + Math.random() * 8);
+    this.maxSize = this.size;
+    this.angle = Math.random() * Math.PI * 2;
+    this.sides = Math.floor(3 + Math.random() * 5); // 3-7 sides
+    this.rotation = Math.random() * Math.PI * 2;
+    this.rotSpeed = (Math.random() - 0.5) * 0.003;
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    this.pulseSpeed = 0.01 + Math.random() * 0.02;
+    this.opacity = 0;
+    this.targetOpacity = 0.6 + Math.random() * 0.4;
+    this.life = 0;
+    this.maxLife = 800 + Math.random() * 400;
+    this.children = [];
+    this.growTimer = 0;
+    this.growInterval = 60 + Math.random() * 120;
+    this.branchDepth = 0;
+    this.maxDepth = 1 + Math.floor(Math.random() * 2);
+  }
+
+  update() {
+    this.life++;
+    this.rotation += this.rotSpeed;
+    this.pulsePhase += this.pulseSpeed;
+    
+    // Fade in
+    if (this.opacity < this.targetOpacity) {
+      this.opacity += 0.005;
+    }
+    
+    // Slowly fade out near end of life
+    if (this.life > this.maxLife * 0.8) {
+      this.opacity -= 0.002;
+    }
+    
+    // Grow children
+    if (autoGrow && this.branchDepth < this.maxDepth && this.life > 60) {
+      this.growTimer++;
+      if (this.growTimer >= this.growInterval && this.children.length < 3) {
+        this.growTimer = 0;
+        const angle = this.angle + (Math.random() - 0.5) * Math.PI * 0.8;
+        const dist = this.size * 3 + Math.random() * 40;
+        const nx = this.x + Math.cos(angle) * dist;
+        const ny = this.y + Math.sin(angle) * dist;
+        if (nx > 20 && nx < W - 20 && ny > 20 && ny < H - 20) {
+          const child = new Crystal(nx, ny, this.size * 0.7);
+          child.branchDepth = this.branchDepth + 1;
+          child.maxLife = this.maxLife * 0.8;
+          this.children.push(child);
+          crystals.push(child);
+          
+          // Add connection
+          connections.push({
+            x1: this.x, y1: this.y,
+            x2: nx, y2: ny,
+            opacity: 0,
+            maxOpacity: 0.3,
+            life: 0
+          });
+        }
+      }
+    }
+    
+    return this.opacity > 0;
+  }
+
+  draw(ctx) {
+    if (this.opacity <= 0) return;
+    
+    const pulse = 1 + Math.sin(this.pulsePhase) * 0.15;
+    const s = this.size * pulse;
+    const alpha = Math.max(0, this.opacity);
+    
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation);
+    
+    // Glow
+    const glowGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, s * 3);
+    glowGrad.addColorStop(0, palette.glow + (alpha * 0.3) + ')');
+    glowGrad.addColorStop(1, palette.glow + '0)');
+    ctx.fillStyle = glowGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, s * 3, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Crystal polygon
+    ctx.beginPath();
+    for (let i = 0; i < this.sides; i++) {
+      const a = (i / this.sides) * Math.PI * 2;
+      const r = s * (0.8 + Math.sin(a * 3 + this.pulsePhase) * 0.2);
+      const px = Math.cos(a) * r;
+      const py = Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    
+    // Fill with gradient
+    const fillGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, s);
+    fillGrad.addColorStop(0, palette.accent + alpha + ')');
+    fillGrad.addColorStop(0.5, palette.crystal + (alpha * 0.7) + ')');
+    fillGrad.addColorStop(1, palette.glow + (alpha * 0.2) + ')');
+    ctx.fillStyle = fillGrad;
+    ctx.fill();
+    
+    // Edge highlight
+    ctx.strokeStyle = palette.crystal + (alpha * 0.5) + ')';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+    
+    ctx.restore();
+  }
+}
+
+// ── Flow Particle ──
+class FlowParticle {
+  constructor(x, y) {
+    this.x = x || Math.random() * W;
+    this.y = y || Math.random() * H;
+    this.vx = (Math.random() - 0.5) * 0.5;
+    this.vy = (Math.random() - 0.5) * 0.5;
+    this.life = 0;
+    this.maxLife = 200 + Math.random() * 300;
+    this.size = 0.5 + Math.random() * 1.5;
+    this.hue = Math.random() * 60; // within palette range
+    this.trail = [];
+    this.maxTrail = 8 + Math.floor(Math.random() * 12);
+  }
+
+  update() {
+    this.life++;
+    
+    // Flow toward nearest crystal
+    if (crystals.length > 0) {
+      let nearest = null;
+      let nearestDist = Infinity;
+      for (const c of crystals) {
+        const dx = c.x - this.x;
+        const dy = c.y - this.y;
+        const d = dx * dx + dy * dy;
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearest = c;
+        }
+      }
+      
+      if (nearest && nearestDist < 40000) {
+        const dx = nearest.x - this.x;
+        const dy = nearest.y - this.y;
+        const dist = Math.sqrt(nearestDist);
+        const force = 0.02 / (dist * 0.01 + 1);
+        this.vx += (dx / dist) * force;
+        this.vy += (dy / dist) * force;
+        
+        // Orbit slightly
+        this.vx += (-dy / dist) * force * 0.3;
+        this.vy += (dx / dist) * force * 0.3;
+      }
+    }
+    
+    // Mouse attraction
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 200) {
+        const force = 0.05 / (d * 0.01 + 1);
+        this.vx += (dx / d) * force;
+        this.vy += (dy / d) * force;
+      }
+    }
+    
+    // Damping
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+    
+    // Speed limit
+    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    if (speed > 2) {
+      this.vx = (this.vx / speed) * 2;
+      this.vy = (this.vy / speed) * 2;
+    }
+    
+    this.trail.push({ x: this.x, y: this.y });
+    if (this.trail.length > this.maxTrail) this.trail.shift();
+    
+    this.x += this.vx;
+    this.y += this.vy;
+    
+    // Wrap
+    if (this.x < 0) this.x = W;
+    if (this.x > W) this.x = 0;
+    if (this.y < 0) this.y = H;
+    if (this.y > H) this.y = 0;
+    
+    return this.life < this.maxLife;
+  }
+
+  draw(ctx) {
+    const lifeRatio = this.life / this.maxLife;
+    const alpha = lifeRatio < 0.1 ? lifeRatio * 10 : lifeRatio > 0.8 ? (1 - lifeRatio) * 5 : 1;
+    
+    // Trail
+    if (this.trail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(this.trail[0].x, this.trail[0].y);
+      for (let i = 1; i < this.trail.length; i++) {
+        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+      }
+      ctx.strokeStyle = palette.particle + (alpha * 0.3) + ')';
+      ctx.lineWidth = this.size * 0.5;
+      ctx.stroke();
+    }
+    
+    // Particle
+    ctx.fillStyle = palette.particle + alpha + ')';
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// ── Initialize ──
+function init() {
+  // Seed initial crystals
+  const count = 3 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < count; i++) {
+    const x = W * 0.2 + Math.random() * W * 0.6;
+    const y = H * 0.2 + Math.random() * H * 0.6;
+    crystals.push(new Crystal(x, y));
+  }
+  
+  // Seed initial flow particles
+  for (let i = 0; i < 150; i++) {
+    flowParticles.push(new FlowParticle());
+  }
+}
+
+// ── Draw connections ──
+function drawConnections() {
+  for (let i = connections.length - 1; i >= 0; i--) {
+    const c = connections[i];
+    c.life++;
+    if (c.life < 30) {
+      c.opacity = (c.life / 30) * c.maxOpacity;
+    } else if (c.life > 200) {
+      c.opacity = Math.max(0, c.maxOpacity - (c.life - 200) * 0.005);
+    }
+    
+    if (c.opacity <= 0) {
+      connections.splice(i, 1);
+      continue;
+    }
+    
+    ctx.beginPath();
+    ctx.moveTo(c.x1, c.y1);
+    
+    // Curved connection
+    const mx = (c.x1 + c.x2) / 2 + (Math.sin(frameCount * 0.01 + i) * 20);
+    const my = (c.y1 + c.y2) / 2 + (Math.cos(frameCount * 0.01 + i) * 20);
+    ctx.quadraticCurveTo(mx, my, c.x2, c.y2);
+    
+    ctx.strokeStyle = palette.glow + (c.opacity * 0.4) + ')';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+  }
+}
+
+// ── Main Loop ──
+function draw() {
+  if (!paused) {
+    frameCount++;
+    
+    // Semi-transparent background for trails
+    ctx.fillStyle = palette.bg + 'e6';
+    ctx.fillRect(0, 0, W, H);
+    
+    // Update & draw connections
+    drawConnections();
+    
+    // Update & draw crystals
+    for (let i = crystals.length - 1; i >= 0; i--) {
+      if (!crystals[i].update()) {
+        crystals.splice(i, 1);
+      } else {
+        crystals[i].draw(ctx);
+      }
+    }
+    
+    // Auto-grow from edges
+    if (autoGrow && frameCount % 120 === 0 && crystals.length < 30) {
+      const edge = Math.floor(Math.random() * 4);
+      let x, y;
+      if (edge === 0) { x = Math.random() * W; y = 10; }
+      else if (edge === 1) { x = W - 10; y = Math.random() * H; }
+      else if (edge === 2) { x = Math.random() * W; y = H - 10; }
+      else { x = 10; y = Math.random() * H; }
+      crystals.push(new Crystal(x, y));
+    }
+    
+    // Update & draw flow particles
+    if (showFlow) {
+      for (let i = flowParticles.length - 1; i >= 0; i--) {
+        if (!flowParticles[i].update()) {
+          flowParticles.splice(i, 1);
+        } else {
+          flowParticles[i].draw(ctx);
+        }
+      }
+      
+      // Maintain particle count
+      while (flowParticles.length < 150) {
+        flowParticles.push(new FlowParticle());
+      }
+    }
+  }
+  
+  requestAnimationFrame(draw);
+}
+
+// ── Input ──
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+
+canvas.addEventListener('mouseleave', () => {
+  mouse.active = false;
+});
+
+canvas.addEventListener('click', e => {
+  const x = e.clientX;
+  const y = e.clientY;
+  
+  // Plant a crystal
+  const crystal = new Crystal(x, y);
+  crystal.maxLife = 600 + Math.random() * 300;
+  crystals.push(crystal);
+  
+  // Burst particles
+  for (let i = 0; i < 20; i++) {
+    const p = new FlowParticle(
+      x + (Math.random() - 0.5) * 30,
+      y + (Math.random() - 0.5) * 30
+    );
+    p.vx = (Math.random() - 0.5) * 3;
+    p.vy = (Math.random() - 0.5) * 3;
+    p.maxLife = 100 + Math.random() * 100;
+    flowParticles.push(p);
+  }
+  
+  // Fade title
+  const title = document.getElementById('title');
+  if (title.style.opacity !== '0') {
+    title.style.transition = 'opacity 2s';
+    title.style.opacity = '0';
+  }
+});
+
+// Touch support
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  mouse.active = true;
+}, { passive: false });
+
+canvas.addEventListener('touchend', () => {
+  mouse.active = false;
+});
+
+canvas.addEventListener('touchstart', e => {
+  const x = e.touches[0].clientX;
+  const y = e.touches[0].clientY;
+  crystals.push(new Crystal(x, y));
+});
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    paused = !paused;
+  }
+});
+
+// ── Controls ──
+document.getElementById('btn-palette').addEventListener('click', () => {
+  paletteIndex = (paletteIndex + 1) % palettes.length;
+  palette = palettes[paletteIndex];
+});
+
+document.getElementById('btn-grow').addEventListener('click', function() {
+  autoGrow = !autoGrow;
+  this.classList.toggle('active');
+});
+
+document.getElementById('btn-flow').addEventListener('click', function() {
+  showFlow = !showFlow;
+  this.classList.toggle('active');
+});
+
+document.getElementById('btn-burst').addEventListener('click', () => {
+  for (let i = 0; i < 50; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * 100;
+    const p = new FlowParticle(
+      W / 2 + Math.cos(angle) * dist,
+      H / 2 + Math.sin(angle) * dist
+    );
+    p.vx = Math.cos(angle) * (1 + Math.random() * 2);
+    p.vy = Math.sin(angle) * (1 + Math.random() * 2);
+    p.maxLife = 150 + Math.random() * 150;
+    flowParticles.push(p);
+  }
+});
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+  crystals = [];
+  connections = [];
+  flowParticles = [];
+});
+
+document.getElementById('btn-save').addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = 'crystal-memory-' + Date.now() + '.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+// ── Start ──
+init();
+draw();
+</script>
+
+</body>
+</html>
