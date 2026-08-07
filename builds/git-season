@@ -1,0 +1,243 @@
+#!/usr/bin/env bash
+# git-season — what season is your codebase in?
+# Analyzes git history and classifies repo lifecycle into Spring/Summer/Autumn/Winter.
+# Usage: git-season [repo-path]
+set -euo pipefail
+
+REPO="${1:-.}"
+cd "$REPO" 2>/dev/null || { echo "❌ Not a valid directory: $REPO"; exit 1; }
+git rev-parse --is-inside-work-tree &>/dev/null || { echo "❌ Not a git repo: $REPO"; exit 1; }
+
+# ── Gather metrics ──────────────────────────────────────────────
+TOTAL_COMMITS=$(git rev-list --all --count 2>/dev/null || echo 0)
+FIRST_COMMIT_EPOCH=$(git -C "$REPO" log --all --reverse --format='%at' 2>/dev/null | head -1 || true)
+FIRST_COMMIT_EPOCH=${FIRST_COMMIT_EPOCH:-0}
+NOW_EPOCH=$(date +%s)
+AGE_DAYS=$(( (NOW_EPOCH - FIRST_COMMIT_EPOCH) / 86400 ))
+AGE_DAYS=$(( AGE_DAYS > 0 ? AGE_DAYS : 1 ))
+
+# Last 30 days activity
+LAST30=$(git log --all --since='30 days ago' --format='%h' 2>/dev/null | wc -l)
+LAST30=$(( LAST30 > 0 ? LAST30 : 0 ))
+
+# Last 90 days
+LAST90=$(git log --all --since='90 days ago' --format='%h' 2>/dev/null | wc -l)
+LAST90=$(( LAST90 > 0 ? LAST90 : 0 ))
+
+# File stats
+TOTAL_FILES=$(git ls-files | wc -l)
+TOTAL_FILES=$(( TOTAL_FILES > 0 ? TOTAL_FILES : 1 ))
+
+# Deleted files (files in history but not current tree)
+DELETED=$(git log --all --diff-filter=D --name-only --format='' 2>/dev/null | sort -u | wc -l)
+DELETED=$(( DELETED > 0 ? DELETED : 0 ))
+
+# Active files (modified in last 30 days)
+ACTIVE=$(git log --all --since='30 days ago' --name-only --format='' 2>/dev/null | sort -u | wc -l)
+ACTIVE=$(( ACTIVE > 0 ? ACTIVE : 0 ))
+
+# New files (added in last 30 days)
+NEWFILES=$(git log --all --since='30 days ago' --diff-filter=A --name-only --format='' 2>/dev/null | sort -u | wc -l)
+NEWFILES=$(( NEWFILES > 0 ? NEWFILES : 0 ))
+
+# Renames in last 30 days
+RENAMES=$(git log --all --since='30 days ago' --diff-filter=R --name-only --format='' 2>/dev/null | sort -u | wc -l)
+RENAMES=$(( RENAMES > 0 ? RENAMES : 0 ))
+
+# Branch count
+BRANCHES=$(git branch -a 2>/dev/null | wc -l)
+BRANCHES=$(( BRANCHES > 0 ? BRANCHES : 1 ))
+
+# Contributor count
+CONTRIBUTORS=$(git log --all --format='%ae' 2>/dev/null | sort -u | wc -l)
+CONTRIBUTORS=$(( CONTRIBUTORS > 0 ? CONTRIBUTORS : 1 ))
+
+# Velocity: commits per week
+WEEKS=$(( AGE_DAYS / 7 ))
+WEEKS=$(( WEEKS > 0 ? WEEKS : 1 ))
+VELOCITY=$(( TOTAL_COMMITS / WEEKS ))
+
+# Recent velocity (last 4 weeks vs previous 4 weeks)
+RECENT4=$(git log --all --since='28 days ago' --format='%h' 2>/dev/null | wc -l)
+PREV4=$(git log --all --since='56 days ago' --until='28 days ago' --format='%h' 2>/dev/null | wc -l)
+PREV4=$(( PREV4 > 0 ? PREV4 : 1 ))
+TREND=$(( RECENT4 * 100 / PREV4 ))
+
+# Deleting ratio
+DELETE_RATIO=$(( DELETED * 100 / (TOTAL_FILES + DELETED) ))
+DELETE_RATIO=$(( DELETE_RATIO > 0 ? DELETE_RATIO : 0 ))
+
+# Growth ratio (new files vs total)
+GROWTH_RATIO=$(( NEWFILES * 100 / (TOTAL_FILES + 1) ))
+
+# ── Season logic ────────────────────────────────────────────────
+# Score each season dimension (0-100)
+SPRING_SCORE=0   # growth, new files, recent activity
+SUMMER_SCORE=0   # maturity, stability, high velocity, many files
+AUTUMN_SCORE=0   # deletions, refactoring, decline, renames
+WINTER_SCORE=0   # inactivity, frozen, old age, zero activity
+
+# Growth signals → Spring
+if [ "$GROWTH_RATIO" -gt 20 ]; then SPRING_SCORE=$(( SPRING_SCORE + 40 )); elif [ "$GROWTH_RATIO" -gt 10 ]; then SPRING_SCORE=$(( SPRING_SCORE + 25 )); elif [ "$GROWTH_RATIO" -gt 5 ]; then SPRING_SCORE=$(( SPRING_SCORE + 15 )); fi
+if [ "$ACTIVE" -gt 50 ]; then SPRING_SCORE=$(( SPRING_SCORE + 25 )); elif [ "$ACTIVE" -gt 20 ]; then SPRING_SCORE=$(( SPRING_SCORE + 15 )); fi
+if [ "$BRANCHES" -gt 5 ]; then SPRING_SCORE=$(( SPRING_SCORE + 15 )); fi
+if [ "$CONTRIBUTORS" -gt 2 ]; then SPRING_SCORE=$(( SPRING_SCORE + 10 )); fi
+if [ "$TREND" -gt 150 ]; then SPRING_SCORE=$(( SPRING_SCORE + 15 )); fi
+if [ "$TOTAL_COMMITS" -lt 50 ] && [ "$LAST30" -gt 0 ]; then SPRING_SCORE=$(( SPRING_SCORE + 15 )); fi
+
+# Maturity signals → Summer
+if [ "$TOTAL_COMMITS" -gt 200 ]; then SUMMER_SCORE=$(( SUMMER_SCORE + 25 )); elif [ "$TOTAL_COMMITS" -gt 100 ]; then SUMMER_SCORE=$(( SUMMER_SCORE + 15 )); fi
+if [ "$TOTAL_FILES" -gt 100 ]; then SUMMER_SCORE=$(( SUMMER_SCORE + 25 )); elif [ "$TOTAL_FILES" -gt 50 ]; then SUMMER_SCORE=$(( SUMMER_SCORE + 15 )); fi
+if [ "$VELOCITY" -gt 10 ]; then SUMMER_SCORE=$(( SUMMER_SCORE + 20 )); elif [ "$VELOCITY" -gt 5 ]; then SUMMER_SCORE=$(( SUMMER_SCORE + 10 )); fi
+if [ "$LAST30" -gt 20 ]; then SUMMER_SCORE=$(( SUMMER_SCORE + 15 )); fi
+if [ "$DELETE_RATIO" -lt 10 ] && [ "$AGE_DAYS" -gt 180 ]; then SUMMER_SCORE=$(( SUMMER_SCORE + 10 )); fi
+if [ "$CONTRIBUTORS" -gt 1 ]; then SUMMER_SCORE=$(( SUMMER_SCORE + 10 )); fi
+
+# Decline/refactor signals → Autumn
+if [ "$DELETE_RATIO" -gt 15 ]; then AUTUMN_SCORE=$(( AUTUMN_SCORE + 30 )); elif [ "$DELETE_RATIO" -gt 8 ]; then AUTUMN_SCORE=$(( AUTUMN_SCORE + 20 )); fi
+if [ "$RENAMES" -gt 10 ]; then AUTUMN_SCORE=$(( AUTUMN_SCORE + 20 )); elif [ "$RENAMES" -gt 5 ]; then AUTUMN_SCORE=$(( AUTUMN_SCORE + 10 )); fi
+if [ "$TREND" -lt 70 ] && [ "$LAST30" -gt 0 ]; then AUTUMN_SCORE=$(( AUTUMN_SCORE + 15 )); fi
+if [ "$TREND" -lt 50 ] && [ "$LAST90" -gt 0 ]; then AUTUMN_SCORE=$(( AUTUMN_SCORE + 15 )); fi
+if [ "$LAST30" -gt 5 ] && [ "$DELETE_RATIO" -gt 5 ]; then AUTUMN_SCORE=$(( AUTUMN_SCORE + 10 )); fi
+
+# Inactivity signals → Winter
+if [ "$LAST30" -eq 0 ]; then WINTER_SCORE=$(( WINTER_SCORE + 50 )); elif [ "$LAST30" -lt 3 ]; then WINTER_SCORE=$(( WINTER_SCORE + 30 )); fi
+if [ "$LAST90" -lt 5 ]; then WINTER_SCORE=$(( WINTER_SCORE + 25 )); fi
+if [ "$TREND" -lt 30 ] && [ "$LAST90" -gt 0 ]; then WINTER_SCORE=$(( WINTER_SCORE + 20 )); fi
+if [ "$AGE_DAYS" -gt 365 ] && [ "$LAST30" -lt 5 ]; then WINTER_SCORE=$(( WINTER_SCORE + 15 )); fi
+
+# Determine season
+SEASON=""
+SEASON_SCORE=0
+if [ "$SPRING_SCORE" -ge "$SUMMER_SCORE" ] && [ "$SPRING_SCORE" -ge "$AUTUMN_SCORE" ] && [ "$SPRING_SCORE" -ge "$WINTER_SCORE" ]; then SEASON="spring"; SEASON_SCORE=$SPRING_SCORE; fi
+if [ "$SUMMER_SCORE" -gt "$SEASON_SCORE" ]; then SEASON="summer"; SEASON_SCORE=$SUMMER_SCORE; fi
+if [ "$AUTUMN_SCORE" -gt "$SEASON_SCORE" ]; then SEASON="autumn"; SEASON_SCORE=$AUTUMN_SCORE; fi
+if [ "$WINTER_SCORE" -gt "$SEASON_SCORE" ]; then SEASON="winter"; SEASON_SCORE=$WINTER_SCORE; fi
+
+# Edge case: no commits at all
+if [ "$TOTAL_COMMITS" -eq 0 ]; then SEASON="fog"; fi
+
+# ── Output ──────────────────────────────────────────────────────
+REPO_NAME=$(basename "$(cd "$REPO" 2>/dev/null && pwd)")
+
+case "$SEASON" in
+  spring)
+    echo ""
+    echo "  🌱  ·  ╭──────────────────────────────╮  ·  🌱"
+    echo "       │  $REPO_NAME"
+    echo "       │"
+    echo "       │  SEASON: SPRING 🌱"
+    echo "       │"
+    echo "       │  Your codebase is sprouting."
+    echo "       │  New files, active growth, fresh energy."
+    echo "       │"
+    echo "       │  New files (30d): $NEWFILES"
+    echo "       │  Active files:   $ACTIVE"
+    echo "       │  Trend:          +${TREND}%"
+    echo "       │"
+    echo "       │  \"Every oak was once a nut\""
+    echo "       │         — anonymous investor"
+    echo "       ╰──────────────────────────────╯"
+    echo ""
+    ;;
+  summer)
+    echo ""
+    echo "  ☀️  ·  ╭──────────────────────────────╮  ·  ☀️"
+    echo "       │  $REPO_NAME"
+    echo "       │"
+    echo "       │  SEASON: SUMMER ☀️"
+    echo "       │"
+    echo "       │  Your codebase is in full bloom."
+    echo "       │  Mature, productive, at peak energy."
+    echo "       │"
+    echo "       │  Total commits:  $TOTAL_COMMITS"
+    echo "       │  Files:          $TOTAL_FILES"
+    echo "       │  Velocity:       ${VELOCITY} commits/week"
+    echo "       │  Contributors:   $CONTRIBUTORS"
+    echo "       │"
+    echo "       │  \"Sustain the harvest, don't rush it.\""
+    echo "       ╰──────────────────────────────╯"
+    echo ""
+    ;;
+  autumn)
+    echo ""
+    echo "  🍂  ·  ╭──────────────────────────────╮  ·  🍂"
+    echo "       │  $REPO_NAME"
+    echo "       │"
+    echo "       │  SEASON: AUTUMN 🍂"
+    echo "       │"
+    echo "       │  Your codebase is shedding leaves."
+    echo "       │  Refactoring, pruning, letting go."
+    echo "       │"
+    echo "       │  Deleted files:  $DELETED"
+    echo "       │  Renames:        $RENAMES"
+    echo "       │  Delete ratio:   ${DELETE_RATIO}%"
+    echo "       │  Trend:          ${TREND}%"
+    echo "       │"
+    echo "       │  \"What gets cut makes room for what's next.\""
+    echo "       ╰──────────────────────────────╯"
+    echo ""
+    ;;
+  winter)
+    echo ""
+    echo "  ❄️  ·  ╭──────────────────────────────╮  ·  ❄️"
+    echo "       │  $REPO_NAME"
+    echo "       │"
+    echo "       │  SEASON: WINTER ❄️"
+    echo "       │"
+    echo "       │  Your codebase is dormant."
+    echo "       │  Cold, quiet, conserving energy."
+    echo "       │"
+    echo "       │  Last commit:    $([ "$LAST30" -eq 0 ] && echo '30+ days ago' || echo "${LAST30}d ago")"
+    echo "       │  Recent (30d):   $LAST30 commits"
+    echo "       │  Recent (90d):   $LAST90 commits"
+    echo "       │  Age:            ${AGE_DAYS} days"
+    echo "       │"
+    echo "       │  \"Rest is not idleness.\" — John Lubbock"
+    echo "       ╰──────────────────────────────╯"
+    echo ""
+    ;;
+  fog)
+    echo ""
+    echo "  🌫️  ·  ╭──────────────────────────────╮  ·  🌫️"
+    echo "       │  $REPO_NAME"
+    echo "       │"
+    echo "       │  SEASON: PRE-SEASON FOG 🌫️"
+    echo "       │"
+    echo "       │  No commits yet. A blank canvas."
+    echo "       │  Every season starts somewhere."
+    echo "       │"
+    echo "       │  Make the first commit."
+    echo "       │  Spring is waiting."
+    echo "       ╰──────────────────────────────╯"
+    echo ""
+    ;;
+esac
+
+# ── JSON output (optional, --json) ──────────────────────────────
+if [ "${2:-}" = "--json" ]; then
+  cat <<EOF
+{
+  "repo": "$REPO_NAME",
+  "season": "$SEASON",
+  "total_commits": $TOTAL_COMMITS,
+  "age_days": $AGE_DAYS,
+  "files": $TOTAL_FILES,
+  "deleted": $DELETED,
+  "active_30d": $ACTIVE,
+  "new_30d": $NEWFILES,
+  "renames_30d": $RENAMES,
+  "branches": $BRANCHES,
+  "contributors": $CONTRIBUTORS,
+  "velocity_per_week": $VELOCITY,
+  "trend_percent": $TREND,
+  "delete_ratio": $DELETE_RATIO,
+  "scores": {
+    "spring": $SPRING_SCORE,
+    "summer": $SUMMER_SCORE,
+    "autumn": $AUTUMN_SCORE,
+    "winter": $WINTER_SCORE
+  }
+}
+EOF
+fi

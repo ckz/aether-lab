@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+# repo-pulse — instant project health snapshot as a compact ASCII dashboard
+# Usage: repo-pulse [path]  (defaults to current directory)
+
+set -uo pipefail
+
+# ─── Config ────────────────────────────────────────────────────────────────────
+MAX_FILES=12
+MAX_AUTHORS=5
+RECENT_DAYS=14
+BAR_WIDTH=20
+
+# ─── Helpers ───────────────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GRN='\033[0;32m'
+YEL='\033[1;33m'
+CYN='\033[0;36m'
+BLD='\033[1m'
+DIM='\033[2m'
+RST='\033[0m'
+
+cprint() { printf "${!1}%s${RST}" "$2"; }
+hbar() {
+  local _color="$1"
+  local _pct="$2"
+  local _filled=$(( _pct * BAR_WIDTH / 100 ))
+  [ "$_filled" -gt "$BAR_WIDTH" ] && _filled=$BAR_WIDTH
+  local _empty=$(( BAR_WIDTH - _filled ))
+  printf "${!_color}"
+  printf '█%.0s' $(seq 1 "$_filled")
+  printf "${DIM}"
+  printf '░%.0s' $(seq 1 "$_empty")
+  printf "${RST}"
+  printf " %3d%%" "$_pct"
+}
+
+# ─── Setup ─────────────────────────────────────────────────────────────────────
+REPO="${1:-.}"
+cd "$REPO" 2>/dev/null || { echo "repo-pulse: cannot access $REPO"; exit 1; }
+
+[ -d .git ] || { echo "repo-pulse: $REPO is not a git repository"; exit 1; }
+
+BRANCH=$(git branch --show-current 2>/dev/null || echo "?")
+COMMITS_TOTAL=$(git rev-list --all --count 2>/dev/null || echo 0)
+FIRST_COMMIT=$(git log --reverse --format="%ci" 2>/dev/null | head -1 | cut -d' ' -f1)
+LAST_COMMIT=$(git log -1 --format="%ci" 2>/dev/null | cut -d' ' -f1)
+NOW=$(date +%s)
+LAST_SEC=$(date -d "$LAST_COMMIT" +%s 2>/dev/null || echo "$NOW")
+COMMIT_AGE_DAYS=$(( (NOW - LAST_SEC) / 86400 ))
+[ "$COMMIT_AGE_DAYS" -lt 0 ] && COMMIT_AGE_DAYS=0
+
+CONTRIBUTORS=$(git shortlog -sn --all 2>/dev/null | head -"$MAX_AUTHORS" || true)
+TOTAL_CONTRIBUTORS=$(git shortlog -sn --all 2>/dev/null | wc -l | tr -d ' ')
+
+# File stats
+TOTAL_FILES=$(git ls-files | wc -l | tr -d ' ')
+LANG_BREAKDOWN=$(git ls-files | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -"$MAX_FILES")
+
+# Recent velocity
+RECENT_COMMITS=$(git log --since="$RECENT_DAYS days ago" --oneline 2>/dev/null | wc -l | tr -d ' ')
+RECENT_AUTHORS=$(git log --since="$RECENT_DAYS days ago" --format="%an" 2>/dev/null | sort -u | wc -l | tr -d ' ')
+
+# Working tree
+CHANGED=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+STAGED_INS=$(git diff --cached --numstat 2>/dev/null | awk '{s+=$1} END{print s+0}')
+STAGED_DEL=$(git diff --cached --numstat 2>/dev/null | awk '{s+=$2} END{print s+0}')
+
+# Branch ahead/behind
+AHEAD=0
+BEHIND=0
+UPSTREAM=$(git rev-parse --abbrev-ref "@{upstream}" 2>/dev/null || echo "")
+if [ -n "$UPSTREAM" ]; then
+  AHEAD=$(git rev-list --count "@{upstream}..HEAD" 2>/dev/null || echo 0)
+  BEHIND=$(git rev-list --count "HEAD..@{upstream}" 2>/dev/null || echo 0)
+fi
+
+# Hotspots (most-edited files)
+mapfile -t HOT_FILES < <(git log --format="" --diff-filter=M --all --name-only 2>/dev/null \
+  | sort | uniq -c | sort -rn | head -6 | awk '{print $2}')
+
+# ─── Health Score ──────────────────────────────────────────────────────────────
+SCORE=70
+[ "$COMMIT_AGE_DAYS" -le 1 ] && SCORE=$((SCORE + 15))
+[ "$COMMIT_AGE_DAYS" -le 7 ] && SCORE=$((SCORE + 5))
+[ "$COMMIT_AGE_DAYS" -gt 30 ] && SCORE=$((SCORE - 10))
+[ "$COMMIT_AGE_DAYS" -gt 90 ] && SCORE=$((SCORE - 10))
+[ "$RECENT_COMMITS" -gt 0 ] && SCORE=$((SCORE + 5))
+[ "$CHANGED" -gt 50 ] && SCORE=$((SCORE - 5))
+[ "$AHEAD" -gt 0 ] && SCORE=$((SCORE + 5))
+[ "$SCORE" -gt 100 ] && SCORE=100
+[ "$SCORE" -lt 0 ] && SCORE=0
+
+health_emoji() {
+  if   [ "$1" -ge 85 ]; then echo "🔥"
+  elif [ "$1" -ge 65 ]; then echo "✅"
+  elif [ "$1" -ge 40 ]; then echo "⚠️"
+  else echo "💀"; fi
+}
+health_label() {
+  if   [ "$1" -ge 85 ]; then echo "Vibrant"
+  elif [ "$1" -ge 65 ]; then echo "Healthy"
+  elif [ "$1" -ge 40 ]; then echo "Stale"
+  else echo "Critical"; fi
+}
+
+# ─── Oracle Verdict ────────────────────────────────────────────────────────────
+VERDICT=""
+if   [ "$COMMIT_AGE_DAYS" -gt 90 ] && [ "$COMMITS_TOTAL" -gt 0 ]; then
+  VERDICT="Ancient scroll — dust off and reawaken"
+elif [ "$COMMIT_AGE_DAYS" -gt 21 ]; then
+  VERDICT="Dormant — the repo dreams but does not act"
+elif [ "$CHANGED" -gt 30 ]; then
+  VERDICT="Feast mode — many hands in the dough"
+elif [ "$RECENT_COMMITS" -gt 20 ]; then
+  VERDICT="Velocity demon — who unhooked the brakes?"
+elif [ "$TOTAL_FILES" -lt 5 ]; then
+  VERDICT="Seedling — young, unformed, potential infinite"
+elif [ "$SCORE" -ge 85 ]; then
+  VERDICT="Tending the garden — all is well"
+elif [ "$AHEAD" -gt 5 ]; then
+  VERDICT="Branch pioneer — forging ahead of the pack"
+elif [ "$BEHIND" -gt 5 ]; then
+  VERDICT="Laggard — catch up before the tide goes out"
+elif [ "$RECENT_COMMITS" -eq 0 ] && [ "$CHANGED" -eq 0 ]; then
+  VERDICT="Zen mode — complete and needing nothing"
+else
+  VERDICT="Steady current — flowing without urgency"
+fi
+
+# ─── Activity Sparkline (last 13 weeks) ────────────────────────────────────────
+sparkline() {
+  local line=""
+  for i in $(seq 13 -1 0); do
+    local count
+    if [ "$i" -eq 0 ]; then
+      count=$(git log --since="7 days ago" --oneline 2>/dev/null | wc -l | tr -d ' ')
+    else
+      until="$(( i * 7 )) days ago"
+      since="$(( (i - 1) * 7 )) days ago"
+      count=$(git log --since="$since" --until="$until" --oneline 2>/dev/null | wc -l | tr -d ' ')
+    fi
+    if   [ "$count" -eq 0 ]; then line+=" "
+    elif [ "$count" -le 2 ]; then line+="░"
+    elif [ "$count" -le 5 ]; then line+="▒"
+    elif [ "$count" -le 10 ]; then line+="▓"
+    else line+="█"; fi
+  done
+  echo "$line"
+}
+
+# ─── Render ────────────────────────────────────────────────────────────────────
+[ -t 1 ] && clear
+
+printf "\n"
+cprint BLD "  📦 repo-pulse"
+cprint DIM "  $REPO"
+printf "\n"
+printf "  %.0s─" $(seq 1 56); printf "\n"
+
+# Branch + health
+printf "  ${BLD}Branch${RST}%s %s\n" "$(printf '%*s' $(( 20 - ${#BRANCH} )) '')" "$BRANCH"
+printf "  ${BLD}Health${RST}%s " "$(printf '%*s' 14 '')"
+cprint GRN "$(health_emoji $SCORE) $(health_label $SCORE)"
+printf "  ["
+hbar GRN "$SCORE"
+printf "]\n"
+printf "  %.0s─" $(seq 1 56); printf "\n"
+
+# Velocity
+printf "  ${BLD}Velocity${RST}\n"
+printf "    Total commits : %s\n" "$COMMITS_TOTAL"
+printf "    First commit  : %s\n" "$FIRST_COMMIT"
+printf "    Last commit   : %s (%d days ago)\n" "$LAST_COMMIT" "$COMMIT_AGE_DAYS"
+printf "    Recent (14d)  : %d commits · %d contributors\n" "$RECENT_COMMITS" "$RECENT_AUTHORS"
+printf "    Sparkline     : "
+cprint DIM "$(sparkline)"
+printf "\n"
+printf "    %s\n" "$(printf '%*s' 22 '')past ▸ now"
+printf "  %.0s─" $(seq 1 56); printf "\n"
+
+# Working tree
+printf "  ${BLD}Working Tree${RST}\n"
+printf "    Files         : %s\n" "$TOTAL_FILES"
+printf "    Unstaged chg  : %d\n" "$CHANGED"
+printf "    Staged        : +%s / -%s lines\n" "$STAGED_INS" "$STAGED_DEL"
+if [ -n "$UPSTREAM" ]; then
+  printf "    Upstream      : %s\n" "$UPSTREAM"
+  printf "    Ahead / Behind: %d / %d\n" "$AHEAD" "$BEHIND"
+else
+  printf "    Upstream      : none (local only)\n"
+fi
+printf "  %.0s─" $(seq 1 56); printf "\n"
+
+# Languages
+printf "  ${BLD}Languages${RST}\n"
+rank=0
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  rank=$((rank + 1))
+  _count=$(echo "$line" | awk '{print $1}')
+  _ext=$(echo "$line" | awk '{print $2}')
+  _pct=$(( _count * 100 / (TOTAL_FILES + 1) ))
+  printf "    %-10s " "$_ext"
+  hbar CYN "$_pct"
+  printf " (%d)\n" "$_count"
+  [ "$rank" -ge "$MAX_FILES" ] && break
+done <<< "$LANG_BREAKDOWN"
+
+printf "  %.0s─" $(seq 1 56); printf "\n"
+
+# Contributors
+printf "  ${BLD}Contributors${RST}  (%d total)\n" "$TOTAL_CONTRIBUTORS"
+rank=0
+while IFS= read -r author; do
+  [ -z "$author" ] && continue
+  rank=$((rank + 1))
+  _commits=$(echo "$author" | awk '{print $1}')
+  _name=$(echo "$author" | awk '{print $2}')
+  _pct=$(( _commits * 100 / (COMMITS_TOTAL + 1) ))
+  printf "    %d. %-14s " "$rank" "$_name"
+  hbar YEL "$_pct"
+  printf "\n"
+  [ "$rank" -ge "$MAX_AUTHORS" ] && break
+done <<< "$CONTRIBUTORS"
+printf "  %.0s─" $(seq 1 56); printf "\n"
+
+# Hot files
+if [ "${#HOT_FILES[@]}" -gt 0 ]; then
+  printf "  ${BLD}Hot Files${RST}\n"
+  for f in "${HOT_FILES[@]}"; do
+    [ -n "$f" ] && printf "    %s\n" "$f"
+  done
+  printf "  %.0s─" $(seq 1 56); printf "\n"
+fi
+
+# Oracle
+printf "  ${BLD}🔮 Oracle says${RST}\n"
+printf "    \"%s\"\n" "$VERDICT"
+printf "  %.0s─" $(seq 1 56); printf "\n"
+printf "\n"

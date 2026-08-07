@@ -1,0 +1,392 @@
+#!/usr/bin/env bash
+# term-chart — zero-dependency ASCII bar chart & sparkline tool
+# Reads numbers from args, stdin, or labeled lines and draws charts.
+# Pure bash + printf + bc. No Python, no Node, no jq.
+#
+# Usage:
+#   term-chart 10 20 15 30 25
+#   echo "10 20 15 30 25" | term-chart
+#   echo "Mon:10 Tue:20 Wed:15 Thu:30 Fri:25" | term-chart
+#   term-chart -v 10 20 15 30 25        # vertical bars
+#   term-chart -s 2 10 20 15            # scale by 2
+#   term-chart -l "Low Med High" 5 8 3  # custom labels
+#   term-chart -b 10 20 15 30 25        # big bars (block chars)
+#   term-chart --spark 10 20 15 30 25   # sparkline only
+
+set -euo pipefail
+
+# ─── Colors ───
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+DIM='\033[2m'
+RESET='\033[0m'
+
+# ─── Global state ───
+_VERTICAL=false
+_BIG_BARS=false
+_SCALE=1
+_SPARKLINE=false
+_WIDTH=0
+_HEIGHT=10
+_SHOW_LABELS=true
+_SHOW_AXIS=true
+_USE_COLOR=false
+_FORCE_ASCII=false
+_POSITIONAL_INPUT=""
+
+_DATA_NUMS=()
+_DATA_LABELS=()
+_DATA_COUNT=0
+_DATA_MIN=0
+_DATA_MAX=0
+_DATA_RANGE=1
+
+# ─── Parse args (sets globals directly, no subshell) ───
+_parse_args() {
+  local positional=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -v|--vertical)  _VERTICAL=true; shift ;;
+      -b|--big)       _BIG_BARS=true; shift ;;
+      -s|--scale)     _SCALE="${2:-1}"; shift 2 ;;
+      -l|--labels)
+        _DATA_LABELS=()
+        IFS=',' read -ra _DATA_LABELS <<< "${2:-}"
+        shift 2
+        ;;
+      --spark)        _SPARKLINE=true; shift ;;
+      -w|--width)     _WIDTH="$2"; shift 2 ;;
+      -h|--height)    _HEIGHT="$2"; shift 2 ;;
+      --no-labels)    _SHOW_LABELS=false; shift ;;
+      --no-axis)      _SHOW_AXIS=false; shift ;;
+      --color)        _USE_COLOR=true; shift ;;
+      --ascii)        _FORCE_ASCII=true; shift ;;
+      -n|--no-color)  _USE_COLOR=false; shift ;;
+      --help)
+        sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
+        exit 0
+        ;;
+      -*)  echo "Error: unknown flag '$1'. Try --help." >&2; exit 2 ;;
+      *)   positional+=("$1"); shift ;;
+    esac
+  done
+  if [[ ${#positional[@]} -gt 0 ]]; then
+    _POSITIONAL_INPUT="${positional[*]}"
+  fi
+}
+
+# ─── Read data from _POSITIONAL_INPUT or stdin ───
+_read_data() {
+  local input="${1:-}"
+
+  if [[ -z "$input" ]]; then
+    if [[ ! -t 0 ]]; then
+      input="$(cat)"
+    fi
+  fi
+
+  if [[ -z "$input" ]]; then
+    echo "Error: no data. Provide numbers as args, pipe via stdin, or use --help." >&2
+    exit 1
+  fi
+
+  _DATA_NUMS=()
+  _DATA_LABELS=()
+  _DATA_COUNT=0
+
+  # Parse: extract all "name:number" or "name number" pairs
+  while IFS= read -r line; do
+    # Extract all labeled patterns from the line
+    while [[ "$line" =~ ([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*[:=]?[[:space:]]*([0-9.eE+-]+) ]]; do
+      _DATA_LABELS+=("${BASH_REMATCH[1]}")
+      _DATA_NUMS+=("${BASH_REMATCH[2]}")
+      has_labels=true
+      # Remove matched portion and continue
+      line="${line#*${BASH_REMATCH[0]}}"
+    done
+    # If no labels found, extract pure numbers
+    if [[ "$has_labels" == "false" ]] || [[ ${_DATA_LABELS[@]+${#_DATA_LABELS[@]}} -eq 0 ]]; then
+      for word in $line; do
+        if [[ "$word" =~ ^[0-9.eE+-]+$ ]]; then
+          _DATA_NUMS+=("$word")
+        fi
+      done
+    fi
+  done <<< "$input"
+
+  _DATA_COUNT=${#_DATA_NUMS[@]}
+  if [[ $_DATA_COUNT -eq 0 ]]; then
+    echo "Error: no valid numbers found." >&2
+    exit 1
+  fi
+}
+
+# ─── Compute min/max/range ───
+_compute_range() {
+  local min="${_DATA_NUMS[0]}"
+  local max="${_DATA_NUMS[0]}"
+
+  for v in "${_DATA_NUMS[@]}"; do
+    if (( $(echo "$v < $min" | bc -l) )); then min="$v"; fi
+    if (( $(echo "$v > $max" | bc -l) )); then max="$v"; fi
+  done
+
+  if (( $(echo "$min == $max" | bc -l) )); then
+    max=$(echo "$min + 1" | bc -l)
+  fi
+
+  _DATA_MIN="$min"
+  _DATA_MAX="$max"
+  _DATA_RANGE=$(echo "$max - $min" | bc -l)
+}
+
+# ─── Bar character for fill level 0.0-1.0 ───
+_bar_char() {
+  local pct="$1"
+  if [[ "$_FORCE_ASCII" == "true" ]]; then
+    if   (( $(echo "$pct >= 0.85" | bc -l) )); then printf "#"
+    elif (( $(echo "$pct >= 0.6"  | bc -l) )); then printf "="
+    elif (( $(echo "$pct >= 0.35" | bc -l) )); then printf "-"
+    elif (( $(echo "$pct > 0"    | bc -l) )); then printf "."
+    else printf " "; fi
+  elif [[ "$_BIG_BARS" == "true" ]]; then
+    if   (( $(echo "$pct >= 0.95" | bc -l) )); then printf "█"
+    elif (( $(echo "$pct >= 0.8"  | bc -l) )); then printf "▇"
+    elif (( $(echo "$pct >= 0.6"  | bc -l) )); then printf "▆"
+    elif (( $(echo "$pct >= 0.4"  | bc -l) )); then printf "▅"
+    elif (( $(echo "$pct >= 0.2"  | bc -l) )); then printf "▄"
+    elif (( $(echo "$pct > 0"    | bc -l) )); then printf "▂"
+    else printf " "; fi
+  else
+    if   (( $(echo "$pct >= 0.85" | bc -l) )); then printf "█"
+    elif (( $(echo "$pct >= 0.55" | bc -l) )); then printf "▇"
+    elif (( $(echo "$pct >= 0.35" | bc -l) )); then printf "▆"
+    elif (( $(echo "$pct >= 0.15" | bc -l) )); then printf "▄"
+    elif (( $(echo "$pct > 0"    | bc -l) )); then printf "▂"
+    else printf " "; fi
+  fi
+}
+
+# ─── Color helper ───
+_color() {
+  local intensity="$1"
+  local text="$2"
+  if [[ "$_USE_COLOR" == "true" ]] && [[ "$_FORCE_ASCII" != "true" ]]; then
+    if   (( $(echo "$intensity > 0.7" | bc -l) )); then printf "${GREEN}%s${RESET}" "$text"
+    elif (( $(echo "$intensity > 0.3" | bc -l) )); then printf "${CYAN}%s${RESET}" "$text"
+    else printf "${DIM}%s${RESET}" "$text"; fi
+  else
+    printf "%s" "$text"
+  fi
+}
+
+# ─── Chart width ───
+_get_width() {
+  if [[ $_WIDTH -gt 0 ]]; then
+    echo "$_WIDTH"
+  else
+    local cols
+    cols=$(tput cols 2>/dev/null || echo 80)
+    local w=$(( cols > 60 ? 60 : cols - 4 ))
+    (( w < 20 )) && w=20
+    echo "$w"
+  fi
+}
+
+# ─── Sparkline ───
+_draw_sparkline() {
+  _compute_range
+  local chars=("▁" "▂" "▃" "▄" "▅" "▆" "▇" "█")
+
+  printf "  "
+  for v in "${_DATA_NUMS[@]}"; do
+    local norm
+    norm=$(echo "($v - $_DATA_MIN) / $_DATA_RANGE" | bc -l)
+    (( $(echo "$norm < 0" | bc -l) )) && norm=0
+    (( $(echo "$norm > 1" | bc -l) )) && norm=1
+    local idx
+    idx=$(echo "$norm * 7" | bc -l)
+    idx=${idx%%.*}
+    (( idx < 0 )) && idx=0
+    (( idx > 7 )) && idx=7
+    printf "%s" "${chars[$idx]}"
+  done
+  printf "\n"
+}
+
+# ─── Horizontal bar chart ───
+_draw_horizontal() {
+  _compute_range
+
+  local width
+  width=$(_get_width)
+  local max_bar_w=$(( width - 14 ))
+  (( max_bar_w < 10 )) && max_bar_w=10
+
+  local idx=0
+  for v in "${_DATA_NUMS[@]}"; do
+    local scaled
+    scaled=$(echo "$v * $_SCALE" | bc -l)
+
+    local norm
+    norm=$(echo "($scaled - $_DATA_MIN) / $_DATA_RANGE" | bc -l)
+    (( $(echo "$norm < 0" | bc -l) )) && norm=0
+    (( $(echo "$norm > 1" | bc -l) )) && norm=1
+
+    local bar_w
+    bar_w=$(echo "$norm * $max_bar_w" | bc -l)
+    bar_w=${bar_w%%.*}
+
+    # Label
+    local label=""
+    if [[ ${#_DATA_LABELS[@]} -gt $idx ]]; then
+      label="${_DATA_LABELS[$idx]}"
+    fi
+    label="${label:0:8}"
+    label=$(printf "%-8s" "$label")
+
+    # Build bar
+    local bar=""
+    for (( i=0; i<bar_w; i++ )); do
+      local pct
+      pct=$(echo "($i + 0.5) / $max_bar_w" | bc -l)
+      bar+="$(_bar_char "$pct")"
+    done
+    local padding=$(( max_bar_w - bar_w ))
+    for (( i=0; i<padding; i++ )); do
+      bar+=" "
+    done
+
+    local display_val
+    display_val=$(printf "%.1f" "$scaled")
+    display_val="${display_val%.0}"
+
+    if [[ "$_SHOW_LABELS" == "true" ]]; then
+      printf " %s │%s│ %s\n" "$label" "$bar" "$display_val"
+    else
+      printf " %s │%s│\n" "$label" "$bar"
+    fi
+
+    (( idx++ )) || true
+  done
+
+  # Axis
+  if [[ "$_SHOW_AXIS" == "true" ]]; then
+    printf "         └"
+    for (( i=0; i<max_bar_w; i++ )); do printf "─"; done
+    printf "\n"
+  fi
+}
+
+# ─── Vertical bar chart ───
+_draw_vertical() {
+  _compute_range
+
+  local h=${_HEIGHT}
+  (( h > 15 )) && h=15
+  (( h < 5 )) && h=5
+
+  local count=$_DATA_COUNT
+  local width
+  width=$(_get_width)
+
+  local label_w=0
+  if [[ ${#_DATA_LABELS[@]} -gt 0 ]]; then
+    for lbl in "${_DATA_LABELS[@]}"; do
+      (( ${#lbl} > label_w )) && label_w=${#lbl}
+    done
+  fi
+  (( label_w < 3 )) && label_w=3
+  (( label_w > 8 )) && label_w=8
+
+  local bar_w=$(( (width - label_w - 2) / count ))
+  (( bar_w < 1 )) && bar_w=1
+  (( bar_w > 5 )) && bar_w=5
+
+  for (( row=h; row>=0; row-- )); do
+    local threshold
+    threshold=$(echo "$_DATA_MIN + ($_DATA_RANGE * $row) / $h" | bc -l)
+
+    local axis_label=""
+    if (( row % 3 == 0 )) || (( row == h )); then
+      axis_label=$(printf "%${label_w}s" "$(printf "%.0f" "$threshold")")
+    else
+      axis_label=$(printf "%${label_w}s" "")
+    fi
+
+    local line="$axis_label │"
+
+    for v in "${_DATA_NUMS[@]}"; do
+      local scaled
+      scaled=$(echo "$v * $_SCALE" | bc -l)
+      if (( $(echo "$scaled >= $threshold" | bc -l) )); then
+        local norm
+        norm=$(echo "($scaled - $_DATA_MIN) / $_DATA_RANGE" | bc -l)
+        (( $(echo "$norm > 1" | bc -l) )) && norm=1
+        line+="$(_bar_char "$norm")"
+      else
+        line+=" "
+      fi
+      line+=" "
+    done
+
+    printf " %s\n" "$line"
+  done
+
+  # Bottom axis
+  printf " %s └" "$(printf "%${label_w}s" "")"
+  for (( i=0; i<count; i++ )); do printf "──"; done
+  printf "\n"
+
+  # X-axis labels
+  if [[ ${#_DATA_LABELS[@]} -gt 0 ]]; then
+    printf " %s  " "$(printf "%${label_w}s" "")"
+    for lbl in "${_DATA_LABELS[@]}"; do
+      local short="${lbl:0:$(( bar_w + 1 ))}"
+      printf "%-$(( bar_w + 1 ))s" "$short"
+    done
+    printf "\n"
+  fi
+}
+
+# ─── Header ───
+_print_header() {
+  if [[ "$_USE_COLOR" == "true" ]]; then
+    printf "${BOLD}${CYAN}── term-chart${RESET}"
+    [[ "$_VERTICAL" == "true" ]] && printf " ${DIM}(vertical)${RESET}"
+    [[ "$_BIG_BARS" == "true" ]] && printf " ${DIM}(big)${RESET}"
+    printf "\n"
+  else
+    printf "── term-chart"
+    [[ "$_VERTICAL" == "true" ]] && printf " (vertical)"
+    [[ "$_BIG_BARS" == "true" ]] && printf " (big)"
+    printf "\n"
+  fi
+}
+
+# ─── Main ───
+main() {
+  if ! command -v bc &>/dev/null; then
+    echo "Error: 'bc' required. Install: sudo apt install bc (or brew install bc)" >&2
+    exit 1
+  fi
+
+  _parse_args "$@"
+  _read_data "${_POSITIONAL_INPUT:-}"
+
+  _print_header
+
+  if [[ "$_SPARKLINE" == "true" ]]; then
+    _draw_sparkline
+  elif [[ "$_VERTICAL" == "true" ]]; then
+    _draw_vertical
+  else
+    _draw_horizontal
+  fi
+}
+
+main "$@"
