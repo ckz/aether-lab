@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ferrofluid — Liquid Metal Chamber</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050508;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #888;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 10;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    pointer-events: none;
+  }
+  #ui .title {
+    font-size: 13px;
+    color: #c0c0c0;
+    margin-bottom: 6px;
+    letter-spacing: 0.2em;
+  }
+  #ui .hint {
+    color: #555;
+    line-height: 1.6;
+  }
+  #controls {
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    z-index: 10;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    pointer-events: all;
+  }
+  .btn {
+    background: rgba(20,20,30,0.8);
+    border: 1px solid #333;
+    color: #aaa;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    transition: all 0.2s;
+    backdrop-filter: blur(4px);
+  }
+  .btn:hover {
+    border-color: #888;
+    color: #fff;
+    background: rgba(40,40,60,0.9);
+  }
+  .btn.active {
+    border-color: #d4af37;
+    color: #d4af37;
+    box-shadow: 0 0 12px rgba(212,175,55,0.2);
+  }
+  #stats {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10;
+    font-size: 10px;
+    color: #444;
+    text-align: right;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <div class="title">◈ Ferrofluid Chamber</div>
+  <div class="hint">
+    Click — inject field<br>
+    Drag — move magnet<br>
+    Scroll — field strength<br>
+    Space — pulse<br>
+    1-4 — palette
+  </div>
+</div>
+
+<div id="controls">
+  <button class="btn active" data-mode="merge">Merge</button>
+  <button class="btn" data-mode="scatter">Scatter</button>
+  <button class="btn" data-mode="orbit">Orbit</button>
+  <button class="btn" data-mode="freeze">Freeze</button>
+  <button class="btn" data-palette="1">Mercury</button>
+  <button class="btn" data-palette="2">Cyber</button>
+  <button class="btn" data-palette="3">Inferno</button>
+  <button class="btn" data-palette="4">Void</button>
+</div>
+
+<div id="stats">
+  <div id="fps">60 fps</div>
+  <div id="blobs">0 blobs</div>
+</div>
+
+<canvas id="c"></canvas>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+const RES = 6; // pixel scale for metaball thresholding
+let cols, rows;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cols = Math.ceil(W / RES);
+  rows = Math.ceil(H / RES);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Palettes ---
+const palettes = {
+  1: { name: 'Mercury', bg: '#050508', light: '#e8e8f0', mid: '#8888aa', dark: '#1a1a2e', glow: '#d4d4e8', accent: '#aab' },
+  2: { name: 'Cyber', bg: '#030308', light: '#00ffcc', mid: '#ff00aa', dark: '#0a0018', glow: '#00ffaa', accent: '#ff66dd' },
+  3: { name: 'Inferno', bg: '#080402', light: '#ffe8c0', mid: '#ff4400', dark: '#1a0800', glow: '#ff9944', accent: '#ffcc66' },
+  4: { name: 'Void', bg: '#020204', light: '#d4aaff', mid: '#6633cc', dark: '#0a001a', glow: '#aa77ff', accent: '#ddbbff' }
+};
+let currentPalette = 1;
+
+// --- Blob system ---
+const blobs = [];
+const MAX_BLOBS = 30;
+
+class Blob {
+  constructor(x, y, vx, vy, r) {
+    this.x = x; this.y = y;
+    this.vx = vx || 0; this.vy = vy || 0;
+    this.r = r || 60 + Math.random() * 80;
+    this.baseR = this.r;
+    this.phase = Math.random() * Math.PI * 2;
+    this.pulseSpeed = 0.02 + Math.random() * 0.03;
+    this.life = 1;
+    this.decay = 0.0003 + Math.random() * 0.0005;
+    this.hueOff = Math.random() * 40 - 20;
+  }
+
+  update(mouse, mode, dt) {
+    this.phase += this.pulseSpeed;
+    this.r = this.baseR + Math.sin(this.phase) * this.baseR * 0.15;
+
+    // Mouse interaction
+    const dx = mouse.x - this.x;
+    const dy = mouse.y - this.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const mouseForce = mouse.active ? 8000 / (dist * dist + 1000) : 0;
+
+    if (mode === 'merge') {
+      this.vx += dx * mouseForce * 0.0003;
+      this.vy += dy * mouseForce * 0.0003;
+      // gentle mutual attraction
+      for (let other of blobs) {
+        if (other === this) continue;
+        const ddx = other.x - this.x;
+        const ddy = other.y - this.y;
+        const d2 = ddx * ddx + ddy * ddy + 1;
+        const f = 500 / d2;
+        this.vx += ddx * f * 0.0001;
+        this.vy += ddy * f * 0.0001;
+      }
+    } else if (mode === 'scatter') {
+      this.vx -= dx * mouseForce * 0.0006;
+      this.vy -= dy * mouseForce * 0.0006;
+    } else if (mode === 'orbit') {
+      // perpendicular force for orbit
+      this.vx += (-dy / dist) * mouseForce * 0.0004;
+      this.vy += (dx / dist) * mouseForce * 0.0004;
+    }
+
+    // Damping
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+
+    // Clamp speed
+    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    if (speed > 4) {
+      this.vx = (this.vx / speed) * 4;
+      this.vy = (this.vy / speed) * 4;
+    }
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Bounce
+    const margin = this.r * 0.5;
+    if (this.x < margin) { this.x = margin; this.vx = Math.abs(this.vx) * 0.6; }
+    if (this.x > W - margin) { this.x = W - margin; this.vx = -Math.abs(this.vx) * 0.6; }
+    if (this.y < margin) { this.y = margin; this.vy = Math.abs(this.vy) * 0.6; }
+    if (this.y > H - margin) { this.y = H - margin; this.vy = -Math.abs(this.vy) * 0.6; }
+
+    this.life -= this.decay;
+  }
+
+  influence(px, py) {
+    const dx = px * RES - this.x;
+    const dy = py * RES - this.y;
+    const d2 = dx * dx + dy * dy + 1;
+    return (this.r * this.r) / d2;
+  }
+}
+
+// --- State ---
+const mouse = { x: 0, y: 0, active: false, pressing: false };
+let mode = 'merge';
+let fieldStrength = 1;
+let running = true;
+
+// --- Input ---
+canvas.addEventListener('mousedown', (e) => {
+  mouse.pressing = true;
+  mouse.active = true;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  addBlobAt(e.clientX, e.clientY);
+});
+canvas.addEventListener('mouseup', () => mouse.pressing = false);
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+  if (mouse.pressing && blobs.length < MAX_BLOBS && Math.random() < 0.3) {
+    addBlobAt(e.clientX + (Math.random() - 0.5) * 30, e.clientY + (Math.random() - 0.5) * 30);
+  }
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  mouse.pressing = true;
+  mouse.active = true;
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+  addBlobAt(t.clientX, t.clientY);
+}, { passive: false });
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+}, { passive: false });
+canvas.addEventListener('touchend', () => { mouse.pressing = false; mouse.active = false; });
+
+canvas.addEventListener('wheel', (e) => {
+  fieldStrength = Math.max(0.3, Math.min(3, fieldStrength - e.deltaY * 0.001));
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); pulse(); }
+  if (e.key === '1') setPalette(1);
+  if (e.key === '2') setPalette(2);
+  if (e.key === '3') setPalette(3);
+  if (e.key === '4') setPalette(4);
+});
+
+function addBlobAt(x, y) {
+  if (blobs.length >= MAX_BLOBS) blobs.shift();
+  blobs.push(new Blob(
+    x, y,
+    (Math.random() - 0.5) * 2,
+    (Math.random() - 0.5) * 2,
+    50 + Math.random() * 100
+  ));
+}
+
+function pulse() {
+  for (let b of blobs) {
+    b.r *= 1.5;
+    b.vx += (Math.random() - 0.5) * 3;
+    b.vy += (Math.random() - 0.5) * 3;
+  }
+  // Inject new blobs at random positions
+  for (let i = 0; i < 5; i++) {
+    if (blobs.length >= MAX_BLOBS) blobs.shift();
+    blobs.push(new Blob(
+      Math.random() * W, Math.random() * H,
+      (Math.random() - 0.5) * 3,
+      (Math.random() - 0.5) * 3,
+      40 + Math.random() * 70
+    ));
+  }
+}
+
+function setPalette(n) {
+  currentPalette = n;
+  document.querySelectorAll('[data-palette]').forEach(b => b.classList.toggle('active', parseInt(b.dataset.palette) === n));
+}
+
+// --- Controls ---
+document.querySelectorAll('.btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (btn.dataset.mode) {
+      mode = btn.dataset.mode;
+      if (mode === 'freeze') running = !running;
+      document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('active', b === btn));
+      if (mode !== 'freeze') {
+        document.querySelector('[data-mode="freeze"]').classList.remove('active');
+      }
+    }
+    if (btn.dataset.palette) setPalette(parseInt(btn.dataset.palette));
+  });
+});
+
+// --- Initial blobs ---
+for (let i = 0; i < 12; i++) {
+  blobs.push(new Blob(
+    W * 0.2 + Math.random() * W * 0.6,
+    H * 0.2 + Math.random() * H * 0.6,
+    (Math.random() - 0.5) * 1.5,
+    (Math.random() - 0.5) * 1.5,
+    60 + Math.random() * 100
+  ));
+}
+
+// --- Render ---
+const imageDataCache = {};
+
+function getPaletteColor(p, t) {
+  // t: 0=shadow edge, 0.5=mid surface, 1=highlight
+  const pal = palettes[p];
+  if (t < 0.3) {
+    const f = t / 0.3;
+    return lerpColor(pal.dark, pal.mid, f);
+  } else if (t < 0.7) {
+    const f = (t - 0.3) / 0.4;
+    return lerpColor(pal.mid, pal.light, f);
+  } else {
+    const f = (t - 0.7) / 0.3;
+    return lerpColor(pal.light, pal.glow, f);
+  }
+}
+
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return [r, g, b];
+}
+
+function lerpColor(c1, c2, t) {
+  const a = hexToRgb(c1);
+  const b = hexToRgb(c2);
+  const r = Math.round(a[0] + (b[0] - a[0]) * t);
+  const g = Math.round(a[1] + (b[1] - a[1]) * t);
+  const bl = Math.round(a[2] + (b[2] - a[2]) * t);
+  return [r, g, bl];
+}
+
+// FPS counter
+let lastFrameTime = performance.now();
+let frameCount = 0;
+let fpsDisplay = 60;
+
+function render() {
+  requestAnimationFrame(render);
+
+  // FPS
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFrameTime > 500) {
+    fpsDisplay = Math.round(frameCount / ((now - lastFrameTime) / 1000));
+    frameCount = 0;
+    lastFrameTime = now;
+    document.getElementById('fps').textContent = fpsDisplay + ' fps';
+    document.getElementById('blobs').textContent = blobs.length + ' blobs';
+  }
+
+  if (running) {
+    for (let b of blobs) b.update(mouse, mode, 1);
+    // Remove dead blobs
+    for (let i = blobs.length - 1; i >= 0; i--) {
+      if (blobs[i].life <= 0) blobs.splice(i, 1);
+    }
+    // Ambient spawning
+    if (blobs.length < 8 && Math.random() < 0.01) {
+      blobs.push(new Blob(
+        Math.random() * W, Math.random() * H,
+        (Math.random() - 0.5), (Math.random() - 0.5),
+        40 + Math.random() * 80
+      ));
+    }
+  }
+
+  // Metaball threshold render
+  const pal = palettes[currentPalette];
+  const bg = hexToRgb(pal.bg);
+
+  // Downscale render
+  const offCanvas = document.createElement('canvas');
+  offCanvas.width = cols;
+  offCanvas.height = rows;
+  const offCtx = offCanvas.getContext('2d');
+  const imgData = offCtx.createImageData(cols, rows);
+  const data = imgData.data;
+
+  for (let py = 0; py < rows; py++) {
+    for (let px = 0; px < cols; px++) {
+      let sum = 0;
+      for (let b of blobs) {
+        sum += b.influence(px, py) * fieldStrength;
+      }
+
+      const idx = (py * cols + px) * 4;
+      if (sum > 1.0) {
+        // ferrofluid metal
+        const t = Math.min(1, (sum - 1.0) / 3.0);
+        const [r, g, bl] = getPaletteColor(currentPalette, t);
+        data[idx] = r;
+        data[idx + 1] = g;
+        data[idx + 2] = bl;
+        data[idx + 3] = 255;
+      } else if (sum > 0.3) {
+        // edge glow
+        const t = sum / 1.0;
+        const edge = Math.pow(t, 3);
+        const [r, g, b] = hexToRgb(pal.glow);
+        data[idx] = Math.round(r * edge);
+        data[idx + 1] = Math.round(g * edge);
+        data[idx + 2] = Math.round(b * edge);
+        data[idx + 3] = Math.round(edge * 80);
+      } else {
+        // dark background with subtle noise
+        data[idx] = bg[0];
+        data[idx + 1] = bg[1];
+        data[idx + 2] = bg[2];
+        data[idx + 3] = 255;
+      }
+    }
+  }
+
+  offCtx.putImageData(imgData, 0, 0);
+
+  // Upscale to main canvas with smooth scaling
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(offCanvas, 0, 0, W, H);
+
+  // Overlay: scanline glow effect
+  const glowGrad = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 300);
+  glowGrad.addColorStop(0, 'rgba(255,255,255,0.03)');
+  glowGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glowGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle vignette
+  const vignetteGrad = ctx.createRadialGradient(W/2, H/2, Math.min(W, H) * 0.3, W/2, H/2, Math.max(W, H) * 0.7);
+  vignetteGrad.addColorStop(0, 'rgba(0,0,0,0)');
+  vignetteGrad.addColorStop(1, 'rgba(0,0,0,0.4)');
+  ctx.fillStyle = vignetteGrad;
+  ctx.fillRect(0, 0, W, H);
+}
+
+render();
+
+// Prevent context menu
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+</script>
+
+</body>
+</html>
