@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+# git-snapshot — capture your dev environment state in a single markdown file
+# Usage: git-snapshot [label] [output-dir]
+#   label       optional label for this snapshot (default: auto timestamp)
+#   output-dir  where to save (default: .git-snapshots/)
+set -euo pipefail
+
+# ── config ───────────────────────────────────────────────────────────
+OUTPUT_DIR="${2:-.git-snapshots}"
+LABEL="${1:-$(date +%Y-%m-%d_%H%M%S)}"
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+SNAP_FILE="${OUTPUT_DIR}/${LABEL}.md"
+
+# ── colors (optional) ────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
+
+info()  { printf "${CYAN}▸${RESET} %s\n" "$*"; }
+ok()    { printf "${GREEN}✓${RESET} %s\n" "$*"; }
+warn()  { printf "${YELLOW}!${RESET} %s\n" "$*"; }
+fail()  { printf "${RED}✗${RESET} %s\n" "$*"; }
+
+# ── helpers ──────────────────────────────────────────────────────────
+is_git_repo() { git rev-parse --is-inside-work-tree &>/dev/null; }
+
+section() {
+    printf "\n${BOLD}## %s${RESET}\n\n" "$1"
+}
+
+# ── preamble ─────────────────────────────────────────────────────────
+mkdir -p "$OUTPUT_DIR"
+TIMESTAMP="$(date '+%Y-%m-%d %H:%M:%S %Z')"
+HOSTNAME_SHORT="$(hostname -s 2>/dev/null || echo 'unknown')"
+USER_NAME="$(whoami)"
+
+# ── gather data ──────────────────────────────────────────────────────
+section "Meta"
+{
+    echo "- **Snapshot:** \`${LABEL}\`"
+    echo "- **Time:** ${TIMESTAMP}"
+    echo "- **Host:** \`${HOSTNAME_SHORT}\`"
+    echo "- **User:** \`${USER_NAME}\`"
+    echo "- **Repo:** \`$(basename "$REPO_ROOT")\`"
+    echo "- **Path:** \`${REPO_ROOT}\`"
+}
+
+if is_git_repo; then
+    section "Git Branch & Status"
+    {
+        echo "- **Branch:** \`$(git symbolic-ref --short HEAD 2>/dev/null || echo '(detached)')\`"
+        echo "- **HEAD:** \`$(git rev-parse --short HEAD 2>/dev/null || echo 'n/a')\`"
+        echo ""
+        # Status summary
+        STATUS="$(git status --porcelain 2>/dev/null || true)"
+        if [ -n "$STATUS" ]; then
+            ADDED=$(echo "$STATUS" | grep -c '^A' || true)
+            MODIFIED=$(echo "$STATUS" | grep -c '^ M' || true)
+            DELETED=$(echo "$STATUS" | grep -c '^ D' || true)
+            UNTRACKED=$(echo "$STATUS" | grep -c '^??' || true)
+            STAGED=$(echo "$STATUS" | grep -c '^M' || true)
+            echo "- **Changes:** ${ADDED} added, ${MODIFIED} modified, ${DELETED} deleted, ${UNTRACKED} untracked"
+            echo "- **Staged:** ${STAGED}"
+            echo ""
+            echo "\`\`\`"
+            echo "$STATUS" | head -30
+            TOTAL=$(echo "$STATUS" | wc -l)
+            if [ "$TOTAL" -gt 30 ]; then
+                echo "... and $(( TOTAL - 30 )) more"
+            fi
+            echo "\`\`\`"
+        else
+            echo "- **Working tree:** clean ✅"
+        fi
+    }
+
+    section "Recent Commits"
+    {
+        echo "\`\`\`"
+        git log --oneline -10 2>/dev/null || echo "(no commits)"
+        echo "\`\`\`"
+    }
+
+    section "Branch Ahead/Behind"
+    {
+        UPSTREAM="$(git rev-parse --abbrev-ref @{upstream} 2>/dev/null || true)"
+        if [ -n "$UPSTREAM" ]; then
+            AHEAD=$(git rev-list --count "@{upstream}..HEAD" 2>/dev/null || echo "?")
+            BEHIND=$(git rev-list --count "HEAD..@{upstream}" 2>/dev/null || echo "?")
+            echo "- **Upstream:** \`${UPSTREAM}\`"
+            echo "- **Ahead by:** ${AHEAD} commit(s)"
+            echo "- **Behind by:** ${BEHIND} commit(s)"
+        else
+            echo "- **Upstream:** none configured"
+        fi
+    }
+
+    section "Active Languages (last 30 commits)"
+    {
+        echo "\`\`\`"
+        git log --format="" --since="30 days" --name-only 2>/dev/null \
+            | grep -E '\.\w+$' \
+            | sed 's/.*\.//' \
+            | sort | uniq -c | sort -rn | head -10 \
+            || echo "(no recent commits)"
+        echo "\`\`\`"
+    }
+else
+    warn "Not inside a git repo — git sections skipped"
+fi
+
+# ── tmux sessions ────────────────────────────────────────────────────
+if command -v tmux &>/dev/null; then
+    SESSIONS=$(tmux list-sessions 2>/dev/null || true)
+    if [ -n "$SESSIONS" ]; then
+        section "Tmux Sessions"
+        {
+            echo "\`\`\`"
+            echo "$SESSIONS"
+            echo "\`\`\`"
+            echo ""
+            echo "**Windows & panes:**"
+            echo "\`\`\`"
+            tmux list-windows -t "$(echo "$SESSIONS" | head -1 | cut -d: -f1)" 2>/dev/null || true
+            echo "\`\`\`"
+        }
+    fi
+fi
+
+# ── dev processes ────────────────────────────────────────────────────
+section "Running Dev Processes"
+{
+    echo "\`\`\`"
+    # Common dev tools: node, python, cargo, go, ruby, java, docker, vim, nvim, code, codium, ssh
+    ps aux 2>/dev/null \
+        | grep -E '(node|python|cargo|go build|ruby|java|docker|vim |nvim |code |codium |ssh |npm |yarn |pnpm |make |cmake|gcc |clang|rustc)' \
+        | grep -v grep \
+        | head -20 \
+        || echo "(no dev processes detected)"
+    echo "\`\`\`"
+}
+
+# ── terminal environment ─────────────────────────────────────────────
+section "Terminal Environment"
+{
+    echo "- **Shell:** \`${SHELL}\`"
+    echo "- **TERM:** \`${TERM:-unset}\`"
+    echo "- **EDITOR:** \`${EDITOR:-unset}\`"
+    echo "- **PAGER:** \`${PAGER:-unset}\`"
+    echo "- **LANG:** \`${LANG:-unset}\`"
+    echo "- **COLORTERM:** \`${COLORTERM:-unset}\`"
+    if command -v tmux &>/dev/null && [ -n "${TMUX:-}" ]; then
+        echo "- **Tmux:** yes (\`${TMUX}\`)"
+    fi
+}
+
+# ── uncommitted file count estimate ─────────────────────────────────
+if is_git_repo; then
+    section "Repository Health"
+    {
+        TOTAL=$(git ls-files | wc -l)
+        echo "- **Tracked files:** ${TOTAL}"
+        STASHES=$(git stash list 2>/dev/null | wc -l)
+        echo "- **Stashes:** ${STASHES}"
+        SUBMODULES=$(git submodule status 2>/dev/null | wc -l)
+        echo "- **Submodules:** ${SUBMODULES}"
+    }
+fi
+
+# ── footer ───────────────────────────────────────────────────────────
+{
+    echo ""
+    section "Snapshot Complete"
+    echo "_Generated by \`git-snapshot\` at ${TIMESTAMP}_"
+} >> "$SNAP_FILE"
+
+# ── output ───────────────────────────────────────────────────────────
+ok "Snapshot saved → \`${SNAP_FILE}\`"
+printf "\n${BOLD}Preview:${RESET}\n\n"
+cat "$SNAP_FILE"
