@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mycelial Dawn</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050508;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+  }
+  .ui {
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(10, 10, 18, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 0.75rem 1.5rem;
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+    z-index: 10;
+    font-size: 0.8rem;
+    color: #888;
+  }
+  .ui .stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+  }
+  .ui .stat .val {
+    color: #fff;
+    font-weight: 600;
+    font-size: 1rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .ui .sep {
+    width: 1px;
+    height: 2rem;
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .hint {
+    position: fixed;
+    top: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.75rem;
+    z-index: 10;
+    pointer-events: none;
+    letter-spacing: 0.05em;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hint">CLICK TO PLANT · MOVE TO GUIDE · SPACE TO BLOOM</div>
+<div class="ui">
+  <div class="stat"><span class="val" id="tipCount">0</span><span>tips</span></div>
+  <div class="sep"></div>
+  <div class="stat"><span class="val" id="nodeCount">0</span><span>nodes</span></div>
+  <div class="sep"></div>
+  <div class="stat"><span class="val" id="sporeCount">0</span><span>spores</span></div>
+  <div class="sep"></div>
+  <div class="stat"><span class="val" id="depth">0</span><span>depth</span></div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- State ---
+let mouse = { x: W / 2, y: H / 2, active: false };
+let tips = [];
+let nodes = [];
+let spores = [];
+let particles = [];
+let maxDepth = 0;
+
+// --- Config ---
+const CONFIG = {
+  maxTips: 200,
+  maxNodes: 400,
+  maxSpores: 150,
+  branchProb: 0.012,
+  angleSpread: Math.PI * 0.38,
+  growSpeed: 0.6,
+  maxLen: 90,
+  thickness: 1.4,
+  glow: 18,
+  sporeChance: 0.003,
+  colors: {
+    tip: '#7fff9e',
+    mid: '#3d8b5c',
+    root: '#1a3d2a',
+    spore: '#b8ffd4',
+    glow: 'rgba(120, 255, 160, 0.06)'
+  }
+};
+
+// --- Classes ---
+class Tip {
+  constructor(x, y, angle, depth, parent) {
+    this.x = x;
+    this.y = y;
+    this.angle = angle + (Math.random() - 0.5) * CONFIG.angleSpread;
+    this.depth = depth || 0;
+    this.parent = parent;
+    this.len = 0;
+    this.maxLen = CONFIG.maxLen * (0.6 + Math.random() * 0.4) * Math.pow(0.72, this.depth);
+    this.speed = CONFIG.growSpeed * (0.7 + Math.random() * 0.6);
+    this.thickness = CONFIG.thickness * Math.pow(0.7, this.depth);
+    this.alive = true;
+    this.branched = false;
+    this.age = 0;
+    this.wobble = Math.random() * Math.PI * 2;
+    this.wobbleSpeed = 0.02 + Math.random() * 0.03;
+    this.wobbleAmp = 0.003 + Math.random() * 0.008;
+  }
+  update() {
+    if (!this.alive) return;
+    this.age++;
+    this.wobble += this.wobbleSpeed;
+    this.angle += Math.sin(this.wobble) * this.wobbleAmp;
+    this.len += this.speed;
+    if (this.len >= this.maxLen) {
+      this.alive = false;
+      // Try to branch
+      if (this.depth < 6 && Math.random() < CONFIG.branchProb * (6 - this.depth) && tips.length + nodes.length < CONFIG.maxNodes) {
+        const ex = this.x + Math.cos(this.angle) * this.len;
+        const ey = this.y + Math.sin(this.angle) * this.len;
+        if (ex > 0 && ex < W && ey > 0 && ey < H) {
+          tips.push(new Tip(ex, ey, this.angle + (Math.random() > 0.5 ? 1 : -1) * (0.3 + Math.random() * 0.5), this.depth + 1, this));
+          if (this.depth + 1 > maxDepth) maxDepth = this.depth + 1;
+        }
+      }
+      // Convert to node
+      const ex = this.x + Math.cos(this.angle) * this.len;
+      const ey = this.y + Math.sin(this.angle) * this.len;
+      nodes.push({ x: ex, y: ey, depth: this.depth, glow: 1 });
+    }
+  }
+  get endX() { return this.x + Math.cos(this.angle) * this.len; }
+  get endY() { return this.y + Math.sin(this.angle) * this.len; }
+}
+
+class Spore {
+  constructor(x, y) {
+    this.x = x || Math.random() * W;
+    this.y = y || Math.random() * H;
+    this.vx = (Math.random() - 0.5) * 0.3;
+    this.vy = (Math.random() - 0.5) * 0.3 - 0.15;
+    this.life = 1;
+    this.decay = 0.001 + Math.random() * 0.004;
+    this.size = 1 + Math.random() * 2.5;
+    this.pulse = Math.random() * Math.PI * 2;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= this.decay;
+    this.pulse += 0.05;
+    // gentle drift toward mouse
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const d = Math.hypot(dx, dy);
+      if (d < 200 && d > 1) {
+        this.vx += (dx / d) * 0.003;
+        this.vy += (dy / d) * 0.003;
+      }
+    }
+    // friction
+    this.vx *= 0.999;
+    this.vy *= 0.999;
+  }
+  draw() {
+    const a = this.life * (0.5 + 0.5 * Math.sin(this.pulse));
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(180, 255, 210, ${a})`;
+    ctx.fill();
+    // soft glow
+    const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size * 4);
+    g.addColorStop(0, `rgba(120, 255, 160, ${a * 0.3})`);
+    g.addColorStop(1, 'rgba(120, 255, 160, 0)');
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * 4, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+  }
+}
+
+// --- Background ambient particles ---
+class Particle {
+  constructor() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.size = Math.random() * 1.5;
+    this.alpha = Math.random() * 0.4;
+    this.speed = 0.1 + Math.random() * 0.2;
+    this.drift = Math.random() * Math.PI * 2;
+  }
+  update() {
+    this.drift += 0.005;
+    this.x += Math.cos(this.drift) * this.speed;
+    this.y += Math.sin(this.drift) * this.speed - 0.05;
+    if (this.y < -10) { this.y = H + 10; this.x = Math.random() * W; }
+    if (this.x < -10) this.x = W + 10;
+    if (this.x > W + 10) this.x = -10;
+  }
+  draw() {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(160, 220, 180, ${this.alpha})`;
+    ctx.fill();
+  }
+}
+for (let i = 0; i < 80; i++) particles.push(new Particle());
+
+// --- Ground gradient ---
+function drawGround() {
+  const g = ctx.createLinearGradient(0, H * 0.75, 0, H);
+  g.addColorStop(0, 'rgba(10, 20, 15, 0)');
+  g.addColorStop(1, 'rgba(10, 20, 15, 0.5)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, H * 0.75, W, H * 0.25);
+}
+
+// --- Interaction ---
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => mouse.active = false);
+canvas.addEventListener('click', e => {
+  if (tips.length < CONFIG.maxTips) {
+    const angle = Math.random() * Math.PI * 2;
+    tips.push(new Tip(e.clientX, e.clientY, angle, 0, null));
+  }
+  // burst spores
+  for (let i = 0; i < 12; i++) {
+    spores.push(new Spore(e.clientX, e.clientY));
+  }
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  mouse.active = true;
+}, { passive: false });
+canvas.addEventListener('touchstart', e => {
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  mouse.active = true;
+  if (tips.length < CONFIG.maxTips) {
+    tips.push(new Tip(t.clientX, t.clientY, Math.random() * Math.PI * 2, 0, null));
+  }
+});
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    // Bloom burst — scatter many spores
+    for (let i = 0; i < 40; i++) {
+      spores.push(new Spore(
+        W * 0.2 + Math.random() * W * 0.6,
+        H * 0.3 + Math.random() * H * 0.5
+      ));
+    }
+    // Plant several new tips
+    for (let i = 0; i < 8; i++) {
+      if (tips.length < CONFIG.maxTips) {
+        tips.push(new Tip(
+          W * 0.15 + Math.random() * W * 0.7,
+          H * 0.5 + Math.random() * H * 0.4,
+          -Math.PI / 2 + (Math.random() - 0.5) * 1.2,
+          0, null
+        ));
+      }
+    }
+  }
+});
+
+// --- Seed initial mycelium ---
+function seedInitial() {
+  const cx = W / 2;
+  const cy = H * 0.65;
+  // Main cluster
+  for (let i = 0; i < 6; i++) {
+    const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.5;
+    const r = 30 + Math.random() * 80;
+    tips.push(new Tip(cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.5, a + Math.PI + (Math.random() - 0.5) * 0.8, 0, null));
+  }
+  // Secondary cluster
+  for (let i = 0; i < 4; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = 40 + Math.random() * 60;
+    tips.push(new Tip(cx * 0.6 + Math.cos(a) * r, cy * 0.85 + Math.sin(a) * r * 0.4, a + Math.PI, 1, null));
+  }
+}
+seedInitial();
+
+// --- Draw connections between nearby nodes ---
+function drawConnections() {
+  const maxDist = 60;
+  ctx.strokeStyle = 'rgba(60, 160, 100, 0.06)';
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const dx = nodes[i].x - nodes[j].x;
+      const dy = nodes[i].y - nodes[j].y;
+      const d = dx * dx + dy * dy;
+      if (d < maxDist * maxDist) {
+        const a = (1 - Math.sqrt(d) / maxDist) * 0.08;
+        ctx.strokeStyle = `rgba(60, 180, 100, ${a})`;
+        ctx.beginPath();
+        ctx.moveTo(nodes[i].x, nodes[i].y);
+        ctx.lineTo(nodes[j].x, nodes[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+// --- Main loop ---
+function loop() {
+  // Trail / fade
+  ctx.fillStyle = 'rgba(5, 5, 8, 0.15)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Ambient particles
+  particles.forEach(p => { p.update(); p.draw(); });
+
+  // Glow layer under everything
+  ctx.globalCompositeOperation = 'lighter';
+  const ambientGlow = ctx.createRadialGradient(W * 0.5, H * 0.6, 0, W * 0.5, H * 0.6, W * 0.6);
+  ambientGlow.addColorStop(0, 'rgba(20, 60, 40, 0.015)');
+  ambientGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = ambientGlow;
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = 'source-over';
+
+  // Update tips
+  tips.forEach(t => t.update());
+
+  // Draw branches
+  tips.forEach(t => {
+    if (t.len > 0) {
+      const ex = t.endX;
+      const ey = t.endY;
+      const progress = t.len / t.maxLen;
+      // thickness tapers
+      const lw = t.thickness * (1 - progress * 0.5);
+      // color gradient along length
+      const r = Math.round(30 + progress * 80);
+      const g = Math.round(100 + progress * 155);
+      const b = Math.round(60 + progress * 100);
+      ctx.beginPath();
+      ctx.moveTo(t.x, t.y);
+      ctx.lineTo(ex, ey);
+      ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.85)`;
+      ctx.lineWidth = lw;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+
+      // Glow at tip
+      if (t.alive) {
+        ctx.beginPath();
+        ctx.arc(ex, ey, CONFIG.glow * progress, 0, Math.PI * 2);
+        const tg = ctx.createRadialGradient(ex, ey, 0, ex, ey, CONFIG.glow * progress);
+        tg.addColorStop(0, 'rgba(120, 255, 160, 0.35)');
+        tg.addColorStop(1, 'rgba(120, 255, 160, 0)');
+        ctx.fillStyle = tg;
+        ctx.fill();
+      }
+    }
+  });
+
+  // Draw nodes
+  nodes.forEach(n => {
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, 1.5 + n.depth * 0.3, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(140, 240, 180, ${0.5 + n.depth * 0.08})`;
+    ctx.fill();
+  });
+
+  // Draw connections
+  drawConnections();
+
+  // Spontaneous spore generation
+  if (spores.length < CONFIG.maxSpores && Math.random() < CONFIG.sporeChance) {
+    const spawnNearNode = nodes.length > 0 && Math.random() < 0.6;
+    if (spawnNearNode) {
+      const n = nodes[Math.floor(Math.random() * nodes.length)];
+      spores.push(new Spore(n.x + (Math.random() - 0.5) * 40, n.y + (Math.random() - 0.5) * 40));
+    } else {
+      spores.push(new Spore());
+    }
+  }
+
+  // Update & draw spores
+  spores = spores.filter(s => s.life > 0);
+  ctx.globalCompositeOperation = 'lighter';
+  spores.forEach(s => { s.update(); s.draw(); });
+  ctx.globalCompositeOperation = 'source-over';
+
+  // Ground
+  drawGround();
+
+  // Mouse aura
+  if (mouse.active) {
+    const mg = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 120);
+    mg.addColorStop(0, 'rgba(120, 255, 160, 0.04)');
+    mg.addColorStop(1, 'rgba(120, 255, 160, 0)');
+    ctx.fillStyle = mg;
+    ctx.fillRect(mouse.x - 120, mouse.y - 120, 240, 240);
+  }
+
+  // Update stats
+  document.getElementById('tipCount').textContent = tips.length;
+  document.getElementById('nodeCount').textContent = nodes.length;
+  document.getElementById('sporeCount').textContent = spores.length;
+  document.getElementById('depth').textContent = maxDepth;
+
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
