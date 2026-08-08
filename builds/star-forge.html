@@ -3,482 +3,554 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Star Forge</title>
+<title>Star Forge — Cosmic Stellar Nursery</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #000;
-    overflow: hidden;
-    font-family: 'Courier New', monospace;
-    cursor: crosshair;
-    height: 100vh;
-  }
-  canvas {
-    display: block;
-    position: fixed;
-    top: 0; left: 0;
-  }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+  canvas { display: block; position: absolute; top: 0; left: 0; cursor: crosshair; }
+
   #ui {
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 10;
-    text-align: center;
+    position: absolute; bottom: 0; left: 0; right: 0;
+    display: flex; justify-content: center; align-items: center;
+    gap: 16px; padding: 14px 20px;
+    background: linear-gradient(transparent, rgba(0,0,0,0.85));
+    color: #ccc; font-size: 12px; z-index: 10;
+    flex-wrap: wrap;
   }
-  #input {
-    background: rgba(10, 10, 30, 0.7);
-    border: 1px solid rgba(100, 180, 255, 0.3);
-    color: #a0d0ff;
-    padding: 10px 20px;
-    font-family: 'Courier New', monospace;
-    font-size: 16px;
-    border-radius: 25px;
-    outline: none;
-    text-align: center;
-    width: 300px;
-    backdrop-filter: blur(10px);
-    transition: all 0.3s;
+  .btn {
+    background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.18);
+    color: #ddd; padding: 6px 14px; border-radius: 20px; cursor: pointer;
+    font-family: inherit; font-size: 12px; transition: all 0.2s;
+    backdrop-filter: blur(8px);
   }
-  #input:focus {
-    border-color: rgba(100, 180, 255, 0.8);
-    box-shadow: 0 0 20px rgba(100, 180, 255, 0.2);
-  }
-  #input::placeholder {
-    color: rgba(160, 208, 255, 0.4);
-  }
-  #hint {
-    color: rgba(160, 208, 255, 0.5);
-    font-size: 11px;
-    margin-top: 8px;
-    letter-spacing: 1px;
+  .btn:hover { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.4); color: #fff; }
+  .btn.active { background: rgba(100,180,255,0.25); border-color: rgba(100,180,255,0.7); color: #aef; }
+  #title {
+    position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.08); font-size: 11px; letter-spacing: 0.4em;
+    text-transform: uppercase; pointer-events: none; z-index: 5;
+    white-space: nowrap;
   }
   #stats {
-    position: fixed;
-    top: 15px;
-    right: 20px;
-    color: rgba(160, 208, 255, 0.4);
-    font-size: 11px;
-    text-align: right;
-    z-index: 10;
-    line-height: 1.6;
+    position: absolute; top: 14px; right: 18px;
+    color: rgba(255,255,255,0.25); font-size: 11px; text-align: right;
+    pointer-events: none; z-index: 5; line-height: 1.7;
   }
-  #title {
-    position: fixed;
-    top: 15px;
-    left: 20px;
-    z-index: 10;
-    color: rgba(160, 208, 255, 0.3);
-    font-size: 11px;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-  }
-  #title span {
-    color: rgba(100, 180, 255, 0.6);
+  #hint {
+    position: absolute; top: 14px; left: 18px;
+    color: rgba(255,255,255,0.2); font-size: 11px;
+    pointer-events: none; z-index: 5; line-height: 1.7;
   }
 </style>
 </head>
 <body>
-<canvas id="sky"></canvas>
-<div id="title">⚡ <span>STAR FORGE</span> — type to cast stars</div>
-<div id="stats">
-  <span id="star-count">stars: 0</span><br>
-  <span id="trail-count">trails: 0</span><br>
-  <span id="constellation-count">constellations: 0</span>
+<canvas id="c"></canvas>
+<div id="title">★ Star Forge — Stellar Nursery</div>
+<div id="hint">
+  Click — Spawn star<br>
+  Hold — Charge ignition<br>
+  Drag — Sculpt nebula
 </div>
+<div id="stats"></div>
 <div id="ui">
-  <input type="text" id="input" placeholder="type a word and press enter..." maxlength="20" autocomplete="off" autofocus>
-  <div id="hint">ENTER = forge &nbsp;|&nbsp; SPACE = pause &nbsp;|&nbsp; C = clear sky &nbsp;|&nbsp; S = save</div>
+  <span style="color:#888; font-size:11px;">★ Stars: <span id="count">0</span></span>
+  <button class="btn" id="btnNova" onclick="triggerNova()">💥 Supernova</button>
+  <button class="btn" id="btnNebula" onclick="toggleNebula()">🌫️ Nebula</button>
+  <button class="btn" id="btnCollapse" onclick="toggleCollapse()">🕳️ Collapse</button>
+  <button class="btn" onclick="clearAll()">✨ Clear</button>
+  <button class="btn" onclick="savePNG()">📷 Save</button>
 </div>
 
 <script>
-const canvas = document.getElementById('sky');
+const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-let W, H;
+let W, H, DPR = Math.min(window.devicePixelRatio || 1, 2);
 
 function resize() {
-  W = canvas.width = window.innerWidth;
-  H = canvas.height = window.innerHeight;
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 }
 resize();
 window.addEventListener('resize', resize);
 
 // --- State ---
-let paused = false;
 let stars = [];
-let trails = [];
+let nebulaClouds = [];
 let particles = [];
-let twinkles = [];
-let constellations = [];
-let mouse = { x: W/2, y: H/2 };
+let bursts = [];
+let mouse = { x: W/2, y: H/2, down: false, holdTime: 0 };
+let mode = 'normal'; // normal, collapse
+let showNebula = true;
+let time = 0;
 
-// --- Background stars ---
-for (let i = 0; i < 200; i++) {
-  twinkles.push({
-    x: Math.random() * W,
-    y: Math.random() * H,
-    r: Math.random() * 1.5 + 0.3,
-    phase: Math.random() * Math.PI * 2,
-    speed: Math.random() * 0.02 + 0.005
-  });
-}
-
-// --- Color palettes ---
-const palettes = [
-  { name: 'aurora',  colors: ['#00ffaa', '#00aaff', '#ff00ff', '#ffaa00', '#ffffff'] },
-  { name: 'ember',   colors: ['#ff4400', '#ff8800', '#ffcc00', '#ff2200', '#ffeedd'] },
-  { name: 'frost',   colors: ['#88ccff', '#ffffff', '#aaddff', '#ddeeff', '#ffffff'] },
-  { name: 'violet',  colors: ['#aa44ff', '#ff44aa', '#8844ff', '#cc66ff', '#ffffff'] },
-  { name: 'gold',    colors: ['#ffcc00', '#ff9900', '#ffdd44', '#ffaa00', '#ffffcc'] },
-  { name: 'void',    colors: ['#8844aa', '#cc66ff', '#6622aa', '#aa88ff', '#ffffff'] }
-];
-let paletteIdx = 0;
-
-function getPalette() {
-  return palettes[paletteIdx % palettes.length];
-}
-
-function randomColor() {
-  return getPalette().colors[Math.floor(Math.random() * getPalette().colors.length)];
-}
-
-// --- Letter constellation data ---
-// Define simple constellation shapes for each letter
-const letterPoints = {
-  'A': [[0,1],[0.5,0],[1,1],[0.5,0.5]],
-  'B': [[0,0],[0,1],[0.3,1],[0.3,0.7],[0,0.7],[0.3,0.7],[0.3,0.4],[0,0.4],[0.3,0.4],[0.3,0],[0,0]],
-  'C': [[1,0],[0.3,0],[0,0.5],[0.3,1],[1,1]],
-  'D': [[0,0],[0,1],[0.3,1],[0.7,0.7],[0.7,0.3],[0.3,0],[0,0]],
-  'E': [[1,0],[0,0],[0,1],[1,1],[0,1],[0,0.5],[0.6,0.5]],
-  'F': [[1,0],[0,0],[0,1],[0.6,1],[0,0.5],[0.6,0.5]],
-  'G': [[0.7,0.7],[1,0.7],[1,0.3],[0.7,0.3],[0.7,0],[0.3,0],[0,0.5],[0,1],[0.3,1],[0.7,0.7]],
-  'H': [[0,0],[0,1],[0,0.5],[0.7,0.5],[0.7,1],[0.7,0]],
-  'I': [[0,0],[1,0],[0.5,0],[0.5,1],[0,1],[1,1]],
-  'J': [[0,0],[1,0],[1,1],[0.7,1],[0.5,1.1],[0.3,1]],
-  'K': [[0,0],[0,1],[0,0.5],[0.7,1],[0,0.5],[0.7,0]],
-  'L': [[0,0],[0,1],[1,1]],
-  'M': [[0,1],[0,0],[0.5,0.5],[1,0],[1,1]],
-  'N': [[0,1],[0,0],[1,1],[1,0]],
-  'O': [[0.5,0],[0,0.3],[0,0.7],[0.5,1],[1,0.7],[1,0.3],[0.5,0]],
-  'P': [[0,1],[0,0],[0.5,0],[0.7,0.2],[0.7,0.4],[0.5,0.5],[0,0.5]],
-  'Q': [[0.5,0],[0,0.3],[0,0.7],[0.5,1],[1,0.7],[1,0.3],[0.5,0],[0.7,0.7],[1,1]],
-  'R': [[0,1],[0,0],[0.5,0],[0.7,0.2],[0.7,0.4],[0.5,0.5],[0,0.5],[0.5,0.5],[0.7,1]],
-  'S': [[1,0],[0,0],[0,0.3],[0.7,0.3],[0.7,0.7],[0,0.7],[0,1],[1,1]],
-  'T': [[0,0],[1,0],[0.5,0],[0.5,1]],
-  'U': [[0,0],[0,0.7],[0.3,1],[0.7,1],[1,0.7],[1,0]],
-  'V': [[0,0],[0.5,1],[1,0]],
-  'W': [[0,0],[0.2,1],[0.5,0.3],[0.8,1],[1,0]],
-  'X': [[0,0],[1,1],[0.5,0.5],[0,1],[1,0]],
-  'Y': [[0,0],[0.5,0.5],[1,0],[0.5,0.5],[0.5,1]],
-  'Z': [[0,0],[1,0],[0,1],[1,1]],
-  '0': [[0.5,0],[0,0.3],[0,0.7],[0.5,1],[1,0.7],[1,0.3],[0.5,0],[0.7,0.7],[0.3,0.3]],
-  '1': [[0.3,0],[0.5,0],[0.5,1],[0.3,1]],
-  '2': [[0,0.3],[0.3,0],[0.7,0],[1,0.3],[1,0.5],[0,1],[0,0.7],[1,0.7]],
-  '3': [[0,0],[0.3,0],[0.7,0.3],[0.5,0.5],[0.7,0.7],[0.3,1],[0,1]],
-  '4': [[0.7,0],[0.7,1],[0,0.5],[1,0.5]],
-  '5': [[1,0],[0,0],[0,0.5],[0.7,0.5],[0.7,0.7],[0,0.7],[0,1],[1,1]],
-  '6': [[0.7,0],[0.3,0],[0,0.3],[0,0.7],[0.3,1],[0.7,1],[1,0.7],[1,0.5],[0.3,0.5],[0,0.3]],
-  '7': [[0,0],[1,0],[0.3,1]],
-  '8': [[0.5,0.5],[0,0.3],[0,0.7],[0.5,1],[1,0.7],[1,0.3],[0.5,0.5],[0.5,0],[0.5,1]],
-  '9': [[0.3,1],[0.7,1],[1,0.7],[1,0.3],[0.7,0],[0.3,0],[0,0.3],[0,0.5],[0.7,0.5],[1,0.3]],
-  ' ': []
+const MAX_STARS = 60;
+const O_CLASSES = ['O','B','A','F','G','K','M'];
+const O_COLORS = {
+  O: {core:'#b3d9ff', glow:'#3b7dd8', mass:'#1a3a6e'},
+  B: {core:'#cce5ff', glow:'#5599dd', mass:'#1e3d6e'},
+  A: {core:'#f0f0ff', glow:'#9999cc', mass:'#3a2a5e'},
+  F: {core:'#fff8e0', glow:'#ccaa44', mass:'#5e4a1e'},
+  G: {core:'#ffe8a0', glow:'#dd9933', mass:'#6e4a0e'},
+  K: {core:'#ffaa55', glow:'#cc5511', mass:'#7e2a0a'},
+  M: {core:'#ff6633', glow:'#dd2200', mass:'#6e1000'},
 };
 
-// --- Forge a word ---
-function forgeWord(word) {
-  const chars = word.toUpperCase().split('');
-  const totalWidth = chars.reduce((sum, c) => {
-    const pts = letterPoints[c] || [];
-    return sum + (pts.length > 0 ? 1.2 : 0.5);
-  }, 0);
-  
-  let offsetX = -totalWidth / 2;
-  const centerY = H * 0.35;
-  const letterScale = Math.min(60, (W * 0.6) / totalWidth);
-
-  const allLetterStars = [];
-
-  chars.forEach((char, ci) => {
-    const pts = letterPoints[char] || [];
-    const letterWidth = pts.length > 0 ? 1.2 : 0.5;
-    const lx = offsetX + letterWidth / 2;
-
-    if (pts.length === 0) {
-      offsetX += letterWidth;
-      return;
+// Star class
+class Star {
+  constructor(x, y, power = 1) {
+    this.x = x; this.y = y;
+    this.vx = (Math.random() - 0.5) * 0.3;
+    this.vy = (Math.random() - 0.5) * 0.3;
+    this.mass = 0.5 + Math.random() * 3 * power;
+    this.oclass = this.pickClass(power);
+    this.colors = O_COLORS[this.oclass];
+    this.radius = this.mass * 2.5;
+    this.life = 1;
+    this.maxLife = 600 + Math.random() * 800;
+    this.age = 0;
+    this.flickerPhase = Math.random() * Math.PI * 2;
+    this.flickerSpeed = 0.02 + Math.random() * 0.04;
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    this.coreGlow = 1;
+    this.merging = false;
+    // Light rays
+    this.rayCount = 3 + Math.floor(Math.random() * 6);
+    this.rayLength = 8 + Math.random() * 25 * this.mass;
+  }
+  pickClass(power) {
+    const r = Math.random();
+    if (power > 1.5) return r < 0.4 ? 'O' : r < 0.7 ? 'B' : 'A';
+    if (r < 0.03) return 'O';
+    if (r < 0.12) return 'B';
+    if (r < 0.25) return 'A';
+    if (r < 0.45) return 'F';
+    if (r < 0.65) return 'G';
+    if (r < 0.82) return 'K';
+    return 'M';
+  }
+  update() {
+    this.age++;
+    if (this.age > this.maxLife) this.life -= 0.003;
+    this.flickerPhase += this.flickerSpeed;
+    this.pulsePhase += 0.03;
+    // Drift
+    this.vx += (Math.random() - 0.5) * 0.02;
+    this.vy += (Math.random() - 0.5) * 0.02;
+    // Mouse gentle pull
+    const dx = mouse.x - this.x, dy = mouse.y - this.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 250 && dist > 5) {
+      const f = 0.015 / (dist * 0.01 + 1);
+      this.vx += (dx / dist) * f;
+      this.vy += (dy / dist) * f;
     }
-
-    const color = randomColor();
-    const starGroup = {
-      points: [],
-      color: color,
-      char: char,
-      born: performance.now(),
-      launched: false
-    };
-
-    pts.forEach((p, pi) => {
-      const sx = W/2 + (lx + p[0] - 0.5) * letterScale;
-      const sy = centerY + (p[1] - 0.5) * letterScale;
-      starGroup.points.push({ x: sx, y: sy, origX: sx, origY: sy });
-    });
-
-    allLetterStars.push(starGroup);
-    offsetX += letterWidth;
-  });
-
-  // Create a "shooting star" trail for each letter group
-  allLetterStars.forEach((group, gi) => {
-    const delay = gi * 300;
-    setTimeout(() => {
-      // Trail arcs from below toward the letter
-      group.points.forEach((pt, pi) => {
-        const startX = pt.origX + (Math.random() - 0.5) * 200;
-        const startY = H + 50;
-        const cpX = pt.origX + (Math.random() - 0.5) * 150;
-        const cpY = H * 0.6;
-        
-        const star = {
-          x: startX,
-          y: startY,
-          targetX: pt.origX,
-          targetY: pt.origY,
-          cpX: cpX,
-          cpY: cpY,
-          t: 0,
-          speed: 0.008 + Math.random() * 0.007,
-          color: group.color,
-          size: Math.random() * 2 + 1.5,
-          trail: [],
-          arrived: false,
-          letterIdx: gi,
-          glowPhase: Math.random() * Math.PI * 2
-        };
-        stars.push(star);
-      });
-
-      // Add sparkle particles along path
-      for (let i = 0; i < 8; i++) {
-        particles.push({
-          x: W/2 + (Math.random() - 0.5) * W * 0.6,
-          y: H + Math.random() * 100,
-          vx: (Math.random() - 0.5) * 0.5,
-          vy: -(Math.random() * 2 + 1),
-          life: 1,
-          decay: 0.01 + Math.random() * 0.02,
-          color: group.color,
-          size: Math.random() * 2 + 0.5
-        });
+    // Collapse mode: all stars pulled to center
+    if (mode === 'collapse') {
+      const cx = W/2 - this.x, cy = H/2 - this.y;
+      const cd = Math.hypot(cx, cy);
+      if (cd > 5) {
+        const cf = 0.3 / (cd * 0.005 + 1);
+        this.vx += (cx/cd) * cf;
+        this.vy += (cy/cd) * cf;
       }
-    }, delay);
-  });
-
-  // After all arrive, slowly form constellation connections
-  const totalArrivalTime = allLetterStars.length * 300 + 2000;
-  setTimeout(() => {
-    const allPts = [];
-    allLetterStars.forEach(g => {
-      g.points.forEach(p => allPts.push({ x: p.origX, y: p.origY, color: g.color }));
-    });
-    if (allPts.length >= 2) {
-      // Connect nearby points within each letter
-      allLetterStars.forEach(g => {
-        for (let i = 0; i < g.points.length - 1; i++) {
-          constellations.push({
-            x1: g.points[i].origX,
-            y1: g.points[i].origY,
-            x2: g.points[i+1].origX,
-            y2: g.points[i+1].origY,
-            color: g.color,
-            opacity: 0,
-            maxOpacity: 0.3 + Math.random() * 0.3,
-            delay: Math.random() * 1000,
-            startTime: performance.now()
-          });
-        }
-      });
+      // Spin
+      this.vx += -cy * 0.0003;
+      this.vy += cx * 0.0003;
     }
-  }, totalArrivalTime);
+    // Damping
+    this.vx *= 0.998; this.vy *= 0.998;
+    this.x += this.vx; this.y += this.vy;
+    // Wrap
+    if (this.x < -100) this.x = W + 100;
+    if (this.x > W + 100) this.x = -100;
+    if (this.y < -100) this.y = H + 100;
+    if (this.y > H + 100) this.y = -100;
+    // Core glow pulse
+    this.coreGlow = 0.7 + 0.3 * Math.sin(this.pulsePhase) + 0.15 * Math.sin(this.flickerPhase);
+  }
+  draw() {
+    const flicker = 0.85 + 0.15 * Math.sin(this.flickerPhase * 3.7);
+    const alpha = this.life * flicker;
+    const {core, glow, mass} = this.colors;
+
+    // Outer glow halo
+    const outerR = this.rayLength * 4;
+    const outer = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, outerR);
+    outer.addColorStop(0, hexToRgba(glow, 0.18 * alpha));
+    outer.addColorStop(0.3, hexToRgba(mass, 0.06 * alpha));
+    outer.addColorStop(1, 'transparent');
+    ctx.beginPath(); ctx.arc(this.x, this.y, outerR, 0, Math.PI * 2);
+    ctx.fillStyle = outer; ctx.fill();
+
+    // Rays
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.4;
+    ctx.strokeStyle = glow;
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < this.rayCount; i++) {
+      const angle = (i / this.rayCount) * Math.PI * 2 + time * 0.001;
+      const len = this.rayLength * (0.7 + 0.3 * Math.sin(time * 0.02 + i));
+      ctx.beginPath();
+      ctx.moveTo(this.x, this.y);
+      ctx.lineTo(this.x + Math.cos(angle) * len, this.y + Math.sin(angle) * len);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Mid glow
+    const mid = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius * 6);
+    mid.addColorStop(0, hexToRgba(core, 0.9 * alpha));
+    mid.addColorStop(0.25, hexToRgba(glow, 0.4 * alpha));
+    mid.addColorStop(0.6, hexToRgba(mass, 0.08 * alpha));
+    mid.addColorStop(1, 'transparent');
+    ctx.beginPath(); ctx.arc(this.x, this.y, this.radius * 6, 0, Math.PI * 2);
+    ctx.fillStyle = mid; ctx.fill();
+
+    // Core
+    const coreG = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius);
+    coreG.addColorStop(0, `rgba(255,255,255,${alpha})`);
+    coreG.addColorStop(0.2, hexToRgba(core, alpha * this.coreGlow));
+    coreG.addColorStop(0.7, hexToRgba(glow, alpha * 0.5));
+    coreG.addColorStop(1, 'transparent');
+    ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fillStyle = coreG; ctx.fill();
+  }
+  dead() { return this.life <= 0; }
 }
 
-// --- Input handling ---
-const input = document.getElementById('input');
-input.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && input.value.trim()) {
-    forgeWord(input.value.trim());
-    input.value = '';
+// Nebula cloud
+class NebulaCloud {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.r = 80 + Math.random() * 200;
+    this.vx = (Math.random()-0.5)*0.15; this.vy = (Math.random()-0.5)*0.15;
+    const palettes = [
+      {a:'#4400aa', b:'#aa0066', c:'#220044'},
+      {a:'#003388', b:'#0088cc', c:'#001144'},
+      {a:'#880044', b:'#cc4400', c:'#330011'},
+      {a:'#226633', b:'#00aa88', c:'#112211'},
+    ];
+    this.pal = palettes[Math.floor(Math.random()*palettes.length)];
+    this.alpha = 0.03 + Math.random() * 0.05;
+    this.phase = Math.random() * Math.PI * 2;
   }
-});
+  update() {
+    this.x += this.vx; this.y += this.vy;
+    this.phase += 0.003;
+    // Gentle drift toward mouse
+    const dx = mouse.x - this.x, dy = mouse.y - this.y;
+    const d = Math.hypot(dx, dy);
+    if (d < 400 && d > 5) {
+      this.vx += (dx/d) * 0.005;
+      this.vy += (dy/d) * 0.005;
+    }
+    this.vx *= 0.999; this.vy *= 0.999;
+  }
+  draw() {
+    const pulse = 1 + 0.2 * Math.sin(this.phase);
+    const r = this.r * pulse;
+    const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r);
+    g.addColorStop(0, hexToRgba(this.pal.a, this.alpha * pulse));
+    g.addColorStop(0.4, hexToRgba(this.pal.b, this.alpha * 0.5 * pulse));
+    g.addColorStop(0.7, hexToRgba(this.pal.c, this.alpha * 0.2));
+    g.addColorStop(1, 'transparent');
+    ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = g; ctx.fill();
+  }
+}
 
-document.addEventListener('keydown', (e) => {
-  if (e.target === input) return;
-  if (e.key === ' ') { paused = !paused; e.preventDefault(); }
-  if (e.key === 'c' || e.key === 'C') {
-    stars = []; trails = []; particles = []; constellations = [];
-  }
-  if (e.key === 's' || e.key === 'S') {
-    const link = document.createElement('a');
-    link.download = 'star-forge.png';
-    link.href = canvas.toDataURL();
-    link.click();
-  }
-});
-
-document.addEventListener('mousemove', (e) => {
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
-  // Ambient sparkles near mouse
-  if (Math.random() < 0.3) {
-    particles.push({
-      x: mouse.x + (Math.random() - 0.5) * 40,
-      y: mouse.y + (Math.random() - 0.5) * 40,
-      vx: (Math.random() - 0.5) * 0.3,
-      vy: -(Math.random() * 0.8 + 0.2),
-      life: 1,
-      decay: 0.015 + Math.random() * 0.02,
-      color: randomColor(),
-      size: Math.random() * 1.5 + 0.5
-    });
-  }
-});
-
-canvas.addEventListener('click', (e) => {
-  // Click to forge a random star burst
-  for (let i = 0; i < 15; i++) {
+// Particle (for bursts and collisions)
+class Particle {
+  constructor(x, y, color, speed, life) {
+    this.x = x; this.y = y;
     const angle = Math.random() * Math.PI * 2;
-    const speed = Math.random() * 3 + 1;
-    particles.push({
-      x: e.clientX,
-      y: e.clientY,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      life: 1,
-      decay: 0.01 + Math.random() * 0.02,
-      color: randomColor(),
-      size: Math.random() * 2 + 1
-    });
+    const s = Math.random() * speed;
+    this.vx = Math.cos(angle) * s;
+    this.vy = Math.sin(angle) * s;
+    this.color = color;
+    this.life = life;
+    this.maxLife = life;
+    this.size = 0.5 + Math.random() * 2;
+  }
+  update() {
+    this.x += this.vx; this.y += this.vy;
+    this.vx *= 0.985; this.vy *= 0.985;
+    this.life--;
+  }
+  draw() {
+    const a = this.life / this.maxLife;
+    ctx.beginPath(); ctx.arc(this.x, this.y, this.size * a, 0, Math.PI * 2);
+    ctx.fillStyle = hexToRgba(this.color, a);
+    ctx.fill();
+  }
+  dead() { return this.life <= 0; }
+}
+
+// Burst ring (supernova shockwave)
+class BurstRing {
+  constructor(x, y, color) {
+    this.x = x; this.y = y;
+    this.radius = 5; this.maxRadius = 300 + Math.random() * 200;
+    this.speed = 3 + Math.random() * 2;
+    this.color = color; this.life = 1;
+  }
+  update() {
+    this.radius += this.speed;
+    this.speed *= 0.98;
+    this.life = 1 - this.radius / this.maxRadius;
+  }
+  draw() {
+    if (this.life <= 0) return;
+    ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.strokeStyle = hexToRgba(this.color, this.life * 0.6);
+    ctx.lineWidth = 2 * this.life;
+    ctx.stroke();
+  }
+  dead() { return this.life <= 0; }
+}
+
+// --- Helpers ---
+function hexToRgba(hex, a) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function spawnStar(x, y, power = 1) {
+  if (stars.length >= MAX_STARS) stars.shift();
+  stars.push(new Star(x, y, power));
+}
+
+function spawnBurst(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    particles.push(new Particle(x, y, color, 2 + Math.random() * 4, 30 + Math.random() * 40));
+  }
+}
+
+function triggerNova() {
+  if (stars.length < 2) return;
+  // Pick the most massive star
+  stars.sort((a,b) => b.mass - a.mass);
+  const s = stars[0];
+  // Shockwave
+  bursts.push(new BurstRing(s.x, s.y, s.colors.core));
+  bursts.push(new BurstRing(s.x, s.y, s.colors.glow));
+  // Particles
+  spawnBurst(s.x, s.y, s.colors.core, 150);
+  spawnBurst(s.x, s.y, '#ffffff', 50);
+  // Remove star
+  stars.splice(0, 1);
+  // Flash nearby stars with energy — they grow
+  stars.forEach(st => {
+    const d = Math.hypot(st.x - s.x, st.y - s.y);
+    if (d < 200) {
+      st.mass += 0.5 * (1 - d/200);
+      st.radius = st.mass * 2.5;
+      spawnBurst(st.x, st.y, st.colors.core, 20);
+    }
+  });
+}
+
+function triggerCollapse() {
+  if (stars.length < 3) return;
+  // Sort by mass
+  stars.sort((a,b) => b.mass - a.mass);
+  const survivors = stars.slice(2);
+  // Black hole at center of mass
+  let cx = 0, cy = 0;
+  stars.forEach(s => { cx += s.x; cy += s.y; });
+  cx /= stars.length; cy /= stars.length;
+  // Accretion disk particles
+  for (let i = 0; i < 200; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const r = 20 + Math.random() * 60;
+    particles.push(new Particle(cx + Math.cos(angle)*r, cy + Math.sin(angle)*r, '#ffffff', 3, 60 + Math.random()*60));
+  }
+  bursts.push(new BurstRing(cx, cy, '#000000'));
+  stars = survivors;
+}
+
+function toggleNebula() {
+  showNebula = !showNebula;
+  document.getElementById('btnNebula').classList.toggle('active', showNebula);
+}
+function toggleCollapse() {
+  mode = mode === 'collapse' ? 'normal' : 'collapse';
+  document.getElementById('btnCollapse').classList.toggle('active', mode === 'collapse');
+}
+function clearAll() {
+  stars = []; particles = []; bursts = []; nebulaClouds = [];
+}
+
+function savePNG() {
+  const link = document.createElement('a');
+  link.download = 'star-forge-' + Date.now() + '.png';
+  link.href = canvas.toDataURL();
+  link.click();
+}
+
+// --- Interaction ---
+canvas.addEventListener('mousedown', e => {
+  mouse.down = true; mouse.holdTime = 0;
+  mouse.x = e.clientX; mouse.y = e.clientY;
+});
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY;
+  if (mouse.down && stars.length < MAX_STARS && Math.random() < 0.3) {
+    spawnStar(e.clientX + (Math.random()-0.5)*30, e.clientY + (Math.random()-0.5)*30, 0.5 + mouse.holdTime * 0.5);
   }
 });
+canvas.addEventListener('mouseup', e => {
+  if (mouse.down) {
+    const power = 0.5 + mouse.holdTime * 0.8;
+    spawnStar(e.clientX, e.clientY, Math.min(power, 3));
+    // Ignition burst
+    const s = stars[stars.length - 1];
+    spawnBurst(s.x, s.y, s.colors.core, 15 + Math.floor(power * 20));
+  }
+  mouse.down = false; mouse.holdTime = 0;
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  mouse.down = true; mouse.holdTime = 0;
+  const t = e.touches[0]; mouse.x = t.clientX; mouse.y = t.clientY;
+}, {passive:false});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0]; mouse.x = t.clientX; mouse.y = t.clientY;
+  if (mouse.down && stars.length < MAX_STARS && Math.random() < 0.3) {
+    spawnStar(t.clientX + (Math.random()-0.5)*30, t.clientY + (Math.random()-0.5)*30, 0.5 + mouse.holdTime * 0.5);
+  }
+}, {passive:false});
+canvas.addEventListener('touchend', e => {
+  if (mouse.down) {
+    const power = 0.5 + mouse.holdTime * 0.8;
+    spawnStar(mouse.x, mouse.y, Math.min(power, 3));
+    const s = stars[stars.length - 1];
+    spawnBurst(s.x, s.y, s.colors.core, 15 + Math.floor(power * 20));
+  }
+  mouse.down = false; mouse.holdTime = 0;
+});
 
-// --- Animation ---
-let lastTime = performance.now();
+document.getElementById('btnNebula').classList.add('active');
 
-function animate(time) {
-  requestAnimationFrame(animate);
-  if (paused) return;
+// --- Init nebula ---
+for (let i = 0; i < 12; i++) {
+  nebulaClouds.push(new NebulaCloud(Math.random()*W, Math.random()*H));
+}
 
-  const dt = Math.min((time - lastTime) / 16.67, 3);
-  lastTime = time;
+// --- Main loop ---
+function frame() {
+  time++;
+  if (mouse.down) mouse.holdTime += 0.02;
 
-  // Fade trail
-  ctx.fillStyle = 'rgba(0, 0, 5, 0.15)';
+  // Background — deep space fade
+  ctx.fillStyle = 'rgba(2, 1, 8, 0.18)';
   ctx.fillRect(0, 0, W, H);
 
-  // Twinkle stars
-  twinkles.forEach(t => {
-    t.phase += t.speed * dt;
-    const alpha = 0.3 + Math.sin(t.phase) * 0.4 + 0.4;
-    ctx.beginPath();
-    ctx.arc(t.x, t.y, t.r, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(200, 220, 255, ${alpha * 0.6})`;
-    ctx.fill();
-  });
-
-  // Constellation lines
-  constellations.forEach(c => {
-    const elapsed = time - c.startTime - c.delay;
-    if (elapsed > 0) {
-      c.opacity = Math.min(c.maxOpacity, c.opacity + 0.003 * dt);
-      ctx.beginPath();
-      ctx.moveTo(c.x1, c.y1);
-      ctx.lineTo(c.x2, c.y2);
-      ctx.strokeStyle = c.color + hexAlpha(c.opacity);
-      ctx.lineWidth = 0.5;
-      ctx.stroke();
+  // Nebula
+  if (showNebula) {
+    nebulaClouds.forEach(n => { n.update(); n.draw(); });
+    // Occasionally spawn new nebula
+    if (Math.random() < 0.005 && nebulaClouds.length < 18) {
+      nebulaClouds.push(new NebulaCloud(Math.random()*W, Math.random()*H));
     }
-  });
+  }
 
-  // Stars flying in
-  stars.forEach(star => {
-    if (!star.arrived) {
-      star.t += star.speed * dt;
-      if (star.t >= 1) {
-        star.t = 1;
-        star.arrived = true;
+  // Background stars (static tiny)
+  if (time % 3 === 0) {
+    ctx.fillStyle = `rgba(255,255,255,${0.1 + Math.random()*0.3})`;
+    ctx.fillRect(Math.random()*W, Math.random()*H, 1, 1);
+  }
+
+  // Connection filaments between nearby stars
+  ctx.lineWidth = 0.4;
+  for (let i = 0; i < stars.length; i++) {
+    for (let j = i+1; j < stars.length; j++) {
+      const d = Math.hypot(stars[i].x - stars[j].x, stars[i].y - stars[j].y);
+      if (d < 180) {
+        const a = (1 - d/180) * 0.15 * Math.min(stars[i].life, stars[j].life);
+        const g = ctx.createLinearGradient(stars[i].x, stars[i].y, stars[j].x, stars[j].y);
+        g.addColorStop(0, hexToRgba(stars[i].colors.glow, a));
+        g.addColorStop(1, hexToRgba(stars[j].colors.glow, a));
+        ctx.beginPath();
+        ctx.moveTo(stars[i].x, stars[i].y);
+        ctx.lineTo(stars[j].x, stars[j].y);
+        ctx.strokeStyle = g;
+        ctx.stroke();
       }
-      // Quadratic bezier
-      const t = star.t;
-      const mt = 1 - t;
-      star.x = mt*mt*star.x + 2*mt*t*star.cpX + t*t*star.targetX;
-      star.y = mt*mt*(star.y) + 2*mt*t*star.cpY + t*t*star.targetY;
-
-      // Trail
-      star.trail.push({ x: star.x, y: star.y, life: 1 });
-      if (star.trail.length > 30) star.trail.shift();
-    } else {
-      // Gentle hover at target
-      star.glowPhase += 0.03 * dt;
-      star.x = star.targetX + Math.sin(star.glowPhase) * 1.5;
-      star.y = star.targetY + Math.cos(star.glowPhase * 1.3) * 1.5;
     }
+  }
 
-    // Draw trail
-    if (star.trail.length > 1) {
-      ctx.beginPath();
-      ctx.moveTo(star.trail[0].x, star.trail[0].y);
-      for (let i = 1; i < star.trail.length; i++) {
-        ctx.lineTo(star.trail[i].x, star.trail[i].y);
+  // Star-star gravity (gentle)
+  for (let i = 0; i < stars.length; i++) {
+    for (let j = i+1; j < stars.length; j++) {
+      const dx = stars[j].x - stars[i].x, dy = stars[j].y - stars[i].y;
+      const d = Math.hypot(dx, dy);
+      if (d > 20 && d < 300) {
+        const f = 0.02 / (d * 0.05 + 1);
+        const nx = dx/d, ny = dy/d;
+        stars[i].vx += nx * f; stars[i].vy += ny * f;
+        stars[j].vx -= nx * f; stars[j].vy -= ny * f;
+        // Merge if very close
+        if (d < stars[i].radius + stars[j].radius && !stars[i].merging && !stars[j].merging) {
+          stars[i].merging = stars[j].merging = true;
+          stars[i].mass += stars[j].mass * 0.8;
+          stars[i].radius = stars[i].mass * 2.5;
+          stars[i].maxLife = Math.max(stars[i].maxLife, stars[j].maxLife);
+          stars[i].life = Math.max(stars[i].life, stars[j].life);
+          // Reclassify
+          if (stars[i].mass > 6) { stars[i].oclass = 'O'; stars[i].colors = O_COLORS['O']; }
+          else if (stars[i].mass > 4) { stars[i].oclass = 'B'; stars[i].colors = O_COLORS['B']; }
+          else if (stars[i].mass > 2.5) { stars[i].oclass = 'A'; stars[i].colors = O_COLORS['A']; }
+          spawnBurst((stars[i].x+stars[j].x)/2, (stars[i].y+stars[j].y)/2, stars[i].colors.core, 30);
+          stars.splice(j, 1);
+        }
       }
-      const trailAlpha = star.arrived ? 0.15 : 0.4;
-      ctx.strokeStyle = star.color + hexAlpha(trailAlpha);
-      ctx.lineWidth = star.size * 0.5;
-      ctx.stroke();
     }
+  }
 
-    // Draw star point
-    const glow = star.arrived ? 0.8 + Math.sin(star.glowPhase) * 0.2 : 0.6;
-    ctx.beginPath();
-    ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
-    ctx.fillStyle = star.color + hexAlpha(glow);
-    ctx.fill();
+  // Update & draw stars
+  stars = stars.filter(s => !s.dead());
+  stars.forEach(s => { s.update(); s.draw(); });
 
-    // Glow halo
-    ctx.beginPath();
-    ctx.arc(star.x, star.y, star.size * 3, 0, Math.PI * 2);
-    ctx.fillStyle = star.color + hexAlpha(glow * 0.15);
-    ctx.fill();
-  });
+  // Burst rings
+  bursts = bursts.filter(b => !b.dead());
+  bursts.forEach(b => { b.update(); b.draw(); });
 
   // Particles
-  particles = particles.filter(p => {
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-    p.vy += 0.01 * dt; // gentle rise
-    p.life -= p.decay * dt;
-    if (p.life <= 0) return false;
+  particles = particles.filter(p => !p.dead());
+  particles.forEach(p => { p.update(); p.draw(); });
 
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
-    ctx.fillStyle = p.color + hexAlpha(p.life * 0.7);
-    ctx.fill();
-    return true;
-  });
+  // Spontaneous ignition (small chance each frame when stars exist)
+  if (stars.length > 0 && Math.random() < 0.003) {
+    const s = stars[Math.floor(Math.random()*stars.length)];
+    spawnBurst(s.x, s.y, s.colors.core, 5);
+  }
+
+  // Slowly age-out oldest stars for lifecycle feel
+  if (stars.length > MAX_STARS * 0.8 && Math.random() < 0.02) {
+    const oldest = stars.reduce((a,b) => a.age > b.age ? a : b);
+    oldest.life -= 0.05;
+  }
 
   // Stats
-  document.getElementById('star-count').textContent = 'stars: ' + stars.length;
-  document.getElementById('trail-count').textContent = 'trails: ' + trails.length;
-  document.getElementById('constellation-count').textContent = 'constellations: ' + constellations.length;
+  document.getElementById('count').textContent = stars.length;
+  document.getElementById('stats').innerHTML =
+    `Massive: ${stars.filter(s=>s.mass>4).length} | Merging: ${stars.filter(s=>s.merging).length}`;
+
+  requestAnimationFrame(frame);
 }
 
-function hexAlpha(a) {
-  const val = Math.max(0, Math.min(1, a));
-  return Math.round(val * 255).toString(16).padStart(2, '0');
+// Initial spawn
+for (let i = 0; i < 8; i++) {
+  spawnStar(100 + Math.random()*(W-200), 100 + Math.random()*(H-200), 0.5 + Math.random());
 }
+// Initial background fill
+ctx.fillStyle = '#020108'; ctx.fillRect(0, 0, W, H);
 
-// Initial welcome
-setTimeout(() => forgeWord('HELLO'), 500);
-
-requestAnimationFrame(animate);
+frame();
 </script>
 </body>
 </html>
