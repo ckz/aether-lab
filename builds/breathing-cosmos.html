@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Breathing Cosmos</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #05060f;
+    font-family: 'Courier New', monospace;
+    color: #c8c0d4;
+    cursor: none;
+  }
+  canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+  }
+  #ui {
+    position: fixed;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    z-index: 10;
+    pointer-events: none;
+    transition: opacity 1.5s;
+  }
+  #phase {
+    font-size: 13px;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    opacity: 0.7;
+    margin-bottom: 8px;
+  }
+  #breath-label {
+    font-size: 22px;
+    letter-spacing: 0.5em;
+    text-transform: uppercase;
+    opacity: 0.9;
+    transition: all 0.8s;
+  }
+  #cycle-count {
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    opacity: 0.4;
+    margin-top: 10px;
+  }
+  #hint {
+    position: fixed;
+    top: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    opacity: 0;
+    z-index: 10;
+    pointer-events: none;
+    transition: opacity 2s;
+  }
+  #title {
+    position: fixed;
+    top: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    letter-spacing: 0.5em;
+    text-transform: uppercase;
+    opacity: 0.3;
+    z-index: 10;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="title">✦ Breathing Cosmos ✦</div>
+<div id="hint">CLICK TO BEGIN · SPACE TO PAUSE · 1-4 CHANGE STYLE</div>
+<div id="ui">
+  <div id="phase">Ready</div>
+  <div id="breath-label">—</div>
+  <div id="cycle-count">cycle · 0</div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, CX, CY;
+
+function resize() {
+  W = canvas.width = window.innerWidth * devicePixelRatio;
+  H = canvas.height = window.innerHeight * devicePixelRatio;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  CX = W / 2;
+  CY = H / 2;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ─── State ───
+let running = false;
+let paused = false;
+let phase = 'idle'; // idle | inhale | hold | exhale
+let phaseTime = 0;
+let cycles = 0;
+let breathScale = 1;
+let targetScale = 1;
+let globalAlpha = 1;
+let fadeAlpha = 0;
+
+// 4-7-8 breathing: inhale 4s, hold 7s, exhale 8s
+const PHASES = [
+  { name: 'inhale',  duration: 4, label: 'Breathe In',  targetScale: 1.35 },
+  { name: 'hold',    duration: 7, label: 'Hold',        targetScale: 1.35 },
+  { name: 'exhale',  duration: 8, label: 'Breathe Out', targetScale: 0.7  },
+];
+let currentPhaseIdx = 0;
+
+// ─── Style presets ───
+let styleIdx = 0;
+const STYLES = [
+  { name: 'Nebula',   pal: [[100,60,20],[200,80,30],[280,70,25],[340,60,20]], starColor: [220,210,240], nebulaDensity: 0.6 },
+  { name: 'Aurora',   pal: [[140,70,30],[180,60,25],[220,50,20],[100,60,25]], starColor: [180,255,220], nebulaDensity: 0.4 },
+  { name: 'Ember',    pal: [[10,80,30],[30,90,35],[50,85,28],[0,70,22]],     starColor: [255,220,180], nebulaDensity: 0.5 },
+  { name: 'Ocean',    pal: [[200,70,30],[220,60,25],[180,65,28],[260,50,20]], starColor: [200,240,255], nebulaDensity: 0.5 },
+];
+
+// ─── Particles ───
+const stars = [];
+const STAR_COUNT = 400;
+for (let i = 0; i < STAR_COUNT; i++) {
+  stars.push({
+    x: Math.random() * 2 - 1,
+    y: Math.random() * 2 - 1,
+    z: Math.random(),
+    size: Math.random() * 1.8 + 0.3,
+    twinkleSpeed: Math.random() * 2 + 1,
+    twinkleOffset: Math.random() * Math.PI * 2,
+    hueOffset: Math.random() * 40 - 20,
+  });
+}
+
+const orbs = [];
+const ORB_COUNT = 18;
+for (let i = 0; i < ORB_COUNT; i++) {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = Math.random() * 0.5 + 0.1;
+  orbs.push({
+    angle,
+    dist,
+    baseDist: dist,
+    size: Math.random() * 40 + 15,
+    hue: Math.random(),
+    orbitSpeed: (Math.random() - 0.5) * 0.15,
+    pulseSpeed: Math.random() * 1.5 + 0.8,
+    pulseOffset: Math.random() * Math.PI * 2,
+    drift: Math.random() * 0.3 + 0.1,
+  });
+}
+
+const trails = [];
+const MAX_TRAILS = 60;
+
+// ─── Mouse ───
+let mouseX = CX, mouseY = CY;
+let mouseActive = false;
+document.addEventListener('mousemove', e => {
+  mouseX = e.clientX * devicePixelRatio;
+  mouseY = e.clientY * devicePixelRatio;
+  mouseActive = true;
+});
+document.addEventListener('mouseleave', () => { mouseActive = false; });
+
+// ─── Controls ───
+document.addEventListener('click', () => {
+  if (!running) {
+    running = true;
+    fadeAlpha = 1;
+    document.getElementById('hint').style.opacity = '0';
+    startBreathCycle();
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    paused = !paused;
+    document.getElementById('phase').textContent = paused ? 'Paused' : phase === 'idle' ? 'Ready' : PHASES[currentPhaseIdx].label;
+  }
+  if (e.key >= '1' && e.key <= '4') {
+    styleIdx = parseInt(e.key) - 1;
+    document.getElementById('phase').textContent = paused ? 'Paused' : 'Style: ' + STYLES[styleIdx].name;
+  }
+});
+
+// ─── Breathing cycle ───
+let breathStartTime = 0;
+function startBreathCycle() {
+  currentPhaseIdx = 0;
+  phaseTime = 0;
+  phase = PHASES[0].name;
+  targetScale = PHASES[0].targetScale;
+  breathStartTime = performance.now();
+  updateUI();
+}
+
+function updateBreath(now) {
+  if (!running || paused || phase === 'idle') return;
+  
+  phaseTime += 1/60;
+  const currentPhase = PHASES[currentPhaseIdx];
+  
+  if (phaseTime >= currentPhase.duration) {
+    phaseTime = 0;
+    currentPhaseIdx++;
+    if (currentPhaseIdx >= PHASES.length) {
+      currentPhaseIdx = 0;
+      cycles++;
+      document.getElementById('cycle-count').textContent = 'cycle · ' + cycles;
+    }
+    phase = PHASES[currentPhaseIdx].name;
+    targetScale = PHASES[currentPhaseIdx].targetScale;
+    updateUI();
+  }
+  
+  // Smooth scale transition
+  const progress = phaseTime / currentPhase.duration;
+  const ease = phase === 'inhale' ? easeInOutCubic(progress) : 
+               phase === 'exhale' ? easeInOutCubic(progress) : 1;
+  breathScale = lerp(breathScale, targetScale, 0.04);
+}
+
+function updateUI() {
+  if (phase === 'idle') {
+    document.getElementById('phase').textContent = 'Ready';
+    document.getElementById('breath-label').textContent = '—';
+  } else {
+    document.getElementById('phase').textContent = PHASES[currentPhaseIdx].name.toUpperCase();
+    document.getElementById('breath-label').textContent = PHASES[currentPhaseIdx].label;
+  }
+}
+
+// ─── Helpers ───
+function lerp(a, b, t) { return a + (b - a) * t; }
+function easeInOutCubic(t) { return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2; }
+function hsl(h, s, l, a) { return a !== undefined ? `hsla(${h},${s}%,${l}%,${a})` : `hsl(${h},${s}%,${l}%)`; }
+function lerpColor(c1, c2, t) {
+  return [
+    c1[0] + (c2[0]-c1[0])*t,
+    c1[1] + (c2[1]-c1[1])*t,
+    c1[2] + (c2[2]-c1[2])*t,
+  ];
+}
+function colorStr(c, a) { return `rgb(${~~c[0]},${~~c[1]},${~~c[2]},${a !== undefined ? a : 1})`; }
+
+function getPaletteColor(t, alpha) {
+  const style = STYLES[styleIdx];
+  const pal = style.pal;
+  const idx = t * (pal.length - 1);
+  const i = Math.floor(idx);
+  const f = idx - i;
+  const c = i < pal.length - 1 ? lerpColor(pal[i], pal[i+1], f) : pal[pal.length-1];
+  return colorStr(c, alpha);
+}
+
+// ─── Draw ───
+let time = 0;
+function draw(now) {
+  time = now * 0.001;
+  
+  // Fade
+  if (fadeAlpha > 0) {
+    fadeAlpha = Math.max(0, fadeAlpha - 0.005);
+  }
+  
+  // Clear with trail
+  ctx.fillStyle = `rgba(5,6,15,${0.12 + (breathScale - 0.7) * 0.2})`;
+  ctx.fillRect(0, 0, W, H);
+  
+  const style = STYLES[styleIdx];
+  const baseRadius = Math.min(W, H) * 0.28 * breathScale;
+  
+  // Nebula clouds
+  drawNebula(baseRadius);
+  
+  // Breathing ring
+  drawBreathRing(baseRadius);
+  
+  // Stars
+  drawStars(baseRadius);
+  
+  // Orbs
+  drawOrbs(baseRadius);
+  
+  // Center glow
+  drawCenterGlow(baseRadius);
+  
+  // Cursor
+  if (mouseActive) {
+    drawCursor();
+  }
+}
+
+function drawNebula(baseRadius) {
+  const count = 5;
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2 + time * 0.1;
+    const dist = baseRadius * 1.3 + Math.sin(time * 0.3 + i) * baseRadius * 0.4;
+    const x = CX + Math.cos(angle) * dist;
+    const y = CY + Math.sin(angle) * dist * 0.6;
+    const r = baseRadius * (0.6 + Math.sin(time * 0.5 + i * 1.2) * 0.3);
+    
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    const hue = (i / count) * 360;
+    grad.addColorStop(0, hsl(hue, 70, 40, 0.03 * STYLES[styleIdx].nebulaDensity));
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x-r, y-r, r*2, r*2);
+  }
+}
+
+function drawBreathRing(baseRadius) {
+  const segments = 180;
+  ctx.beginPath();
+  for (let i = 0; i <= segments; i++) {
+    const a = (i / segments) * Math.PI * 2;
+    const wobble = Math.sin(a * 6 + time * 0.8) * baseRadius * 0.03 +
+                   Math.sin(a * 3 - time * 0.5) * baseRadius * 0.05;
+    const r = baseRadius + wobble;
+    const x = CX + Math.cos(a) * r;
+    const y = CY + Math.sin(a) * r * 0.85;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  
+  const alpha = 0.15 + (breathScale - 0.7) * 0.3;
+  ctx.strokeStyle = getPaletteColor((Math.sin(time * 0.2) + 1) / 2, alpha);
+  ctx.lineWidth = 1.5;
+  ctx.shadowBlur = 20;
+  ctx.shadowColor = getPaletteColor(0.5, 0.3);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+function drawStars(baseRadius) {
+  const style = STYLES[styleIdx];
+  stars.forEach(star => {
+    const sx = CX + star.x * W * 0.6;
+    const sy = CY + star.y * H * 0.6;
+    const dist = Math.sqrt((sx-CX)**2 + (sy-CY)**2) / (baseRadius * 2);
+    const inside = dist < 1.5;
+    const twinkle = (Math.sin(time * star.twinkleSpeed + star.twinkleOffset) + 1) / 2;
+    const alpha = inside ? 0.3 + twinkle * 0.6 : 0.05 + twinkle * 0.15;
+    const size = star.size * (0.8 + twinkle * 0.4) * (inside ? 1.2 : 0.6);
+    
+    ctx.beginPath();
+    ctx.arc(sx, sy, size, 0, Math.PI * 2);
+    ctx.fillStyle = colorStr(style.starColor, alpha);
+    ctx.fill();
+    
+    if (inside && twinkle > 0.85) {
+      ctx.beginPath();
+      ctx.arc(sx, sy, size * 3, 0, Math.PI * 2);
+      ctx.fillStyle = colorStr(style.starColor, 0.05);
+      ctx.fill();
+    }
+  });
+}
+
+function drawOrbs(baseRadius) {
+  const style = STYLES[styleIdx];
+  orbs.forEach((orb, i) => {
+    if (!paused) {
+      orb.angle += orb.orbitSpeed * 0.01;
+      orb.dist = orb.baseDist + Math.sin(time * orb.drift + i) * 0.08;
+    }
+    const x = CX + Math.cos(orb.angle) * baseRadius * orb.dist;
+    const y = CY + Math.sin(orb.angle) * baseRadius * orb.dist * 0.85;
+    const pulse = (Math.sin(time * orb.pulseSpeed + orb.pulseOffset) + 1) / 2;
+    const r = orb.size * (0.7 + pulse * 0.5) * (breathScale * 0.7 + 0.3);
+    
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    const hue = (orb.hue * 360 + time * 10) % 360;
+    grad.addColorStop(0, hsl(hue, 60, 60, 0.08 + pulse * 0.06));
+    grad.addColorStop(0.5, hsl(hue, 70, 45, 0.03));
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x-r, y-r, r*2, r*2);
+    
+    // Core
+    ctx.beginPath();
+    ctx.arc(x, y, r * 0.15, 0, Math.PI * 2);
+    ctx.fillStyle = hsl(hue, 50, 75, 0.4 + pulse * 0.3);
+    ctx.fill();
+    
+    // Trail
+    if (running && !paused && Math.random() < 0.03) {
+      trails.push({ x, y, life: 1, hue, size: r * 0.1 });
+    }
+  });
+}
+
+function drawCenterGlow(baseRadius) {
+  const r = baseRadius * 0.5 * breathScale;
+  const grad = ctx.createRadialGradient(CX, CY, 0, CX, CY, r);
+  const hue = (time * 15) % 360;
+  const intensity = 0.06 + (breathScale - 0.7) * 0.08;
+  grad.addColorStop(0, hsl(hue, 50, 70, intensity));
+  grad.addColorStop(0.5, hsl(hue + 30, 60, 40, intensity * 0.4));
+  grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad;
+  ctx.fillRect(CX-r, CY-r, r*2, r*2);
+  
+  // Breathing text pulse
+  if (running && !paused) {
+    const pulse = (Math.sin(time * 1.5) + 1) / 2;
+    ctx.font = `${~~(12 + pulse * 4)}px 'Courier New'`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = colorStr(STYLES[styleIdx].starColor, 0.1 + pulse * 0.1);
+    const bText = phase === 'inhale' ? '∿ inhale' : phase === 'hold' ? '◎ hold' : phase === 'exhale' ? '∽ exhale' : '';
+    if (bText) ctx.fillText(bText, CX, CY);
+  }
+}
+
+function drawCursor() {
+  const grad = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 60);
+  grad.addColorStop(0, colorStr(STYLES[styleIdx].starColor, 0.15));
+  grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad;
+  ctx.fillRect(mouseX-60, mouseY-60, 120, 120);
+  
+  ctx.beginPath();
+  ctx.arc(mouseX, mouseY, 3, 0, Math.PI * 2);
+  ctx.fillStyle = colorStr(STYLES[styleIdx].starColor, 0.5);
+  ctx.fill();
+}
+
+// ─── Loop ───
+function loop(now) {
+  updateBreath(now);
+  
+  if (!paused) {
+    // Update trails
+    for (let i = trails.length - 1; i >= 0; i--) {
+      trails[i].life -= 0.008;
+      if (trails[i].life <= 0) trails.splice(i, 1);
+    }
+  }
+  
+  draw(now);
+  
+  // Fade UI on start
+  if (fadeAlpha > 0 && running) {
+    document.getElementById('ui').style.opacity = fadeAlpha;
+  }
+  
+  requestAnimationFrame(loop);
+}
+
+// ─── Init ───
+function init() {
+  // Initial background fill
+  ctx.fillStyle = '#05060f';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Show hint
+  document.getElementById('hint').style.opacity = '0.6';
+  setTimeout(() => { document.getElementById('hint').style.opacity = '0'; }, 6000);
+  
+  requestAnimationFrame(loop);
+}
+
+init();
+</script>
+</body>
+</html>
