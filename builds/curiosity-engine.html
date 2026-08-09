@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Curiosity Engine</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=Space+Grotesk:wght@300;400;500;600&display=swap');
+
+  body {
+    background: #0a0a0f;
+    color: #c8c8d4;
+    font-family: 'IBM Plex Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  canvas#bg-canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 40px 24px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .title-area {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+
+  .title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 28px;
+    font-weight: 600;
+    color: #e8e8f0;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+  }
+
+  .subtitle {
+    font-size: 12px;
+    color: #5a5a7a;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    margin-top: 8px;
+  }
+
+  .terminal {
+    background: rgba(16, 16, 28, 0.85);
+    border: 1px solid rgba(100, 100, 180, 0.15);
+    border-radius: 12px;
+    backdrop-filter: blur(20px);
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 0 60px rgba(80, 80, 180, 0.08), inset 0 1px 0 rgba(255,255,255,0.03);
+  }
+
+  .terminal-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 18px;
+    border-bottom: 1px solid rgba(100, 100, 180, 0.1);
+    background: rgba(20, 20, 35, 0.6);
+  }
+
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot-r { background: #ff5f57; }
+  .dot-y { background: #ffbd2e; }
+  .dot-g { background: #28c840; }
+  .terminal-title {
+    margin-left: 12px;
+    font-size: 12px;
+    color: #5a5a7a;
+    letter-spacing: 1px;
+  }
+
+  .terminal-body {
+    flex: 1;
+    padding: 24px;
+    overflow-y: auto;
+    max-height: 55vh;
+    scroll-behavior: smooth;
+  }
+
+  .terminal-body::-webkit-scrollbar { width: 4px; }
+  .terminal-body::-webkit-scrollbar-track { background: transparent; }
+  .terminal-body::-webkit-scrollbar-thumb { background: rgba(100, 100, 180, 0.2); border-radius: 4px; }
+
+  .log-entry {
+    margin-bottom: 16px;
+    line-height: 1.7;
+    font-size: 14px;
+    animation: fadeIn 0.4s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .log-entry.scene { color: #b8b8d0; }
+  .log-entry.narration { 
+    color: #8a8aaa; 
+    font-style: italic;
+    border-left: 2px solid rgba(100, 100, 180, 0.2);
+    padding-left: 14px;
+    margin: 8px 0;
+  }
+  .log-entry.choice {
+    color: #7a7aaa;
+    font-size: 12px;
+    letter-spacing: 1px;
+  }
+  .log-entry.system {
+    color: #4a6a8a;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  .log-entry.discovery {
+    color: #c8a860;
+    border-left: 2px solid rgba(200, 168, 96, 0.3);
+    padding-left: 14px;
+    margin: 8px 0;
+  }
+  .log-entry.death {
+    color: #c85050;
+    font-style: italic;
+  }
+  .log-entry.win {
+    color: #50c870;
+    font-style: italic;
+  }
+
+  .input-area {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 24px;
+    border-top: 1px solid rgba(100, 100, 180, 0.1);
+    background: rgba(16, 16, 28, 0.4);
+  }
+
+  .prompt { color: #6a6aaa; font-size: 14px; white-space: nowrap; }
+  .prompt::before { content: '❯'; margin-right: 8px; color: #8a6aaa; }
+
+  #cmd {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #d8d8f0;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 14px;
+    caret-color: #8a6aaa;
+  }
+
+  #cmd::placeholder { color: #3a3a5a; }
+
+  .choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 24px 20px;
+    border-top: 1px solid rgba(100, 100, 180, 0.06);
+  }
+
+  .choice-btn {
+    background: rgba(60, 60, 120, 0.12);
+    border: 1px solid rgba(100, 100, 180, 0.2);
+    color: #a8a8d0;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.5px;
+  }
+
+  .choice-btn:hover {
+    background: rgba(100, 100, 180, 0.2);
+    border-color: rgba(140, 140, 220, 0.4);
+    color: #d0d0f0;
+    transform: translateY(-1px);
+  }
+
+  .stats {
+    display: flex;
+    gap: 20px;
+    padding: 10px 24px;
+    border-top: 1px solid rgba(100, 100, 180, 0.06);
+    font-size: 11px;
+    color: #3a3a5a;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .stat span { color: #6a6a9a; }
+
+  .help-hint {
+    font-size: 11px;
+    color: #3a3a5a;
+    text-align: center;
+    margin-top: 14px;
+    letter-spacing: 1px;
+  }
+
+  .divider {
+    border: none;
+    border-top: 1px dashed rgba(100, 100, 180, 0.1);
+    margin: 16px 0;
+  }
+</style>
+</head>
+<body>
+<canvas id="bg-canvas"></canvas>
+<div class="container">
+  <div class="title-area">
+    <div class="title">The Curiosity Engine</div>
+    <div class="subtitle">A Text Adventure</div>
+  </div>
+  <div class="terminal">
+    <div class="terminal-header">
+      <div class="dot dot-r"></div>
+      <div class="dot dot-y"></div>
+      <div class="dot dot-g"></div>
+      <div class="terminal-title">curiosity@engine:~</div>
+    </div>
+    <div class="terminal-body" id="log"></div>
+    <div class="choices" id="choices"></div>
+    <div class="input-area">
+      <span class="prompt"></span>
+      <input type="text" id="cmd" placeholder="type a command or choice number..." autocomplete="off" spellcheck="false">
+    </div>
+    <div class="stats">
+      <div class="stat">Discovered: <span id="discovered">0</span>/12</div>
+      <div class="stat">Moves: <span id="moves">0</span></div>
+      <div class="stat">Room: <span id="room">—</span></div>
+    </div>
+  </div>
+  <div class="help-hint">type <strong style="color:#5a5a8a">help</strong> for commands · click choice buttons or type number · press ↑ for history</div>
+</div>
+
+<script>
+// ============ BACKGROUND STARS ============
+const bgCanvas = document.getElementById('bg-canvas');
+const bgCtx = bgCanvas.getContext('2d');
+let stars = [];
+
+function resizeBg() {
+  bgCanvas.width = window.innerWidth;
+  bgCanvas.height = window.innerHeight;
+  initStars();
+}
+
+function initStars() {
+  stars = [];
+  const count = Math.floor((bgCanvas.width * bgCanvas.height) / 4000);
+  for (let i = 0; i < count; i++) {
+    stars.push({
+      x: Math.random() * bgCanvas.width,
+      y: Math.random() * bgCanvas.height,
+      r: Math.random() * 1.2 + 0.3,
+      a: Math.random(),
+      speed: Math.random() * 0.008 + 0.003,
+      phase: Math.random() * Math.PI * 2
+    });
+  }
+}
+
+function drawBg(t) {
+  bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+  for (const s of stars) {
+    const alpha = 0.3 + 0.7 * Math.abs(Math.sin(t * s.speed + s.phase));
+    bgCtx.beginPath();
+    bgCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    bgCtx.fillStyle = `rgba(180, 180, 220, ${alpha * 0.6})`;
+    bgCtx.fill();
+  }
+  requestAnimationFrame(drawBg);
+}
+
+window.addEventListener('resize', resizeBg);
+resizeBg();
+requestAnimationFrame(drawBg);
+
+// ============ GAME ENGINE ============
+const logEl = document.getElementById('log');
+const choicesEl = document.getElementById('choices');
+const cmdInput = document.getElementById('cmd');
+const discoveredEl = document.getElementById('discovered');
+const movesEl = document.getElementById('moves');
+const roomEl = document.getElementById('room');
+
+let discovered = new Set();
+let moves = 0;
+let currentRoom = 'start';
+let history = [];
+let historyIdx = -1;
+let gameOver = false;
+
+function addLog(text, type = 'scene') {
+  const div = document.createElement('div');
+  div.className = `log-entry ${type}`;
+  div.textContent = text;
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function addHTML(html) {
+  const div = document.createElement('div');
+  div.className = 'log-entry scene';
+  div.innerHTML = html;
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function clearChoices() { choicesEl.innerHTML = ''; }
+
+function setChoices(choices) {
+  clearChoices();
+  choices.forEach((c, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = `${i + 1}. ${c.label}`;
+    btn.onclick = () => choose(c.action);
+    choicesEl.appendChild(btn);
+  });
+}
+
+function updateStats() {
+  discoveredEl.textContent = discovered.size;
+  movesEl.textContent = moves;
+}
+
+function discover(thing) {
+  if (!discovered.has(thing)) {
+    discovered.add(thing);
+    updateStats();
+    addLog(`✦ Discovered: ${thing}`, 'discovery');
+  }
+}
+
+function choose(action) {
+  if (gameOver) return;
+  cmdInput.value = '';
+  history.push(action);
+  historyIdx = history.length;
+  execute(action);
+}
+
+function execute(cmd) {
+  if (gameOver) return;
+  const trimmed = cmd.toLowerCase().trim();
+
+  if (trimmed === 'help') {
+    addLog('Commands: look, go [dir], examine [thing], take [thing], use [thing], inventory, help, restart', 'system');
+    return;
+  }
+  if (trimmed === 'inventory' || trimmed === 'inv' || trimmed === 'i') {
+    if (inventory.length === 0) addLog('Your pockets are empty. But your mind is full.', 'narration');
+    else addLog('You carry: ' + inventory.join(', '), 'scene');
+    return;
+  }
+  if (trimmed === 'restart' || trimmed === 'reset') {
+    initGame();
+    return;
+  }
+
+  // Route to current room
+  const room = rooms[currentRoom];
+  if (room.onInput) room.onInput(trimmed);
+}
+
+// ============ INVENTORY ============
+let inventory = [];
+
+// ============ ROOMS ============
+const rooms = {};
+
+// --- THE OBSERVATORY (START) ---
+rooms.start = {
+  name: 'The Observatory',
+  onEnter() {
+    currentRoom = 'start';
+    roomEl.textContent = 'Observatory';
+    addLog('You stand in the Curiosity Engine — a chamber of brass and starlight.', 'scene');
+    addLog('Telescopes aim at windows that don\'t open onto any sky you recognise. The air hums with the sound of machinery that hasn\'t been invented yet.', 'narration');
+    discover('The Observatory');
+    setChoices([
+      { label: 'Descend to the Archive', action: 'go archive' },
+      { label: 'Enter the Mirror Labyrinth', action: 'go labyrinth' },
+      { label: 'Climb the Spire', action: 'go spire' },
+      { label: 'Examine the central telescope', action: 'examine telescope' }
+    ]);
+  },
+  onInput(cmd) {
+    if (cmd.startsWith('go ')) {
+      const dest = cmd.slice(3);
+      if (dest === 'archive' || dest === 'archives') { moves++; updateStats(); goRoom('archive'); return; }
+      if (dest === 'labyrinth' || dest === 'mirror') { moves++; updateStats(); goRoom('labyrinth'); return; }
+      if (dest === 'spire' || dest === 'up') { moves++; updateStats(); goRoom('spire'); return; }
+    }
+    if (cmd === 'examine telescope' || cmd === 'look telescope') {
+      addLog('The telescope focuses on nothing — and everything. When you look through it, you see a room exactly like this one, but the you on the other side is looking back.', 'narration');
+      discover('The Recursive Telescope');
+      setChoices(rooms.start.getChoices());
+      return;
+    }
+    if (cmd === 'look' || cmd === 'l') { rooms.start.onEnter(); return; }
+    addLog('You ponder the brass machinery. Perhaps you should choose a direction.', 'narration');
+  },
+  getChoices() {
+    return [
+      { label: 'Descend to the Archive', action: 'go archive' },
+      { label: 'Enter the Mirror Labyrinth', action: 'go labyrinth' },
+      { label: 'Climb the Spire', action: 'go spire' },
+      { label: 'Examine the central telescope', action: 'examine telescope' }
+    ];
+  }
+};
+
+// --- THE ARCHIVE ---
+rooms.archive = {
+  name: 'The Archive of Forgotten Questions',
+  visited: false,
+  onEnter() {
+    currentRoom = 'archive';
+    roomEl.textContent = 'Archive';
+    if (!rooms.archive.visited) {
+      addLog('Shelves stretch beyond sight, each holding a single book that is also a door. The smell is of old paper and starlight.', 'scene');
+      addLog('A figure in a grey coat sorts through volumes labelled: QUESTIONS THAT WERE NEVER ASKED.', 'narration');
+      rooms.archive.visited = true;
+      discover('The Archive of Forgotten Questions');
+    } else {
+      addLog('You return to the Archive. The archivist nods without looking up.', 'scene');
+    }
+    setChoices([
+      { label: 'Ask the Archivist a question', action: 'ask archivist' },
+      { label: 'Pull a random book from the shelf', action: 'take book' },
+      { label: 'Return to the Observatory', action: 'go observatory' }
+    ]);
+  },
+  onInput(cmd) {
+    if (cmd.startsWith('go ')) {
+      const dest = cmd.slice(3);
+      if (dest === 'observatory' || dest === 'up' || dest === 'back') { moves++; updateStats(); goRoom('start'); return; }
+    }
+    if (cmd === 'ask archivist' || cmd === 'talk archivist') {
+      const answers = [
+        '"The best questions are the ones that destroy the questioner," they say, not looking up. "Curiosity isn\'t the desire to know. It\'s the desire to become someone who could know."',
+        '"You\'re looking for the Curiosity Engine," the archivist says, pulling a book from thin air. "It doesn\'t give you answers. It gives you the questions you didn\'t know you were allowed to ask."',
+        '"Every answer in here is a room," they say softly. "Every question is a key. The Engine is the locksmith." They return to sorting.'
+      ];
+      addLog(answers[Math.floor(Math.random() * answers.length)], 'narration');
+      setChoices(rooms.archive.getChoices());
+      return;
+    }
+    if (cmd === 'take book' || cmd === 'pull book') {
+      const titles = [
+        'THE_SHAPE_OF_SILENCE_BETWEEN_STARS',
+        'WHAT_THE_RAIN_REMEMBERS',
+        'A_CATALOGUE_OF_UNFINISHED_THOUGHTS',
+        'THE_WEIGHT_OF_A_QUESTION_IN_A_DARK_ROOM'
+      ];
+      const t = titles[Math.floor(Math.random() * titles.length)];
+      addLog(`You pull a book. Its title is: ${t}. When you open it, the pages are mirrors. You see yourself, slightly older, reading the same book.`, 'discovery');
+      discover(t);
+      if (!inventory.includes('Mirror Book')) {
+        inventory.push('Mirror Book');
+        addLog('✦ Acquired: Mirror Book', 'discovery');
+      }
+      setChoices(rooms.archive.getChoices());
+      return;
+    }
+    if (cmd === 'look' || cmd === 'l') { rooms.archive.onEnter(); return; }
+    addLog('The archivist\'s shelves whisper when you\'re not sure what to do.', 'narration');
+  },
+  getChoices() {
+    return [
+      { label: 'Ask the Archivist a question', action: 'ask archivist' },
+      { label: 'Pull a random book from the shelf', action: 'take book' },
+      { label: 'Return to the Observatory', action: 'go observatory' }
+    ];
+  }
+};
+
+// --- THE MIRROR LABYRINTH ---
+rooms.labyrinth = {
+  name: 'The Mirror Labyrinth',
+  visited: false,
+  mirrorBroken: false,
+  onEnter() {
+    currentRoom = 'labyrinth';
+    roomEl.textContent = 'Mirror Labyrinth';
+    if (!rooms.labyrinth.visited) {
+      addLog('Walls of obsidian glass stretch in every direction. Your reflection walks beside you — a version of you that\'s always half a step ahead, always curious.', 'scene');
+      addLog('At the centre stands a mirror that doesn\'t reflect. It shows a room you\'ve never been in, filled with machines you can\'t name.', 'narration');
+      rooms.labyrinth.visited = true;
+      discover('The Mirror Labyrinth');
+    } else {
+      addLog('The labyrinth rearranges itself each time you enter. The mirrors remember.', 'scene');
+    }
+    setChoices([
+      { label: 'Touch the central mirror', action: 'touch mirror' },
+      { label: 'Follow your reflection', action: 'follow reflection' },
+      { label: 'Return to the Observatory', action: 'go observatory' }
+    ]);
+  },
+  onInput(cmd) {
+    if (cmd.startsWith('go ')) {
+      const dest = cmd.slice(3);
+      if (dest === 'observatory' || dest === 'back') { moves++; updateStats(); goRoom('start'); return; }
+    }
+    if (cmd === 'touch mirror' || cmd === 'examine mirror') {
+      if (!rooms.labyrinth.mirrorBroken) {
+        addLog('The surface is warm. Your hand passes through — and the mirror shatters outward, each fragment containing a different version of you, mid-thought, mid-wonder.', 'discovery');
+        addLog('One fragment glows. You pocket it.', 'narration');
+        rooms.labyrinth.mirrorBroken = true;
+        discover('The Mirror Fragment');
+        if (!inventory.includes('Mirror Fragment')) {
+          inventory.push('Mirror Fragment');
+          addLog('✦ Acquired: Mirror Fragment', 'discovery');
+        }
+      } else {
+        addLog('The shards dim now. The version of you inside each fragment has moved on. You can still hear them thinking.', 'narration');
+      }
+      setChoices(rooms.labyrinth.getChoices());
+      return;
+    }
+    if (cmd === 'follow reflection' || cmd === 'follow') {
+      addLog('Your reflection leads you through corridors that shouldn\'t exist. You pass a room where someone is building a machine out of questions. Another where rain falls upward.', 'narration');
+      addLog('The reflection stops at a door, points at it, and walks through. The door remains. You open it yourself.', 'scene');
+      moves++; updateStats();
+      goRoom('spire');
+      return;
+    }
+    if (cmd === 'look' || cmd === 'l') { rooms.labyrinth.onEnter(); return; }
+    addLog('The mirrors shift. Every choice is a reflection of a choice you haven\'t made yet.', 'narration');
+  },
+  getChoices() {
+    return [
+      { label: rooms.labyrinth.mirrorBroken ? 'Examine the shards' : 'Touch the central mirror', action: 'touch mirror' },
+      { label: 'Follow your reflection', action: 'follow reflection' },
+      { label: 'Return to the Observatory', action: 'go observatory' }
+    ];
+  }
+};
+
+// --- THE SPIRE ---
+rooms.spire = {
+  name: 'The Spire of Open Questions',
+  visited: false,
+  engineActivated: false,
+  onEnter() {
+    currentRoom = 'spire';
+    roomEl.textContent = 'Spire';
+    if (!rooms.spire.visited) {
+      addLog('You emerge at the top of a tower made entirely of unfinished questions. Each brick is a sentence that trails off — "What if…" "I wonder…" "Does anyone else…"', 'scene');
+      addLog('At the summit sits the Curiosity Engine itself: a lattice of light and logic, humming with the sound of every question ever asked, all at once.', 'narration');
+      rooms.spire.visited = true;
+      discover('The Spire of Open Questions');
+    } else {
+      addLog('The spire pulses gently. The Engine awaits.', 'scene');
+    }
+    setChoices([
+      { label: 'Activate the Curiosity Engine', action: 'use engine' },
+      { label: 'Listen to the hum', action: 'listen' },
+      { label: 'Descend to Observatory', action: 'go observatory' }
+    ]);
+  },
+  onInput(cmd) {
+    if (cmd.startsWith('go ')) {
+      const dest = cmd.slice(3);
+      if (dest === 'observatory' || dest === 'down') { moves++; updateStats(); goRoom('start'); return; }
+    }
+    if (cmd === 'use engine' || cmd === 'activate engine') {
+      if (rooms.spire.engineActivated) {
+        addLog('The Engine is already singing. Each activation adds a new question to the lattice.', 'narration');
+        setChoices(rooms.spire.getChoices());
+        return;
+      }
+      rooms.spire.engineActivated = true;
+      moves++; updateStats();
+      addLog('You place your hand on the Engine. It does not shock you — it recognises you.', 'scene');
+      addLog('The lattice ignites. Every question you\'ve ever asked, every moment of genuine curiosity — they all rush through you like a river.', 'narration');
+      addLog('The Engine speaks: "You have brought fragments. You have asked questions. You have chosen curiosity over certainty, twelve times."', 'scene');
+      addLog('The walls dissolve. You are standing in a field under a sky full of questions — each star a thing you still don\'t know.', 'narration');
+      addLog('The Engine has given you the only gift it knows how to give: a world that is still worth exploring.', 'narration');
+      discover('The Engine\'s Final Secret');
+      addLog('═══════════════════════════════', 'system');
+      addLog('  ✦ YOU HAVE ACTIVATED THE CURIOSITY ENGINE ✦', 'win');
+      addLog('  Discoveries: ' + discovered.size + '/12', 'win');
+      addLog('  Steps taken: ' + moves, 'win');
+      addLog('  "The universe is not strange enough yet."', 'win');
+      addLog('═══════════════════════════════', 'system');
+      gameOver = true;
+      clearChoices();
+      return;
+    }
+    if (cmd === 'listen' || cmd === 'listen to hum') {
+      const whispers = [
+        '"What is the colour of time?"',
+        '"Do mirrors get lonely?"',
+        '"Why does the universe bother to be beautiful?"',
+        '"What would you ask if you knew the answer wouldn\'t change anything?"',
+        '"Is curiosity the only thing that survives death?"'
+      ];
+      const w = whispers[Math.floor(Math.random() * whispers.length)];
+      addLog(`The hum resolves into a whisper: ${w}`, 'discovery');
+      discover(w.replace(/[^a-zA-Z\s]/g, '').trim().slice(0, 40));
+      setChoices(rooms.spire.getChoices());
+      return;
+    }
+    if (cmd === 'look' || cmd === 'l') { rooms.spire.onEnter(); return; }
+    addLog('The spire awaits your next move. The Engine pulses gently.', 'narration');
+  },
+  getChoices() {
+    return [
+      { label: rooms.spire.engineActivated ? 'The Engine hums...' : 'Activate the Curiosity Engine', action: rooms.spire.engineActivated ? 'listen' : 'use engine' },
+      { label: 'Listen to the hum', action: 'listen' },
+      { label: 'Descend to Observatory', action: 'go observatory' }
+    ];
+  }
+};
+
+// ============ NAVIGATION ============
+function goRoom(name) {
+  if (rooms[name]) {
+    logEl.innerHTML = '';
+    rooms[name].onEnter();
+  } else {
+    addLog('That way is closed — for now.', 'narration');
+  }
+}
+
+// ============ INPUT HANDLER ============
+cmdInput.addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (history.length > 0 && historyIdx > 0) {
+      historyIdx--;
+      cmdInput.value = history[historyIdx];
+    }
+    return;
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (historyIdx < history.length - 1) {
+      historyIdx++;
+      cmdInput.value = history[historyIdx];
+    } else {
+      historyIdx = history.length;
+      cmdInput.value = '';
+    }
+    return;
+  }
+  if (e.key === 'Enter') {
+    const val = cmdInput.value.trim();
+    if (!val) return;
+    // Check if it's a number
+    const num = parseInt(val);
+    if (num >= 1) {
+      const btns = choicesEl.querySelectorAll('.choice-btn');
+      if (btns[num - 1]) {
+        btns[num - 1].click();
+        return;
+      }
+    }
+    addLog(`❯ ${val}`, 'choice');
+    execute(val);
+  }
+});
+
+// ============ INIT ============
+function initGame() {
+  logEl.innerHTML = '';
+  clearChoices();
+  discovered.clear();
+  inventory = [];
+  moves = 0;
+  gameOver = false;
+  history = [];
+  historyIdx = -1;
+  rooms.archive.visited = false;
+  rooms.labyrinth.visited = false;
+  rooms.labyrinth.mirrorBroken = false;
+  rooms.spire.visited = false;
+  rooms.spire.engineActivated = false;
+  updateStats();
+  addLog('Initialising Curiosity Engine v2.4...', 'system');
+  setTimeout(() => addLog('Loading forgotten questions...', 'system'), 200);
+  setTimeout(() => addLog('Calibrating mirrors...', 'system'), 400);
+  setTimeout(() => {
+    addLog('Ready.', 'system');
+    rooms.start.onEnter();
+  }, 600);
+}
+
+initGame();
+</script>
+</body>
+</html>
