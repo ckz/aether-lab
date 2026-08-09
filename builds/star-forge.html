@@ -3,554 +3,311 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Star Forge — Cosmic Stellar Nursery</title>
+<title>Star Forge — Black Hole Visualization</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
-  canvas { display: block; position: absolute; top: 0; left: 0; cursor: crosshair; }
-
-  #ui {
-    position: absolute; bottom: 0; left: 0; right: 0;
-    display: flex; justify-content: center; align-items: center;
-    gap: 16px; padding: 14px 20px;
-    background: linear-gradient(transparent, rgba(0,0,0,0.85));
-    color: #ccc; font-size: 12px; z-index: 10;
-    flex-wrap: wrap;
-  }
-  .btn {
-    background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.18);
-    color: #ddd; padding: 6px 14px; border-radius: 20px; cursor: pointer;
-    font-family: inherit; font-size: 12px; transition: all 0.2s;
-    backdrop-filter: blur(8px);
-  }
-  .btn:hover { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.4); color: #fff; }
-  .btn.active { background: rgba(100,180,255,0.25); border-color: rgba(100,180,255,0.7); color: #aef; }
-  #title {
-    position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-    color: rgba(255,255,255,0.08); font-size: 11px; letter-spacing: 0.4em;
-    text-transform: uppercase; pointer-events: none; z-index: 5;
-    white-space: nowrap;
-  }
-  #stats {
-    position: absolute; top: 14px; right: 18px;
-    color: rgba(255,255,255,0.25); font-size: 11px; text-align: right;
-    pointer-events: none; z-index: 5; line-height: 1.7;
-  }
-  #hint {
-    position: absolute; top: 14px; left: 18px;
-    color: rgba(255,255,255,0.2); font-size: 11px;
-    pointer-events: none; z-index: 5; line-height: 1.7;
-  }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; cursor: crosshair; }
+canvas { display: block; }
+#ui { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 10; flex-wrap: wrap; justify-content: center; }
+.btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: rgba(255,255,255,0.7); padding: 6px 14px; border-radius: 20px; cursor: pointer; font-size: 12px; font-family: inherit; transition: all 0.3s; backdrop-filter: blur(8px); }
+.btn:hover { background: rgba(255,255,255,0.15); color: #fff; border-color: rgba(255,255,255,0.3); }
+.btn.active { background: rgba(255,140,50,0.2); border-color: rgba(255,140,50,0.5); color: #ff8c32; }
+#info { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.35); font-size: 11px; text-align: center; z-index: 10; pointer-events: none; letter-spacing: 0.5px; }
+#stats { position: fixed; top: 16px; right: 16px; color: rgba(255,255,255,0.25); font-size: 10px; text-align: right; z-index: 10; pointer-events: none; line-height: 1.7; }
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
-<div id="title">★ Star Forge — Stellar Nursery</div>
-<div id="hint">
-  Click — Spawn star<br>
-  Hold — Charge ignition<br>
-  Drag — Sculpt nebula
+<div id="ui">
+  <button class="btn active" data-mode="create">Click: Create BH</button>
+  <button class="btn" data-mode="repel">Click: Repel</button>
+  <button class="btn" data-mode="attract">Click: Attract</button>
+  <button class="btn" data-mode="jet">Toggle Jets</button>
+  <button class="btn" data-mode="lens">Toggle Lensing</button>
+  <button class="btn" data-mode="clear">Clear All</button>
 </div>
 <div id="stats"></div>
-<div id="ui">
-  <span style="color:#888; font-size:11px;">★ Stars: <span id="count">0</span></span>
-  <button class="btn" id="btnNova" onclick="triggerNova()">💥 Supernova</button>
-  <button class="btn" id="btnNebula" onclick="toggleNebula()">🌫️ Nebula</button>
-  <button class="btn" id="btnCollapse" onclick="toggleCollapse()">🕳️ Collapse</button>
-  <button class="btn" onclick="clearAll()">✨ Clear</button>
-  <button class="btn" onclick="savePNG()">📷 Save</button>
-</div>
-
+<div id="info">click to create black holes &bull; scroll to resize &bull; space to pause &bull; S to save</div>
+<canvas id="c"></canvas>
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-let W, H, DPR = Math.min(window.devicePixelRatio || 1, 2);
+let W, H;
+function resize() { W = canvas.width = innerWidth; H = canvas.height = innerHeight; }
+resize(); addEventListener('resize', resize);
 
-function resize() {
-  W = window.innerWidth; H = window.innerHeight;
-  canvas.width = W * DPR; canvas.height = H * DPR;
-  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-}
-resize();
-window.addEventListener('resize', resize);
+let mode = 'create';
+let jets = true, lensing = true, paused = false;
+document.querySelectorAll('.btn').forEach(b => {
+  b.addEventListener('click', () => {
+    if (b.dataset.mode === 'clear') { blackHoles = []; return; }
+    if (b.dataset.mode === 'jet') { jets = !jets; b.classList.toggle('active', jets); return; }
+    if (b.dataset.mode === 'lens') { lensing = !lensing; b.classList.toggle('active', lensing); return; }
+    mode = b.dataset.mode;
+    document.querySelectorAll('.btn').forEach(x => { if (['create','repel','attract'].includes(x.dataset.mode)) x.classList.remove('active'); });
+    b.classList.add('active');
+  });
+});
+document.querySelector('[data-mode="jet"]').classList.add('active');
+document.querySelector('[data-mode="lens"]').classList.add('active');
 
-// --- State ---
-let stars = [];
-let nebulaClouds = [];
-let particles = [];
-let bursts = [];
-let mouse = { x: W/2, y: H/2, down: false, holdTime: 0 };
-let mode = 'normal'; // normal, collapse
-let showNebula = true;
-let time = 0;
-
-const MAX_STARS = 60;
-const O_CLASSES = ['O','B','A','F','G','K','M'];
-const O_COLORS = {
-  O: {core:'#b3d9ff', glow:'#3b7dd8', mass:'#1a3a6e'},
-  B: {core:'#cce5ff', glow:'#5599dd', mass:'#1e3d6e'},
-  A: {core:'#f0f0ff', glow:'#9999cc', mass:'#3a2a5e'},
-  F: {core:'#fff8e0', glow:'#ccaa44', mass:'#5e4a1e'},
-  G: {core:'#ffe8a0', glow:'#dd9933', mass:'#6e4a0e'},
-  K: {core:'#ffaa55', glow:'#cc5511', mass:'#7e2a0a'},
-  M: {core:'#ff6633', glow:'#dd2200', mass:'#6e1000'},
-};
-
-// Star class
+// Stars
 class Star {
-  constructor(x, y, power = 1) {
-    this.x = x; this.y = y;
-    this.vx = (Math.random() - 0.5) * 0.3;
-    this.vy = (Math.random() - 0.5) * 0.3;
-    this.mass = 0.5 + Math.random() * 3 * power;
-    this.oclass = this.pickClass(power);
-    this.colors = O_COLORS[this.oclass];
-    this.radius = this.mass * 2.5;
-    this.life = 1;
-    this.maxLife = 600 + Math.random() * 800;
-    this.age = 0;
-    this.flickerPhase = Math.random() * Math.PI * 2;
-    this.flickerSpeed = 0.02 + Math.random() * 0.04;
-    this.pulsePhase = Math.random() * Math.PI * 2;
-    this.coreGlow = 1;
-    this.merging = false;
-    // Light rays
-    this.rayCount = 3 + Math.floor(Math.random() * 6);
-    this.rayLength = 8 + Math.random() * 25 * this.mass;
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.baseX = this.x; this.baseY = this.y;
+    this.size = Math.random() * 1.5 + 0.3;
+    this.twinkleSpeed = Math.random() * 0.03 + 0.005;
+    this.twinkleOffset = Math.random() * Math.PI * 2;
+    this.hue = Math.random() < 0.1 ? Math.random() * 60 + 200 : Math.random() * 40 + 30;
   }
-  pickClass(power) {
-    const r = Math.random();
-    if (power > 1.5) return r < 0.4 ? 'O' : r < 0.7 ? 'B' : 'A';
-    if (r < 0.03) return 'O';
-    if (r < 0.12) return 'B';
-    if (r < 0.25) return 'A';
-    if (r < 0.45) return 'F';
-    if (r < 0.65) return 'G';
-    if (r < 0.82) return 'K';
-    return 'M';
+  draw(t) {
+    const a = 0.4 + 0.6 * Math.abs(Math.sin(t * this.twinkleSpeed + this.twinkleOffset));
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${this.hue}, 30%, 90%, ${a})`;
+    ctx.fill();
+  }
+  update(bhs, t) {
+    for (const bh of bhs) {
+      const dx = this.x - bh.x, dy = this.y - bh.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < bh.eventHorizon * 4) {
+        const pull = (1 - d / (bh.eventHorizon * 4)) * bh.pull * 0.5;
+        this.x -= (dx / d) * pull;
+        this.y -= (dy / d) * pull;
+      }
+      // Gravitational lensing: bend light around BH
+      if (lensing && d > bh.eventHorizon * 1.2 && d < bh.eventHorizon * 6) {
+        const lensStrength = bh.mass * 0.3 * Math.exp(-d / (bh.eventHorizon * 3));
+        const angle = Math.atan2(dy, dx);
+        const perpX = -Math.sin(angle), perpY = Math.cos(angle);
+        this.x += perpX * lensStrength * 0.15;
+        this.y += perpY * lensStrength * 0.15;
+      }
+    }
+  }
+}
+
+// Accretion disk particle
+class DiskParticle {
+  constructor(bh) { this.bh = bh; this.init(); }
+  init() {
+    const bh = this.bh;
+    const dist = bh.eventHorizon * (1.5 + Math.random() * 3);
+    const angle = Math.random() * Math.PI * 2;
+    this.x = bh.x + Math.cos(angle) * dist;
+    this.y = bh.y + Math.sin(angle) * dist * 0.35; // flattened disk
+    this.dist = dist;
+    this.angle = angle;
+    this.speed = (0.008 + Math.random() * 0.012) * (bh.mass / 20);
+    this.size = Math.random() * 2 + 0.5;
+    this.life = 1;
+    this.decay = 0.0003 + Math.random() * 0.001;
+    this.brightness = Math.random() * 0.5 + 0.5;
+  }
+  update() {
+    this.angle += this.speed;
+    this.dist -= 0.02;
+    const bh = this.bh;
+    this.x = bh.x + Math.cos(this.angle) * this.dist;
+    this.y = bh.y + Math.sin(this.angle) * this.dist * 0.35;
+    // Doppler beaming: brighter on approaching side (left side = blue, right = red)
+    this.life -= this.decay;
+    if (this.life <= 0 || this.dist < bh.eventHorizon * 1.05) this.init();
+  }
+  draw() {
+    const bh = this.bh;
+    // Doppler shift color
+    const doppler = Math.cos(this.angle); // +1 = approaching (blue), -1 = receding (red)
+    const hue = 20 + doppler * 30; // orange to purple
+    const sat = 80 + Math.abs(doppler) * 20;
+    const light = 40 + this.brightness * 30 * this.life;
+    const alpha = this.life * 0.7;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${hue}, ${sat}%, ${light}%, ${alpha})`;
+    ctx.fill();
+    // Glow
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life * 3, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${hue}, ${sat}%, ${light}%, ${alpha * 0.15})`;
+    ctx.fill();
+  }
+}
+
+// Jet particle
+class JetParticle {
+  constructor(bh, dir) {
+    this.bh = bh;
+    this.dir = dir; // 1 = up, -1 = down
+    this.x = bh.x + (Math.random() - 0.5) * 4;
+    this.y = bh.y + dir * bh.eventHorizon * 0.5;
+    this.vx = (Math.random() - 0.5) * 0.8;
+    this.vy = dir * (2 + Math.random() * 3);
+    this.life = 1;
+    this.decay = 0.005 + Math.random() * 0.008;
+    this.size = Math.random() * 2 + 0.5;
+    this.hue = 190 + Math.random() * 30;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vx *= 0.99;
+    this.vy *= 0.995;
+    this.life -= this.decay;
+  }
+  draw() {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${this.hue}, 90%, 60%, ${this.life * 0.6})`;
+    ctx.fill();
+  }
+}
+
+// Black Hole
+class BlackHole {
+  constructor(x, y, mass) {
+    this.x = x; this.y = y;
+    this.mass = mass || 15 + Math.random() * 25;
+    this.eventHorizon = this.mass * 0.8;
+    this.pull = this.mass * 0.4;
+    this.diskParticles = [];
+    this.jetParticles = [];
+    this.age = 0;
+    this.birth = performance.now();
+    // Initialize disk
+    const count = Math.floor(this.mass * 12);
+    for (let i = 0; i < count; i++) this.diskParticles.push(new DiskParticle(this));
   }
   update() {
     this.age++;
-    if (this.age > this.maxLife) this.life -= 0.003;
-    this.flickerPhase += this.flickerSpeed;
-    this.pulsePhase += 0.03;
-    // Drift
-    this.vx += (Math.random() - 0.5) * 0.02;
-    this.vy += (Math.random() - 0.5) * 0.02;
-    // Mouse gentle pull
-    const dx = mouse.x - this.x, dy = mouse.y - this.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist < 250 && dist > 5) {
-      const f = 0.015 / (dist * 0.01 + 1);
-      this.vx += (dx / dist) * f;
-      this.vy += (dy / dist) * f;
+    // Spawn jet particles
+    if (jets && Math.random() < 0.3) {
+      this.jetParticles.push(new JetParticle(this, 1));
+      this.jetParticles.push(new JetParticle(this, -1));
     }
-    // Collapse mode: all stars pulled to center
-    if (mode === 'collapse') {
-      const cx = W/2 - this.x, cy = H/2 - this.y;
-      const cd = Math.hypot(cx, cy);
-      if (cd > 5) {
-        const cf = 0.3 / (cd * 0.005 + 1);
-        this.vx += (cx/cd) * cf;
-        this.vy += (cy/cd) * cf;
-      }
-      // Spin
-      this.vx += -cy * 0.0003;
-      this.vy += cx * 0.0003;
-    }
-    // Damping
-    this.vx *= 0.998; this.vy *= 0.998;
-    this.x += this.vx; this.y += this.vy;
-    // Wrap
-    if (this.x < -100) this.x = W + 100;
-    if (this.x > W + 100) this.x = -100;
-    if (this.y < -100) this.y = H + 100;
-    if (this.y > H + 100) this.y = -100;
-    // Core glow pulse
-    this.coreGlow = 0.7 + 0.3 * Math.sin(this.pulsePhase) + 0.15 * Math.sin(this.flickerPhase);
+    this.diskParticles.forEach(p => p.update());
+    this.jetParticles = this.jetParticles.filter(p => { p.update(); return p.life > 0; });
   }
   draw() {
-    const flicker = 0.85 + 0.15 * Math.sin(this.flickerPhase * 3.7);
-    const alpha = this.life * flicker;
-    const {core, glow, mass} = this.colors;
-
-    // Outer glow halo
-    const outerR = this.rayLength * 4;
-    const outer = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, outerR);
-    outer.addColorStop(0, hexToRgba(glow, 0.18 * alpha));
-    outer.addColorStop(0.3, hexToRgba(mass, 0.06 * alpha));
-    outer.addColorStop(1, 'transparent');
-    ctx.beginPath(); ctx.arc(this.x, this.y, outerR, 0, Math.PI * 2);
-    ctx.fillStyle = outer; ctx.fill();
-
-    // Rays
-    ctx.save();
-    ctx.globalAlpha = alpha * 0.4;
-    ctx.strokeStyle = glow;
-    ctx.lineWidth = 0.5;
-    for (let i = 0; i < this.rayCount; i++) {
-      const angle = (i / this.rayCount) * Math.PI * 2 + time * 0.001;
-      const len = this.rayLength * (0.7 + 0.3 * Math.sin(time * 0.02 + i));
-      ctx.beginPath();
-      ctx.moveTo(this.x, this.y);
-      ctx.lineTo(this.x + Math.cos(angle) * len, this.y + Math.sin(angle) * len);
-      ctx.stroke();
-    }
-    ctx.restore();
-
-    // Mid glow
-    const mid = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius * 6);
-    mid.addColorStop(0, hexToRgba(core, 0.9 * alpha));
-    mid.addColorStop(0.25, hexToRgba(glow, 0.4 * alpha));
-    mid.addColorStop(0.6, hexToRgba(mass, 0.08 * alpha));
-    mid.addColorStop(1, 'transparent');
-    ctx.beginPath(); ctx.arc(this.x, this.y, this.radius * 6, 0, Math.PI * 2);
-    ctx.fillStyle = mid; ctx.fill();
-
-    // Core
-    const coreG = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius);
-    coreG.addColorStop(0, `rgba(255,255,255,${alpha})`);
-    coreG.addColorStop(0.2, hexToRgba(core, alpha * this.coreGlow));
-    coreG.addColorStop(0.7, hexToRgba(glow, alpha * 0.5));
-    coreG.addColorStop(1, 'transparent');
-    ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-    ctx.fillStyle = coreG; ctx.fill();
-  }
-  dead() { return this.life <= 0; }
-}
-
-// Nebula cloud
-class NebulaCloud {
-  constructor(x, y) {
-    this.x = x; this.y = y;
-    this.r = 80 + Math.random() * 200;
-    this.vx = (Math.random()-0.5)*0.15; this.vy = (Math.random()-0.5)*0.15;
-    const palettes = [
-      {a:'#4400aa', b:'#aa0066', c:'#220044'},
-      {a:'#003388', b:'#0088cc', c:'#001144'},
-      {a:'#880044', b:'#cc4400', c:'#330011'},
-      {a:'#226633', b:'#00aa88', c:'#112211'},
-    ];
-    this.pal = palettes[Math.floor(Math.random()*palettes.length)];
-    this.alpha = 0.03 + Math.random() * 0.05;
-    this.phase = Math.random() * Math.PI * 2;
-  }
-  update() {
-    this.x += this.vx; this.y += this.vy;
-    this.phase += 0.003;
-    // Gentle drift toward mouse
-    const dx = mouse.x - this.x, dy = mouse.y - this.y;
-    const d = Math.hypot(dx, dy);
-    if (d < 400 && d > 5) {
-      this.vx += (dx/d) * 0.005;
-      this.vy += (dy/d) * 0.005;
-    }
-    this.vx *= 0.999; this.vy *= 0.999;
-  }
-  draw() {
-    const pulse = 1 + 0.2 * Math.sin(this.phase);
-    const r = this.r * pulse;
-    const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r);
-    g.addColorStop(0, hexToRgba(this.pal.a, this.alpha * pulse));
-    g.addColorStop(0.4, hexToRgba(this.pal.b, this.alpha * 0.5 * pulse));
-    g.addColorStop(0.7, hexToRgba(this.pal.c, this.alpha * 0.2));
-    g.addColorStop(1, 'transparent');
-    ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = g; ctx.fill();
-  }
-}
-
-// Particle (for bursts and collisions)
-class Particle {
-  constructor(x, y, color, speed, life) {
-    this.x = x; this.y = y;
-    const angle = Math.random() * Math.PI * 2;
-    const s = Math.random() * speed;
-    this.vx = Math.cos(angle) * s;
-    this.vy = Math.sin(angle) * s;
-    this.color = color;
-    this.life = life;
-    this.maxLife = life;
-    this.size = 0.5 + Math.random() * 2;
-  }
-  update() {
-    this.x += this.vx; this.y += this.vy;
-    this.vx *= 0.985; this.vy *= 0.985;
-    this.life--;
-  }
-  draw() {
-    const a = this.life / this.maxLife;
-    ctx.beginPath(); ctx.arc(this.x, this.y, this.size * a, 0, Math.PI * 2);
-    ctx.fillStyle = hexToRgba(this.color, a);
+    const t = this.age;
+    // Accretion disk glow (outer ring)
+    const grd = ctx.createRadialGradient(this.x, this.y, this.eventHorizon * 0.8, this.x, this.y, this.eventHorizon * 3);
+    grd.addColorStop(0, 'rgba(0,0,0,1)');
+    grd.addColorStop(0.15, 'rgba(0,0,0,1)');
+    grd.addColorStop(0.2, 'rgba(255,100,20,0.15)');
+    grd.addColorStop(0.4, 'rgba(255,60,10,0.06)');
+    grd.addColorStop(0.7, 'rgba(100,20,255,0.02)');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.eventHorizon * 3, 0, Math.PI * 2);
+    ctx.fillStyle = grd;
     ctx.fill();
-  }
-  dead() { return this.life <= 0; }
-}
 
-// Burst ring (supernova shockwave)
-class BurstRing {
-  constructor(x, y, color) {
-    this.x = x; this.y = y;
-    this.radius = 5; this.maxRadius = 300 + Math.random() * 200;
-    this.speed = 3 + Math.random() * 2;
-    this.color = color; this.life = 1;
-  }
-  update() {
-    this.radius += this.speed;
-    this.speed *= 0.98;
-    this.life = 1 - this.radius / this.maxRadius;
-  }
-  draw() {
-    if (this.life <= 0) return;
-    ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-    ctx.strokeStyle = hexToRgba(this.color, this.life * 0.6);
-    ctx.lineWidth = 2 * this.life;
+    // Draw disk particles
+    this.diskParticles.forEach(p => p.draw());
+
+    // Event horizon (absolute black)
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.eventHorizon, 0, Math.PI * 2);
+    ctx.fillStyle = '#000';
+    ctx.fill();
+
+    // Photon ring (thin bright ring at the edge)
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.eventHorizon * 1.08, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255, 180, 100, ${0.4 + 0.2 * Math.sin(t * 0.05)})`;
+    ctx.lineWidth = 1.5;
     ctx.stroke();
-  }
-  dead() { return this.life <= 0; }
-}
 
-// --- Helpers ---
-function hexToRgba(hex, a) {
-  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
-  return `rgba(${r},${g},${b},${a})`;
-}
-
-function spawnStar(x, y, power = 1) {
-  if (stars.length >= MAX_STARS) stars.shift();
-  stars.push(new Star(x, y, power));
-}
-
-function spawnBurst(x, y, color, count) {
-  for (let i = 0; i < count; i++) {
-    particles.push(new Particle(x, y, color, 2 + Math.random() * 4, 30 + Math.random() * 40));
+    // Draw jets
+    if (jets) this.jetParticles.forEach(p => p.draw());
   }
 }
 
-function triggerNova() {
-  if (stars.length < 2) return;
-  // Pick the most massive star
-  stars.sort((a,b) => b.mass - a.mass);
-  const s = stars[0];
-  // Shockwave
-  bursts.push(new BurstRing(s.x, s.y, s.colors.core));
-  bursts.push(new BurstRing(s.x, s.y, s.colors.glow));
-  // Particles
-  spawnBurst(s.x, s.y, s.colors.core, 150);
-  spawnBurst(s.x, s.y, '#ffffff', 50);
-  // Remove star
-  stars.splice(0, 1);
-  // Flash nearby stars with energy — they grow
-  stars.forEach(st => {
-    const d = Math.hypot(st.x - s.x, st.y - s.y);
-    if (d < 200) {
-      st.mass += 0.5 * (1 - d/200);
-      st.radius = st.mass * 2.5;
-      spawnBurst(st.x, st.y, st.colors.core, 20);
-    }
-  });
-}
+// State
+let blackHoles = [];
+const stars = Array.from({ length: 300 }, () => new Star());
+let mouse = { x: W / 2, y: H / 2, down: false };
+let time = 0;
 
-function triggerCollapse() {
-  if (stars.length < 3) return;
-  // Sort by mass
-  stars.sort((a,b) => b.mass - a.mass);
-  const survivors = stars.slice(2);
-  // Black hole at center of mass
-  let cx = 0, cy = 0;
-  stars.forEach(s => { cx += s.x; cy += s.y; });
-  cx /= stars.length; cy /= stars.length;
-  // Accretion disk particles
-  for (let i = 0; i < 200; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const r = 20 + Math.random() * 60;
-    particles.push(new Particle(cx + Math.cos(angle)*r, cy + Math.sin(angle)*r, '#ffffff', 3, 60 + Math.random()*60));
-  }
-  bursts.push(new BurstRing(cx, cy, '#000000'));
-  stars = survivors;
-}
-
-function toggleNebula() {
-  showNebula = !showNebula;
-  document.getElementById('btnNebula').classList.toggle('active', showNebula);
-}
-function toggleCollapse() {
-  mode = mode === 'collapse' ? 'normal' : 'collapse';
-  document.getElementById('btnCollapse').classList.toggle('active', mode === 'collapse');
-}
-function clearAll() {
-  stars = []; particles = []; bursts = []; nebulaClouds = [];
-}
-
-function savePNG() {
-  const link = document.createElement('a');
-  link.download = 'star-forge-' + Date.now() + '.png';
-  link.href = canvas.toDataURL();
-  link.click();
-}
-
-// --- Interaction ---
-canvas.addEventListener('mousedown', e => {
-  mouse.down = true; mouse.holdTime = 0;
-  mouse.x = e.clientX; mouse.y = e.clientY;
-});
-canvas.addEventListener('mousemove', e => {
-  mouse.x = e.clientX; mouse.y = e.clientY;
-  if (mouse.down && stars.length < MAX_STARS && Math.random() < 0.3) {
-    spawnStar(e.clientX + (Math.random()-0.5)*30, e.clientY + (Math.random()-0.5)*30, 0.5 + mouse.holdTime * 0.5);
+addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+addEventListener('mousedown', e => {
+  mouse.down = true;
+  if (mode === 'create') {
+    const bh = new BlackHole(e.clientX, e.clientY);
+    blackHoles.push(bh);
+    if (blackHoles.length > 8) blackHoles.shift();
   }
 });
-canvas.addEventListener('mouseup', e => {
-  if (mouse.down) {
-    const power = 0.5 + mouse.holdTime * 0.8;
-    spawnStar(e.clientX, e.clientY, Math.min(power, 3));
-    // Ignition burst
-    const s = stars[stars.length - 1];
-    spawnBurst(s.x, s.y, s.colors.core, 15 + Math.floor(power * 20));
+addEventListener('mouseup', () => mouse.down = false);
+addEventListener('wheel', e => {
+  if (blackHoles.length > 0) {
+    const bh = blackHoles[blackHoles.length - 1];
+    bh.mass = Math.max(5, Math.min(60, bh.mass + (e.deltaY > 0 ? -2 : 2)));
+    bh.eventHorizon = bh.mass * 0.8;
+    bh.pull = bh.mass * 0.4;
+    bh.diskParticles = [];
+    const count = Math.floor(bh.mass * 12);
+    for (let i = 0; i < count; i++) bh.diskParticles.push(new DiskParticle(bh));
   }
-  mouse.down = false; mouse.holdTime = 0;
 });
-canvas.addEventListener('touchstart', e => {
-  e.preventDefault();
-  mouse.down = true; mouse.holdTime = 0;
-  const t = e.touches[0]; mouse.x = t.clientX; mouse.y = t.clientY;
-}, {passive:false});
-canvas.addEventListener('touchmove', e => {
-  e.preventDefault();
-  const t = e.touches[0]; mouse.x = t.clientX; mouse.y = t.clientY;
-  if (mouse.down && stars.length < MAX_STARS && Math.random() < 0.3) {
-    spawnStar(t.clientX + (Math.random()-0.5)*30, t.clientY + (Math.random()-0.5)*30, 0.5 + mouse.holdTime * 0.5);
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { paused = !paused; e.preventDefault(); }
+  if (e.key === 's' || e.key === 'S') {
+    const link = document.createElement('a');
+    link.download = 'star-forge.png';
+    link.href = canvas.toDataURL();
+    link.click();
   }
-}, {passive:false});
-canvas.addEventListener('touchend', e => {
-  if (mouse.down) {
-    const power = 0.5 + mouse.holdTime * 0.8;
-    spawnStar(mouse.x, mouse.y, Math.min(power, 3));
-    const s = stars[stars.length - 1];
-    spawnBurst(s.x, s.y, s.colors.core, 15 + Math.floor(power * 20));
-  }
-  mouse.down = false; mouse.holdTime = 0;
 });
 
-document.getElementById('btnNebula').classList.add('active');
-
-// --- Init nebula ---
-for (let i = 0; i < 12; i++) {
-  nebulaClouds.push(new NebulaCloud(Math.random()*W, Math.random()*H));
-}
-
-// --- Main loop ---
-function frame() {
+// Main loop
+function animate() {
+  requestAnimationFrame(animate);
+  if (paused) return;
   time++;
-  if (mouse.down) mouse.holdTime += 0.02;
 
-  // Background — deep space fade
-  ctx.fillStyle = 'rgba(2, 1, 8, 0.18)';
+  // Trail fade
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
   ctx.fillRect(0, 0, W, H);
 
-  // Nebula
-  if (showNebula) {
-    nebulaClouds.forEach(n => { n.update(); n.draw(); });
-    // Occasionally spawn new nebula
-    if (Math.random() < 0.005 && nebulaClouds.length < 18) {
-      nebulaClouds.push(new NebulaCloud(Math.random()*W, Math.random()*H));
-    }
-  }
-
-  // Background stars (static tiny)
-  if (time % 3 === 0) {
-    ctx.fillStyle = `rgba(255,255,255,${0.1 + Math.random()*0.3})`;
-    ctx.fillRect(Math.random()*W, Math.random()*H, 1, 1);
-  }
-
-  // Connection filaments between nearby stars
-  ctx.lineWidth = 0.4;
-  for (let i = 0; i < stars.length; i++) {
-    for (let j = i+1; j < stars.length; j++) {
-      const d = Math.hypot(stars[i].x - stars[j].x, stars[i].y - stars[j].y);
-      if (d < 180) {
-        const a = (1 - d/180) * 0.15 * Math.min(stars[i].life, stars[j].life);
-        const g = ctx.createLinearGradient(stars[i].x, stars[i].y, stars[j].x, stars[j].y);
-        g.addColorStop(0, hexToRgba(stars[i].colors.glow, a));
-        g.addColorStop(1, hexToRgba(stars[j].colors.glow, a));
-        ctx.beginPath();
-        ctx.moveTo(stars[i].x, stars[i].y);
-        ctx.lineTo(stars[j].x, stars[j].y);
-        ctx.strokeStyle = g;
-        ctx.stroke();
-      }
-    }
-  }
-
-  // Star-star gravity (gentle)
-  for (let i = 0; i < stars.length; i++) {
-    for (let j = i+1; j < stars.length; j++) {
-      const dx = stars[j].x - stars[i].x, dy = stars[j].y - stars[i].y;
-      const d = Math.hypot(dx, dy);
-      if (d > 20 && d < 300) {
-        const f = 0.02 / (d * 0.05 + 1);
-        const nx = dx/d, ny = dy/d;
-        stars[i].vx += nx * f; stars[i].vy += ny * f;
-        stars[j].vx -= nx * f; stars[j].vy -= ny * f;
-        // Merge if very close
-        if (d < stars[i].radius + stars[j].radius && !stars[i].merging && !stars[j].merging) {
-          stars[i].merging = stars[j].merging = true;
-          stars[i].mass += stars[j].mass * 0.8;
-          stars[i].radius = stars[i].mass * 2.5;
-          stars[i].maxLife = Math.max(stars[i].maxLife, stars[j].maxLife);
-          stars[i].life = Math.max(stars[i].life, stars[j].life);
-          // Reclassify
-          if (stars[i].mass > 6) { stars[i].oclass = 'O'; stars[i].colors = O_COLORS['O']; }
-          else if (stars[i].mass > 4) { stars[i].oclass = 'B'; stars[i].colors = O_COLORS['B']; }
-          else if (stars[i].mass > 2.5) { stars[i].oclass = 'A'; stars[i].colors = O_COLORS['A']; }
-          spawnBurst((stars[i].x+stars[j].x)/2, (stars[i].y+stars[j].y)/2, stars[i].colors.core, 30);
-          stars.splice(j, 1);
+  // Mouse interaction
+  if (mouse.down && blackHoles.length > 0) {
+    const bh = blackHoles[blackHoles.length - 1];
+    const dx = mouse.x - bh.x, dy = mouse.y - bh.y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d > bh.eventHorizon) {
+      const force = mode === 'attract' ? -0.3 : mode === 'repel' ? 0.6 : 0;
+      stars.forEach(s => {
+        const sdx = s.x - bh.x, sdy = s.y - bh.y;
+        const sd = Math.sqrt(sdx * sdx + sdy * sdy);
+        if (sd < 200) {
+          const f = force * (1 - sd / 200);
+          s.x += (sdx / sd) * f;
+          s.y += (sdy / sd) * f;
         }
-      }
+      });
     }
   }
 
-  // Update & draw stars
-  stars = stars.filter(s => !s.dead());
-  stars.forEach(s => { s.update(); s.draw(); });
+  // Update and draw stars
+  stars.forEach(s => { s.update(blackHoles, time); s.draw(time); });
 
-  // Burst rings
-  bursts = bursts.filter(b => !b.dead());
-  bursts.forEach(b => { b.update(); b.draw(); });
-
-  // Particles
-  particles = particles.filter(p => !p.dead());
-  particles.forEach(p => { p.update(); p.draw(); });
-
-  // Spontaneous ignition (small chance each frame when stars exist)
-  if (stars.length > 0 && Math.random() < 0.003) {
-    const s = stars[Math.floor(Math.random()*stars.length)];
-    spawnBurst(s.x, s.y, s.colors.core, 5);
-  }
-
-  // Slowly age-out oldest stars for lifecycle feel
-  if (stars.length > MAX_STARS * 0.8 && Math.random() < 0.02) {
-    const oldest = stars.reduce((a,b) => a.age > b.age ? a : b);
-    oldest.life -= 0.05;
-  }
+  // Update and draw black holes
+  blackHoles.forEach(bh => { bh.update(); bh.draw(); });
 
   // Stats
-  document.getElementById('count').textContent = stars.length;
-  document.getElementById('stats').innerHTML =
-    `Massive: ${stars.filter(s=>s.mass>4).length} | Merging: ${stars.filter(s=>s.merging).length}`;
-
-  requestAnimationFrame(frame);
+  if (time % 30 === 0) {
+    const totalParticles = blackHoles.reduce((a, bh) => a + bh.diskParticles.length + bh.jetParticles.length, 0);
+    document.getElementById('stats').innerHTML = 
+      `BLACK HOLES: ${blackHoles.length}<br>STARS: ${stars.length}<br>DISK PARTICLES: ${totalParticles}`;
+  }
 }
 
-// Initial spawn
-for (let i = 0; i < 8; i++) {
-  spawnStar(100 + Math.random()*(W-200), 100 + Math.random()*(H-200), 0.5 + Math.random());
-}
-// Initial background fill
-ctx.fillStyle = '#020108'; ctx.fillRect(0, 0, W, H);
-
-frame();
+animate();
 </script>
 </body>
 </html>
