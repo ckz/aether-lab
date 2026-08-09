@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chromatic Tides — Caustic Light</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #050508; }
+  canvas { display: block; cursor: crosshair; }
+  #ui {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 10px; align-items: center; padding: 8px 14px;
+    background: rgba(10,10,18,0.75); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 999px; backdrop-filter: blur(8px); font-family: -apple-system, system-ui, sans-serif;
+    color: #888; font-size: 12px; letter-spacing: 0.04em; user-select: none; pointer-events: auto;
+  }
+  #ui button {
+    background: none; border: 1px solid rgba(255,255,255,0.12); color: #aaa;
+    border-radius: 999px; padding: 4px 10px; cursor: pointer; font-size: 11px;
+    letter-spacing: 0.05em; transition: all 0.2s ease;
+  }
+  #ui button:hover { background: rgba(255,255,255,0.06); color: #fff; border-color: rgba(255,255,255,0.3); }
+  #info {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.45); font-family: -apple-system, system-ui, sans-serif;
+    font-size: 11px; letter-spacing: 0.08em; pointer-events: none; transition: opacity 1.5s ease;
+  }
+  #title {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.7); font-family: -apple-system, system-ui, sans-serif;
+    font-size: 13px; letter-spacing: 0.2em; pointer-events: none; text-transform: uppercase;
+    text-shadow: 0 0 20px rgba(100,180,255,0.5);
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="title">Chromatic Tides</div>
+<div id="info">click to place light · drag to bend · scroll depth · space palette · s save</div>
+<div id="ui">
+  <button id="modeBtn">mode: flow</button>
+  <button id="paletteBtn">palette: ocean</button>
+  <button id="clearBtn">clear</button>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H, DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resize(); window.addEventListener('resize', resize);
+
+// --- Palettes ---
+const PALETTES = {
+  ocean:  { name: 'ocean',  bg: [3, 6, 14],    hues: [190, 210, 230, 170, 200, 250], sat: [90, 85, 80, 75, 95, 70] },
+  ember:  { name: 'ember',  bg: [14, 5, 3],     hues: [15, 30, 45, 5, 25, 350],      sat: [95, 90, 85, 80, 100, 75] },
+  aurora: { name: 'aurora', bg: [4, 8, 12],     hues: [140, 180, 220, 160, 200, 280], sat: [80, 75, 85, 70, 90, 65] },
+  violet: { name: 'violet', bg: [8, 3, 14],     hues: [260, 280, 300, 240, 220, 320], sat: [85, 90, 80, 75, 95, 70] },
+  gold:   { name: 'gold',   bg: [12, 10, 4],    hues: [40, 50, 30, 60, 20, 45],      sat: [90, 85, 95, 80, 100, 88] },
+  rose:   { name: 'rose',   bg: [14, 4, 8],     hues: [340, 350, 330, 355, 320, 10], sat: [85, 90, 80, 75, 95, 70] },
+};
+
+let palette = PALETTES.ocean;
+let paletteNames = Object.keys(PALETTES);
+let paletteIdx = 0;
+
+// --- Light pools ---
+class LightPool {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.targetX = x; this.targetY = y;
+    this.size = 40 + Math.random() * 60;
+    this.hueIdx = Math.floor(Math.random() * palette.hues.length);
+    this.phase = Math.random() * Math.PI * 2;
+    this.speed = 0.3 + Math.random() * 0.7;
+    this.driftRadius = 30 + Math.random() * 80;
+    this.driftAngle = Math.random() * Math.PI * 2;
+    this.driftSpeed = 0.1 + Math.random() * 0.3;
+    this.opacity = 0;
+    this.targetOpacity = 0.5 + Math.random() * 0.4;
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    this.life = 1;
+    this.age = 0;
+  }
+
+  update(t, mouse, dt) {
+    this.age += dt;
+    this.opacity += (this.targetOpacity - this.opacity) * 0.03;
+
+    // gentle drift
+    this.driftAngle += this.driftSpeed * dt;
+    const dx = Math.cos(this.driftAngle) * this.driftRadius;
+    const dy = Math.sin(this.driftAngle * 1.3) * this.driftRadius;
+
+    let tx = this.targetX + dx;
+    let ty = this.targetY + dy;
+
+    // mouse influence
+    if (mouse.down && mouse.x !== null) {
+      const mx = mouse.x - (tx + this.x) * 0.5;
+      const my = mouse.y - (ty + this.y) * 0.5;
+      const dist = Math.sqrt(mx * mx + my * my);
+      if (dist < 300) {
+        const force = (300 - dist) / 300 * 2;
+        tx += mx * force * 0.3;
+        ty += my * force * 0.3;
+      }
+    }
+
+    this.x += (tx - this.x) * 0.02;
+    this.y += (ty - this.y) * 0.02;
+    this.phase += this.speed * dt;
+    this.pulsePhase += 1.2 * dt;
+  }
+}
+
+// --- State ---
+let pools = [];
+let t = 0;
+let mouse = { x: null, y: null, down: false };
+let mode = 0; // 0=flow, 1=ripple, 2=drift
+const modes = ['flow', 'ripple', 'drift'];
+let timeSpeed = 1;
+let depth = 1;
+let saveFlash = 0;
+let infoTimeout;
+
+// seed some initial pools
+for (let i = 0; i < 5; i++) {
+  pools.push(new LightPool(
+    W * 0.2 + Math.random() * W * 0.6,
+    H * 0.2 + Math.random() * H * 0.6
+  ));
+}
+
+// --- Input ---
+canvas.addEventListener('mousedown', e => { mouse.down = true; mouse.x = e.clientX; mouse.y = e.clientY; });
+canvas.addEventListener('mouseup', () => { mouse.down = false; });
+canvas.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+canvas.addEventListener('mouseleave', () => { mouse.down = false; mouse.x = null; mouse.y = null; });
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault(); mouse.down = true;
+  mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY;
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY;
+}, { passive: false });
+canvas.addEventListener('touchend', () => { mouse.down = false; });
+
+canvas.addEventListener('click', e => {
+  pools.push(new LightPool(e.clientX, e.clientY));
+  if (pools.length > 20) pools.shift();
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  depth = Math.max(0.2, Math.min(3, depth + (e.deltaY > 0 ? 0.1 : -0.1)));
+}, { passive: false });
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); cyclePalette(); }
+  if (e.key === 's' || e.key === 'S') savePNG();
+  if (e.key === 'c' || e.key === 'C') {
+    pools = [];
+    fadeInfo('cleared');
+  }
+});
+
+document.getElementById('modeBtn').addEventListener('click', () => {
+  mode = (mode + 1) % modes.length;
+  document.getElementById('modeBtn').textContent = 'mode: ' + modes[mode];
+});
+document.getElementById('paletteBtn').addEventListener('click', cyclePalette);
+document.getElementById('clearBtn').addEventListener('click', () => {
+  pools = []; fadeInfo('cleared');
+});
+
+function cyclePalette() {
+  paletteIdx = (paletteIdx + 1) % paletteNames.length;
+  palette = PALETTES[paletteNames[paletteIdx]];
+  document.getElementById('paletteBtn').textContent = 'palette: ' + palette.name;
+  fadeInfo(palette.name);
+}
+
+function fadeInfo(text) {
+  const info = document.getElementById('info');
+  info.textContent = text; info.style.opacity = '1';
+  clearTimeout(infoTimeout);
+  infoTimeout = setTimeout(() => { info.style.opacity = '0.4'; }, 2000);
+}
+
+function savePNG() {
+  const link = document.createElement('a');
+  link.download = 'chromatic-tides-' + Date.now() + '.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+  saveFlash = 1;
+  fadeInfo('saved');
+}
+
+// --- Caustic rendering ---
+function caustic(x, y, t, pool) {
+  let val = 0;
+  const freq = 0.008;
+  const spd = t * 0.6;
+
+  // layered waves
+  for (let i = 0; i < 5; i++) {
+    const f = freq * (1 + i * 0.7);
+    const px = x + Math.sin(t * 0.3 + i * 1.7) * 30 * (mode === 2 ? 3 : 1);
+    const py = y + Math.cos(t * 0.4 + i * 2.1) * 30 * (mode === 2 ? 3 : 1);
+    val += Math.sin(px * f + spd * (0.8 + i * 0.3)) *
+           Math.cos(py * f * 0.9 + spd * (0.6 + i * 0.2)) *
+           Math.sin((px + py) * f * 0.5 + spd * 0.4);
+  }
+
+  // ripple mode adds concentric rings from pool centers
+  if (mode === 1) {
+    const dx = x - pool.x, dy = y - pool.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    val += Math.sin(dist * 0.04 - t * 2) * 0.8 * Math.exp(-dist * 0.003);
+  }
+
+  return val / 5;
+}
+
+function getColor(val, intensity, pool) {
+  const hue = palette.hues[pool.hueIdx % palette.hues.length];
+  const sat = palette.sat[pool.hueIdx % palette.sat.length];
+  const light = 45 + val * 25 + intensity * 15;
+  const alpha = Math.max(0, Math.min(1, intensity * pool.opacity * 0.7));
+  return `hsla(${hue}, ${sat}%, ${Math.max(20, Math.min(70, light))}%, ${alpha})`;
+}
+
+// --- Render ---
+let last = performance.now();
+
+function render(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  t += dt * timeSpeed;
+
+  // fade background for trail effect
+  const bg = palette.bg;
+  ctx.fillStyle = `rgba(${bg[0]}, ${bg[1]}, ${bg[2]}, ${mode === 2 ? 0.06 : 0.12})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // update pools
+  for (const p of pools) p.update(t, mouse, dt);
+
+  // render caustic layers
+  // use lower resolution for caustic, scale up
+  const scale = 4;
+  const cw = Math.ceil(W / scale);
+  const ch = Math.ceil(H / scale);
+
+  // create offscreen for caustic
+  if (!this._causticCanvas || this._causticCanvas.width !== cw * DPR) {
+    this._causticCanvas = document.createElement('canvas');
+    this._causticCanvas.width = cw * DPR;
+    this._causticCanvas.height = ch * DPR;
+    this._cctx = this._causticCanvas.getContext('2d');
+    this._cctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    this._cw = cw; this._ch = ch;
+  }
+
+  const cctx = this._cctx;
+  cctx.clearRect(0, 0, cw, ch);
+
+  // blend mode for caustic
+  cctx.globalCompositeOperation = 'lighter';
+
+  for (const pool of pools) {
+    if (pool.opacity < 0.01) continue;
+    const hueIdx = pool.hueIdx % palette.hues.length;
+    const hue = palette.hues[hueIdx];
+    const sat = palette.sat[hueIdx];
+    const pulse = 0.7 + 0.3 * Math.sin(pool.pulsePhase);
+    const radius = pool.size * depth * pulse;
+    const intensity = pool.opacity * pulse;
+
+    // draw caustic pattern in circle around pool
+    const cx = pool.x / scale;
+    const cy = pool.y / scale;
+    const r = radius / scale;
+
+    for (let gy = Math.max(0, cy - r); gy < Math.min(ch, cy + r); gy++) {
+      for (let gx = Math.max(0, cx - r); gx < Math.min(cw, cx + r); gx++) {
+        const wx = gx * scale;
+        const wy = gy * scale;
+        const dx = wx - pool.x;
+        const dy = wy - pool.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < r) {
+          const norm = dist / r;
+          const falloff = 1 - norm * norm; // smooth falloff
+          const val = caustic(wx, wy, t + pool.phase, pool);
+          const bright = (val + 1) * 0.5 * falloff * intensity;
+
+          if (bright > 0.02) {
+            const light = 40 + val * 20 + intensity * 15;
+            const alpha = Math.min(0.55, bright * 0.5);
+            cctx.fillStyle = `hsla(${hue + val * 30}, ${sat}%, ${Math.max(25, Math.min(65, light))}%, ${alpha})`;
+            cctx.fillRect(gx, gy, 1.5, 1.5);
+          }
+        }
+      }
+    }
+  }
+
+  // draw caustic offscreen to main canvas
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = mode === 2 ? 0.8 : 1;
+  ctx.drawImage(this._causticCanvas, 0, 0, cw * DPR, ch * DPR, 0, 0, W, H);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+
+  // draw pool centers as soft glows
+  for (const pool of pools) {
+    const hue = palette.hues[pool.hueIdx % palette.hues.length];
+    const sat = palette.sat[pool.hueIdx % palette.sat.length];
+    const pulse = 0.7 + 0.3 * Math.sin(pool.pulsePhase);
+    const r = pool.size * depth * pulse;
+    const grad = ctx.createRadialGradient(pool.x, pool.y, 0, pool.x, pool.y, r);
+    grad.addColorStop(0, `hsla(${hue}, ${sat}%, 70%, ${pool.opacity * 0.35})`);
+    grad.addColorStop(0.4, `hsla(${hue + 20}, ${sat}%, 50%, ${pool.opacity * 0.12})`);
+    grad.addColorStop(1, `hsla(${hue}, ${sat}%, 40%, 0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(pool.x, pool.y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // subtle vignette
+  const vg = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.3, W/2, H/2, Math.max(W,H)*0.7);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.4)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+
+  // save flash
+  if (saveFlash > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${saveFlash * 0.3})`;
+    ctx.fillRect(0, 0, W, H);
+    saveFlash -= dt * 3;
+    if (saveFlash < 0) saveFlash = 0;
+  }
+
+  requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>
