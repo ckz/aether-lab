@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Synthetic Bloom — Generative Organism</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050508;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    cursor: crosshair;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1;
+  }
+  .ui {
+    position: fixed;
+    z-index: 10;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .ui > * { pointer-events: auto; }
+  .panel {
+    background: rgba(10, 10, 18, 0.85);
+    backdrop-filter: blur(8px);
+    border: 1px solid #1a1a2e;
+    border-radius: 8px;
+    padding: 0.6rem 1rem;
+    font-size: 0.75rem;
+    color: #aaa;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+  .panel span { color: #fff; font-weight: 600; }
+  .panel button {
+    background: #1e1e2e;
+    border: 1px solid #2a2a4e;
+    color: #ccc;
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    transition: all 0.2s;
+  }
+  .panel button:hover { background: #2a2a4e; color: #fff; border-color: #3a3a6e; }
+  .panel select {
+    background: #1e1e2e;
+    border: 1px solid #2a2a4e;
+    color: #ccc;
+    padding: 0.3rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    cursor: pointer;
+  }
+  .legend {
+    position: fixed;
+    z-index: 10;
+    bottom: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(10, 10, 18, 0.75);
+    backdrop-filter: blur(6px);
+    border: 1px solid #1a1a2e;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-size: 0.65rem;
+    color: #666;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-align: center;
+  }
+  .legend kbd {
+    background: #1a1a2e;
+    border: 1px solid #2a2a4e;
+    border-radius: 3px;
+    padding: 0.15rem 0.4rem;
+    color: #aaa;
+    font-family: monospace;
+    font-size: 0.7rem;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div class="ui">
+  <div class="panel">
+    Palette
+    <select id="paletteSelect">
+      <option value="0">Aurora</option>
+      <option value="1">Ember</option>
+      <option value="2">Deep</option>
+      <option value="3">Toxic</option>
+      <option value="4">Monochrome</option>
+      <option value="5">Violet</option>
+    </select>
+  </div>
+  <div class="panel">
+    <button id="seedBtn">New Seed</button>
+    <button id="pauseBtn">Pause</button>
+    <button id="clearBtn">Clear</button>
+  </div>
+</div>
+
+<div class="legend">
+  <kbd>Click</kbd> plant seed &nbsp;·&nbsp;
+  <kbd>Hold</kbd> attract &nbsp;·&nbsp;
+  <kbd>Space</kbd> pause &nbsp;·&nbsp;
+  <kbd>C</kbd> clear &nbsp;·&nbsp;
+  <kbd>S</kbd> save
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Palette System ---
+const palettes = [
+  { name: 'Aurora', colors: ['#00ffc8', '#00d4aa', '#7b2ff7', '#ff6b9d', '#00b4d8', '#90e0ef'] },
+  { name: 'Ember', colors: ['#ff4500', '#ff6b35', '#ffa500', '#ffcc02', '#ff2e63', '#ff006e'] },
+  { name: 'Deep', colors: ['#023e8a', '#0077b6', '#0096c7', '#00b4d8', '#48cae4', '#90e0ef'] },
+  { name: 'Toxic', colors: ['#39ff14', '#00ff41', '#7fff00', '#adff2f', '#00ff87', '#60ff94'] },
+  { name: 'Monochrome', colors: ['#ffffff', '#cccccc', '#999999', '#666666', '#333333', '#e0e0e0'] },
+  { name: 'Violet', colors: ['#7b2ff7', '#9b5de5', '#c77dff', '#e0aaff', '#5a189a', '#3c096c'] }
+];
+
+let currentPalette = 0;
+
+// --- Noise ---
+function noise2D(x, y) {
+  const n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+function fbm(x, y, octaves = 4) {
+  let val = 0, amp = 0.5, freq = 1;
+  for (let i = 0; i < octaves; i++) {
+    val += amp * noise2D(x * freq, y * freq);
+    amp *= 0.5;
+    freq *= 2.1;
+  }
+  return val;
+}
+
+// --- Organism / Branch System ---
+class Organism {
+  constructor(x, y, color, generation = 0) {
+    this.x = x;
+    this.y = y;
+    this.color = color;
+    this.generation = generation;
+    this.angle = Math.random() * Math.PI * 2;
+    this.speed = 0.3 + Math.random() * 0.7;
+    this.life = 1.0;
+    this.decay = 0.001 + Math.random() * 0.003;
+    this.length = 20 + Math.random() * 60;
+    this.thickness = Math.max(0.5, (6 - generation) * 0.8);
+    this.history = [{ x, y }];
+    this.maxHistory = Math.floor(this.length / this.speed);
+    this.turnRate = (Math.random() - 0.5) * 0.08;
+    this.childrenSpawned = false;
+    this.noiseOffsetX = Math.random() * 1000;
+    this.noiseOffsetY = Math.random() * 1000;
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    this.alive = true;
+  }
+
+  update(time, mouse) {
+    if (!this.alive) return;
+
+    // Curved growth via noise
+    const n = fbm(this.x * 0.003 + this.noiseOffsetX, this.y * 0.003 + this.noiseOffsetY, 3);
+    this.angle += this.turnRate + (n - 0.5) * 0.15;
+
+    // Mouse attraction
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 200) {
+        const force = (200 - dist) / 200 * 0.05;
+        this.angle += Math.atan2(dy, dx) - this.angle + (Math.random() - 0.5) * 0.3;
+        this.angle *= force;
+      }
+    }
+
+    const prevX = this.x;
+    const prevY = this.y;
+    this.x += Math.cos(this.angle) * this.speed;
+    this.y += Math.sin(this.angle) * this.speed;
+
+    this.history.push({ x: this.x, y: this.y });
+    if (this.history.length > this.maxHistory) this.history.shift();
+
+    // Spawn children at branching points
+    if (!this.childrenSpawned && this.history.length > 15 && Math.random() < 0.012 && this.generation < 4) {
+      this.childrenSpawned = true;
+      const branchAngle = this.angle + (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.8);
+      const child = new Organism(this.x, this.y, this.color, this.generation + 1);
+      child.angle = branchAngle;
+      child.speed *= 0.75;
+      child.thickness *= 0.6;
+      organisms.push(child);
+    }
+
+    // Life decay
+    this.life -= this.decay;
+    if (this.life <= 0 || this.x < -50 || this.x > W + 50 || this.y < -50 || this.y > H + 50) {
+      this.alive = false;
+    }
+  }
+
+  draw(time) {
+    if (!this.alive || this.history.length < 2) return;
+
+    const pulse = 0.7 + 0.3 * Math.sin(time * 0.003 + this.pulsePhase);
+    const alpha = this.life * pulse * 0.7;
+
+    ctx.beginPath();
+    ctx.moveTo(this.history[0].x, this.history[0].y);
+    for (let i = 1; i < this.history.length; i++) {
+      ctx.lineTo(this.history[i].x, this.history[i].y);
+    }
+    ctx.strokeStyle = this.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+    ctx.lineWidth = this.thickness;
+    ctx.lineCap = 'round';
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = this.thickness * 3;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Draw glowing tip
+    const tip = this.history[this.history.length - 1];
+    const tipAlpha = alpha * 0.8;
+    const grad = ctx.createRadialGradient(tip.x, tip.y, 0, tip.x, tip.y, this.thickness * 4);
+    grad.addColorStop(0, this.color + Math.floor(tipAlpha * 255).toString(16).padStart(2, '0'));
+    grad.addColorStop(1, this.color + '00');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(tip.x, tip.y, this.thickness * 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// --- Particle System (spores / atmosphere) ---
+class Particle {
+  constructor() {
+    this.reset();
+  }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.vx = (Math.random() - 0.5) * 0.3;
+    this.vy = (Math.random() - 0.5) * 0.3;
+    this.life = Math.random();
+    this.decay = 0.0005 + Math.random() * 0.001;
+    this.size = 0.5 + Math.random() * 1.5;
+    this.colorIdx = Math.floor(Math.random() * 6);
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= this.decay;
+    if (this.life <= 0 || this.x < 0 || this.x > W || this.y < 0 || this.y > H) this.reset();
+  }
+  draw(time) {
+    const alpha = Math.sin(this.life * Math.PI) * 0.4;
+    const col = palettes[currentPalette].colors[this.colorIdx];
+    ctx.fillStyle = col + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+// --- State ---
+let organisms = [];
+let particles = [];
+let paused = false;
+let time = 0;
+let mouse = { x: 0, y: 0, active: false, down: false };
+let seedTimer = 0;
+let seedInterval = 180; // frames between auto-seeds
+
+// Init particles
+for (let i = 0; i < 150; i++) particles.push(new Particle());
+
+// --- Input ---
+canvas.addEventListener('mousedown', (e) => {
+  mouse.down = true;
+  mouse.active = true;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  seedOrganism(e.clientX, e.clientY);
+});
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseup', () => { mouse.down = false; mouse.active = false; });
+canvas.addEventListener('mouseleave', () => { mouse.active = false; mouse.down = false; });
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  mouse.down = true;
+  mouse.active = true;
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  seedOrganism(t.clientX, t.clientY);
+}, { passive: false });
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  mouse.active = true;
+}, { passive: false });
+canvas.addEventListener('touchend', () => { mouse.down = false; mouse.active = false; });
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); togglePause(); }
+  if (e.code === 'KeyC') { organisms = []; }
+  if (e.code === 'KeyS') { saveFrame(); }
+});
+
+document.getElementById('paletteSelect').addEventListener('change', (e) => {
+  currentPalette = parseInt(e.target.value);
+});
+document.getElementById('seedBtn').addEventListener('click', () => {
+  seedOrganism(W / 2 + (Math.random() - 0.5) * 200, H / 2 + (Math.random() - 0.5) * 200);
+});
+document.getElementById('pauseBtn').addEventListener('click', togglePause);
+document.getElementById('clearBtn').addEventListener('click', () => { organisms = []; });
+
+function togglePause() {
+  paused = !paused;
+  document.getElementById('pauseBtn').textContent = paused ? 'Resume' : 'Pause';
+}
+
+function saveFrame() {
+  const link = document.createElement('a');
+  link.download = `synthetic-bloom-${Date.now()}.png`;
+  link.href = canvas.toDataURL();
+  link.click();
+}
+
+// --- Seeding ---
+function seedOrganism(x, y) {
+  const colors = palettes[currentPalette].colors;
+  const color = colors[Math.floor(Math.random() * colors.length)];
+  const count = 3 + Math.floor(Math.random() * 6);
+  for (let i = 0; i < count; i++) {
+    organisms.push(new Organism(
+      x + (Math.random() - 0.5) * 30,
+      y + (Math.random() - 0.5) * 30,
+      color
+    ));
+  }
+}
+
+// --- Main Loop ---
+function animate(timestamp) {
+  if (!paused) time = timestamp;
+
+  // Fade for trail effect
+  ctx.fillStyle = 'rgba(5, 5, 8, 0.08)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Auto-seed periodically
+  if (!paused) {
+    seedTimer++;
+    if (seedTimer > seedInterval && organisms.length < 80) {
+      seedTimer = 0;
+      seedOrganism(
+        Math.random() * W * 0.8 + W * 0.1,
+        Math.random() * H * 0.8 + H * 0.1
+      );
+    }
+  }
+
+  // Update & draw particles
+  particles.forEach(p => {
+    if (!paused) p.update();
+    p.draw(time);
+  });
+
+  // Update & draw organisms
+  organisms = organisms.filter(o => o.alive);
+  organisms.forEach(o => {
+    if (!paused) o.update(time, mouse);
+    o.draw(time);
+  });
+
+  requestAnimationFrame(animate);
+}
+
+// Start with initial seeds
+setTimeout(() => {
+  seedOrganism(W * 0.3, H * 0.4);
+  seedOrganism(W * 0.7, H * 0.6);
+  seedOrganism(W * 0.5, H * 0.3);
+}, 100);
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
