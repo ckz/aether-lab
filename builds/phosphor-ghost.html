@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phosphor Ghost — CRT Particle Canvas</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+  }
+  #ui {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #0f0;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 10;
+    text-shadow: 0 0 8px #0f0, 0 0 20px #0f0;
+    opacity: 0.7;
+    text-align: center;
+    line-height: 1.8;
+  }
+  #ghost-text {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #0f0;
+    font-size: 14px;
+    letter-spacing: 0.3em;
+    pointer-events: none;
+    z-index: 10;
+    text-shadow: 0 0 6px #0f0, 0 0 15px #0f0;
+    opacity: 0;
+    transition: opacity 0.5s;
+    font-family: 'Courier New', monospace;
+  }
+  #stats {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    color: #0f0;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    pointer-events: none;
+    z-index: 10;
+    text-shadow: 0 0 5px #0f0;
+    opacity: 0.5;
+    text-align: right;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="ui">PHOSPHOR_GHOST v1.0 // TYPE_TO_SUMMON // CLICK_TO_BURST // SPACE_CYCLE_PALETTE // C_CLEAR</div>
+<div id="ghost-text"></div>
+<div id="stats"></div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const ghostEl = document.getElementById('ghost-text');
+const statsEl = document.getElementById('stats');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ── Palettes ──
+const PALETTES = [
+  { name: 'GREEN_PHOSPHOR',  bg: '#020a02', glow: '#00ff41', dim: '#003300', bright: '#66ff88' },
+  { name: 'AMBER_TERMINAL',  bg: '#0a0800', glow: '#ffb000', dim: '#332200', bright: '#ffdd66' },
+  { name: 'CYAN_CRT',        bg: '#000a0a', glow: '#00ffff', dim: '#003333', bright: '#66ffff' },
+  { name: 'PHOSPHOR_WHITE',  bg: '#050505', glow: '#ccffcc', dim: '#1a1a1a', bright: '#ffffff' },
+  { name: 'RADAR_GREEN',     bg: '#010a01', glow: '#00ff66', dim: '#002211', bright: '#33ff99' },
+];
+let paletteIdx = 0;
+let P = PALETTES[0];
+
+function cyclePalette() {
+  paletteIdx = (paletteIdx + 1) % PALETTES.length;
+  P = PALETTES[paletteIdx];
+  document.getElementById('ui').textContent =
+    `PHOSPHOR_GHOST v1.0 // ${P.name} // TYPE_TO_SUMMON // CLICK_TO_BURST // SPACE_PALETTE // C_CLEAR`;
+  ghostEl.style.textShadow = `0 0 6px ${P.glow}, 0 0 15px ${P.glow}`;
+  ghostEl.style.color = P.glow;
+}
+
+// ── Scanlines ──
+function drawScanlines() {
+  ctx.fillStyle = 'rgba(0,0,0,0.08)';
+  for (let y = 0; y < H; y += 3) {
+    ctx.fillRect(0, y, W, 1);
+  }
+  // subtle horizontal flicker
+  if (Math.random() < 0.03) {
+    const flickY = Math.random() * H;
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.fillRect(0, flickY, W, 2 + Math.random() * 4);
+  }
+  // vignette
+  const vg = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.3, W/2, H/2, Math.max(W,H)*0.7);
+  vg.addColorStop(0, 'transparent');
+  vg.addColorStop(1, 'rgba(0,0,0,0.5)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+  // screen curvature glow
+  const cg = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.6);
+  cg.addColorStop(0, 'transparent');
+  cg.addColorStop(0.7, 'transparent');
+  cg.addColorStop(1, P.dim + '22');
+  ctx.fillStyle = cg;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ── Particles ──
+const MAX_PARTICLES = 1200;
+let particles = [];
+
+class Particle {
+  constructor(x, y, type = 'ambient') {
+    this.x = x || Math.random() * W;
+    this.y = y || Math.random() * H;
+    this.type = type; // 'ambient', 'letter', 'burst'
+    this.vx = (Math.random() - 0.5) * 0.5;
+    this.vy = (Math.random() - 0.5) * 0.5 - 0.3; // slight upward drift like phosphor
+    this.life = type === 'burst' ? 60 + Math.random() * 40 : Infinity;
+    this.maxLife = this.life;
+    this.size = type === 'burst' ? 1.5 + Math.random() * 2.5 : 0.5 + Math.random() * 1.5;
+    this.glowSize = this.size * (2 + Math.random() * 3);
+    this.flickerRate = 0.02 + Math.random() * 0.08;
+    this.flickerOffset = Math.random() * Math.PI * 2;
+    this.char = String.fromCharCode(0x30A0 + Math.random() * 96); // katakana
+    this.isChar = type === 'letter';
+    this.charLife = type === 'letter' ? 120 + Math.random() * 80 : 0;
+  }
+
+  update(time) {
+    this.x += this.vx;
+    this.y += this.vy;
+    // subtle jitter
+    this.vx += (Math.random() - 0.5) * 0.03;
+    this.vy += (Math.random() - 0.5) * 0.03;
+    // dampen
+    this.vx *= 0.998;
+    this.vy *= 0.998;
+    // gentle upward bias (phosphor risers)
+    this.vy -= 0.003;
+    // wrap
+    if (this.x < -20) this.x = W + 20;
+    if (this.x > W + 20) this.x = -20;
+    if (this.y < -20) this.y = H + 20;
+    if (this.y > H + 20) this.y = -20;
+    if (this.type === 'burst') this.life--;
+    if (this.isChar) this.charLife--;
+  }
+
+  draw(time) {
+    const flicker = 0.5 + 0.5 * Math.sin(time * this.flickerRate + this.flickerOffset);
+    let alpha = this.type === 'burst' ? (this.life / this.maxLife) : (0.3 + 0.7 * flicker);
+    if (this.isChar) alpha = Math.min(alpha, this.charLife / 40);
+
+    const glow = P.glow;
+    const bright = P.bright;
+
+    // outer glow
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.glowSize, 0, Math.PI * 2);
+    ctx.fillStyle = glow + Math.floor(alpha * 40).toString(16).padStart(2, '0');
+    ctx.fill();
+
+    // core
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = bright + Math.floor(alpha * 180).toString(16).padStart(2, '0');
+    ctx.fill();
+
+    // katakana ghost char
+    if (this.isChar && alpha > 0.3) {
+      ctx.font = `${8 + this.size * 2}px Courier New`;
+      ctx.fillStyle = glow + Math.floor(alpha * 200).toString(16).padStart(2, '0');
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(this.char, this.x, this.y);
+    }
+  }
+
+  dead() {
+    return this.type === 'burst' && this.life <= 0;
+  }
+}
+
+// ── Initialize ambient particles ──
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < 400; i++) {
+    particles.push(new Particle(null, null, 'ambient'));
+  }
+}
+initParticles();
+
+// ── Letter → particle spawn ──
+function spawnLetterParticles(x, y, char) {
+  const count = 15 + Math.floor(Math.random() * 25);
+  for (let i = 0; i < count; i++) {
+    if (particles.length >= MAX_PARTICLES) {
+      // remove oldest ambient
+      const idx = particles.findIndex(p => p.type === 'ambient');
+      if (idx >= 0) particles.splice(idx, 1);
+    }
+    const p = new Particle(
+      x + (Math.random() - 0.5) * 40,
+      y + (Math.random() - 0.5) * 40,
+      'letter'
+    );
+    p.vx = (Math.random() - 0.5) * 3;
+    p.vy = (Math.random() - 0.5) * 3;
+    p.char = char;
+    particles.push(p);
+  }
+}
+
+// ── Burst ──
+function burst(x, y) {
+  const count = 50 + Math.floor(Math.random() * 40);
+  for (let i = 0; i < count; i++) {
+    if (particles.length >= MAX_PARTICLES) {
+      const idx = particles.findIndex(p => p.type === 'ambient');
+      if (idx >= 0) particles.splice(idx, 1);
+    }
+    const p = new Particle(x, y, 'burst');
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 4;
+    p.vx = Math.cos(angle) * speed;
+    p.vy = Math.sin(angle) * speed;
+    particles.push(p);
+  }
+}
+
+// ── Ghost text flash ──
+let ghostTimeout;
+function showGhost(text) {
+  ghostEl.textContent = text;
+  ghostEl.style.opacity = '1';
+  ghostEl.style.color = P.glow;
+  ghostEl.style.textShadow = `0 0 6px ${P.glow}, 0 0 15px ${P.glow}, 0 0 30px ${P.glow}`;
+  clearTimeout(ghostTimeout);
+  ghostTimeout = setTimeout(() => { ghostEl.style.opacity = '0'; }, 2000);
+}
+
+// ── Ghost trails (persistent fading text) ──
+let ghostTrails = [];
+class GhostTrail {
+  constructor(text, x, y) {
+    this.text = text;
+    this.x = x;
+    this.y = y;
+    this.life = 200;
+    this.maxLife = 200;
+    this.vx = (Math.random() - 0.5) * 0.3;
+    this.vy = -0.3 - Math.random() * 0.5;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life--;
+  }
+  draw() {
+    const alpha = (this.life / this.maxLife) * 0.3;
+    ctx.font = '16px Courier New';
+    ctx.fillStyle = P.glow + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = P.glow;
+    ctx.shadowBlur = 10;
+    ctx.fillText(this.text, this.x, this.y);
+    ctx.shadowBlur = 0;
+  }
+  dead() { return this.life <= 0; }
+}
+
+// ── Mouse ──
+let mouse = { x: W/2, y: H/2, active: false };
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('click', e => {
+  burst(e.clientX, e.clientY);
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  mouse.active = true;
+}, { passive: false });
+canvas.addEventListener('touchstart', e => {
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  mouse.active = true;
+  burst(mouse.x, mouse.y);
+});
+canvas.addEventListener('touchend', () => { mouse.active = false; });
+
+// ── Keyboard ──
+let currentGhost = '';
+let ghostX = W / 2, ghostY = H / 2;
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    cyclePalette();
+    return;
+  }
+  if (e.code === 'KeyC') {
+    e.preventDefault();
+    particles = particles.filter(p => p.type === 'burst');
+    ghostTrails = [];
+    return;
+  }
+  if (e.key === 'Escape') {
+    currentGhost = '';
+    return;
+  }
+  if (e.key.length === 1) {
+    e.preventDefault();
+    currentGhost += e.key.toUpperCase();
+    ghostX = mouse.active ? mouse.x : W/2 + (Math.random()-0.5)*100;
+    ghostY = mouse.active ? mouse.y : H/2 + (Math.random()-0.5)*100;
+    spawnLetterParticles(ghostX, ghostY, e.key.toUpperCase());
+    ghostTrails.push(new GhostTrail(e.key.toUpperCase(), ghostX, ghostY));
+    if (ghostTrails.length > 30) ghostTrails.shift();
+    // show accumulated ghost
+    if (currentGhost.length <= 8) {
+      showGhost(currentGhost);
+    } else {
+      showGhost(currentGhost.slice(-8));
+    }
+  }
+  if (e.key === 'Backspace') {
+    currentGhost = currentGhost.slice(0, -1);
+    showGhost(currentGhost || '...');
+  }
+});
+
+// ── Animation loop ──
+let lastTime = 0;
+let frameCount = 0;
+let fps = 0;
+let fpsTime = 0;
+
+function animate(time) {
+  requestAnimationFrame(animate);
+  const dt = time - lastTime;
+  lastTime = time;
+
+  // FPS
+  frameCount++;
+  if (time - fpsTime > 1000) {
+    fps = frameCount;
+    frameCount = 0;
+    fpsTime = time;
+  }
+
+  // Semi-transparent background for trails
+  ctx.fillStyle = P.bg + '18';
+  ctx.fillRect(0, 0, W, H);
+
+  // Update & draw ghost trails
+  ghostTrails = ghostTrails.filter(g => !g.dead());
+  ghostTrails.forEach(g => { g.update(); g.draw(); });
+
+  // Mouse glow
+  if (mouse.active) {
+    const mg = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 80);
+    mg.addColorStop(0, P.glow + '15');
+    mg.addColorStop(1, 'transparent');
+    ctx.fillStyle = mg;
+    ctx.fillRect(mouse.x - 80, mouse.y - 80, 160, 160);
+    // spawn ambient particles near cursor
+    if (Math.random() < 0.3 && particles.length < MAX_PARTICLES) {
+      const p = new Particle(
+        mouse.x + (Math.random()-0.5) * 60,
+        mouse.y + (Math.random()-0.5) * 60,
+        'ambient'
+      );
+      p.vx = (Math.random() - 0.5) * 0.5;
+      p.vy = (Math.random() - 0.5) * 0.5;
+      particles.push(p);
+    }
+  }
+
+  // Update & draw particles
+  particles = particles.filter(p => !p.dead());
+  particles.forEach(p => { p.update(time * 0.001); p.draw(time * 0.001); });
+
+  // Ambient spawn to keep it alive
+  if (particles.filter(p => p.type === 'ambient').length < 200 && Math.random() < 0.4) {
+    particles.push(new Particle(null, null, 'ambient'));
+  }
+
+  // Scanlines & effects
+  drawScanlines();
+
+  // Stats
+  const ambient = particles.filter(p => p.type === 'ambient').length;
+  const burst = particles.filter(p => p.type === 'burst').length;
+  const letter = particles.filter(p => p.type === 'letter').length;
+  statsEl.textContent = `${P.name}\n${particles.length} particles\n${ambient}∅ ${burst}⚡ ${letter}†\n${fps} fps`;
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
