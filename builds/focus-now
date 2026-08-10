@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# focus-now — one-glance developer focus dashboard
+# Shows: time window, git velocity, focus verdict, music suggestion, one action
+# Usage: focus-now [path]  (defaults to current directory)
+
+set -euo pipefail
+
+# ─── Colors ────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GRN='\033[0;32m'
+YEL='\033[0;33m'
+BLU='\033[0;34m'
+MAG='\033[0;35m'
+CYN='\033[0;36m'
+WHT='\033[0;37m'
+BOLD='\033[1m'
+DIM='\033[2m'
+RST='\033[0m'
+
+# ─── Path ──────────────────────────────────────────────────────────
+REPO="${1:-.}"
+cd "$REPO" 2>/dev/null || { echo "Error: '$REPO' is not a valid directory"; exit 1; }
+
+# ─── Time & Greeting ───────────────────────────────────────────────
+H=$(date +%H)
+WEEKDAY=$(date +%u)   # 1=Mon … 7=Sun
+
+if   (( H >= 5  && H < 9  )); then GREET="🌅  Early Dawn";     EMOJI="🌄"
+elif (( H >= 9  && H < 12 )); then GREET="☀️  Morning Sprint";  EMOJI="⚡"
+elif (( H >= 12 && H < 14 )); then GREET="🌤  Midday Reset";   EMOJI="🍵"
+elif (( H >= 14 && H < 17 )); then GREET="🌇  Afternoon Grind"; EMOJI="🔥"
+elif (( H >= 17 && H < 20 )); then GREET="🌆  Evening Wind-Down";EMOJI="🌿"
+elif (( H >= 20 && H < 23 )); then GREET="🌙  Night Shift";     EMOJI="🦉"
+else                                 GREET="✨  Deep Night";      EMOJI="🌌"
+fi
+
+# Weekend modifier
+if (( WEEKDAY >= 6 )); then
+  GREET="$GREET  [weekend mode]"
+fi
+
+# ─── Git Velocity ──────────────────────────────────────────────────
+COMMITS_TODAY=$(git log --since="midnight" --oneline 2>/dev/null | wc -l | tr -d ' ')
+COMMITS_7D=$(git log --since="7 days ago" --oneline 2>/dev/null | wc -l | tr -d ' ')
+COMMITS_AVG=$(( COMMITS_7D / 7 ))
+FILES_CHANGED=$(git diff --name-only 2>/dev/null | wc -l | tr -d ' ')
+UNSTAGED=$(git diff --stat 2>/dev/null | tail -1 | grep -oP '\d+ files?' | grep -oP '\d+' | head -1 || echo 0)
+STAGED=$(git diff --cached --stat 2>/dev/null | tail -1 | grep -oP '\d+ files?' | grep -oP '\d+' | head -1 || echo 0)
+BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "detached")
+
+# Velocity tier
+if (( COMMITS_TODAY >= 10 )); then VEL_EMOJI="🚀"; VEL_LABEL="Hyperspace";   VEL_COLOR="$RED"
+elif (( COMMITS_TODAY >= 5 )); then VEL_EMOJI="⚡"; VEL_LABEL="On Fire";       VEL_COLOR="$RED"
+elif (( COMMITS_TODAY >= 2 )); then VEL_EMOJI="🔥"; VEL_LABEL="Cruising";      VEL_COLOR="$YEL"
+elif (( COMMITS_TODAY >= 1 )); then VEL_EMOJI="🌱"; VEL_LABEL="Warming Up";    VEL_COLOR="$GRN"
+else                                 VEL_EMOJI="🍃"; VEL_LABEL="Dormant";        VEL_COLOR="$CYN"
+fi
+
+# ─── Focus Verdict ─────────────────────────────────────────────────
+# Combines time of day, velocity, and uncommitted changes
+SCORE=0
+(( COMMITS_TODAY > 0 )) && SCORE=$(( SCORE + 1 ))
+(( COMMITS_TODAY >= 3 )) && SCORE=$(( SCORE + 1 ))
+(( UNSTAGED + STAGED > 0 )) && SCORE=$(( SCORE + 1 ))
+(( H >= 9  && H < 12 )) && SCORE=$(( SCORE + 1 ))   # morning bonus
+(( H >= 14 && H < 17 )) && SCORE=$(( SCORE + 1 ))   # afternoon bonus
+(( WEEKDAY >= 6 )) && SCORE=$(( SCORE - 1 ))         # weekend penalty (you deserve rest)
+
+if (( SCORE >= 5 )); then
+  VERDICT="Deep Flow — ride this wave" ; VERDICT_COLOR="$RED$BOLD"
+elif (( SCORE >= 3 )); then
+  VERDICT="Good momentum — keep pushing"; VERDICT_COLOR="$GRN"
+elif (( SCORE >= 1 )); then
+  VERDICT="Gentle warmth — find your rhythm"; VERDICT_COLOR="$YEL"
+elif (( H >= 0 && H < 5 )); then
+  VERDICT="The void stares back — maybe just one more?"; VERDICT_COLOR="$MAG"
+else
+  VERDICT="Quiet waters — perfect for starting"; VERDICT_COLOR="$CYN"
+fi
+
+# ─── Music Suggestion ──────────────────────────────────────────────
+if (( SCORE >= 5 )); then
+  MUSIC="Nils Frahm — 'Says' (repetition for flow)"
+elif (( COMMITS_TODAY == 0 && H >= 0 && H < 6 )); then
+  MUSIC="Brian Eno — 'Music for Airports' (warm-up)"
+elif (( COMMITS_TODAY >= 5 )); then
+  MUSIC="Tycho — 'Awake' (forward momentum)"
+elif (( SCORE >= 2 )); then
+  MUSIC="Aphex Twin — 'Rhubarb' (ambient drift)"
+else
+  MUSIC="Olafur Arnalds — 'Near Light' (gentle arrival)"
+fi
+
+# ─── One Action ────────────────────────────────────────────────────
+ACTIONS=(
+  "Ship the smallest working thing right now"
+  "Write the function name first — fill it later"
+  "Delete one commented-out line. You won't miss it."
+  "git add -p && git commit -m 'wip' — just start"
+  "Run the tests. They're probably failing."
+  "Close three tabs you haven't looked at in an hour"
+  "Write a TODO comment and move on"
+  "Refactor that one ugly line you keep scrolling past"
+  "Push. Even if it's messy. Perfect is the enemy."
+  "Stand up. Stretch. Look at something more than 2 feet away."
+  "Document the weird hack before you forget why it works"
+  "Delete the branch you finished last week"
+  "Run the linter. It has opinions."
+  "Review your last commit. Could the message be clearer?"
+  "Open the README. When did you last update it?"
+)
+ACTION_IDX=$(( COMMITS_TODAY + $(date +%j) + $(date +%s) % 100 ))
+ACTION="${ACTIONS[$(( ACTION_IDX % ${#ACTIONS[@]} ))]}"
+
+# ─── Render ────────────────────────────────────────────────────────
+LINE="───────────────────────────────────────────────────────"
+
+echo ""
+echo -e "  ${BOLD}${EMOJI}  FOCUS NOW${RST}        ${DIM}$(date '+%A, %B %-d · %H:%M')${RST}"
+echo -e "  $LINE"
+echo ""
+echo -e "  ${BOLD}$GREET${RST}"
+echo ""
+echo -e "  ${VEL_COLOR}${VEL_EMOJI}  Velocity: ${VEL_LABEL}${RST}   ${DIM}${COMMITS_TODAY} today  ·  ${COMMITS_AVG}/day avg  ·  ${COMMITS_7D} this week${RST}"
+echo ""
+echo -e "  ${BOLD}📍  Branch:${RST}  $BRANCH"
+echo -e "  ${BOLD}📝  Changes:${RST} ${UNSTAGED} unstaged · ${STAGED} staged"
+echo ""
+echo -e "  $LINE"
+echo ""
+echo -e "  ${BOLD}${VERDICT_COLOR}❯  $VERDICT${RST}"
+echo ""
+echo -e "  ${BOLD}🎵  Vibe:${RST}   $MUSIC"
+echo ""
+echo -e "  ${BOLD}⚡  Now:${RST}    $ACTION"
+echo ""
+echo -e "  $LINE"
+echo ""
+echo -e "  ${DIM}focus-now $(basename "$REPO") · $(git rev-parse --short HEAD 2>/dev/null || echo '?')${RST}"
+echo ""
