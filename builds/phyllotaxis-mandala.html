@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phyllotaxis Mandala</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050508;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #888;
+  }
+  canvas { display: block; }
+  .controls {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .controls button {
+    background: rgba(15, 15, 25, 0.85);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #aaa;
+    padding: 6px 14px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 0.05em;
+    transition: all 0.3s;
+    backdrop-filter: blur(10px);
+  }
+  .controls button:hover {
+    border-color: rgba(255,255,255,0.4);
+    color: #fff;
+    background: rgba(30, 30, 50, 0.9);
+  }
+  .controls button.active {
+    border-color: rgba(150, 200, 255, 0.5);
+    color: #fff;
+    background: rgba(40, 50, 80, 0.9);
+  }
+  .info {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    font-size: 11px;
+    color: #444;
+    letter-spacing: 0.1em;
+    z-index: 10;
+  }
+  .seeds-display {
+    position: fixed;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: #333;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    z-index: 10;
+  }
+  .title-overlay {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 14px;
+    color: rgba(255,255,255,0.15);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    z-index: 5;
+    pointer-events: none;
+    transition: opacity 2s;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div class="title-overlay" id="title">Phyllotaxis Mandala</div>
+
+<div class="controls">
+  <button onclick="newPattern()" class="active">⟳ New</button>
+  <button onclick="toggleMode()" id="modeBtn">Mode: Fibonacci</button>
+  <button onclick="togglePalette()" id="paletteBtn">Palette: Aurora</button>
+  <button onclick="toggleSymmetry()" id="symBtn">Symmetry: 8</button>
+  <button onclick="toggleRotation()" id="rotBtn">Rotation: On</button>
+  <button onclick="toggleOverlay()" id="ovBtn">Overlay: Off</button>
+  <button onclick="saveFrame()">💾 Save</button>
+</div>
+
+<div class="seeds-display" id="seeds">φ = 1.000 · n = 600 · div = 1</div>
+
+<div class="info">
+  Click to pulse · Scroll to zoom · Space to regenerate · R to randomize
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', () => { resize(); draw(); });
+
+// ---- State ----
+let mode = 0; // 0: fibonacci, 1: logarithmic, 2: sunflower, 3: sacred
+const modes = ['Fibonacci', 'Logarithmic', 'Sunflower', 'Sacred'];
+let palette = 0;
+const palettes = ['Aurora', 'Ember', 'Void', 'Ocean', 'Nebula', 'Gold'];
+let symmetry = 8;
+let rotating = true;
+let showOverlay = false;
+let scale = 1;
+let targetScale = 1;
+
+// ---- Seeds ----
+let phi = (1 + Math.sqrt(5)) / 2;
+let angleOffset = Math.PI * (3 - phi);
+let n = 600;
+let div = 1;
+let hueBase = 180;
+let hueRange = 120;
+let goldenAngle = 137.508 * Math.PI / 180;
+let spread = 8;
+
+function randomize() {
+  phi = 1 + Math.random() * 0.7;
+  angleOffset = Math.PI * (3 - Math.min(phi, 1.618));
+  n = 400 + Math.floor(Math.random() * 400);
+  div = 1 + Math.floor(Math.random() * 8);
+  hueBase = Math.floor(Math.random() * 360);
+  hueRange = 60 + Math.floor(Math.random() * 180);
+  goldenAngle = (130 + Math.random() * 20) * Math.PI / 180;
+  spread = 4 + Math.random() * 12;
+  updateSeeds();
+}
+
+function updateSeeds() {
+  document.getElementById('seeds').textContent =
+    `φ = ${phi.toFixed(3)} · n = ${n} · div = ${div} · θ = ${(goldenAngle / Math.PI * 180).toFixed(1)}°`;
+}
+
+// ---- Palettes ----
+function getColor(i, total, brightness) {
+  let h, s, l;
+  const t = i / total;
+  switch(palette) {
+    case 0: // Aurora
+      h = (hueBase + t * hueRange + Math.sin(t * Math.PI * 4) * 30) % 360;
+      s = 70 + Math.sin(t * Math.PI * 6) * 20;
+      l = brightness || (40 + Math.sin(t * Math.PI * 3 + angleOffset) * 25);
+      break;
+    case 1: // Ember
+      h = (t * 60 + Math.random() * 10) % 60;
+      s = 80 + Math.sin(t * Math.PI * 8) * 20;
+      l = brightness || (30 + t * 40 + Math.sin(t * Math.PI * 5) * 15);
+      break;
+    case 2: // Void
+      h = (240 + t * 60 + Math.sin(t * Math.PI * 3) * 20) % 360;
+      s = 50 + Math.sin(t * Math.PI * 4) * 30;
+      l = brightness || (20 + t * 50);
+      break;
+    case 3: // Ocean
+      h = (180 + t * 60 + Math.sin(t * Math.PI * 5) * 25) % 360;
+      s = 60 + Math.sin(t * Math.PI * 6) * 25;
+      l = brightness || (25 + t * 45 + Math.sin(t * Math.PI * 2) * 15);
+      break;
+    case 4: // Nebula
+      h = (hueBase + t * hueRange * 2 + Math.sin(t * Math.PI * 7) * 40) % 360;
+      s = 75 + Math.sin(t * Math.PI * 9) * 20;
+      l = brightness || (35 + Math.sin(t * Math.PI * 4 + angleOffset) * 30);
+      break;
+    case 5: // Gold
+      h = (35 + t * 30 + Math.sin(t * Math.PI * 6) * 15) % 360;
+      s = 70 + Math.sin(t * Math.PI * 8) * 25;
+      l = brightness || (30 + t * 45);
+      break;
+  }
+  return `hsl(${h}, ${s}%, ${l}%)`;
+}
+
+function getGlowColor(i, total) {
+  let h;
+  const t = i / total;
+  switch(palette) {
+    case 0: h = (hueBase + t * hueRange) % 360; break;
+    case 1: h = t * 50; break;
+    case 2: h = (250 + t * 50) % 360; break;
+    case 3: h = (185 + t * 50) % 360; break;
+    case 4: h = (hueBase + t * hueRange * 2) % 360; break;
+    case 5: h = (38 + t * 25) % 360; break;
+  }
+  return `hsla(${h}, 80%, 60%, 0.15)`;
+}
+
+// ---- Pattern Generators ----
+function getPosition(i, total) {
+  let r, theta;
+  const t = i / total;
+
+  switch(mode) {
+    case 0: // Fibonacci spiral
+      r = spread * Math.sqrt(i / div) * scale;
+      theta = i * goldenAngle + angleOffset;
+      break;
+    case 1: // Logarithmic spiral
+      r = spread * Math.log(1 + i / 10) * scale;
+      theta = i * goldenAngle * 0.7 + angleOffset;
+      break;
+    case 2: // Sunflower ( Vogel )
+      r = spread * Math.sqrt(i / div) * (1 + 0.2 * Math.sin(i * 0.01)) * scale;
+      theta = i * goldenAngle + angleOffset;
+      break;
+    case 3: // Sacred geometry
+      const ring = Math.floor(Math.sqrt(i / div));
+      const posInRing = i - ring * ring * div;
+      const ringCount = (ring + 1) * 6;
+      r = spread * ring * (1 + 0.1 * Math.sin(ring * 0.5)) * scale;
+      theta = (posInRing / ringCount) * Math.PI * 2 + angleOffset + ring * 0.1;
+      break;
+    default:
+      r = spread * Math.sqrt(i / div) * scale;
+      theta = i * goldenAngle + angleOffset;
+  }
+
+  return { r, theta };
+}
+
+// ---- Drawing ----
+let time = 0;
+let rotation = 0;
+let pulseWave = 0;
+
+function draw() {
+  // Fade trail
+  ctx.fillStyle = 'rgba(5, 5, 8, 0.15)';
+  ctx.fillRect(0, 0, W, H);
+
+  time += 0.008;
+  if (rotating) rotation += 0.002;
+
+  if (pulseWave > 0) pulseWave *= 0.96;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rotation);
+
+  for (let i = 0; i < n; i++) {
+    const { r, theta } = getPosition(i, n);
+    const x = r * Math.cos(theta);
+    const y = r * Math.sin(theta);
+
+    // Symmetry
+    for (let s = 0; s < symmetry; s++) {
+      const symAngle = (s / symmetry) * Math.PI * 2;
+      const sx = x * Math.cos(symAngle) - y * Math.sin(symAngle);
+      const sy = x * Math.sin(symAngle) + y * Math.cos(symAngle);
+
+      // Pulsing
+      const pulse = 1 + Math.sin(time * 2 + r * 0.02 + i * 0.01) * 0.2;
+      const dist = Math.sqrt(sx * sx + sy * sy);
+      const breathe = 1 + Math.sin(time + dist * 0.005) * 0.1;
+
+      const size = (1.5 + Math.sin(i * 0.05 + time) * 0.8) * pulse * breathe;
+      const alpha = Math.max(0.1, 1 - dist / (Math.max(W, H) * 0.6));
+
+      if (showOverlay) {
+        // Wireframe mode
+        ctx.strokeStyle = getColor(i, n);
+        ctx.globalAlpha = alpha * 0.4;
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.arc(sx, sy, size * 2, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        // Glow dot
+        const glowSize = size * 4;
+        const glow = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowSize);
+        glow.addColorStop(0, getColor(i, n));
+        glow.addColorStop(0.4, getGlowColor(i, n));
+        glow.addColorStop(1, 'transparent');
+
+        ctx.globalAlpha = alpha * 0.8;
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(sx, sy, glowSize, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Core
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = getColor(i, n, 70);
+        ctx.beginPath();
+        ctx.arc(sx, sy, size * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Pulse ring
+  if (pulseWave > 0.01) {
+    ctx.strokeStyle = `rgba(255, 255, 255, ${pulseWave * 0.3})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(0, 0, (1 - pulseWave) * Math.max(W, H) * 0.4, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+  ctx.globalAlpha = 1;
+
+  // Connection filaments (sparse, only nearby pairs)
+  if (!showOverlay && n < 500) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rotation);
+    ctx.globalAlpha = 0.06;
+    ctx.strokeStyle = `hsl(${hueBase}, 50%, 50%)`;
+    ctx.lineWidth = 0.3;
+    for (let i = 0; i < Math.min(n, 200); i += 3) {
+      const { r: r1, theta: t1 } = getPosition(i, n);
+      for (let j = i + 3; j < Math.min(n, 200); j += 3) {
+        const { r: r2, theta: t2 } = getPosition(j, n);
+        const dx = r1 * Math.cos(t1) - r2 * Math.cos(t2);
+        const dy = r1 * Math.sin(t1) - r2 * Math.sin(t2);
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < 30 * scale) {
+          ctx.beginPath();
+          ctx.moveTo(r1 * Math.cos(t1), r1 * Math.sin(t1));
+          ctx.lineTo(r2 * Math.cos(t2), r2 * Math.sin(t2));
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  requestAnimationFrame(draw);
+}
+
+// ---- Controls ----
+function newPattern() {
+  randomize();
+  scale = 1;
+  targetScale = 1;
+  // Fade fully
+  ctx.fillStyle = 'rgba(5, 5, 8, 1)';
+  ctx.fillRect(0, 0, W, H);
+  pulseWave = 1;
+}
+
+function toggleMode() {
+  mode = (mode + 1) % modes.length;
+  document.getElementById('modeBtn').textContent = `Mode: ${modes[mode]}`;
+  newPattern();
+}
+
+function togglePalette() {
+  palette = (palette + 1) % palettes.length;
+  document.getElementById('paletteBtn').textContent = `Palette: ${palettes[palette]}`;
+  if (palette === 0) hueBase = 180;
+  else if (palette === 1) hueBase = 10;
+  else if (palette === 2) hueBase = 250;
+  else if (palette === 3) hueBase = 190;
+  else if (palette === 4) hueBase = Math.floor(Math.random() * 360);
+  else if (palette === 5) hueBase = 38;
+  newPattern();
+}
+
+function toggleSymmetry() {
+  const options = [3, 4, 5, 6, 8, 10, 12, 16];
+  const idx = options.indexOf(symmetry);
+  symmetry = options[(idx + 1) % options.length];
+  document.getElementById('symBtn').textContent = `Symmetry: ${symmetry}`;
+  newPattern();
+}
+
+function toggleRotation() {
+  rotating = !rotating;
+  document.getElementById('rotBtn').textContent = `Rotation: ${rotating ? 'On' : 'Off'}`;
+}
+
+function toggleOverlay() {
+  showOverlay = !showOverlay;
+  document.getElementById('ovBtn').textContent = `Overlay: ${showOverlay ? 'On' : 'Off'}`;
+  document.getElementById('ovBtn').classList.toggle('active', showOverlay);
+}
+
+function saveFrame() {
+  const link = document.createElement('a');
+  link.download = `phyllotaxis-${Date.now()}.png`;
+  link.href = canvas.toDataURL();
+  link.click();
+}
+
+// ---- Events ----
+canvas.addEventListener('click', () => { pulseWave = 1; });
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  targetScale += e.deltaY * -0.001;
+  targetScale = Math.max(0.2, Math.min(3, targetScale));
+}, { passive: false });
+
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); newPattern(); }
+  if (e.key === 'r' || e.key === 'R') { randomize(); newPattern(); }
+  if (e.key === 's' && !e.metaKey && !e.ctrlKey) saveFrame();
+});
+
+// Smooth zoom
+setInterval(() => {
+  scale += (targetScale - scale) * 0.1;
+}, 50);
+
+// Hide title after 3s
+setTimeout(() => {
+  document.getElementById('title').style.opacity = '0';
+}, 3000);
+
+// ---- Start ----
+randomize();
+updateSeeds();
+ctx.fillStyle = 'rgba(5, 5, 8, 1)';
+ctx.fillRect(0, 0, W, H);
+draw();
+</script>
+
+</body>
+</html>
