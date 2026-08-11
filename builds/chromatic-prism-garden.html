@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chromatic Prism Garden</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #050510; }
+  canvas { display: block; cursor: crosshair; }
+  #ui {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; z-index: 10; flex-wrap: wrap; justify-content: center;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  }
+  #ui button {
+    background: rgba(10, 10, 30, 0.7); color: #ccc; border: 1px solid rgba(255,255,255,0.15);
+    padding: 6px 14px; border-radius: 20px; cursor: pointer; font-size: 12px;
+    backdrop-filter: blur(10px); transition: all 0.3s;
+    text-shadow: 0 0 8px rgba(255,255,255,0.3);
+  }
+  #ui button:hover { background: rgba(30, 30, 60, 0.8); color: #fff; border-color: rgba(255,255,255,0.4); }
+  #ui button.active { background: rgba(80, 60, 160, 0.5); border-color: rgba(150,120,255,0.6); color: #fff; }
+  #hint {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.3); font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 11px; letter-spacing: 1px; pointer-events: none;
+    transition: opacity 2s;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="ui">
+  <button id="btnPalette" class="active">Palette</button>
+  <button id="btnClear">Clear</button>
+  <button id="btnAuto">Auto</button>
+  <button id="btnSave">Save PNG</button>
+</div>
+<div id="hint">click anywhere to plant a prism · scroll to resize · space to pause</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Palettes ───
+const PALETTES = [
+  { name: 'Aurora',   colors: ['#00ffa3','#00d4ff','#7b2fff','#ff2d95','#ffea00','#00ffd0'] },
+  { name: 'Ember',    colors: ['#ff4500','#ff6a00','#ffaa00','#ffe040','#ff2040','#ff8040'] },
+  { name: 'Deep',     colors: ['#1a0533','#3b1f8e','#7b5ea7','#c9b1ff','#e8d5ff','#ffffff'] },
+  { name: 'Ocean',    colors: ['#003b5c','#006994','#00a8cc','#40e0d0','#7fffd4','#e0ffff'] },
+  { name: 'Void Gold',colors: ['#0a0a1a','#1a1a3e','#ffd700','#ffaa00','#ff6600','#ffffff'] },
+  { name: 'Neon',     colors: ['#ff00ff','#00ffff','#ffff00','#ff0080','#00ff80','#8000ff'] },
+  { name: 'Biolum',   colors: ['#001133','#003366','#00cc99','#33ffcc','#66ffdd','#ccffee'] },
+];
+let paletteIdx = 0;
+let palette = PALETTES[0];
+
+// ─── State ───
+let prisms = [];
+let particles = [];
+let interferenceGlow = [];
+let paused = false;
+let autoMode = true;
+let autoTimer = 0;
+let mouse = { x: W/2, y: H/2 };
+let frame = 0;
+
+// ─── Utility ───
+function rand(a, b) { return a + Math.random() * (b - a); }
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+function hsl(h, s, l, a=1) { return `hsla(${h},${s}%,${l}%,${a})`; }
+function lerpColor(c1, c2, t) {
+  // Simple hex lerp
+  const r1=parseInt(c1.slice(1,3),16), g1=parseInt(c1.slice(3,5),16), b1=parseInt(c1.slice(5,7),16);
+  const r2=parseInt(c2.slice(1,3),16), g2=parseInt(c2.slice(3,5),16), b2=parseInt(c2.slice(5,7),16);
+  const r=Math.round(r1+(r2-r1)*t), g=Math.round(g1+(g2-g1)*t), b=Math.round(b1+(b2-b1)*t);
+  return `rgb(${r},${g},${b})`;
+}
+
+// ─── Prism Class ───
+class Prism {
+  constructor(x, y, size) {
+    this.x = x; this.y = y;
+    this.size = size || rand(20, 55);
+    this.rotation = rand(0, Math.PI * 2);
+    this.rotSpeed = rand(-0.003, 0.003);
+    this.swayPhase = rand(0, Math.PI * 2);
+    this.swayAmp = rand(0.3, 1.2);
+    this.swayFreq = rand(0.008, 0.02);
+    this.opacity = 0;
+    this.maxOpacity = rand(0.5, 0.85);
+    this.fadeIn = true;
+    this.life = 0;
+    this.maxLife = rand(600, 1400);
+    this.hueBase = rand(0, 360);
+    this.hueSpeed = rand(0.05, 0.2);
+    this.colors = palette.colors;
+    this.refractAngle = rand(0, Math.PI * 2);
+    this.refractSpeed = rand(0.002, 0.008);
+    this.rays = Math.floor(rand(5, 9));
+    this.trail = [];
+    this.trailMax = Math.floor(rand(12, 30));
+    this.driftX = rand(-0.15, 0.15);
+    this.driftY = rand(-0.1, -0.3); // drift upward
+    this.glowIntensity = rand(0.4, 1);
+  }
+
+  update() {
+    this.life++;
+    this.rotation += this.rotSpeed;
+    this.swayPhase += this.swayFreq;
+    this.hueBase = (this.hueBase + this.hueSpeed) % 360;
+    this.refractAngle += this.refractSpeed;
+
+    // Fade in/out
+    if (this.fadeIn) {
+      this.opacity += 0.015;
+      if (this.opacity >= this.maxOpacity) { this.opacity = this.maxOpacity; this.fadeIn = false; }
+    }
+    if (this.life > this.maxLife * 0.75) {
+      this.opacity -= 0.008;
+    }
+
+    // Sway + drift
+    const sway = Math.sin(this.swayPhase) * this.swayAmp;
+    this.trail.unshift({ x: this.x + sway, y: this.y, hue: this.hueBase });
+    if (this.trail.length > this.trailMax) this.trail.pop();
+
+    this.x += this.driftX + Math.sin(this.swayPhase * 1.3) * 0.2;
+    this.y += this.driftY;
+
+    return this.opacity > 0 && this.life < this.maxLife;
+  }
+
+  draw(ctx) {
+    const sway = Math.sin(this.swayPhase) * this.swayAmp;
+    const cx = this.x + sway;
+    const cy = this.y;
+
+    // Draw refraction rays
+    for (let i = 0; i < this.rays; i++) {
+      const angle = this.refractAngle + (i / this.rays) * Math.PI * 2;
+      const rayLen = this.size * rand(1.5, 2.5);
+      const endX = cx + Math.cos(angle) * rayLen;
+      const endY = cy + Math.sin(angle) * rayLen;
+      const colorIdx = i % this.colors.length;
+      const hue = (this.hueBase + i * (360 / this.rays)) % 360;
+
+      // Ray gradient
+      const grad = ctx.createLinearGradient(cx, cy, endX, endY);
+      grad.addColorStop(0, hsl(hue, 90, 65, this.opacity * this.glowIntensity * 0.8));
+      grad.addColorStop(0.5, hsl(hue, 80, 55, this.opacity * 0.4));
+      grad.addColorStop(1, hsl(hue, 70, 50, 0));
+
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(endX, endY);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = rand(1, 3);
+      ctx.stroke();
+    }
+
+    // Prism body — diamond shape
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(this.rotation);
+    ctx.beginPath();
+    const s = this.size * 0.4;
+    ctx.moveTo(0, -s);
+    ctx.lineTo(s * 0.7, 0);
+    ctx.lineTo(0, s);
+    ctx.lineTo(-s * 0.7, 0);
+    ctx.closePath();
+
+    const bodyGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, s);
+    const primaryHue = this.hueBase;
+    bodyGrad.addColorStop(0, hsl(primaryHue, 60, 90, this.opacity * 0.9));
+    bodyGrad.addColorStop(0.5, hsl(primaryHue + 40, 80, 60, this.opacity * 0.5));
+    bodyGrad.addColorStop(1, hsl(primaryHue + 80, 90, 40, 0));
+    ctx.fillStyle = bodyGrad;
+    ctx.fill();
+    ctx.strokeStyle = hsl(primaryHue, 90, 70, this.opacity * 0.6);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+
+    // Core sparkle
+    ctx.beginPath();
+    ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${this.opacity * 0.9})`;
+    ctx.fill();
+
+    // Trail fade
+    if (this.trail.length > 1) {
+      for (let i = 1; i < this.trail.length; i++) {
+        const t = this.trail[i];
+        const alpha = (1 - i / this.trail.length) * this.opacity * 0.3;
+        const hue = (t.hue + i * 2) % 360;
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, (1 - i / this.trail.length) * 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = hsl(hue, 80, 65, alpha);
+        ctx.fill();
+      }
+    }
+  }
+}
+
+// ─── Light Particle (from prisms) ───
+class LightParticle {
+  constructor(x, y, color) {
+    this.x = x; this.y = y;
+    const angle = rand(0, Math.PI * 2);
+    const speed = rand(0.2, 1.5);
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed - 0.3;
+    this.life = 0;
+    this.maxLife = rand(40, 120);
+    this.size = rand(0.5, 2.5);
+    this.color = color;
+    this.hue = rand(0, 360);
+  }
+  update() {
+    this.life++;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy -= 0.003; // float up
+    this.vx *= 0.99;
+    this.vy *= 0.99;
+    this.hue = (this.hue + 0.5) % 360;
+    return this.life < this.maxLife;
+  }
+  draw(ctx) {
+    const alpha = (1 - this.life / this.maxLife) * 0.7;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * (1 - this.life / this.maxLife * 0.5), 0, Math.PI * 2);
+    ctx.fillStyle = hsl(this.hue, 90, 70, alpha);
+    ctx.fill();
+  }
+}
+
+// ─── Interference Spot (where prisms overlap) ───
+class InterferenceSpot {
+  constructor(x, y, intensity) {
+    this.x = x; this.y = y;
+    this.intensity = intensity;
+    this.life = 0;
+    this.maxLife = rand(60, 150);
+    this.hue = rand(0, 360);
+  }
+  update() {
+    this.life++;
+    this.hue = (this.hue + 1.5) % 360;
+    return this.life < this.maxLife;
+  }
+  draw(ctx) {
+    const alpha = (1 - this.life / this.maxLife) * this.intensity * 0.3;
+    const radius = 20 + this.intensity * 30 + Math.sin(this.life * 0.1) * 10;
+    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, radius);
+    grad.addColorStop(0, hsl(this.hue, 90, 70, alpha));
+    grad.addColorStop(0.5, hsl(this.hue + 60, 80, 55, alpha * 0.5));
+    grad.addColorStop(1, hsl(this.hue + 120, 70, 40, 0));
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+  }
+}
+
+// ─── Background Stars ───
+const stars = [];
+for (let i = 0; i < 200; i++) {
+  stars.push({
+    x: rand(0, W), y: rand(0, H),
+    size: rand(0.3, 1.5), twinkle: rand(0, Math.PI * 2),
+    speed: rand(0.01, 0.04)
+  });
+}
+
+function drawStars() {
+  stars.forEach(s => {
+    s.twinkle += s.speed;
+    const alpha = 0.2 + Math.sin(s.twinkle) * 0.2;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(200,210,255,${alpha})`;
+    ctx.fill();
+  });
+}
+
+// ─── Ambient ground glow ───
+function drawAmbientGlow() {
+  // Soft radial gradient following mouse
+  const grad = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 250);
+  const hue = (frame * 0.2) % 360;
+  grad.addColorStop(0, hsl(hue, 60, 30, 0.03));
+  grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ─── Check for interference between prisms ───
+function checkInterference() {
+  for (let i = 0; i < prisms.length; i++) {
+    for (let j = i + 1; j < prisms.length; j++) {
+      const d = dist(prisms[i], prisms[j]);
+      const threshold = prisms[i].size + prisms[j].size + 40;
+      if (d < threshold) {
+        const midX = (prisms[i].x + prisms[j].x) / 2;
+        const midY = (prisms[i].y + prisms[j].y) / 2;
+        const intensity = 1 - d / threshold;
+        if (Math.random() < 0.05 * intensity) {
+          interferenceGlow.push(new InterferenceSpot(midX, midY, intensity));
+        }
+      }
+    }
+  }
+}
+
+// ─── Spawn Prism ───
+function spawnPrism(x, y, size) {
+  const p = new Prism(x, y, size);
+  prisms.push(p);
+  // Burst light particles
+  for (let i = 0; i < 20; i++) {
+    const hue = p.hueBase + rand(-30, 30);
+    particles.push(new LightParticle(x, y, hsl(hue, 90, 70, 0.8)));
+  }
+  // Cap
+  if (prisms.length > 35) prisms.shift();
+}
+
+// ─── Input ───
+canvas.addEventListener('click', e => {
+  spawnPrism(e.clientX, e.clientY);
+});
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -3 : 3;
+  if (prisms.length > 0) {
+    prisms[prisms.length - 1].size = Math.max(10, Math.min(80, prisms[prisms.length - 1].size + delta));
+  }
+}, { passive: false });
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') { paused = !paused; e.preventDefault(); }
+  if (e.code === 'KeyC') { paletteIdx = (paletteIdx + 1) % PALETTES.length; palette = PALETTES[paletteIdx]; updateButtons(); }
+  if (e.code === 'KeyS') savePNG();
+});
+
+document.getElementById('btnPalette').addEventListener('click', () => {
+  paletteIdx = (paletteIdx + 1) % PALETTES.length;
+  palette = PALETTES[paletteIdx];
+  updateButtons();
+});
+document.getElementById('btnClear').addEventListener('click', () => { prisms = []; particles = []; interferenceGlow = []; });
+document.getElementById('btnAuto').addEventListener('click', () => { autoMode = !autoMode; updateButtons(); });
+document.getElementById('btnSave').addEventListener('click', savePNG);
+
+function updateButtons() {
+  document.getElementById('btnPalette').textContent = palette.name;
+  document.getElementById('btnPalette').classList.toggle('active', true);
+  document.getElementById('btnAuto').textContent = autoMode ? 'Auto: ON' : 'Auto: OFF';
+  document.getElementById('btnAuto').classList.toggle('active', autoMode);
+}
+
+function savePNG() {
+  const link = document.createElement('a');
+  link.download = `prism-garden-${Date.now()}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+// ─── Main Loop ───
+function loop() {
+  if (!paused) {
+    frame++;
+
+    // Semi-transparent overlay for motion blur / trails
+    ctx.fillStyle = 'rgba(5, 5, 16, 0.12)';
+    ctx.fillRect(0, 0, W, H);
+
+    // Fade more aggressively every few frames to prevent buildup
+    if (frame % 120 === 0) {
+      ctx.fillStyle = 'rgba(5, 5, 16, 0.15)';
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    drawStars();
+    drawAmbientGlow();
+
+    // Auto spawn
+    if (autoMode) {
+      autoTimer++;
+      if (autoTimer > rand(60, 160)) {
+        autoTimer = 0;
+        spawnPrism(rand(50, W - 50), rand(50, H - 50), rand(20, 55));
+      }
+    }
+
+    // Update prisms
+    prisms = prisms.filter(p => {
+      const alive = p.update();
+      if (alive) p.draw(ctx);
+      return alive;
+    });
+
+    // Interference detection
+    checkInterference();
+
+    // Update interference spots
+    interferenceGlow = interferenceGlow.filter(s => {
+      const alive = s.update();
+      if (alive) s.draw(ctx);
+      return alive;
+    });
+
+    // Update light particles
+    particles = particles.filter(p => {
+      const alive = p.update();
+      if (alive) p.draw(ctx);
+      return alive;
+    });
+
+    // Spawn ambient particles from prisms
+    if (frame % 4 === 0 && prisms.length > 0) {
+      const p = prisms[Math.floor(Math.random() * prisms.length)];
+      particles.push(new LightParticle(p.x, p.y, null));
+    }
+
+    // Cap particles
+    if (particles.length > 500) particles.splice(0, particles.length - 500);
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// ─── Seed with initial prisms ───
+for (let i = 0; i < 5; i++) {
+  setTimeout(() => {
+    spawnPrism(rand(W * 0.2, W * 0.8), rand(H * 0.2, H * 0.8), rand(25, 50));
+  }, i * 300);
+}
+
+updateButtons();
+loop();
+</script>
+</body>
+</html>
