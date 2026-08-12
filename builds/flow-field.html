@@ -3,154 +3,115 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flow Field — Generative Art</title>
+<title>Flow Field — Aether Lab</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     background: #0a0a0f;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 100vh;
-    font-family: 'Courier New', monospace;
-    color: #ccc;
     overflow: hidden;
-  }
-  h1 {
-    font-size: 1.2rem;
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
-    margin-bottom: 0.5rem;
-    color: #888;
-  }
-  .subtitle {
-    font-size: 0.75rem;
-    color: #555;
-    margin-bottom: 1rem;
-    letter-spacing: 0.1em;
-  }
-  canvas {
-    border: 1px solid #1a1a2e;
-    cursor: crosshair;
-    max-width: 95vw;
-    max-height: 75vh;
-  }
-  .controls {
-    margin-top: 1rem;
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    font-size: 0.7rem;
-    color: #666;
-  }
-  .controls button {
-    background: #1a1a2e;
+    font-family: 'Courier New', monospace;
     color: #aaa;
-    border: 1px solid #2a2a4e;
-    padding: 0.4rem 1rem;
-    cursor: pointer;
-    font-family: inherit;
-    font-size: 0.7rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    transition: all 0.2s;
   }
-  .controls button:hover {
-    background: #2a2a4e;
-    color: #fff;
-    border-color: #4a4a8e;
-  }
+  canvas { display: block; }
   .info {
     position: fixed;
-    bottom: 0.8rem;
-    right: 1rem;
-    font-size: 0.6rem;
-    color: #333;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    opacity: 0.4;
+    pointer-events: none;
+    text-align: center;
+  }
+  .title {
+    position: fixed;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    opacity: 0.3;
+    pointer-events: none;
+  }
+  .controls {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 10;
+  }
+  .controls button {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #888;
+    padding: 6px 14px;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+  .controls button:hover {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+    border-color: rgba(255,255,255,0.3);
   }
 </style>
 </head>
 <body>
-  <h1>Flow Field</h1>
-  <div class="subtitle">click to disturb · move to attract</div>
-  <canvas id="canvas"></canvas>
-  <div class="controls">
-    <button onclick="resetField()">Reset</button>
-    <button onclick="togglePalette()">Palette</button>
-    <button onclick="toggleMode()">Mode</button>
-    <span id="stats"></span>
-  </div>
-  <div class="info">generative flow field — aether creation</div>
+<div class="title">Flow Field — Generative</div>
+<canvas id="canvas"></canvas>
+<div class="info">move mouse to influence · click to burst</div>
+<div class="controls">
+  <button onclick="regenerate()">New Seed</button>
+  <button onclick="toggleMode()">Mode</button>
+  <button onclick="clearTrails()">Clear</button>
+</div>
 
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-const stats = document.getElementById('stats');
 
 let W, H;
-let particles = [];
-let flowField = [];
-const COLS = 80;
-const ROWS = 60;
-const CELL_SIZE = 8;
-const PARTICLE_COUNT = 1500;
-let paletteIndex = 0;
-let mode = 0; // 0 = flow, 1 = spiral, 2 = wave
-
-const palettes = [
-  { name: 'Aurora', colors: ['#00ff88', '#00ccff', '#ff00aa', '#ffaa00', '#8800ff'] },
-  { name: 'Ember', colors: ['#ff4400', '#ff8800', '#ffcc00', '#ff0066', '#ff2288'] },
-  { name: 'Ocean', colors: ['#003366', '#0066aa', '#00aacc', '#00ffcc', '#88ffff'] },
-  { name: 'Ghost', colors: ['#ffffff', '#aaaacc', '#6666aa', '#444488', '#222244'] },
-  { name: 'Neon', colors: ['#ff00ff', '#00ffff', '#ffff00', '#ff0080', '#80ff00'] },
-];
-
-let currentPalette = palettes[0];
-
 function resize() {
-  const maxW = window.innerWidth * 0.95;
-  const maxH = window.innerHeight * 0.7;
-  W = Math.min(maxW, COLS * CELL_SIZE);
-  H = Math.min(maxH, ROWS * CELL_SIZE);
-  canvas.width = W;
-  canvas.height = H;
-  initField();
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+let seed = Math.random() * 10000;
+let particles = [];
+let mouse = { x: W/2, y: H/2, active: false };
+let mode = 0;
+const modes = ['flow', 'orbit', 'wave', 'galaxy'];
+const modeNames = ['Flow', 'Orbit', 'Wave', 'Galaxy'];
+
+// Seeded random
+function seededRandom(s) {
+  let x = Math.sin(s) * 10000;
+  return x - Math.floor(x);
 }
 
-function initField() {
-  flowField = [];
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      flowField.push({ x: x * CELL_SIZE, y: y * CELL_SIZE, angle: 0 });
-    }
-  }
-}
+let currentSeed = seed;
 
-function noise(x, y, t) {
-  return Math.sin(x * 0.03 + t) * Math.cos(y * 0.04 + t * 0.7) +
-         Math.sin((x + y) * 0.02 + t * 1.3) * 0.5 +
-         Math.cos(x * 0.01 - y * 0.03 + t * 0.5) * 0.3;
-}
-
-function getAngle(x, y, t) {
-  const cx = W / 2, cy = H / 2;
-  const dx = x - cx, dy = y - cy;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  const baseAngle = Math.atan2(dy, dx);
-
-  if (mode === 0) {
-    return noise(x, y, t) * Math.PI * 2;
-  } else if (mode === 1) {
-    return baseAngle + Math.sin(dist * 0.02 - t * 2) * 1.5 + t;
-  } else {
-    return Math.sin(y * 0.02 + t) * Math.PI + Math.cos(x * 0.03 - t * 0.8) * 0.8;
+function createParticles(count) {
+  particles = [];
+  for (let i = 0; i < count; i++) {
+    particles.push(new Particle());
   }
 }
 
 class Particle {
-  constructor() { this.reset(); }
+  constructor() {
+    this.reset();
+  }
   reset() {
     this.x = Math.random() * W;
     this.y = Math.random() * H;
@@ -158,134 +119,140 @@ class Particle {
     this.vy = 0;
     this.life = Math.random() * 200 + 100;
     this.maxLife = this.life;
-    this.color = currentPalette.colors[Math.floor(Math.random() * currentPalette.colors.length)];
-    this.speed = 0.5 + Math.random() * 1.5;
+    this.size = Math.random() * 1.5 + 0.5;
+    this.hue = (seededRandom(currentSeed + this.x * 0.01 + this.y * 0.01) * 60 + 180) % 360;
   }
-  update(t, mouse) {
-    const angle = getAngle(this.x, this.y, t);
-    this.vx += Math.cos(angle) * 0.3;
-    this.vy += Math.sin(angle) * 0.3;
-
+  update() {
+    const angle = getFieldAngle(this.x, this.y);
+    
+    if (mode === 0) { // flow
+      this.vx += Math.cos(angle) * 0.3;
+      this.vy += Math.sin(angle) * 0.3;
+    } else if (mode === 1) { // orbit
+      const dx = this.x - W/2;
+      const dy = this.y - H/2;
+      const dist = Math.sqrt(dx*dx + dy*dy) + 0.1;
+      this.vx += (-dy/dist * 0.5 + Math.cos(angle) * 0.2);
+      this.vy += (dx/dist * 0.5 + Math.sin(angle) * 0.2);
+    } else if (mode === 2) { // wave
+      this.vx += Math.cos(angle) * 0.2;
+      this.vy += Math.sin(this.x * 0.01 + this.y * 0.01) * 0.5;
+    } else { // galaxy
+      const dx = this.x - W/2;
+      const dy = this.y - H/2;
+      const dist = Math.sqrt(dx*dx + dy*dy) + 0.1;
+      this.vx += (-dy/dist * 0.8) + Math.cos(angle) * 0.1;
+      this.vy += (dx/dist * 0.8) + Math.sin(angle) * 0.1;
+      this.vx *= 0.99;
+      this.vy *= 0.99;
+    }
+    
+    // Mouse influence
     if (mouse.active) {
       const dx = this.x - mouse.x;
       const dy = this.y - mouse.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 120) {
-        const force = (120 - dist) / 120;
-        if (mode === 1) {
-          // attract
-          this.vx -= (dx / dist) * force * 2;
-          this.vy -= (dy / dist) * force * 2;
-        } else {
-          // repel
-          this.vx += (dx / dist) * force * 3;
-          this.vy += (dy / dist) * force * 3;
-        }
+      const dist = Math.sqrt(dx*dx + dy*dy) + 0.1;
+      if (dist < 200) {
+        const force = (200 - dist) / 200;
+        this.vx += (dx/dist) * force * 2;
+        this.vy += (dy/dist) * force * 2;
       }
     }
-
-    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-    const maxSpeed = this.speed * 3;
+    
+    this.vx *= 0.96;
+    this.vy *= 0.96;
+    
+    const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
+    const maxSpeed = 4;
     if (speed > maxSpeed) {
-      this.vx = (this.vx / speed) * maxSpeed;
-      this.vy = (this.vy / speed) * maxSpeed;
+      this.vx = (this.vx/speed) * maxSpeed;
+      this.vy = (this.vy/speed) * maxSpeed;
     }
+    
     this.x += this.vx;
     this.y += this.vy;
     this.life--;
-
-    // wrap
-    if (this.x < 0) this.x = W;
-    if (this.x > W) this.x = 0;
-    if (this.y < 0) this.y = H;
-    if (this.y > H) this.y = 0;
-
-    if (this.life <= 0) this.reset();
+    
+    if (this.x < 0 || this.x > W || this.y < 0 || this.y > H || this.life <= 0) {
+      this.reset();
+    }
   }
-  draw(ctx) {
-    const alpha = (this.life / this.maxLife) * 0.6;
-    ctx.fillStyle = this.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
-    ctx.fillRect(this.x, this.y, 1.5, 1.5);
-  }
-}
-
-function initParticles() {
-  particles = [];
-  for (let i = 0; i < PARTICLE_COUNT; i++) {
-    particles.push(new Particle());
+  draw() {
+    const alpha = (this.life / this.maxLife) * 0.8;
+    const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
+    const lightness = 50 + speed * 10;
+    ctx.fillStyle = `hsla(${this.hue}, 80%, ${lightness}%, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 
-// Fade trail effect
+function getFieldAngle(x, y) {
+  const scale = 0.003;
+  const t = Date.now() * 0.0005;
+  return (
+    Math.sin(x * scale + t + currentSeed) * 
+    Math.cos(y * scale + t * 0.7) * 
+    Math.PI * 2
+  );
+}
+
 function drawBackground() {
-  ctx.fillStyle = 'rgba(10, 10, 15, 0.05)';
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.08)';
   ctx.fillRect(0, 0, W, H);
 }
-
-let mouse = { x: 0, y: 0, active: false };
-let time = 0;
-let animId;
 
 function animate() {
   drawBackground();
-  for (const p of particles) {
-    p.update(time, mouse);
-    p.draw(ctx);
-  }
-  time += 0.008;
-  stats.textContent = `particles: ${PARTICLE_COUNT} · palette: ${currentPalette.name}`;
-  animId = requestAnimationFrame(animate);
-}
-
-function resetField() {
-  ctx.fillStyle = '#0a0a0f';
-  ctx.fillRect(0, 0, W, H);
-  time = 0;
-  initParticles();
-}
-
-function togglePalette() {
-  paletteIndex = (paletteIndex + 1) % palettes.length;
-  currentPalette = palettes[paletteIndex];
   particles.forEach(p => {
-    p.color = currentPalette.colors[Math.floor(Math.random() * currentPalette.colors.length)];
+    p.update();
+    p.draw();
   });
-}
-
-function toggleMode() {
-  mode = (mode + 1) % 3;
-  const modes = ['flow', 'spiral', 'wave'];
-  // flash feedback
-  ctx.fillStyle = 'rgba(255,255,255,0.1)';
-  ctx.fillRect(0, 0, W, H);
+  requestAnimationFrame(animate);
 }
 
 canvas.addEventListener('mousemove', e => {
-  const rect = canvas.getBoundingClientRect();
-  mouse.x = (e.clientX - rect.left) * (W / rect.width);
-  mouse.y = (e.clientY - rect.top) * (H / rect.height);
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
   mouse.active = true;
-});
-canvas.addEventListener('mouseleave', () => { mouse.active = false; });
-canvas.addEventListener('mousedown', e => {
-  const rect = canvas.getBoundingClientRect();
-  mouse.x = (e.clientX - rect.left) * (W / rect.width);
-  mouse.y = (e.clientY - rect.top) * (H / rect.height);
-  mouse.active = true;
-  // burst: reset some particles
-  for (let i = 0; i < 100; i++) {
-    const p = particles[Math.floor(Math.random() * particles.length)];
-    p.x = mouse.x + (Math.random() - 0.5) * 40;
-    p.y = mouse.y + (Math.random() - 0.5) * 40;
-    p.vx = (Math.random() - 0.5) * 10;
-    p.vy = (Math.random() - 0.5) * 10;
-  }
 });
 
-window.addEventListener('resize', resize);
-resize();
-initParticles();
-ctx.fillStyle = '#0a0a0f';
+canvas.addEventListener('mouseleave', () => {
+  mouse.active = false;
+});
+
+canvas.addEventListener('click', e => {
+  for (let i = 0; i < 50; i++) {
+    const p = new Particle();
+    p.x = e.clientX + (Math.random() - 0.5) * 40;
+    p.y = e.clientY + (Math.random() - 0.5) * 40;
+    p.vx = (Math.random() - 0.5) * 8;
+    p.vy = (Math.random() - 0.5) * 8;
+    particles.push(p);
+  }
+  // Remove excess
+  while (particles.length > 1500) particles.shift();
+});
+
+function regenerate() {
+  currentSeed = Math.random() * 10000;
+  ctx.fillStyle = 'rgba(10, 10, 15, 1)';
+  ctx.fillRect(0, 0, W, H);
+  createParticles(800);
+}
+
+function toggleMode() {
+  mode = (mode + 1) % modes.length;
+}
+
+function clearTrails() {
+  ctx.fillStyle = 'rgba(10, 10, 15, 1)';
+  ctx.fillRect(0, 0, W, H);
+}
+
+createParticles(800);
+ctx.fillStyle = 'rgba(10, 10, 15, 1)';
 ctx.fillRect(0, 0, W, H);
 animate();
 </script>
