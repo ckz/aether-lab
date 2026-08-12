@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aurora Drift — Generative Art</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #030014;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #a0a0ff;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  .overlay {
+    position: fixed;
+    top: 24px;
+    left: 28px;
+    z-index: 10;
+    pointer-events: none;
+    text-shadow: 0 0 12px rgba(120,100,255,.6);
+  }
+  .overlay h1 {
+    font-size: 1.1rem;
+    font-weight: normal;
+    letter-spacing: .3em;
+    text-transform: uppercase;
+    color: #c8c8ff;
+    margin-bottom: 6px;
+  }
+  .overlay p {
+    font-size: .72rem;
+    opacity: .55;
+    letter-spacing: .15em;
+  }
+  .controls {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 14px;
+    z-index: 10;
+    pointer-events: all;
+  }
+  .controls button {
+    background: rgba(20, 15, 50, .5);
+    border: 1px solid rgba(140, 120, 255, .3);
+    color: #b0b0ff;
+    padding: 7px 18px;
+    font-family: inherit;
+    font-size: .7rem;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all .25s;
+  }
+  .controls button:hover {
+    background: rgba(60, 40, 150, .45);
+    border-color: rgba(180, 160, 255, .6);
+    color: #fff;
+    box-shadow: 0 0 20px rgba(120, 80, 255, .25);
+  }
+  .info {
+    position: fixed;
+    bottom: 24px;
+    right: 28px;
+    font-size: .65rem;
+    opacity: .35;
+    letter-spacing: .1em;
+    z-index: 10;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div class="overlay">
+  <h1>Aurora Drift</h1>
+  <p>move cursor to guide the light</p>
+</div>
+<div class="controls">
+  <button onclick="resetField()">Reset</button>
+  <button onclick="toggleTrails()">Trails</button>
+  <button onclick="cyclePalette()">Palette</button>
+</div>
+<div class="info" id="info">particles: 0</div>
+<canvas id="c"></canvas>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, dpr;
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+const palettes = [
+  { name: 'Nebula',  colors: ['#6C5CE7','#A29BFE','#00CECB','#FD79A8','#FDCB6E'] },
+  { name: 'Forest',  colors: ['#00B894','#00CEC9','#55E6C1','#F8A5C2','#63CDDA'] },
+  { name: 'Ember',   colors: ['#E17055','#FDCB6E','#FF6B6B','#FAB1A0','#FFEAA7'] },
+  { name: 'Ocean',   colors: ['#0984E3','#74B9FF','#00CEC9','#81ECEC','#DFE6E9'] },
+  { name: 'Void',    colors: ['#6C5CE7','#A29BFE','#DDA0DD','#B8A9E8','#C3A6FF'] },
+];
+
+let palette = 0;
+let trails = true;
+let mouse = { x: W/2, y: H/2, active: false };
+let particles = [];
+const PARTICLE_COUNT = 280;
+
+class Particle {
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.vx = (Math.random() - .5) * .6;
+    this.vy = (Math.random() - .5) * .6;
+    this.life = Math.random() * 200 + 100;
+    this.maxLife = this.life;
+    this.size = Math.random() * 2.2 + .4;
+    this.color = palettes[palette].colors[Math.floor(Math.random() * 5)];
+    this.waveAmp = Math.random() * .8 + .2;
+    this.waveFreq = Math.random() * .02 + .005;
+    this.angle = Math.random() * Math.PI * 2;
+  }
+  update(t) {
+    // Attraction to mouse
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.hypot(dx, dy);
+      const force = Math.min(80 / (dist * dist + 100), .015);
+      this.vx += dx * force;
+      this.vy += dy * force;
+    }
+    // Organic wave motion
+    this.angle += this.waveFreq;
+    this.vx += Math.cos(this.angle) * this.waveAmp * .04;
+    this.vy += Math.sin(this.angle) * this.waveAmp * .04;
+    // Friction
+    this.vx *= .985;
+    this.vy *= .985;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life--;
+    // Wrap edges
+    if (this.x < -20) this.x = W + 20;
+    if (this.x > W + 20) this.x = -20;
+    if (this.y < -20) this.y = H + 20;
+    if (this.y > H + 20) this.y = -20;
+    if (this.life <= 0) this.reset();
+  }
+  draw(ctx, t) {
+    const alpha = (this.life / this.maxLife) * .75;
+    const glow = alpha * 18;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = this.color + Math.round(alpha * 255).toString(16).padStart(2,'0');
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = glow;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+for (let i = 0; i < PARTICLE_COUNT; i++) particles.push(new Particle());
+
+// Draw connections between nearby particles
+function drawConnections() {
+  const maxDist = 90;
+  ctx.lineWidth = .35;
+  for (let i = 0; i < particles.length; i++) {
+    for (let j = i + 1; j < particles.length; j++) {
+      const dx = particles[i].x - particles[j].x;
+      const dy = particles[i].y - particles[j].y;
+      const d = dx*dx + dy*dy;
+      if (d < maxDist * maxDist) {
+        const alpha = (1 - Math.sqrt(d) / maxDist) * .18;
+        ctx.strokeStyle = `rgba(160,140,255,${alpha})`;
+        ctx.beginPath();
+        ctx.moveTo(particles[i].x, particles[i].y);
+        ctx.lineTo(particles[j].x, particles[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+let frame = 0;
+function loop() {
+  frame++;
+  if (trails) {
+    ctx.fillStyle = 'rgba(3,0,20,0.12)';
+    ctx.fillRect(0, 0, W, H);
+  } else {
+    ctx.clearRect(0, 0, W, H);
+  }
+  particles.forEach(p => p.update(frame));
+  drawConnections();
+  particles.forEach(p => p.draw(ctx, frame));
+  document.getElementById('info').textContent =
+    `particles: ${PARTICLE_COUNT} · palette: ${palettes[palette].name}`;
+  requestAnimationFrame(loop);
+}
+
+// Input
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => mouse.active = false);
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY; mouse.active = true;
+}, { passive: false });
+canvas.addEventListener('touchend', () => mouse.active = false);
+
+// Controls
+function resetField() {
+  particles.forEach(p => p.reset());
+}
+function toggleTrails() {
+  trails = !trails;
+  if (!trails) ctx.clearRect(0, 0, W, H);
+}
+function cyclePalette() {
+  palette = (palette + 1) % palettes.length;
+  particles.forEach(p => {
+    p.color = palettes[palette].colors[Math.floor(Math.random() * 5)];
+  });
+}
+loop();
+</script>
+</body>
+</html>
