@@ -3,587 +3,303 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Resonance — Ambient Synth</title>
+<title>Resonance — Harmonic Strings</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #0a0a0f;
+    background: #0a0a12;
     overflow: hidden;
-    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-family: 'Courier New', monospace;
+    color: #889;
     cursor: crosshair;
-    user-select: none;
   }
   canvas { display: block; }
-  #ui {
+  .hint {
     position: fixed;
     top: 20px;
-    left: 20px;
-    z-index: 10;
-    color: rgba(255,255,255,0.7);
+    left: 50%;
+    transform: translateX(-50%);
     font-size: 11px;
-    pointer-events: none;
-  }
-  #title {
-    font-size: 18px;
-    font-weight: 300;
-    letter-spacing: 6px;
+    letter-spacing: .3em;
     text-transform: uppercase;
-    margin-bottom: 8px;
-    color: rgba(255,255,255,0.9);
+    opacity: .35;
+    pointer-events: none;
+    transition: opacity 2s;
   }
-  #hint {
-    opacity: 0.5;
-    line-height: 1.6;
-  }
-  #controls {
+  .controls {
     position: fixed;
     bottom: 20px;
-    left: 20px;
-    z-index: 10;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
-    gap: 10px;
-  }
-  .mode-btn {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.15);
-    color: rgba(255,255,255,0.7);
-    padding: 8px 14px;
-    font-family: inherit;
-    font-size: 11px;
-    letter-spacing: 1px;
-    cursor: pointer;
-    transition: all 0.3s;
-    text-transform: uppercase;
-  }
-  .mode-btn:hover {
-    background: rgba(255,255,255,0.1);
-    border-color: rgba(255,255,255,0.3);
-    color: #fff;
-  }
-  .mode-btn.active {
-    background: rgba(255,255,255,0.15);
-    border-color: rgba(255,255,255,0.4);
-    color: #fff;
-  }
-  #stats {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    z-index: 10;
-    color: rgba(255,255,255,0.4);
+    gap: 18px;
     font-size: 10px;
-    text-align: right;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    opacity: .5;
+  }
+  .controls button {
+    background: rgba(20, 20, 40, .7);
+    border: 1px solid rgba(120, 100, 255, .3);
+    color: #9988dd;
+    padding: 6px 14px;
+    border-radius: 3px;
+    cursor: pointer;
     font-family: inherit;
+    letter-spacing: .15em;
+    transition: all .3s;
+  }
+  .controls button:hover {
+    background: rgba(40, 35, 80, .8);
+    border-color: rgba(150, 130, 255, .6);
+    color: #c8c8ff;
+  }
+  .controls button.active {
+    background: rgba(60, 50, 120, .7);
+    border-color: rgba(180, 160, 255, .7);
+    color: #fff;
   }
 </style>
 </head>
 <body>
-<canvas id="canvas"></canvas>
-<div id="ui">
-  <div id="title">Resonance</div>
-  <div id="hint">
-    Click + drag to play<br>
-    Scroll to change octave<br>
-    1-5 switch palette<br>
-    Space clears
-  </div>
+<div class="hint" id="hint">click or drag across the strings</div>
+<div class="controls">
+  <button id="btn-pentatonic" class="active">Pentatonic</button>
+  <button id="btn-chromatic">Chromatic</button>
+  <button id="btn-drones">Drones</button>
+  <button id="btn-reset">Reset</button>
 </div>
-<div id="controls">
-  <button class="mode-btn active" data-mode="harmonic">Harmonic</button>
-  <button class="mode-btn" data-mode="pad">Pad</button>
-  <button class="mode-btn" data-mode="bells">Bells</button>
-  <button class="mode-btn" data-mode="drone">Drone</button>
-</div>
-<div id="stats"></div>
-
+<canvas id="c"></canvas>
 <script>
-const canvas = document.getElementById('canvas');
+const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-let W, H;
+let W, H, DPR = Math.min(window.devicePixelRatio || 1, 2);
 
 function resize() {
-  W = canvas.width = window.innerWidth;
-  H = canvas.height = window.innerHeight;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  initStrings();
 }
-resize();
 window.addEventListener('resize', resize);
 
-// Audio context
-let audioCtx;
-let masterGain;
-let reverbNode;
-let delayNode;
-
+// Audio
+let audioCtx = null;
 function initAudio() {
-  if (audioCtx) return;
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  
-  masterGain = audioCtx.createGain();
-  masterGain.gain.value = 0.4;
-  
-  // Simple reverb via convolver
-  reverbNode = audioCtx.createConvolver();
-  const reverbLen = audioCtx.sampleRate * 2;
-  const reverbBuf = audioCtx.createBuffer(2, reverbLen, audioCtx.sampleRate);
-  for (let ch = 0; ch < 2; ch++) {
-    const data = reverbBuf.getChannelData(ch);
-    for (let i = 0; i < reverbLen; i++) {
-      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / reverbLen, 2.5);
-    }
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   }
-  reverbNode.buffer = reverbBuf;
-  
-  // Delay
-  delayNode = audioCtx.createDelay();
-  delayNode.delayTime.value = 0.3;
-  const delayGain = audioCtx.createGain();
-  delayGain.gain.value = 0.2;
-  
-  // Routing
-  masterGain.connect(reverbNode);
-  reverbNode.connect(audioCtx.destination);
-  
-  masterGain.connect(delayNode);
-  delayNode.connect(delayGain);
-  delayGain.connect(audioCtx.destination);
-  delayGain.connect(delayNode); // feedback
+  if (audioCtx.state === 'suspended') audioCtx.resume();
 }
 
-// Pentatonic scale frequencies
-const BASE_FREQS = [
-  130.81, 146.83, 164.81, 196.00, 220.00,  // C3 pentatonic
-  261.63, 293.66, 329.63, 392.00, 440.00,
-  523.25, 587.33, 659.25, 783.99, 880.00,
-  1046.50, 1174.66, 1318.51, 1567.98, 1760.00
-];
+function playTone(freq, velocity = 0.6) {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  const filter = audioCtx.createBiquadFilter();
 
-// Palettes
-const palettes = [
-  { name: 'Cosmic', bg: '#0a0a1a', colors: ['#00d4ff', '#7b2fff', '#ff2d95', '#ffd700', '#00ff88'] },
-  { name: 'Aurora', bg: '#0a1a0f', colors: ['#00ff88', '#00d4ff', '#7bffda', '#ff2dff', '#88ff00'] },
-  { name: 'Ember', bg: '#1a0a0a', colors: ['#ff4400', '#ff8800', '#ffcc00', '#ff0066', '#ff6633'] },
-  { name: 'Ocean', bg: '#0a0f1a', colors: ['#0066ff', '#00ccff', '#0099ff', '#66ffff', '#0033ff'] },
-  { name: 'Nebula', bg: '#0f0a1a', colors: ['#cc00ff', '#ff00cc', '#6600ff', '#ff66ff', '#9900ff'] }
-];
+  // Rich harmonic tone
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(freq, now);
 
-let currentPalette = 0;
-let currentMode = 'harmonic';
-let octave = 0; // 0 = middle
-let mouseX = W/2, mouseY = H/2;
-let mouseDown = false;
-let lastNoteTime = 0;
-let activeNotes = [];
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(2000 + velocity * 3000, now);
+  filter.Q.setValueAtTime(1, now);
 
-// Ripples
-let ripples = [];
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(velocity * 0.25, now + 0.005);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.5);
 
-// Particles
-let particles = [];
-const MAX_PARTICLES = 500;
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
 
-// Drone oscillators
-let droneOscs = [];
-
-class Ripple {
-  constructor(x, y, freq) {
-    this.x = x;
-    this.y = y;
-    this.radius = 0;
-    this.maxRadius = 150 + Math.random() * 200;
-    this.speed = 1.5 + Math.random();
-    this.alpha = 0.6;
-    this.color = palettes[currentPalette].colors[Math.floor(Math.random() * 5)];
-    this.freq = freq;
-    this.harmonics = [];
-    for (let i = 0; i < 5; i++) {
-      this.harmonics.push({
-        angle: Math.random() * Math.PI * 2,
-        speed: 0.01 + Math.random() * 0.02,
-        radius: 20 + Math.random() * 40,
-        alpha: 0.3 + Math.random() * 0.3
-      });
-    }
-  }
-  
-  update() {
-    this.radius += this.speed;
-    this.alpha *= 0.99;
-    this.harmonics.forEach(h => h.angle += h.speed);
-    return this.radius < this.maxRadius && this.alpha > 0.01;
-  }
-  
-  draw() {
-    // Outer ring
-    ctx.strokeStyle = this.color;
-    ctx.globalAlpha = this.alpha * 0.5;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-    ctx.stroke();
-    
-    // Harmonics
-    this.harmonics.forEach(h => {
-      const hx = this.x + Math.cos(h.angle) * (this.radius * 0.6 + h.radius);
-      const hy = this.y + Math.sin(h.angle) * (this.radius * 0.6 + h.radius);
-      ctx.globalAlpha = h.alpha * this.alpha;
-      ctx.fillStyle = this.color;
-      ctx.beginPath();
-      ctx.arc(hx, hy, 2, 0, Math.PI * 2);
-      ctx.fill();
-    });
-    
-    ctx.globalAlpha = 1;
-  }
+  osc.start(now);
+  osc.stop(now + 3);
 }
 
-class Particle {
-  constructor(x, y, color) {
-    this.x = x;
-    this.y = y;
-    this.vx = (Math.random() - 0.5) * 2;
-    this.vy = (Math.random() - 0.5) * 2;
-    this.life = 1;
-    this.decay = 0.003 + Math.random() * 0.008;
-    this.color = color;
-    this.size = 1 + Math.random() * 2;
-  }
-  
-  update() {
-    this.x += this.vx;
-    this.y += this.vy;
-    this.vx *= 0.99;
-    this.vy *= 0.99;
-    this.life -= this.decay;
-    return this.life > 0;
-  }
-  
-  draw() {
-    ctx.globalAlpha = this.life * 0.6;
-    ctx.fillStyle = this.color;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-}
+// Scales
+const SCALES = {
+  pentatonic: [261.6, 293.7, 329.6, 392.0, 440.0, 523.3, 587.3, 659.3, 784.0, 880.0],
+  chromatic: [261.6, 277.2, 293.7, 311.1, 329.6, 349.2, 370.0, 392.0, 415.3, 440.0, 466.2, 493.9, 523.3],
+  drones: [130.8, 196.0, 261.6, 329.6, 392.0, 440.0, 523.3, 659.3]
+};
+let currentScale = 'pentatonic';
 
-function playNote(freq, x, y) {
-  if (!audioCtx) initAudio();
-  
-  const t = audioCtx.currentTime;
-  const palette = palettes[currentPalette];
-  const color = palette.colors[Math.floor(Math.random() * palette.colors.length)];
-  
-  // Ripple
-  ripples.push(new Ripple(x, y, freq));
-  
-  // Particles burst
-  for (let i = 0; i < 15; i++) {
-    particles.push(new Particle(x, y, color));
-  }
-  
-  // Mode-specific sound generation
-  if (currentMode === 'harmonic') {
-    // Pure sine with overtones
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'sine';
-    osc.frequency.value = freq;
-    gain.gain.setValueAtTime(0.15, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
-    osc.connect(gain);
-    gain.connect(masterGain);
-    osc.start(t);
-    osc.stop(t + 1.5);
-    
-    // Add slight detune for warmth
-    const osc2 = audioCtx.createOscillator();
-    const gain2 = audioCtx.createGain();
-    osc2.type = 'sine';
-    osc2.frequency.value = freq * 1.002;
-    gain2.gain.setValueAtTime(0.05, t);
-    gain2.gain.exponentialRampToValueAtTime(0.001, t + 1.5);
-    osc2.connect(gain2);
-    gain2.connect(masterGain);
-    osc2.start(t);
-    osc2.stop(t + 1.5);
-    
-  } else if (currentMode === 'pad') {
-    // Multiple detuned oscillators for pad
-    for (let i = 0; i < 3; i++) {
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq * (1 + (i - 1) * 0.003);
-      gain.gain.setValueAtTime(0.08, t);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 2.5);
-      osc.connect(gain);
-      gain.connect(masterGain);
-      osc.start(t);
-      osc.stop(t + 2.5);
-    }
-    
-  } else if (currentMode === 'bells') {
-    // FM synthesis for bell-like tones
-    const carrier = audioCtx.createOscillator();
-    const modulator = audioCtx.createOscillator();
-    const modGain = audioCtx.createGain();
-    const envGain = audioCtx.createGain();
-    
-    carrier.type = 'sine';
-    carrier.frequency.value = freq;
-    modulator.type = 'sine';
-    modulator.frequency.value = freq * 2.4;
-    modGain.gain.setValueAtTime(freq * 0.5, t);
-    modGain.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
-    
-    modulator.connect(modGain);
-    modGain.connect(carrier.frequency);
-    carrier.connect(envGain);
-    envGain.connect(masterGain);
-    
-    envGain.gain.setValueAtTime(0.12, t);
-    envGain.gain.exponentialRampToValueAtTime(0.001, t + 1.2);
-    
-    carrier.start(t);
-    modulator.start(t);
-    carrier.stop(t + 1.2);
-    modulator.stop(t + 1.2);
-    
-  } else if (currentMode === 'drone') {
-    // Sustained drone with harmonics
-    droneOscs.push({ freq, startTime: t, duration: 3 + Math.random() * 2 });
-    
-    const harmonics = [1, 1.5, 2, 2.5, 3];
-    harmonics.forEach((mult, i) => {
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.type = i % 2 === 0 ? 'sine' : 'triangle';
-      osc.frequency.value = freq * mult;
-      gain.gain.setValueAtTime(0.03, t);
-      gain.gain.linearRampToValueAtTime(0.04, t + 0.5);
-      gain.gain.linearRampToValueAtTime(0.001, t + 4);
-      osc.connect(gain);
-      gain.connect(masterGain);
-      osc.start(t);
-      osc.stop(t + 4);
+// Strings
+const strings = [];
+let stringCount = 24;
+
+function initStrings() {
+  const spacing = H / (stringCount + 1);
+  strings.length = 0;
+  const scale = SCALES[currentScale];
+  for (let i = 0; i < stringCount; i++) {
+    const y = spacing * (i + 1);
+    const noteIndex = Math.floor((i / stringCount) * scale.length) % scale.length;
+    strings.push({
+      y,
+      baseY: y,
+      amplitude: 0,
+      velocity: 0,
+      damping: 0.985 + Math.random() * 0.01,
+      freq: scale[noteIndex],
+      hue: (i / stringCount) * 280 + 200,
+      thickness: 1.2 + (1 - i / stringCount) * 1.5,
+      glowWidth: 8 + (1 - i / stringCount) * 20,
+      lastPluck: 0
     });
   }
 }
 
-function getFreqFromPos(x, y) {
-  // Map x to pitch, y to octave modifier
-  const normalizedX = x / W;
-  const noteIndex = Math.floor(normalizedX * BASE_FREQS.length);
-  const clampedIndex = Math.max(0, Math.min(BASE_FREQS.length - 1, noteIndex));
-  const baseFreq = BASE_FREQS[clampedIndex];
-  
-  // Y controls octave shift (0-3)
-  const normalizedY = y / H;
-  const octShift = Math.floor(normalizedY * 4) - 1;
-  
-  return baseFreq * Math.pow(2, octShift);
-}
+// Interaction
+let mouse = { x: -1000, y: -1000, prevX: -1000, prevY: -1000, down: false, dragging: false };
+let interacted = false;
 
-let lastX = 0, lastY = 0;
+function pluckString(s, velocity) {
+  const dx = mouse.x - (s.x || W / 2);
+  const dist = Math.abs(mouse.y - s.y);
+  const influence = Math.max(0, 1 - dist / 60);
+  if (influence > 0) {
+    const speed = Math.sqrt(
+      Math.pow(mouse.x - mouse.prevX, 2) + Math.pow(mouse.y - mouse.prevY, 2)
+    );
+    const pluckForce = velocity * influence * Math.min(speed * 0.15, 1.5);
+    s.velocity += pluckForce * (mouse.x > (s.x || W/2) ? 1 : -1);
+    s.amplitude = Math.min(Math.abs(s.velocity) * 80, 120);
+    const now = performance.now();
+    if (now - s.lastPluck > 80) {
+      playTone(s.freq, Math.min(pluckForce * 1.2, 1));
+      s.lastPluck = now;
+    }
+  }
+}
 
 canvas.addEventListener('mousedown', (e) => {
-  mouseDown = true;
+  mouse.down = true;
+  mouse.dragging = true;
+  mouse.x = mouse.prevX = e.clientX;
+  mouse.y = mouse.prevY = e.clientY;
   initAudio();
-  const freq = getFreqFromPos(e.clientX, e.clientY);
-  const now = Date.now();
-  if (now - lastNoteTime > 50) {
-    playNote(freq, e.clientX, e.clientY);
-    lastNoteTime = now;
-  }
-  lastX = e.clientX;
-  lastY = e.clientY;
+  if (!interacted) { interacted = true; document.getElementById('hint').style.opacity = '0'; }
+  strings.forEach(s => pluckString(s, 0.8));
 });
 
 canvas.addEventListener('mousemove', (e) => {
-  mouseX = e.clientX;
-  mouseY = e.clientY;
-  
-  if (mouseDown) {
-    const freq = getFreqFromPos(e.clientX, e.clientY);
-    const dist = Math.hypot(e.clientX - lastX, e.clientY - lastY);
-    const now = Date.now();
-    const threshold = Math.max(30, 100 - dist * 2);
-    
-    if (now - lastNoteTime > threshold) {
-      playNote(freq, e.clientX, e.clientY);
-      lastNoteTime = now;
-    }
-    lastX = e.clientX;
-    lastY = e.clientY;
+  mouse.prevX = mouse.x;
+  mouse.prevY = mouse.y;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  if (mouse.down) {
+    strings.forEach(s => pluckString(s, 0.5));
   }
 });
 
-canvas.addEventListener('mouseup', () => mouseDown = false);
-canvas.addEventListener('mouseleave', () => mouseDown = false);
+canvas.addEventListener('mouseup', () => { mouse.down = false; mouse.dragging = false; });
+canvas.addEventListener('mouseleave', () => { mouse.down = false; mouse.dragging = false; });
 
-canvas.addEventListener('wheel', (e) => {
-  e.preventDefault();
-  octave = Math.max(-2, Math.min(3, octave + (e.deltaY > 0 ? -1 : 1)));
-  document.getElementById('stats').textContent = `Octave: ${octave}`;
-});
-
-// Touch support
+// Touch
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
+  const t = e.touches[0];
+  mouse.down = true; mouse.dragging = true;
+  mouse.x = mouse.prevX = t.clientX;
+  mouse.y = mouse.prevY = t.clientY;
   initAudio();
-  mouseDown = true;
-  const touch = e.touches[0];
-  mouseX = touch.clientX;
-  mouseY = touch.clientY;
-  const freq = getFreqFromPos(touch.clientX, touch.clientY);
-  playNote(freq, touch.clientX, touch.clientY);
-  lastX = touch.clientX;
-  lastY = touch.clientY;
-});
+  if (!interacted) { interacted = true; document.getElementById('hint').style.opacity = '0'; }
+  strings.forEach(s => pluckString(s, 0.8));
+}, { passive: false });
 
 canvas.addEventListener('touchmove', (e) => {
   e.preventDefault();
-  const touch = e.touches[0];
-  mouseX = touch.clientX;
-  mouseY = touch.clientY;
-  
-  if (mouseDown) {
-    const freq = getFreqFromPos(touch.clientX, touch.clientY);
-    const dist = Math.hypot(touch.clientX - lastX, touch.clientY - lastY);
-    const now = Date.now();
-    const threshold = Math.max(30, 100 - dist * 2);
-    
-    if (now - lastNoteTime > threshold) {
-      playNote(freq, touch.clientX, touch.clientY);
-      lastNoteTime = now;
-    }
-    lastX = touch.clientX;
-    lastY = touch.clientY;
-  }
-});
+  const t = e.touches[0];
+  mouse.prevX = mouse.x; mouse.prevY = mouse.y;
+  mouse.x = t.clientX; mouse.y = t.clientY;
+  strings.forEach(s => pluckString(s, 0.5));
+}, { passive: false });
 
-canvas.addEventListener('touchend', () => mouseDown = false);
+canvas.addEventListener('touchend', () => { mouse.down = false; mouse.dragging = false; });
 
-// Keyboard
-document.addEventListener('keydown', (e) => {
-  if (e.key >= '1' && e.key <= '5') {
-    currentPalette = parseInt(e.key) - 1;
-    document.body.style.background = palettes[currentPalette].bg;
-    updateModeButtons();
-  }
-  if (e.key === ' ') {
-    ripples = [];
-    particles = [];
-    e.preventDefault();
-  }
-});
+// Controls
+document.getElementById('btn-pentatonic').onclick = () => setScale('pentatonic');
+document.getElementById('btn-chromatic').onclick = () => setScale('chromatic');
+document.getElementById('btn-drones').onclick = () => setScale('drones');
+document.getElementById('btn-reset').onclick = () => initStrings();
 
-// Mode buttons
-document.querySelectorAll('.mode-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    currentMode = btn.dataset.mode;
-    updateModeButtons();
-  });
-});
-
-function updateModeButtons() {
-  document.querySelectorAll('.mode-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.mode === currentMode);
-  });
-  document.getElementById('stats').innerHTML = 
-    `${palettes[currentPalette].name} · ${currentMode}<br>Scroll = octave · 1-5 = palette`;
+function setScale(name) {
+  currentScale = name;
+  stringCount = name === 'chromatic' ? 18 : name === 'drones' ? 16 : 24;
+  document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-' + name).classList.add('active');
+  initStrings();
 }
 
-// Background stars
-const stars = [];
-for (let i = 0; i < 150; i++) {
-  stars.push({
-    x: Math.random() * W,
-    y: Math.random() * H,
-    size: Math.random() * 1.5,
-    twinkle: Math.random() * Math.PI * 2,
-    speed: 0.01 + Math.random() * 0.03
-  });
-}
-
-// Animation loop
-let lastTime = 0;
-function animate(time) {
-  const dt = time - lastTime;
-  lastTime = time;
-  
-  // Fade background
-  ctx.fillStyle = palettes[currentPalette].bg + 'f0';
+// Animate
+let time = 0;
+function draw() {
+  time += 0.016;
+  // Fade trail
+  ctx.fillStyle = 'rgba(10, 10, 18, 0.18)';
   ctx.fillRect(0, 0, W, H);
-  
-  // Stars
-  stars.forEach(star => {
-    star.twinkle += star.speed;
-    const alpha = 0.3 + Math.sin(star.twinkle) * 0.3;
-    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-    ctx.fillRect(star.x, star.y, star.size, star.size);
-  });
-  
-  // Mouse glow
-  if (mouseX > 0 && mouseY > 0) {
-    const glow = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 100);
-    const color = palettes[currentPalette].colors[0];
-    glow.addColorStop(0, color + '20');
-    glow.addColorStop(1, 'transparent');
-    ctx.fillStyle = glow;
-    ctx.fillRect(mouseX - 100, mouseY - 100, 200, 200);
+
+  // Ambient glow from mouse
+  if (mouse.down) {
+    const g = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 200);
+    g.addColorStop(0, 'rgba(100, 80, 220, 0.06)');
+    g.addColorStop(1, 'transparent');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
   }
-  
-  // Connection lines between nearby ripples
-  for (let i = 0; i < ripples.length; i++) {
-    for (let j = i + 1; j < ripples.length; j++) {
-      const dist = Math.hypot(ripples[i].x - ripples[j].x, ripples[i].y - ripples[j].y);
-      if (dist < 200) {
-        ctx.strokeStyle = palettes[currentPalette].colors[0];
-        ctx.globalAlpha = 0.1 * (1 - dist / 200);
-        ctx.lineWidth = 0.5;
-        ctx.beginPath();
-        ctx.moveTo(ripples[i].x, ripples[i].y);
-        ctx.lineTo(ripples[j].x, ripples[j].y);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-      }
-    }
-  }
-  
-  // Update & draw ripples
-  ripples = ripples.filter(r => {
-    r.draw();
-    return r.update();
+
+  // Update and draw strings
+  strings.forEach(s => {
+    // Spring physics
+    const spring = -s.amplitude * 0.03;
+    s.velocity += spring;
+    s.velocity *= s.damping;
+    s.amplitude += s.velocity;
+
+    // Gentle ambient sway
+    const ambient = Math.sin(time * s.freq * 0.02 + s.y * 0.01) * 0.15;
+
+    const x1 = 0;
+    const y1 = s.baseY + (s.amplitude + ambient) * Math.sin(s.freq * 0.03);
+    const x2 = W;
+    const y2 = s.baseY + (s.amplitude + ambient) * Math.sin(s.freq * 0.03 + 1.5);
+
+    // Glow
+    const glow = Math.abs(s.amplitude) / 100;
+    const alpha = 0.15 + glow * 0.6;
+
+    ctx.shadowBlur = s.glowWidth * (0.3 + glow * 2);
+    ctx.shadowColor = `hsla(${s.hue}, 70%, 60%, ${glow})`;
+    ctx.strokeStyle = `hsla(${s.hue}, 65%, 65%, ${alpha})`;
+    ctx.lineWidth = s.thickness * (0.8 + glow * 1.5);
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+
+    // Bezier for organic curve
+    const cp1x = W * 0.33;
+    const cp1y = s.baseY + (s.amplitude + ambient) * Math.sin(s.freq * 0.03 + 0.8) * 1.3;
+    const cp2x = W * 0.66;
+    const cp2y = s.baseY + (s.amplitude + ambient) * Math.sin(s.freq * 0.03 + 2.1) * 1.3;
+    ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x2, y2);
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
   });
-  
-  // Update & draw particles
-  particles = particles.filter(p => {
-    p.draw();
-    return p.update();
-  });
-  
-  // Limit particles
-  if (particles.length > MAX_PARTICLES) {
-    particles = particles.slice(-MAX_PARTICLES);
-  }
-  
-  requestAnimationFrame(animate);
+
+  requestAnimationFrame(draw);
 }
 
-// Initialize
-document.body.style.background = palettes[currentPalette].bg;
-updateModeButtons();
-requestAnimationFrame(animate);
-
-// Handle resize for stars
-window.addEventListener('resize', () => {
-  stars.forEach(star => {
-    star.x = Math.random() * W;
-    star.y = Math.random() * H;
-  });
-});
+resize();
+draw();
 </script>
 </body>
 </html>
