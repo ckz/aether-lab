@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ether Weave</title>
+<style>
+  * { margin: 0; padding: 0; }
+  body {
+    background: #06060e;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  .info {
+    position: fixed;
+    bottom: 18px;
+    left: 24px;
+    color: rgba(180,170,220,.4);
+    font-size: 11px;
+    letter-spacing: .2em;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="info">move · click · hold</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = innerWidth;
+  H = canvas.height = innerHeight;
+}
+resize();
+addEventListener('resize', resize);
+
+const mouse = { x: W/2, y: H/2, active: false, down: false };
+addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; });
+addEventListener('mousedown', () => mouse.down = true);
+addEventListener('mouseup', () => mouse.down = false);
+addEventListener('touchmove', e => {
+  mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY; mouse.active = true;
+}, {passive:true});
+addEventListener('touchstart', e => {
+  mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY; mouse.active = true; mouse.down = true;
+}, {passive:true});
+addEventListener('touchend', () => mouse.down = false);
+
+// Simplex-like noise
+class Noise {
+  constructor() {
+    this.perm = new Uint8Array(512);
+    const p = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) p[i] = i;
+    for (let i = 255; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [p[i], p[j]] = [p[j], p[i]];
+    }
+    for (let i = 0; i < 512; i++) this.perm[i] = p[i & 255];
+  }
+  fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+  lerp(a, b, t) { return a + t * (b - a); }
+  grad(hash, x, y) {
+    const h = hash & 3;
+    const u = h < 2 ? x : y;
+    const v = h < 2 ? y : x;
+    return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
+  }
+  get(x, y) {
+    const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+    x -= Math.floor(x); y -= Math.floor(y);
+    const u = this.fade(x), v = this.fade(y);
+    const A = this.perm[X] + Y, B = this.perm[X + 1] + Y;
+    return this.lerp(
+      this.lerp(this.grad(this.perm[A], x, y), this.grad(this.perm[B], x - 1, y), u),
+      this.lerp(this.grad(this.perm[A + 1], x, y - 1), this.grad(this.perm[B + 1], x - 1, y - 1), u),
+      v
+    );
+  }
+}
+const noise = new Noise();
+
+const threads = [];
+const THREAD_COUNT = 180;
+
+class Thread {
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.history = [{ x: this.x, y: this.y }];
+    this.maxHist = 45 + Math.random() * 60;
+    this.hue = 220 + Math.random() * 60; // blue-purple range
+    this.speed = 0.6 + Math.random() * 1.8;
+    this.life = 0;
+    this.maxLife = 200 + Math.random() * 400;
+    this.width = 0.4 + Math.random() * 1.2;
+  }
+  update(time) {
+    const scale = 0.0022;
+    const n = noise.get(this.x * scale + time * 0.15, this.y * scale + time * 0.12);
+    const angle = n * Math.PI * 4;
+
+    // Mouse influence
+    if (mouse.active) {
+      const dx = mouse.x - this.x, dy = mouse.y - this.y;
+      const d = Math.hypot(dx, dy);
+      const radius = mouse.down ? 220 : 140;
+      if (d < radius) {
+        const force = (1 - d / radius) * (mouse.down ? 2.5 : 1.0);
+        const mAngle = Math.atan2(dy, dx) + (mouse.down ? 0.4 : -0.6);
+        this.x += Math.cos(mAngle) * force * 3;
+        this.y += Math.sin(mAngle) * force * 3;
+      }
+    }
+
+    this.x += Math.cos(angle) * this.speed;
+    this.y += Math.sin(angle) * this.speed;
+    this.life++;
+
+    this.history.push({ x: this.x, y: this.y });
+    if (this.history.length > this.maxHist) this.history.shift();
+
+    // Wrap edges
+    if (this.x < -20) this.x += W + 40;
+    if (this.x > W + 20) this.x -= W + 40;
+    if (this.y < -20) this.y += H + 40;
+    if (this.y > H + 20) this.y -= H + 40;
+
+    if (this.life > this.maxLife) this.reset();
+  }
+  draw() {
+    if (this.history.length < 2) return;
+    const fade = Math.min(1, this.life / 40, (this.maxLife - this.life) / 40);
+    ctx.globalAlpha = 0.12 * fade;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (let i = 1; i < this.history.length; i++) {
+      const t = i / this.history.length;
+      const alpha = t * 0.6 * fade;
+      ctx.globalAlpha = alpha * 0.12;
+      ctx.strokeStyle = `hsl(${this.hue + t * 30}, 70%, ${45 + t * 25}%)`;
+      ctx.lineWidth = this.width * t;
+      ctx.beginPath();
+      ctx.moveTo(this.history[i-1].x, this.history[i-1].y);
+      ctx.lineTo(this.history[i].x, this.history[i].y);
+      ctx.stroke();
+    }
+  }
+}
+
+for (let i = 0; i < THREAD_COUNT; i++) threads.push(new Thread());
+
+let time = 0;
+
+function frame() {
+  // Semi-transparent black for trailing
+  ctx.globalAlpha = 0.035;
+  ctx.fillStyle = '#06060e';
+  ctx.fillRect(0, 0, W, H);
+
+  threads.forEach(t => { t.update(time); t.draw(); });
+
+  // Gentle glow at mouse when active
+  if (mouse.active) {
+    const r = mouse.down ? 160 : 100;
+    const grd = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, r);
+    grd.addColorStop(0, 'rgba(120,100,220,.06)');
+    grd.addColorStop(1, 'rgba(120,100,220,0)');
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = grd;
+    ctx.fillRect(mouse.x - r, mouse.y - r, r*2, r*2);
+  }
+
+  ctx.globalAlpha = 1;
+  time += 0.004;
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
+</body>
+</html>
