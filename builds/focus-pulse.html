@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Focus Pulse — Breathe. Focus. Build.</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  :root {
+    --bg: #0a0a0f;
+    --surface: #13131f;
+    --text: #e8e8f0;
+    --text-muted: #6b6b80;
+    --accent: #7c5cff;
+    --accent2: #ff5ca0;
+    --accent3: #5cb8ff;
+    --glow: rgba(124, 92, 255, 0.3);
+  }
+  
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+  }
+  
+  /* Subtle grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: 
+      linear-gradient(rgba(124, 92, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(124, 92, 255, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+  }
+  
+  .container {
+    text-align: center;
+    z-index: 2;
+    padding: 20px;
+  }
+  
+  .title {
+    font-size: 0.85rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 2rem;
+    font-weight: 400;
+  }
+  
+  .breath-container {
+    position: relative;
+    width: 320px;
+    height: 320px;
+    margin: 0 auto 2.5rem;
+  }
+  
+  .breath-ring {
+    position: absolute;
+    inset: 40px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    opacity: 0.2;
+    animation: pulse-ring 8s ease-in-out infinite;
+  }
+  
+  .breath-ring:nth-child(2) {
+    inset: 60px;
+    border-color: var(--accent2);
+    animation-delay: -2.5s;
+  }
+  
+  .breath-ring:nth-child(3) {
+    inset: 80px;
+    border-color: var(--accent3);
+    animation-delay: -5s;
+  }
+  
+  @keyframes pulse-ring {
+    0%, 100% { transform: scale(0.95); opacity: 0.15; }
+    50% { transform: scale(1.15); opacity: 0.4; }
+  }
+  
+  .breath-core {
+    position: absolute;
+    inset: 50%;
+    width: 120px;
+    height: 120px;
+    margin: -60px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, var(--accent), var(--accent2));
+    box-shadow: 
+      0 0 60px var(--glow),
+      0 0 120px rgba(124, 92, 255, 0.2),
+      inset 0 0 40px rgba(255, 255, 255, 0.1);
+    animation: breathe 8s ease-in-out infinite;
+    transition: opacity 0.5s;
+  }
+  
+  .breath-core.paused {
+    animation-play-state: paused;
+    opacity: 0.3;
+  }
+  
+  @keyframes breathe {
+    0%, 100% { transform: scale(0.85); }
+    50% { transform: scale(1.25); }
+  }
+  
+  .timer-display {
+    font-size: 4rem;
+    font-weight: 200;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+    font-variant-numeric: tabular-nums;
+    background: linear-gradient(135deg, var(--text), var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  .session-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 2rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  
+  .controls {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+  
+  button {
+    background: var(--surface);
+    border: 1px solid rgba(124, 92, 255, 0.2);
+    color: var(--text);
+    padding: 0.65rem 1.2rem;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  
+  button:hover {
+    border-color: var(--accent);
+    background: rgba(124, 92, 255, 0.1);
+    transform: translateY(-1px);
+  }
+  
+  button:active {
+    transform: translateY(0);
+  }
+  
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+    min-width: 100px;
+  }
+  
+  button.primary:hover {
+    background: #9b7fff;
+    box-shadow: 0 4px 20px var(--glow);
+  }
+  
+  button.active {
+    border-color: var(--accent2);
+    background: rgba(255, 92, 160, 0.1);
+  }
+  
+  .mode-switch {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+  }
+  
+  .stats {
+    display: flex;
+    gap: 2rem;
+    justify-content: center;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+  }
+  
+  .stat-value {
+    color: var(--accent3);
+    font-size: 1.2rem;
+    display: block;
+    margin-top: 0.25rem;
+    font-weight: 600;
+  }
+  
+  .breath-text {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-top: 1.5rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    opacity: 0.6;
+    animation: fade-text 8s ease-in-out infinite;
+  }
+  
+  @keyframes fade-text {
+    0%, 45% { opacity: 0.6; }
+    50%, 95% { opacity: 0; }
+    100% { opacity: 0.6; }
+  }
+  
+  .custom-input {
+    background: var(--surface);
+    border: 1px solid rgba(124, 92, 255, 0.2);
+    color: var(--text);
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 0.8rem;
+    width: 70px;
+    text-align: center;
+    letter-spacing: 0.05em;
+  }
+  
+  .custom-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 10px var(--glow);
+  }
+  
+  .hidden { display: none !important; }
+  
+  /* Completion overlay */
+  .complete-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 10, 15, 0.95);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    animation: fadeIn 0.5s;
+  }
+  
+  .complete-overlay.show { display: flex; }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  
+  .complete-content {
+    text-align: center;
+    animation: scaleIn 0.5s 0.2s both;
+  }
+  
+  @keyframes scaleIn {
+    from { transform: scale(0.8); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+  
+  .complete-emoji {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+  }
+  
+  .complete-text {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  .complete-sub {
+    color: var(--text-muted);
+    margin-bottom: 2rem;
+    font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="title">◆ Focus Pulse</div>
+  
+  <div class="breath-container">
+    <div class="breath-ring"></div>
+    <div class="breath-ring"></div>
+    <div class="breath-ring"></div>
+    <div class="breath-core" id="breathCore"></div>
+  </div>
+  
+  <div class="timer-display" id="timerDisplay">25:00</div>
+  <div class="session-label" id="sessionLabel">Focus Session</div>
+  
+  <div class="controls" id="mainControls">
+    <button class="primary" id="startBtn">Start</button>
+    <button id="resetBtn">Reset</button>
+    <button id="skipBtn">Skip</button>
+  </div>
+  
+  <div class="mode-switch">
+    <button class="active" data-mode="pomodoro">Pomodoro</button>
+    <button data-mode="custom">Custom</button>
+    <button data-mode="open">∞ Open</button>
+  </div>
+  
+  <div class="controls hidden" id="customControls">
+    <span style="color: var(--text-muted); font-size: 0.8rem;">Focus:</span>
+    <input type="number" class="custom-input" id="focusMin" value="25" min="1" max="120">
+    <span style="color: var(--text-muted); font-size: 0.8rem;">min</span>
+    <span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 0.5rem;">Break:</span>
+    <input type="number" class="custom-input" id="breakMin" value="5" min="1" max="60">
+    <span style="color: var(--text-muted); font-size: 0.8rem;">min</span>
+  </div>
+  
+  <div class="stats">
+    <div>
+      Sessions
+      <span class="stat-value" id="sessionCount">0</span>
+    </div>
+    <div>
+      Focus Time
+      <span class="stat-value" id="totalFocus">0m</span>
+    </div>
+    <div>
+      Streak
+      <span class="stat-value" id="streak">0</span>
+    </div>
+  </div>
+  
+  <div class="breath-text" id="breathText">breathe in...</div>
+</div>
+
+<div class="complete-overlay" id="completeOverlay">
+  <div class="complete-content">
+    <div class="complete-emoji">✦</div>
+    <div class="complete-text" id="completeText">Session Complete</div>
+    <div class="complete-sub" id="completeSub">Time for a break</div>
+    <button class="primary" id="dismissComplete">Continue</button>
+  </div>
+</div>
+
+<script>
+  // State
+  const state = {
+    mode: 'pomodoro',
+    isRunning: false,
+    isBreak: false,
+    timeLeft: 25 * 60,
+    totalTime: 25 * 60,
+    focusMin: 25,
+    breakMin: 5,
+    sessions: 0,
+    totalFocus: 0,
+    streak: 0,
+    interval: null
+  };
+  
+  // Load saved state
+  const saved = localStorage.getItem('focusPulse');
+  if (saved) {
+    try {
+      const data = JSON.parse(saved);
+      Object.assign(state, data);
+      state.isRunning = false;
+      state.interval = null;
+    } catch(e) {}
+  }
+  
+  // Elements
+  const timerDisplay = document.getElementById('timerDisplay');
+  const sessionLabel = document.getElementById('sessionLabel');
+  const startBtn = document.getElementById('startBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const skipBtn = document.getElementById('skipBtn');
+  const breathCore = document.getElementById('breathCore');
+  const breathText = document.getElementById('breathText');
+  const completeOverlay = document.getElementById('completeOverlay');
+  const completeText = document.getElementById('completeText');
+  const completeSub = document.getElementById('completeSub');
+  const sessionCount = document.getElementById('sessionCount');
+  const totalFocus = document.getElementById('totalFocus');
+  const streak = document.getElementById('streak');
+  const modeButtons = document.querySelectorAll('[data-mode]');
+  const customControls = document.getElementById('customControls');
+  const focusMin = document.getElementById('focusMin');
+  const breakMin = document.getElementById('breakMin');
+  
+  // Breath text cycle
+  const breathPhases = [
+    { text: 'breathe in...', start: 0, end: 0.45 },
+    { text: 'hold...', start: 0.5, end: 0.55 },
+    { text: 'breathe out...', start: 0.6, end: 0.95 }
+  ];
+  
+  let breathCycle = 0;
+  
+  function updateBreathText() {
+    const progress = (breathCycle % 8000) / 8000;
+    for (const phase of breathPhases) {
+      if (progress >= phase.start && progress < phase.end) {
+        breathText.textContent = phase.text;
+        break;
+      }
+    }
+    breathCycle += 100;
+  }
+  
+  setInterval(updateBreathText, 100);
+  
+  function formatTime(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+  
+  function updateDisplay() {
+    timerDisplay.textContent = formatTime(state.timeLeft);
+    sessionLabel.textContent = state.isBreak ? 'Break Time' : 'Focus Session';
+    sessionCount.textContent = state.sessions;
+    totalFocus.textContent = state.totalFocus + 'm';
+    streak.textContent = state.streak;
+    save();
+  }
+  
+  function save() {
+    localStorage.setItem('focusPulse', JSON.stringify({
+      mode: state.mode,
+      focusMin: state.focusMin,
+      breakMin: state.breakMin,
+      sessions: state.sessions,
+      totalFocus: state.totalFocus,
+      streak: state.streak
+    }));
+  }
+  
+  function playTone(freq, duration = 0.15) {
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+      osc.start(audioCtx.currentTime);
+      osc.stop(audioCtx.currentTime + duration);
+    } catch(e) {}
+  }
+  
+  function completeSession() {
+    state.isRunning = false;
+    clearInterval(state.interval);
+    
+    if (!state.isBreak) {
+      state.sessions++;
+      state.totalFocus += state.focusMin;
+      state.streak++;
+      playTone(523.25, 0.2);
+      setTimeout(() => playTone(659.25, 0.2), 200);
+      setTimeout(() => playTone(783.99, 0.4), 400);
+      
+      completeText.textContent = 'Session Complete';
+      completeSub.textContent = `Great work! ${state.focusMin} minutes focused.`;
+    } else {
+      state.streak = 0;
+      playTone(440, 0.3);
+      setTimeout(() => playTone(554.37, 0.3), 300);
+      setTimeout(() => playTone(659.25, 0.5), 600);
+      
+      completeText.textContent = 'Break Over';
+      completeSub.textContent = 'Ready to focus again?';
+    }
+    
+    completeOverlay.classList.add('show');
+    breathCore.classList.add('paused');
+    startBtn.textContent = 'Start';
+    updateDisplay();
+  }
+  
+  function startTimer() {
+    if (state.isRunning) {
+      // Pause
+      state.isRunning = false;
+      clearInterval(state.interval);
+      breathCore.classList.add('paused');
+      startBtn.textContent = 'Resume';
+      return;
+    }
+    
+    // Resume/Start
+    state.isRunning = true;
+    breathCore.classList.remove('paused');
+    startBtn.textContent = 'Pause';
+    
+    state.interval = setInterval(() => {
+      state.timeLeft--;
+      
+      if (state.timeLeft <= 0) {
+        completeSession();
+      }
+      
+      updateDisplay();
+    }, 1000);
+  }
+  
+  function resetTimer() {
+    state.isRunning = false;
+    clearInterval(state.interval);
+    state.isBreak = false;
+    state.timeLeft = state.focusMin * 60;
+    state.totalTime = state.timeLeft;
+    breathCore.classList.remove('paused');
+    startBtn.textContent = 'Start';
+    updateDisplay();
+  }
+  
+  function skipSession() {
+    if (state.isBreak) {
+      state.streak = 0;
+    }
+    state.isBreak = !state.isBreak;
+    state.timeLeft = state.isBreak ? state.breakMin * 60 : state.focusMin * 60;
+    state.isRunning = false;
+    clearInterval(state.interval);
+    breathCore.classList.remove('paused');
+    startBtn.textContent = 'Start';
+    updateDisplay();
+  }
+  
+  function setMode(mode) {
+    state.mode = mode;
+    modeButtons.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    
+    if (mode === 'custom') {
+      customControls.classList.remove('hidden');
+      state.focusMin = parseInt(focusMin.value) || 25;
+      state.breakMin = parseInt(breakMin.value) || 5;
+    } else {
+      customControls.classList.add('hidden');
+      if (mode === 'pomodoro') {
+        state.focusMin = 25;
+        state.breakMin = 5;
+      } else {
+        state.focusMin = 50;
+        state.breakMin = 10;
+      }
+    }
+    
+    state.isBreak = false;
+    state.timeLeft = state.focusMin * 60;
+    state.isRunning = false;
+    clearInterval(state.interval);
+    breathCore.classList.remove('paused');
+    startBtn.textContent = 'Start';
+    updateDisplay();
+  }
+  
+  // Event listeners
+  startBtn.addEventListener('click', startTimer);
+  resetBtn.addEventListener('click', resetTimer);
+  skipBtn.addEventListener('click', skipSession);
+  document.getElementById('dismissComplete').addEventListener('click', () => {
+    completeOverlay.classList.remove('show');
+    skipSession();
+  });
+  
+  modeButtons.forEach(btn => {
+    btn.addEventListener('click', () => setMode(btn.dataset.mode));
+  });
+  
+  focusMin.addEventListener('change', () => {
+    if (state.mode === 'custom') {
+      state.focusMin = Math.max(1, Math.min(120, parseInt(focusMin.value) || 25));
+      if (!state.isBreak && !state.isRunning) {
+        state.timeLeft = state.focusMin * 60;
+        updateDisplay();
+      }
+    }
+  });
+  
+  breakMin.addEventListener('change', () => {
+    if (state.mode === 'custom') {
+      state.breakMin = Math.max(1, Math.min(60, parseInt(breakMin.value) || 5));
+      if (state.isBreak && !state.isRunning) {
+        state.timeLeft = state.breakMin * 60;
+        updateDisplay();
+      }
+    }
+  });
+  
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.code === 'Space') { e.preventDefault(); startTimer(); }
+    if (e.code === 'KeyR') resetTimer();
+    if (e.code === 'KeyS') skipSession();
+  });
+  
+  // Init
+  setMode(state.mode || 'pomodoro');
+  updateDisplay();
+</script>
+</body>
+</html>
