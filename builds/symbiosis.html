@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Symbiosis — Living Mandala</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #050508; }
+  canvas { display: block; cursor: crosshair; }
+  .info {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: rgba(180,160,255,.45);
+    letter-spacing: .25em;
+    text-transform: uppercase;
+    pointer-events: none;
+    user-select: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="info">move to guide · click to pulse · hold to bloom</div>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W, H, cx, cy;
+
+  const mouse = { x: 0, y: 0, active: false, held: false, pulse: 0 };
+  let time = 0;
+  const TAU = Math.PI * 2;
+
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+    cx = W / 2;
+    cy = H / 2;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  canvas.addEventListener('mousemove', e => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    mouse.active = true;
+  });
+  canvas.addEventListener('mousedown', () => { mouse.held = true; mouse.pulse = 1; });
+  canvas.addEventListener('mouseup', () => mouse.held = false);
+  canvas.addEventListener('mouseleave', () => mouse.active = false);
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    mouse.x = e.touches[0].clientX;
+    mouse.y = e.touches[0].clientY;
+    mouse.active = true;
+  }, { passive: false });
+  canvas.addEventListener('touchstart', e => {
+    mouse.held = true; mouse.pulse = 1;
+    mouse.x = e.touches[0].clientX;
+    mouse.y = e.touches[0].clientY;
+    mouse.active = true;
+  });
+  canvas.addEventListener('touchend', () => mouse.held = false);
+
+  // Petals: each petal is a curve orbiting the center
+  const PETALS = 12;
+  const RINGS = 5;
+  const particles = [];
+
+  class Particle {
+    constructor() {
+      this.reset();
+    }
+    reset() {
+      this.angle = Math.random() * TAU;
+      this.ring = Math.random() * RINGS;
+      this.speed = 0.002 + Math.random() * 0.005;
+      this.radius = 40 + this.ring * 70;
+      this.size = 1 + Math.random() * 2.5;
+      this.life = 0;
+      this.maxLife = 200 + Math.random() * 400;
+      this.hueOffset = Math.random() * 60 - 30;
+    }
+    update(t, mx, my, pulse) {
+      this.life++;
+      if (this.life > this.maxLife) this.reset();
+
+      // Orbit
+      const orbitSpeed = this.speed * (1 + pulse * 2);
+      this.angle += orbitSpeed;
+
+      // Base radius with breathing
+      const breath = Math.sin(t * 0.001 + this.ring * 0.5) * 20;
+      let r = this.radius + breath;
+
+      // Mouse influence
+      const px = cx + Math.cos(this.angle) * r;
+      const py = cy + Math.sin(this.angle) * r;
+      const dx = mx - px, dy = my - py;
+      const dist = Math.hypot(dx, dy);
+      const influence = Math.max(0, 1 - dist / 250);
+
+      // Attract toward mouse
+      const pull = influence * 80 * (mouse.held ? 2 : 1);
+      if (pull > 0.5) {
+        const ang = Math.atan2(dy, dx);
+        this.angle += Math.sin(ang - this.angle) * pull * 0.02;
+        r += pull * 0.4;
+      }
+
+      // Pulse expansion
+      r += pulse * 60 * (1 - this.ring / RINGS);
+
+      this.x = cx + Math.cos(this.angle) * r;
+      this.y = cy + Math.sin(this.angle) * r;
+      this.alpha = Math.sin((this.life / this.maxLife) * Math.PI) * 0.8;
+      this.currentSize = this.size * (1 + pulse * 1.5);
+    }
+  }
+
+  for (let i = 0; i < 300; i++) particles.push(new Particle());
+
+  function hsl(h, s, l, a = 1) {
+    return `hsla(${h}, ${s}%, ${l}%, ${a})`;
+  }
+
+  function drawPetal(t, idx) {
+    const baseAngle = (idx / PETALS) * TAU;
+    const breathe = Math.sin(t * 0.0008 + idx * 0.3) * 0.15;
+    const layers = 4;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(baseAngle + t * 0.0002);
+
+    for (let l = 0; l < layers; l++) {
+      const layerR = 80 + l * 75;
+      const wobble = Math.sin(t * 0.0015 + l + idx) * 0.2;
+      const petalLen = layerR * (0.6 + breathe + wobble);
+      const petalWidth = 25 + l * 10 + Math.sin(t * 0.002 + l) * 8;
+
+      const hue = (190 + idx * 8 + l * 25 + t * 0.02) % 360;
+      const alpha = 0.12 - l * 0.025;
+
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.bezierCurveTo(
+        petalWidth, -petalLen * 0.3,
+        petalWidth * 0.8, -petalLen * 0.8,
+        0, -petalLen
+      );
+      ctx.bezierCurveTo(
+        -petalWidth * 0.8, -petalLen * 0.8,
+        -petalWidth, -petalLen * 0.3,
+        0, 0
+      );
+      ctx.fillStyle = hsl(hue, 70, 55, alpha);
+      ctx.fill();
+
+      // Edge glow
+      ctx.strokeStyle = hsl(hue + 20, 90, 65, alpha * 1.5);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  function drawCenter(t) {
+    const pulse = Math.sin(t * 0.003) * 0.3 + 0.7;
+    const radius = 30 * pulse + mouse.pulse * 20;
+
+    // Outer glow
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius * 4);
+    const hue = (200 + t * 0.03) % 360;
+    grad.addColorStop(0, hsl(hue, 80, 70, 0.4 * pulse));
+    grad.addColorStop(0.5, hsl(hue + 30, 60, 50, 0.1));
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius * 4, 0, TAU);
+    ctx.fill();
+
+    // Core
+    ctx.fillStyle = hsl(hue, 90, 85, 0.9);
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, TAU);
+    ctx.fill();
+
+    // Inner ring
+    ctx.strokeStyle = hsl(hue + 40, 100, 80, 0.6);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius * 1.8, 0, TAU);
+    ctx.stroke();
+  }
+
+  function drawBackground(t) {
+    // Trail effect
+    ctx.fillStyle = 'rgba(5, 5, 8, 0.12)';
+    ctx.fillRect(0, 0, W, H);
+
+    // Mouse glow
+    if (mouse.active) {
+      const grad = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 200);
+      const hue = (210 + t * 0.02) % 360;
+      grad.addColorStop(0, hsl(hue, 80, 60, 0.06));
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(mouse.x, mouse.y, 200, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+  function animate(timestamp) {
+    time = timestamp;
+    mouse.pulse *= 0.94;
+
+    drawBackground(time);
+
+    // Draw petals
+    for (let i = 0; i < PETALS; i++) {
+      drawPetal(time, i);
+    }
+
+    // Draw connecting geometry
+    ctx.strokeStyle = `rgba(140, 120, 255, ${0.04 + mouse.pulse * 0.08})`;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < PETALS; i++) {
+      const a1 = (i / PETALS) * TAU + time * 0.0002;
+      const a2 = ((i + Math.floor(PETALS / 2)) / PETALS) * TAU + time * 0.0002;
+      const r = 200 + Math.sin(time * 0.001 + i) * 40;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a1) * r, cy + Math.sin(a1) * r);
+      ctx.lineTo(cx + Math.cos(a2) * r, cy + Math.sin(a2) * r);
+      ctx.stroke();
+    }
+
+    // Draw particles
+    particles.forEach(p => {
+      p.update(time, mouse.x, mouse.y, mouse.pulse);
+      const hue = (200 + p.ring * 30 + p.hueOffset + time * 0.02) % 360;
+      ctx.fillStyle = hsl(hue, 75, 65, p.alpha);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.currentSize, 0, TAU);
+      ctx.fill();
+    });
+
+    // Center
+    drawCenter(time);
+
+    requestAnimationFrame(animate);
+  }
+
+  // Initial clear
+  ctx.fillStyle = '#050508';
+  ctx.fillRect(0, 0, W, H);
+
+  requestAnimationFrame(animate);
+})();
+</script>
+</body>
+</html>
