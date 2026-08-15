@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Entropy Fountain</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #030308;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    color: rgba(255,255,255,.45);
+    font-size: 10px;
+    z-index: 10;
+    pointer-events: none;
+    letter-spacing: .5px;
+    line-height: 1.7;
+  }
+  #title {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,.1);
+    font-size: 9px;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .hint {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    color: rgba(255,255,255,.2);
+    font-size: 9px;
+    z-index: 10;
+    pointer-events: none;
+    letter-spacing: .3px;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div>particles <span id="pcount">0</span></div>
+  <div>entropy <span id="entropy">0.00</span></div>
+  <div>fps <span id="fps">0</span></div>
+</div>
+<div id="title">✦ ENTROPY FOUNTAIN ✦</div>
+<div class="hint">click to disturb · move to attract</div>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W, H, cx, cy;
+  const resize = () => {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+    cx = W / 2;
+    cy = H / 2;
+  };
+  resize();
+
+  const mouse = { x: cx, y: cy, active: false };
+  window.addEventListener('mousemove', e => {
+    mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+  });
+  window.addEventListener('mouseleave', () => mouse.active = false);
+  window.addEventListener('mousedown', e => {
+    mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+    // Burst
+    for (let i = 0; i < 80; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 2 + Math.random() * 4;
+      particles.push(new Particle(mouse.x, mouse.y, angle, speed));
+    }
+  });
+  window.addEventListener('touchmove', e => {
+    mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY; mouse.active = true;
+  });
+
+  // Color palette: cold blues → warm golds → red (entropy gradient)
+  const palette = (t) => {
+    const hue = t < 0.5 ? 220 + t * 2 * 40 : 260 + (t - 0.5) * 2 * 60;
+    return `hsla(${hue % 360}, 90%, 65%, `;
+  };
+
+  class Particle {
+    constructor(x, y, angle, speed) {
+      this.x = x || cx + (Math.random() - 0.5) * 20;
+      this.y = y || cy + (Math.random() - 0.5) * 20;
+      const a = angle ?? Math.random() * Math.PI * 2;
+      const s = speed ?? 0.3 + Math.random() * 0.8;
+      this.vx = Math.cos(a) * s;
+      this.vy = Math.sin(a) * s - 0.5 - Math.random() * 0.8; // slight upward bias
+      this.life = 1;
+      this.decay = 0.002 + Math.random() * 0.004;
+      this.entropy = Math.random(); // 0 = ordered, 1 = chaotic
+      this.size = 1 + Math.random() * 1.5;
+    }
+    update(frame) {
+      // Perlin-ish turbulence using layered sine
+      const turbX = Math.sin(this.y * 0.008 + frame * 0.015 + this.entropy * 5) * 0.3;
+      const turbY = Math.cos(this.x * 0.008 + frame * 0.015 + this.entropy * 5) * 0.3;
+
+      // Mouse gravity
+      if (mouse.active) {
+        const dx = mouse.x - this.x;
+        const dy = mouse.y - this.y;
+        const d2 = dx * dx + dy * dy + 1;
+        const dist = Math.sqrt(d2);
+        if (dist < 200) {
+          const f = 0.3 / (dist * 0.05 + 1);
+          this.vx += (dx / dist) * f * 2;
+          this.vy += (dy / dist) * f * 2;
+        }
+      }
+
+      // Entropy drift: higher entropy → more erratic
+      const drift = this.entropy * 0.05;
+      this.vx += turbX * drift + (Math.random() - 0.5) * drift * 2;
+      this.vy += turbY * drift + (Math.random() - 0.5) * drift * 2;
+
+      // Damping
+      const damp = 0.999 - this.entropy * 0.0005;
+      this.vx *= damp;
+      this.vy *= damp;
+
+      this.x += this.vx;
+      this.y += this.vy;
+      this.life -= this.decay;
+    }
+    draw() {
+      const alpha = Math.pow(this.life, 1.5) * 0.8;
+      const hsl = palette(this.entropy);
+      ctx.beginPath();
+      ctx.fillStyle = hsl + alpha + ')';
+      ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  const MAX_PARTICLES = 2000;
+  let particles = [];
+  let frame = 0;
+  let lastTime = performance.now();
+  let fpsArr = [];
+
+  // Spawn fountain
+  const spawnRate = 12;
+  function spawn() {
+    for (let i = 0; i < spawnRate; i++) {
+      if (particles.length < MAX_PARTICLES) {
+        particles.push(new Particle());
+      }
+    }
+  }
+
+  function animate(now) {
+    // FPS
+    const dt = now - lastTime;
+    lastTime = now;
+    fpsArr.push(1000 / dt);
+    if (fpsArr.length > 30) fpsArr.shift();
+
+    // Fade trail
+    ctx.fillStyle = 'rgba(3, 3, 8, 0.06)';
+    ctx.fillRect(0, 0, W, H);
+
+    spawn();
+    frame++;
+
+    let entropySum = 0;
+    let alive = 0;
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.update(frame);
+      if (p.life <= 0 || p.x < -50 || p.x > W + 50 || p.y < -50 || p.y > H + 50) {
+        particles.splice(i, 1);
+        continue;
+      }
+      p.draw();
+      entropySum += p.entropy;
+      alive++;
+    }
+
+    // Update UI every 10 frames
+    if (frame % 10 === 0) {
+      document.getElementById('pcount').textContent = alive;
+      document.getElementById('entropy').textContent = alive > 0 ? (entropySum / alive).toFixed(3) : '0.000';
+      document.getElementById('fps').textContent = Math.round(fpsArr.reduce((a, b) => a + b, 0) / fpsArr.length);
+    }
+
+    requestAnimationFrame(animate);
+  }
+
+  window.addEventListener('resize', resize);
+  requestAnimationFrame(animate);
+})();
+</script>
+</body>
+</html>
