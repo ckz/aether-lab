@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fractal Arboretum</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #05060f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #aab;
+  }
+  canvas { display: block; cursor: crosshair; }
+  .ui {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    background: rgba(10, 12, 24, 0.7);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(120, 100, 200, 0.25);
+    border-radius: 8px;
+    padding: 16px 20px;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    min-width: 200px;
+  }
+  .ui h2 {
+    font-size: 12px;
+    color: #c8c8ff;
+    margin-bottom: 12px;
+    letter-spacing: 0.3em;
+    font-weight: normal;
+  }
+  .ui label {
+    display: block;
+    margin: 8px 0 4px;
+    opacity: 0.7;
+  }
+  .ui input[type=range] {
+    width: 100%;
+    accent-color: #8877dd;
+  }
+  .ui select {
+    width: 100%;
+    background: rgba(20, 18, 40, 0.8);
+    color: #ccc;
+    border: 1px solid rgba(120, 100, 200, 0.3);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .ui .hint {
+    margin-top: 12px;
+    opacity: 0.4;
+    font-size: 9px;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="ui">
+  <h2>Fractal Arboretum</h2>
+  <label>Season</label>
+  <select id="season">
+    <option value="spring">Spring</option>
+    <option value="summer" selected>Summer</option>
+    <option value="autumn">Autumn</option>
+    <option value="winter">Winter</option>
+  </select>
+  <label>Depth <span id="depthVal">10</span></label>
+  <input type="range" id="depth" min="4" max="13" value="10">
+  <label>Wind</label>
+  <input type="range" id="wind" min="0" max="100" value="30">
+  <label>Density <span id="densityVal">5</span></label>
+  <input type="range" id="density" min="1" max="12" value="5">
+  <div class="hint">move mouse to guide wind<br>click to plant new grove</div>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, DPR = Math.min(window.devicePixelRatio || 1, 2);
+let mouse = { x: 0.5, y: 0.5, active: false };
+let time = 0;
+
+const seasonThemes = {
+  spring: { bg: ['#0a0818', '#1a0f28', '#0d0d1a'], leaves: ['#ffb7d5','#ffc8e0','#e8a0c0','#d4789c','#a0d8a0','#c8f0c8'], trunk: '#5c4033', glow: 'rgba(255, 183, 213,' },
+  summer: { bg: ['#040a14', '#0a1a0a', '#060d14'], leaves: ['#2d8a4e','#3da065','#228b3b','#1e6b3a','#7ec850','#90ee90'], trunk: '#3d2817', glow: 'rgba(60, 180, 80,' },
+  autumn: { bg: ['#140a04', '#1a0f08', '#140c06'], leaves: ['#d46a1a','#e8943a','#c0392b','#f4a942','#a0522d','#ff6b35'], trunk: '#2a1a0f', glow: 'rgba(228, 148, 58,' },
+  winter: { bg: ['#080c18', '#0c1020', '#0a0e1c'], leaves: ['#d8e8f8','#b8d0e8','#ffffff','#e0ecf4','#c0d4e4','#aac8e0'], trunk: '#1a1520', glow: 'rgba(200, 220, 240,' }
+};
+
+let config = {
+  season: 'summer',
+  depth: 10,
+  wind: 0.3,
+  density: 5
+};
+
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+window.addEventListener('mousemove', e => {
+  mouse.x = e.clientX / W;
+  mouse.y = e.clientY / H;
+  mouse.active = true;
+});
+window.addEventListener('click', e => {
+  if (e.target.closest('.ui')) return;
+  groves.push(createGrove(e.clientX, H - 40));
+});
+
+const seasonSelect = document.getElementById('season');
+const depthSlider = document.getElementById('depth');
+const windSlider = document.getElementById('wind');
+const densitySlider = document.getElementById('density');
+const depthVal = document.getElementById('depthVal');
+const densityVal = document.getElementById('densityVal');
+
+seasonSelect.addEventListener('change', e => config.season = e.target.value);
+depthSlider.addEventListener('input', e => { config.depth = +e.target.value; depthVal.textContent = e.target.value; });
+windSlider.addEventListener('input', e => config.wind = e.target.value / 100);
+densitySlider.addEventListener('input', e => { config.density = +e.target.value; densityVal.textContent = e.target.value; });
+
+class Grove {
+  constructor(x, baseY, count) {
+    this.x = x;
+    this.baseY = baseY;
+    this.trees = [];
+    for (let i = 0; i < count; i++) {
+      this.trees.push({
+        x: x + (Math.random() - 0.5) * 120,
+        baseY: baseY + Math.random() * 20,
+        height: 80 + Math.random() * 100,
+        phase: Math.random() * Math.PI * 2,
+        lean: (Math.random() - 0.5) * 0.08
+      });
+    }
+  }
+}
+
+let groves = [createGrove(W / 2, H - 40)];
+
+function createGrove(x, y) {
+  return new Grove(x, y, config.density);
+}
+
+function drawBranch(x, y, len, angle, depth, maxDepth, tree) {
+  if (depth > maxDepth || len < 2) return;
+  
+  const theme = seasonThemes[config.season];
+  const windEffect = Math.sin(time * 0.8 + tree.phase + depth * 0.5) * config.wind * (depth / maxDepth) * 0.4;
+  const mouseInfluence = (mouse.x - 0.5) * config.wind * 0.3 * (depth / maxDepth);
+  
+  const finalAngle = angle + windEffect + mouseInfluence + tree.lean * (depth / maxDepth);
+  const endX = x + Math.cos(finalAngle) * len;
+  const endY = y + Math.sin(finalAngle) * len;
+  
+  const progress = depth / maxDepth;
+  const branchWidth = Math.max(0.5, (1 - progress) * (maxDepth - depth) * 0.9);
+  
+  const gradient = ctx.createLinearGradient(x, y, endX, endY);
+  const baseColor = theme.trunk;
+  gradient.addColorStop(0, baseColor);
+  gradient.addColorStop(1, depth > maxDepth - 2 ? theme.leaves[Math.floor(Math.random() * theme.leaves.length)] : baseColor);
+  
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(endX, endY);
+  ctx.strokeStyle = gradient;
+  ctx.lineWidth = branchWidth;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  
+  if (depth >= maxDepth - 2) {
+    ctx.beginPath();
+    ctx.arc(endX, endY, branchWidth * 1.8, 0, Math.PI * 2);
+    ctx.fillStyle = theme.glow + (0.3 + Math.sin(time * 2 + tree.phase) * 0.15) + ')';
+    ctx.fill();
+  }
+  
+  const branchProb = depth > maxDepth * 0.6 ? 0.85 : 0.6;
+  if (Math.random() < branchProb) {
+    const spread = 0.4 + (depth / maxDepth) * 0.3;
+    const shrink = 0.68 + Math.random() * 0.08;
+    drawBranch(endX, endY, len * shrink, finalAngle - spread + (Math.random() - 0.5) * 0.3, depth + 1, maxDepth, tree);
+  }
+  if (Math.random() < branchProb * 0.8) {
+    const spread = 0.4 + (depth / maxDepth) * 0.3;
+    const shrink = 0.68 + Math.random() * 0.08;
+    drawBranch(endX, endY, len * shrink, finalAngle + spread + (Math.random() - 0.5) * 0.3, depth + 1, maxDepth, tree);
+  }
+}
+
+let particles = [];
+
+function spawnParticles(grove) {
+  const theme = seasonThemes[config.season];
+  if (particles.length > 300) return;
+  for (const tree of grove.trees) {
+    if (Math.random() < 0.03) {
+      const tipY = tree.baseY - tree.height;
+      particles.push({
+        x: tree.x + (Math.random() - 0.5) * 60,
+        y: tipY + Math.random() * 40,
+        vx: (Math.random() - 0.5) * 0.5 + config.wind * 1.5,
+        vy: Math.random() * 0.5 + 0.2,
+        life: 1,
+        decay: 0.003 + Math.random() * 0.004,
+        color: theme.leaves[Math.floor(Math.random() * theme.leaves.length)],
+        size: 1.5 + Math.random() * 2.5
+      });
+    }
+  }
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx + Math.sin(time + i) * 0.2;
+    p.y += p.vy;
+    p.life -= p.decay;
+    if (p.life <= 0 || p.y > H + 20 || p.x < -20 || p.x > W + 20) {
+      particles.splice(i, 1);
+    }
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = p.life * 0.7;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawGround() {
+  const theme = seasonThemes[config.season];
+  const grd = ctx.createLinearGradient(0, H - 80, 0, H);
+  grd.addColorStop(0, 'rgba(10,10,20,0)');
+  grd.addColorStop(1, theme.leaves[0] + '18');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, H - 80, W, 80);
+}
+
+function drawBackground() {
+  const theme = seasonThemes[config.season];
+  const grd = ctx.createRadialGradient(W * 0.5, H * 0.3, 0, W * 0.5, H * 0.5, Math.max(W, H) * 0.8);
+  grd.addColorStop(0, theme.bg[1]);
+  grd.addColorStop(0.5, theme.bg[0]);
+  grd.addColorStop(1, theme.bg[2]);
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, W, H);
+  
+  const starCount = 60;
+  for (let i = 0; i < starCount; i++) {
+    const sx = (Math.sin(i * 127.1 + time * 0.01) * 0.5 + 0.5) * W;
+    const sy = (Math.cos(i * 311.7) * 0.5 + 0.5) * H * 0.6;
+    const brightness = 0.2 + Math.sin(time * 1.5 + i * 0.7) * 0.15;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 0.8, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(200, 210, 255, ${brightness})`;
+    ctx.fill();
+  }
+}
+
+function animate() {
+  time += 0.016;
+  drawBackground();
+  drawGround();
+  
+  for (const grove of groves) {
+    for (const tree of grove.trees) {
+      const seed = tree.phase * 100;
+      const baseLen = tree.height * 0.22;
+      drawBranch(tree.x, tree.baseY, baseLen, -Math.PI / 2, 0, config.depth, tree);
+    }
+    spawnParticles(grove);
+  }
+  
+  updateParticles();
+  drawParticles();
+  
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>
