@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Harmonograph — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #05050f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #aaa;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #title {
+    position: fixed;
+    top: 24px;
+    left: 28px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #title h1 {
+    font-size: 16px;
+    color: #d4d4ff;
+    letter-spacing: 4px;
+    font-weight: normal;
+  }
+  #title .sub {
+    font-size: 10px;
+    color: #667;
+    letter-spacing: 2px;
+    margin-top: 4px;
+  }
+  #info {
+    position: fixed;
+    bottom: 24px;
+    left: 28px;
+    font-size: 11px;
+    color: #556;
+    line-height: 1.8;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #info .val { color: #88a; }
+  #controls {
+    position: fixed;
+    bottom: 24px;
+    right: 28px;
+    display: flex;
+    gap: 10px;
+    z-index: 10;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 500px;
+  }
+  #controls button {
+    background: rgba(100,80,200,.08);
+    border: 1px solid rgba(100,80,200,.2);
+    color: #99a;
+    padding: 7px 14px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    transition: all .2s;
+  }
+  #controls button:hover {
+    background: rgba(100,80,200,.2);
+    color: #ccf;
+    border-color: rgba(140,120,255,.5);
+    box-shadow: 0 0 20px rgba(100,80,200,.2);
+  }
+  #controls button.active {
+    background: rgba(100,80,200,.25);
+    color: #fff;
+    border-color: rgba(160,140,255,.7);
+  }
+  .param {
+    position: fixed;
+    top: 24px;
+    right: 28px;
+    z-index: 10;
+    font-size: 10px;
+    color: #667;
+    letter-spacing: 1.5px;
+    text-align: right;
+    line-height: 2;
+    pointer-events: none;
+  }
+  .param span { color: #99b; }
+</style>
+</head>
+<body>
+<div id="title">
+  <h1>HARMOGRAPH</h1>
+  <div class="sub">pendulum light traces</div>
+</div>
+<div class="param" id="params"></div>
+<div id="info">
+  move mouse to guide · <span class="val">click</span> to reset · <span class="val">space</span> pause · <span class="val">1-5</span> presets
+</div>
+<div id="controls">
+  <button id="btnPause">⏸ Pause</button>
+  <button id="btnClear">Clear</button>
+  <button id="btnTrails">Trails: ON</button>
+  <button id="btnGlow">Glow: ON</button>
+  <button class="preset active" data-p="0">Petal</button>
+  <button class="preset" data-p="1">Web</button>
+  <button class="preset" data-p="2">Crystal</button>
+  <button class="preset" data-p="3">Chaos</button>
+  <button class="preset" data-p="4">Wave</button>
+</div>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W/2; cy = H/2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- State ---
+let paused = false;
+let trails = true;
+let glow = true;
+let t = 0;
+let mouseX = cx, mouseY = cy;
+let mouseActive = false;
+let presetIdx = 0;
+
+const presets = [
+  { // Petal
+    name: 'Petal',
+    a: 1.001, b: 0.502, ampA: 0.38, ampB: 0.38,
+    freqA: 2.0, freqB: 3.0,
+    phaseA: 0, phaseB: Math.PI/2,
+    dampA: 1.0001, dampB: 1.0002,
+    decay: 0.992,
+    hueBase: 220, hueRange: 80,
+    lw: 1.2, particles: 3,
+    palettes: [[220,280],[160,200],[280,340]]
+  },
+  { // Web
+    name: 'Web',
+    a: 1.003, b: 0.499, ampA: 0.42, ampB: 0.42,
+    freqA: 7.0, freqB: 6.0,
+    phaseA: 0, phaseB: Math.PI/3,
+    dampA: 1.00005, dampB: 1.00008,
+    decay: 0.985,
+    hueBase: 160, hueRange: 60,
+    lw: 0.9, particles: 5,
+    palettes: [[140,200],[40,80],[200,260]]
+  },
+  { // Crystal
+    name: 'Crystal',
+    a: 1.0002, b: 0.5001, ampA: 0.35, ampB: 0.35,
+    freqA: 5.0, freqB: 4.0,
+    phaseA: 0, phaseB: Math.PI/4,
+    dampA: 1.00001, dampB: 1.00002,
+    decay: 0.990,
+    hueBase: 280, hueRange: 50,
+    lw: 1.5, particles: 4,
+    palettes: [[260,320],[180,220],[320,360]]
+  },
+  { // Chaos
+    name: 'Chaos',
+    a: 1.0025, b: 0.5015, ampA: 0.40, ampB: 0.40,
+    freqA: 11.0, freqB: 7.0,
+    phaseA: 0, phaseB: Math.PI/2.5,
+    dampA: 1.00003, dampB: 1.00005,
+    decay: 0.978,
+    hueBase: 0, hueRange: 100,
+    lw: 0.8, particles: 6,
+    palettes: [[0,60],[320,360],[60,140]]
+  },
+  { // Wave
+    name: 'Wave',
+    a: 1.0008, b: 0.5003, ampA: 0.30, ampB: 0.30,
+    freqA: 3.0, freqB: 2.0,
+    phaseA: 0, phaseB: 0,
+    dampA: 1.0002, dampB: 1.0002,
+    decay: 0.988,
+    hueBase: 180, hueRange: 60,
+    lw: 1.0, particles: 4,
+    palettes: [[160,220],[40,100],[220,280]]
+  }
+];
+
+// --- Oscillators ---
+class Oscillator {
+  constructor(phase, amp, freq, damp, palette) {
+    this.phase = phase;
+    this.basePhase = phase;
+    this.amp = amp;
+    this.baseAmp = amp;
+    this.freq = freq;
+    this.damp = damp;
+    this.palette = palette || 0;
+  }
+  step(dt) {
+    this.phase += this.freq * dt;
+    this.amp *= this.damp;
+  }
+  val() {
+    return Math.sin(this.phase) * this.amp;
+  }
+}
+
+class Pendulum {
+  constructor() {
+    this.oscA = new Oscillator(0, 0.35, 2, 1.0001, 0);
+    this.oscB = new Oscillator(Math.PI/2, 0.35, 3, 1.0001, 1);
+    this.x = cx;
+    this.y = cy;
+    this.trail = [];
+    this.maxTrail = 400;
+    this.palette = 0;
+    this.paletteTimer = 0;
+  }
+  reset(preset) {
+    const p = presets[preset];
+    this.oscA.phase = p.phaseA + Math.random() * 0.3;
+    this.oscA.basePhase = this.oscA.phase;
+    this.oscA.amp = p.ampA * (0.85 + Math.random() * 0.3);
+    this.oscA.baseAmp = this.oscA.amp;
+    this.oscA.freq = p.freqA * (0.95 + Math.random() * 0.1);
+    this.oscA.damp = p.dampA;
+    this.oscB.phase = p.phaseB + Math.random() * 0.3;
+    this.oscB.basePhase = this.oscB.phase;
+    this.oscB.amp = p.ampB * (0.85 + Math.random() * 0.3);
+    this.oscB.baseAmp = this.oscB.amp;
+    this.oscB.freq = p.freqB * (0.95 + Math.random() * 0.1);
+    this.oscB.damp = p.dampB;
+    this.trail = [];
+    this.palette = Math.floor(Math.random() * p.palettes.length);
+    this.paletteTimer = 0;
+  }
+  step(dt, preset) {
+    const p = presets[preset];
+    this.oscA.step(dt);
+    this.oscB.step(dt);
+    // gently restore amplitude
+    if (this.oscA.amp < this.oscA.baseAmp * 0.5) this.oscA.damp = Math.sqrt(this.oscA.damp);
+    if (this.oscB.amp < this.oscB.baseAmp * 0.5) this.oscB.damp = Math.sqrt(this.oscB.damp);
+    if (this.oscA.amp > this.oscA.baseAmp) this.oscA.damp *= 0.9999;
+    if (this.oscB.amp > this.oscB.baseAmp) this.oscB.damp *= 0.9999;
+
+    const a = this.oscA.val();
+    const b = this.oscB.val();
+    const mx = mouseActive ? (mouseX - cx) / cx : 0;
+    const my = mouseActive ? (mouseY - cy) / cy : 0;
+    const scale = Math.min(W, H) * 0.42;
+    this.x = cx + a * scale * (1 + mx * 0.3);
+    this.y = cy + b * scale * (1 + my * 0.3);
+
+    this.trail.push({ x: this.x, y: this.y, a: this.oscA.amp / this.oscA.baseAmp, b: this.oscB.amp / this.oscB.baseAmp });
+    if (this.trail.length > this.maxTrail) this.trail.shift();
+
+    this.paletteTimer += dt;
+    if (this.paletteTimer > 15 + Math.random() * 20) {
+      this.palette = (this.palette + 1) % p.palettes.length;
+      this.paletteTimer = 0;
+    }
+  }
+}
+
+const pendulums = [];
+for (let i = 0; i < presets[0].particles; i++) {
+  const p = new Pendulum();
+  p.reset(0);
+  pendulums.push(p);
+}
+
+function initPendulums() {
+  const p = presets[presetIdx];
+  while (pendulums.length < p.particles) {
+    const pd = new Pendulum();
+    pd.reset(presetIdx);
+    pendulums.push(pd);
+  }
+  while (pendulums.length > p.particles) {
+    pendulums.pop();
+  }
+  pendulums.forEach(pd => pd.reset(presetIdx));
+}
+
+// --- Render ---
+function hue(h, s=70, l=60) {
+  return `hsl(${h % 360}, ${s}%, ${l}%)`;
+}
+
+function drawPendulum(pd, idx) {
+  if (pd.trail.length < 2) return;
+  const pal = presets[presetIdx].palettes[pd.palette % presets[presetIdx].palettes.length];
+  const lw = presets[presetIdx].lw;
+
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // Draw trail segments with color gradient
+  for (let i = 1; i < pd.trail.length; i++) {
+    const t0 = pd.trail[i-1];
+    const t1 = pd.trail[i];
+    const age = i / pd.trail.length; // 0 at tail, 1 at head
+    const hue = pal[0] + (pal[1] - pal[0]) * age;
+    const alpha = 0.05 + age * 0.85;
+    const width = lw * (0.3 + age * 1.2);
+
+    ctx.beginPath();
+    ctx.moveTo(t0.x, t0.y);
+    ctx.lineTo(t1.x, t1.y);
+    ctx.strokeStyle = hue(hue, 60 + age * 30, 45 + age * 25);
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = width;
+    ctx.stroke();
+  }
+
+  // Glow at head
+  if (glow) {
+    const head = pd.trail[pd.trail.length - 1];
+    const headHue = pal[1];
+    const grad = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, 18);
+    grad.addColorStop(0, hue(headHue, 90, 70));
+    grad.addColorStop(0.5, hue(headHue, 80, 50));
+    grad.addColorStop(1, 'transparent');
+    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, 18, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 1;
+}
+
+// --- Main Loop ---
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+
+  if (!paused) {
+    t += dt;
+
+    // Fade background
+    if (trails) {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 0.04;
+      ctx.fillStyle = '#05050f';
+      ctx.fillRect(0, 0, W, H);
+    } else {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#05050f';
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    ctx.globalCompositeOperation = 'lighter';
+
+    pendulums.forEach((pd, i) => pd.step(dt, presetIdx));
+    pendulums.forEach((pd, i) => drawPendulum(pd, i));
+
+    // Decay all trails if no trails mode
+    if (!trails) {
+      pendulums.forEach(pd => {
+        if (pd.trail.length > 2) pd.trail.shift();
+      });
+    }
+
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+  }
+
+  requestAnimationFrame(frame);
+}
+
+// --- UI ---
+function updateParams() {
+  const p = presets[presetIdx];
+  document.getElementById('params').innerHTML =
+    `freq ratio <span>${p.freqA} : ${p.freqB}</span><br>` +
+    `damping <span>${p.dampA.toFixed(5)} / ${p.dampB.toFixed(5)}</span><br>` +
+    `pendulums <span>${pendulums.length}</span>`;
+}
+
+document.getElementById('btnPause').onclick = function() {
+  paused = !paused;
+  this.textContent = paused ? '▶ Play' : '⏸ Pause';
+  this.classList.toggle('active', paused);
+};
+
+document.getElementById('btnClear').onclick = function() {
+  pendulums.forEach(pd => pd.trail = []);
+  ctx.fillStyle = '#05050f';
+  ctx.fillRect(0, 0, W, H);
+};
+
+document.getElementById('btnTrails').onclick = function() {
+  trails = !trails;
+  this.textContent = `Trails: ${trails ? 'ON' : 'OFF'}`;
+  this.classList.toggle('active', !trails);
+};
+
+document.getElementById('btnGlow').onclick = function() {
+  glow = !glow;
+  this.textContent = `Glow: ${glow ? 'ON' : 'OFF'}`;
+  this.classList.toggle('active', !glow);
+};
+
+document.querySelectorAll('.preset').forEach(btn => {
+  btn.onclick = function() {
+    document.querySelectorAll('.preset').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    presetIdx = parseInt(this.dataset.p);
+    initPendulums();
+    updateParams();
+  };
+});
+
+document.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  mouseActive = true;
+});
+document.addEventListener('mouseleave', () => { mouseActive = false; });
+document.addEventListener('click', () => { initPendulums(); });
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); document.getElementById('btnPause').click(); }
+  if (e.key >= '1' && e.key <= '5') {
+    presetIdx = parseInt(e.key) - 1;
+    document.querySelectorAll('.preset').forEach(b => b.classList.remove('active'));
+    document.querySelector(`.preset[data-p="${presetIdx}"]`).classList.add('active');
+    initPendulums();
+    updateParams();
+  }
+});
+
+// --- Init ---
+ctx.fillStyle = '#05050f';
+ctx.fillRect(0, 0, W, H);
+initPendulums();
+updateParams();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
