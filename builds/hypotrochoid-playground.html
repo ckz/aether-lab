@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hypotrochoid Playground</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+  }
+  canvas {
+    display: block;
+    flex: 1;
+    cursor: crosshair;
+  }
+  .panel {
+    width: 300px;
+    background: rgba(15, 15, 25, 0.95);
+    padding: 20px;
+    overflow-y: auto;
+    border-left: 1px solid #1a1a2e;
+    font-size: 12px;
+    user-select: none;
+  }
+  .panel h2 {
+    font-size: 16px;
+    margin-bottom: 4px;
+    background: linear-gradient(135deg, #ff6b9d, #c084fc, #60a5fa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .panel .subtitle {
+    font-size: 10px;
+    color: #666;
+    margin-bottom: 16px;
+  }
+  .group {
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #1a1a2e;
+  }
+  .group-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: #888;
+    margin-bottom: 10px;
+  }
+  .slider-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+    gap: 8px;
+  }
+  .slider-row label {
+    width: 30px;
+    font-size: 11px;
+    color: #aaa;
+    flex-shrink: 0;
+  }
+  .slider-row input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 4px;
+    border-radius: 2px;
+    background: #1a1a2e;
+    outline: none;
+  }
+  .slider-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #c084fc;
+    cursor: pointer;
+    box-shadow: 0 0 8px rgba(192, 132, 252, 0.4);
+  }
+  .slider-row .val {
+    width: 40px;
+    text-align: right;
+    font-size: 11px;
+    color: #c084fc;
+  }
+  .preset-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .preset-btn {
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+    color: #ccc;
+    padding: 6px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    transition: all 0.2s;
+  }
+  .preset-btn:hover {
+    background: #252540;
+    border-color: #c084fc;
+    color: #fff;
+  }
+  .preset-btn.active {
+    background: rgba(192, 132, 252, 0.15);
+    border-color: #c084fc;
+    color: #c084fc;
+  }
+  .toggle-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .toggle-row span { font-size: 11px; color: #aaa; }
+  .toggle {
+    width: 36px; height: 18px;
+    background: #1a1a2e;
+    border-radius: 9px;
+    position: relative;
+    cursor: pointer;
+    border: 1px solid #2a2a3e;
+    transition: all 0.2s;
+  }
+  .toggle.on {
+    background: rgba(192, 132, 252, 0.3);
+    border-color: #c084fc;
+  }
+  .toggle::after {
+    content: '';
+    position: absolute;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #666;
+    top: 1px; left: 2px;
+    transition: all 0.2s;
+  }
+  .toggle.on::after {
+    left: 18px;
+    background: #c084fc;
+    box-shadow: 0 0 6px rgba(192, 132, 252, 0.5);
+  }
+  .pen-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .pen-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,0.03);
+    padding: 6px 8px;
+    border-radius: 4px;
+    border: 1px solid #1a1a2e;
+  }
+  .pen-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .pen-name { font-size: 11px; flex: 1; }
+  .pen-remove {
+    background: none;
+    border: none;
+    color: #555;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0;
+    line-height: 1;
+  }
+  .pen-remove:hover { color: #ff6b9d; }
+  .action-btn {
+    width: 100%;
+    padding: 8px;
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+    color: #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    margin-bottom: 6px;
+    transition: all 0.2s;
+  }
+  .action-btn:hover {
+    background: #252540;
+    border-color: #60a5fa;
+    color: #fff;
+  }
+  .stats {
+    font-size: 10px;
+    color: #555;
+    text-align: center;
+    margin-top: 8px;
+  }
+  .help-text {
+    font-size: 10px;
+    color: #555;
+    line-height: 1.6;
+    margin-top: 4px;
+  }
+  @media (max-width: 768px) {
+    .panel { width: 260px; padding: 14px; font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div class="panel">
+  <h2>✦ Hypotrochoid</h2>
+  <div class="subtitle">Spirograph curves — click canvas to shift origin</div>
+
+  <div class="group">
+    <div class="group-label">Pens</div>
+    <div class="pen-list" id="penList"></div>
+  </div>
+
+  <div class="group">
+    <div class="group-label">Parameters</div>
+    <div id="sliders"></div>
+  </div>
+
+  <div class="group">
+    <div class="group-label">Presets</div>
+    <div class="preset-grid" id="presets"></div>
+  </div>
+
+  <div class="group">
+    <div class="group-label">Display</div>
+    <div class="toggle-row">
+      <span>Trail fade</span>
+      <div class="toggle on" id="togFade" onclick="toggleFade()"></div>
+    </div>
+    <div class="toggle-row">
+      <span>Guides</span>
+      <div class="toggle" id="togGuides" onclick="toggleGuides()"></div>
+    </div>
+    <div class="toggle-row">
+      <span>Glow</span>
+      <div class="toggle on" id="togGlow" onclick="toggleGlow()"></div>
+    </div>
+    <div class="toggle-row">
+      <span>Color cycle</span>
+      <div class="toggle on" id="togColor" onclick="toggleColor()"></div>
+    </div>
+    <div class="slider-row" style="margin-top:8px">
+      <label>Spd</label>
+      <input type="range" min="1" max="20" value="8" id="speedSlider" oninput="updateSpeed()">
+      <span class="val" id="speedVal">8</span>
+    </div>
+  </div>
+
+  <div class="group">
+    <button class="action-btn" onclick="addPen()">+ Add Pen</button>
+    <button class="action-btn" onclick="clearCanvas()">Clear Canvas</button>
+    <button class="action-btn" onclick="resetView()">Reset Center</button>
+  </div>
+
+  <div class="stats" id="stats"></div>
+  <div class="help-text">
+    Click canvas to shift origin<br>
+    Scroll to zoom<br>
+    Press 1-5 for presets<br>
+    Space to pause
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth - 300;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', () => {
+  resize();
+  resetView();
+});
+
+let originX = W / 2, originY = H / 2;
+let zoom = 1;
+let paused = false;
+let fadeTrails = true;
+let showGuides = false;
+let showGlow = true;
+let colorCycle = true;
+let speed = 8;
+
+let t = 0;
+let pens = [];
+let penIdCounter = 0;
+
+const palettes = [
+  ['#ff6b9d', '#c084fc', '#60a5fa'],
+  ['#34d399', '#22d3ee', '#a78bfa'],
+  ['#fb923c', '#f43f5e', '#facc15'],
+  ['#2dd4bf', '#818cf8', '#f472b6'],
+  ['#a3e635', '#22d3ee', '#e879f9'],
+  ['#f97316', '#ef4444', '#fbbf24'],
+];
+
+function createPen(R, r, d, colorOffset = 0, paletteIdx = 0) {
+  return {
+    id: penIdCounter++,
+    R: R || 150,
+    r: r || 52,
+    d: d || 70,
+    tOffset: 0,
+    colorOffset: colorOffset,
+    paletteIdx: paletteIdx,
+    prevX: null, prevY: null,
+  };
+}
+
+function hslToRgb(h, s, l) {
+  h = ((h % 360) + 360) % 360;
+  s /= 100; l /= 100;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  let r, g, b;
+  if (h < 60)      { r=c; g=x; b=0; }
+  else if (h < 120) { r=x; g=c; b=0; }
+  else if (h < 180) { r=0; g=c; b=x; }
+  else if (h < 240) { r=0; g=x; b=c; }
+  else if (h < 300) { r=x; g=0; b=c; }
+  else               { r=c; g=0; b=x; }
+  return `rgb(${Math.round((r+m)*255)},${Math.round((g+m)*255)},${Math.round((b+m)*255)})`;
+}
+
+function getPenColor(pen, t) {
+  if (colorCycle) {
+    const hue = (t * 30 + pen.colorOffset) % 360;
+    return hslToRgb(hue, 80, 60);
+  }
+  const pal = palettes[pen.paletteIdx % palettes.length];
+  return pal[Math.floor(t / 60) % pal.length];
+}
+
+function hypotrochoid(pen, angle) {
+  const R = pen.R * zoom;
+  const r = pen.r * zoom;
+  const d = pen.d * zoom;
+  const diff = R - r;
+  const ratio = diff / r;
+  const x = originX + diff * Math.cos(angle) + d * Math.cos(ratio * angle);
+  const y = originY + diff * Math.sin(angle) - d * Math.sin(ratio * angle);
+  return { x, y };
+}
+
+function updatePen(pen, dt) {
+  pen.tOffset += dt * speed * 0.005;
+}
+
+function drawPen(pen) {
+  const angle = pen.tOffset;
+  const { x, y } = hypotrochoid(pen, angle);
+  const color = getPenColor(pen, t);
+
+  if (showGuides) {
+    const R = pen.R * zoom, r = pen.r * zoom, d = pen.d * zoom;
+    const diff = R - r;
+    const ratio = diff / Math.max(r, 1);
+
+    // Draw rolling circle
+    const cx = originX + diff * Math.cos(angle);
+    const cy = originY + diff * Math.sin(angle);
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Draw rod
+    const px = cx + d * Math.cos(ratio * angle);
+    const py = cy - d * Math.sin(ratio * angle);
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(px, py);
+    ctx.stroke();
+
+    // Draw pen point
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath();
+    ctx.arc(px, py, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (pen.prevX !== null) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    if (showGlow) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 8;
+    } else {
+      ctx.shadowBlur = 0;
+    }
+    ctx.beginPath();
+    ctx.moveTo(pen.prevX, pen.prevY);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  pen.prevX = x;
+  pen.prevY = y;
+}
+
+function drawBackground() {
+  if (fadeTrails) {
+    ctx.fillStyle = 'rgba(10, 10, 15, 0.03)';
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+function animate() {
+  if (!paused) {
+    drawBackground();
+    for (const pen of pens) {
+      updatePen(pen, 1);
+      drawPen(pen);
+    }
+    t++;
+  }
+  updateStats();
+  requestAnimationFrame(animate);
+}
+
+function clearCanvas() {
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, W, H);
+  for (const pen of pens) {
+    pen.prevX = null; pen.prevY = null;
+  }
+}
+
+function resetView() {
+  originX = W / 2;
+  originY = H / 2;
+  zoom = 1;
+}
+
+// Controls
+function toggleFade() {
+  fadeTrails = !fadeTrails;
+  document.getElementById('togFade').classList.toggle('on', fadeTrails);
+}
+function toggleGuides() {
+  showGuides = !showGuides;
+  document.getElementById('togGuides').classList.toggle('on', showGuides);
+}
+function toggleGlow() {
+  showGlow = !showGlow;
+  document.getElementById('togGlow').classList.toggle('on', showGlow);
+}
+function toggleColor() {
+  colorCycle = !colorCycle;
+  document.getElementById('togColor').classList.toggle('on', colorCycle);
+}
+function updateSpeed() {
+  speed = parseInt(document.getElementById('speedSlider').value);
+  document.getElementById('speedVal').textContent = speed;
+}
+
+// Mouse interaction
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  originX = e.clientX - rect.left;
+  originY = e.clientY - rect.top;
+  for (const pen of pens) {
+    pen.prevX = null; pen.prevY = null;
+  }
+});
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  zoom = Math.max(0.2, Math.min(3, zoom - e.deltaY * 0.001));
+  for (const pen of pens) {
+    pen.prevX = null; pen.prevY = null;
+  }
+}, { passive: false });
+
+// Keyboard
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); paused = !paused; }
+});
+
+// Sliders
+function buildSliders() {
+  const container = document.getElementById('sliders');
+  if (pens.length === 0) {
+    container.innerHTML = '<div style="color:#555;font-size:11px;padding:8px;">Add a pen to edit parameters</div>';
+    return;
+  }
+  const pen = pens[0];
+  container.innerHTML = '';
+  const params = [
+    { key: 'R', label: 'R', min: 30, max: 300, step: 1 },
+    { key: 'r', label: 'r', min: 5, max: 150, step: 1 },
+    { key: 'd', label: 'd', min: 5, max: 200, step: 1 },
+  ];
+  for (const p of params) {
+    const row = document.createElement('div');
+    row.className = 'slider-row';
+    row.innerHTML = `
+      <label>${p.label}</label>
+      <input type="range" min="${p.min}" max="${p.max}" value="${pen[p.key]}" step="${p.step}"
+        oninput="updatePenParam(${pen.id}, '${p.key}', this.value); this.nextElementSibling.textContent=this.value">
+      <span class="val">${pen[p.key]}</span>
+    `;
+    container.appendChild(row);
+  }
+}
+
+function updatePenParam(id, key, value) {
+  const pen = pens.find(p => p.id === id);
+  if (pen) {
+    pen[key] = parseFloat(value);
+    pen.prevX = null; pen.prevY = null;
+  }
+}
+
+// Pen management
+function renderPens() {
+  const list = document.getElementById('penList');
+  list.innerHTML = '';
+  pens.forEach((pen, i) => {
+    const pal = palettes[pen.paletteIdx % palettes.length];
+    const color = colorCycle ? '#fff' : pal[0];
+    const row = document.createElement('div');
+    row.className = 'pen-row';
+    row.innerHTML = `
+      <div class="pen-dot" style="background:${color}"></div>
+      <span class="pen-name">Pen ${i+1}</span>
+      <button class="pen-remove" onclick="removePen(${pen.id})">×</button>
+    `;
+    list.appendChild(row);
+  });
+  buildSliders();
+}
+
+function addPen(R, r, d) {
+  const palIdx = pens.length % palettes.length;
+  const pen = createPen(R, r, d, pens.length * 90, palIdx);
+  pens.push(pen);
+  renderPens();
+}
+
+function removePen(id) {
+  pens = pens.filter(p => p.id !== id);
+  renderPens();
+}
+
+// Presets
+const presets = {
+  'Flower':     { R: 150, r: 52, d: 70, pens: [{R:150,r:52,d:70},{R:150,r:52,d:120}] },
+  'Star':       { R: 180, r: 60, d: 90, pens: [{R:180,r:60,d:90},{R:180,r:60,d:30}] },
+  'Web':        { R: 200, r: 75, d: 50, pens: [{R:200,r:75,d:50},{R:200,r:75,d:100}] },
+  'Bloom':      { R: 120, r: 40, d: 80, pens: [{R:120,r:40,d:80},{R:120,r:60,d:40},{R:120,r:80,d:60}] },
+  'Orbit':      { R: 160, r: 90, d: 45, pens: [{R:160,r:90,d:45},{R:160,r:90,d:95}] },
+  'Crystal':    { R: 140, r: 55, d: 100, pens: [{R:140,r:55,d:100}] },
+  'Mandala':    { R: 100, r: 33, d: 70, pens: [
+    {R:100,r:33,d:70},{R:100,r:33,d:140},{R:100,r:66,d:70},{R:100,r:66,d:105}
+  ]},
+};
+
+function loadPreset(name) {
+  clearCanvas();
+  pens = [];
+  penIdCounter = 0;
+  const p = presets[name];
+  for (const cfg of p.pens) {
+    addPen(cfg.R, cfg.r, cfg.d);
+  }
+}
+
+function buildPresets() {
+  const container = document.getElementById('presets');
+  container.innerHTML = '';
+  for (const name of Object.keys(presets)) {
+    const btn = document.createElement('button');
+    btn.className = 'preset-btn';
+    btn.textContent = name;
+    btn.onclick = () => {
+      loadPreset(name);
+      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    };
+    container.appendChild(btn);
+  }
+}
+
+function updateStats() {
+  const points = pens.length > 0 ? Math.floor(t * speed * 0.5 * pens.length) : 0;
+  document.getElementById('stats').innerHTML =
+    `${pens.length} pen${pens.length!==1?'s':''} · ${points.toLocaleString()} pts · t=${t}`;
+}
+
+// Init
+buildPresets();
+loadPreset('Flower');
+ctx.fillStyle = '#0a0a0f';
+ctx.fillRect(0, 0, W, H);
+animate();
+</script>
+
+</body>
+</html>
