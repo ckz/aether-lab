@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Moiré Loom</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #08080f;
+    font-family: 'Courier New', monospace;
+    color: #aab;
+    overflow: hidden;
+    height: 100vh;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  .controls {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: rgba(10,10,20,.85);
+    border: 1px solid rgba(100,90,180,.25);
+    border-radius: 6px;
+    padding: 18px;
+    font-size: .7rem;
+    letter-spacing: .08em;
+    z-index: 10;
+    min-width: 200px;
+    backdrop-filter: blur(10px);
+  }
+  .controls .title {
+    font-size: .85rem;
+    color: #c8c8ff;
+    letter-spacing: .2em;
+    margin-bottom: 14px;
+    text-transform: uppercase;
+  }
+  .controls label {
+    display: block;
+    margin-bottom: 12px;
+    opacity: .7;
+  }
+  .controls input[type=range] {
+    width: 100%;
+    margin-top: 4px;
+    accent-color: #8877dd;
+  }
+  .controls select {
+    width: 100%;
+    margin-top: 4px;
+    background: #14122a;
+    color: #ccc;
+    border: 1px solid rgba(100,90,180,.3);
+    padding: 4px 6px;
+    font-family: 'Courier New', monospace;
+    font-size: .7rem;
+    border-radius: 3px;
+  }
+  .controls button {
+    width: 100%;
+    margin-top: 6px;
+    background: rgba(100,80,200,.15);
+    color: #b8a8ff;
+    border: 1px solid rgba(140,120,255,.3);
+    padding: 6px 10px;
+    font-family: 'Courier New', monospace;
+    font-size: .68rem;
+    letter-spacing: .1em;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all .2s;
+  }
+  .controls button:hover {
+    background: rgba(120,100,220,.25);
+    border-color: rgba(160,140,255,.5);
+  }
+  .hint {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    font-size: .65rem;
+    opacity: .35;
+    letter-spacing: .1em;
+  }
+  .fps {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    font-size: .65rem;
+    opacity: .3;
+    letter-spacing: .1em;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="controls">
+  <div class="title">Moiré Loom</div>
+  <label>Density <input type="range" id="density" min="10" max="120" value="45"></label>
+  <label>Layers <input type="range" id="layers" min="1" max="6" value="3"></label>
+  <label>Rotation <input type="range" id="rotation" min="-45" max="45" value="12"></label>
+  <label>Mouse warp <input type="range" id="warp" min="0" max="200" value="60"></label>
+  <label>Color <select id="colorMode">
+    <option value="mono">Mono</option>
+    <option value="spectrum" selected>Spectrum</option>
+    <option value="warm">Warm</option>
+    <option value="cool">Cool</option>
+    <option value="electric">Electric</option>
+  </select></label>
+  <label>Pattern <select id="pattern">
+    <option value="lines" selected>Lines</option>
+    <option value="dots">Dots</option>
+    <option value="circles">Circles</option>
+    <option value="hex">Hex</option>
+  </select></label>
+  <label>Trail <input type="range" id="trail" min="0" max="50" value="8"></label>
+  <button id="resetBtn">Reset</button>
+  <button id="pauseBtn">Pause</button>
+</div>
+<div class="hint">Move mouse to warp · Scroll to zoom · Space to pause · R to reset</div>
+<div class="fps" id="fps"></div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, t = 0, paused = false, frame = 0, lastFpsTime = 0, fpsCount = 0;
+
+const state = {
+  density: 45,
+  layers: 3,
+  rotation: 12 * Math.PI / 180,
+  warp: 60,
+  colorMode: 'spectrum',
+  pattern: 'lines',
+  trail: 8,
+  mx: -9999,
+  my: -9999,
+  zoom: 1
+};
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Input
+canvas.addEventListener('mousemove', e => { state.mx = e.clientX; state.my = e.clientY; });
+canvas.addEventListener('mouseleave', () => { state.mx = -9999; state.my = -9999; });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  state.mx = e.touches[0].clientX;
+  state.my = e.touches[0].clientY;
+}, { passive: false });
+canvas.addEventListener('touchend', () => { state.mx = -9999; state.my = -9999; });
+
+window.addEventListener('wheel', e => {
+  state.zoom = Math.max(0.2, Math.min(5, state.zoom - e.deltaY * 0.001));
+});
+
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); paused = !paused; }
+  if (e.code === 'KeyR') reset();
+});
+
+function reset() { t = 0; ctx.fillStyle = '#08080f'; ctx.fillRect(0, 0, W, H); }
+document.getElementById('resetBtn').onclick = reset;
+document.getElementById('pauseBtn').onclick = () => { paused = !paused; document.getElementById('pauseBtn').textContent = paused ? 'Play' : 'Pause'; };
+
+// Sliders
+const sliders = ['density','layers','rotation','warp','trail'];
+sliders.forEach(id => {
+  document.getElementById(id).addEventListener('input', e => {
+    const v = parseFloat(e.target.value);
+    if (id === 'rotation') state[id] = v * Math.PI / 180;
+    else state[id] = v;
+  });
+});
+document.getElementById('colorMode').addEventListener('change', e => state.colorMode = e.target.value);
+document.getElementById('pattern').addEventListener('change', e => state.pattern = e.target.value);
+
+// Color
+function getColor(i, total, alpha) {
+  const colors = {
+    mono: () => `rgba(180,180,220,${alpha})`,
+    spectrum: () => { const h = (i / total + t * 0.02) % 1; return `hsla(${h * 360},70%,65%,${alpha})`; },
+    warm: () => { const h = (i / total) * 60 + 10; return `hsla(${h},80%,60%,${alpha})`; },
+    cool: () => { const h = 180 + (i / total) * 80; return `hsla(${h},70%,60%,${alpha})`; },
+    electric: () => { const h = 120 + Math.sin(i * 0.5 + t * 0.05) * 60; return `hsla(${h},90%,60%,${alpha})`; }
+  };
+  return colors[state.colorMode]();
+}
+
+// Draw a single layer
+function drawLayer(layerIndex, totalLayers, zoom) {
+  const density = state.density * zoom;
+  const rot = state.rotation + layerIndex * (Math.PI / totalLayers) * 0.7;
+  const offset = layerIndex * 0.15;
+  const mouseWarp = state.warp;
+
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.rotate(rot);
+
+  const maxDim = Math.sqrt(W * W + H * H);
+
+  for (let i = -maxDim; i < maxDim; i += density) {
+    let warpAmount = 0;
+    if (mouseWarp > 0 && state.mx > -999) {
+      const sx = i * Math.cos(-rot);
+      const sy = i * Math.sin(-rot);
+      const wx = W / 2 + sx;
+      const wy = H / 2 + sy;
+      const dx = wx - state.mx;
+      const dy = wy - state.my;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const influence = Math.max(0, 1 - dist / 300);
+      warpAmount = influence * mouseWarp * 0.3 * Math.sin(t * 0.03 + layerIndex);
+    }
+
+    const alpha = 0.25 + 0.15 * Math.sin(t * 0.02 + i * 0.01 + layerIndex);
+
+    if (state.pattern === 'lines') {
+      ctx.beginPath();
+      ctx.moveTo(i + warpAmount, -maxDim);
+      ctx.lineTo(i - warpAmount, maxDim);
+      ctx.strokeStyle = getColor(layerIndex, totalLayers, alpha);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    } else if (state.pattern === 'dots') {
+      for (let j = -maxDim; j < maxDim; j += density) {
+        const x = i + warpAmount * Math.sin(t * 0.03 + j * 0.005);
+        const y = j;
+        const dx2 = x - (state.mx > -999 ? state.mx : W/2);
+        const dy2 = y - (state.my > -999 ? state.my : H/2);
+        const dist2 = Math.sqrt(dx2*dx2 + dy2*dy2);
+        const r = 1.2 + (mouseWarp > 0 ? Math.max(0, 1 - dist2/250) * mouseWarp * 0.02 : 0);
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fillStyle = getColor(layerIndex, totalLayers, alpha);
+        ctx.fill();
+      }
+    } else if (state.pattern === 'circles') {
+      const r = Math.abs(i) + warpAmount * 0.5;
+      if (r > 0 && r < maxDim) {
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.strokeStyle = getColor(layerIndex, totalLayers, alpha);
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
+    } else if (state.pattern === 'hex') {
+      const size = density * 0.5;
+      for (let j = -maxDim; j < maxDim; j += density * 1.5) {
+        const x = i + warpAmount * 0.5;
+        const y = j;
+        drawHex(ctx, x, y, size, getColor(layerIndex, totalLayers, alpha * 0.7));
+      }
+    }
+  }
+
+  ctx.restore();
+}
+
+function drawHex(ctx, x, y, size, color) {
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.PI / 3) * i - Math.PI / 6;
+    const hx = x + size * Math.cos(angle);
+    const hy = y + size * Math.sin(angle);
+    if (i === 0) ctx.moveTo(hx, hy);
+    else ctx.lineTo(hx, hy);
+  }
+  ctx.closePath();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+}
+
+function animate() {
+  if (!paused) {
+    const trailAlpha = state.trail / 100;
+    ctx.fillStyle = `rgba(8,8,15,${1 - trailAlpha * 0.5})`;
+    ctx.fillRect(0, 0, W, H);
+
+    const layers = Math.floor(state.layers);
+    for (let i = 0; i < layers; i++) {
+      drawLayer(i, layers, state.zoom);
+    }
+
+    t++;
+    frame++;
+    if (t - lastFpsTime > 60) {
+      document.getElementById('fps').textContent = `${Math.round(frame / ((t - lastFpsTime) / 60))} fps`;
+      frame = 0;
+      lastFpsTime = t;
+    }
+  }
+  requestAnimationFrame(animate);
+}
+
+reset();
+animate();
+</script>
+</body>
+</html>
