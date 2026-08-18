@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tiny Base Kit</title>
+<style>
+  :root {
+    --phosphor: #33ff66;
+    --phosphor-dim: #1a8033;
+    --phosphor-glow: #33ff6688;
+    --bg: #0a0e0a;
+    --bg-light: #111611;
+    --border: #1a2a1a;
+    --amber: #ffb833;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  @keyframes flicker {
+    0%, 100% { opacity: 1; }
+    92% { opacity: 1; }
+    93% { opacity: 0.85; }
+    94% { opacity: 1; }
+    96% { opacity: 0.9; }
+    97% { opacity: 1; }
+  }
+
+  @keyframes scanline {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100vh); }
+  }
+
+  @keyframes blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--phosphor);
+    font-family: 'Courier New', Courier, monospace;
+    min-height: 100vh;
+    padding: 24px;
+    font-size: 14px;
+    line-height: 1.6;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.15) 2px,
+      rgba(0, 0, 0, 0.15) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* Moving scan beam */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(to bottom, transparent, rgba(51, 255, 102, 0.08), transparent);
+    animation: scanline 6s linear infinite;
+    pointer-events: none;
+    z-index: 1001;
+  }
+
+  .container {
+    max-width: 860px;
+    margin: 0 auto;
+    animation: flicker 8s infinite;
+    position: relative;
+    z-index: 1;
+  }
+
+  header {
+    border-bottom: 1px solid var(--phosphor-dim);
+    padding-bottom: 16px;
+    margin-bottom: 24px;
+  }
+
+  header h1 {
+    font-size: 22px;
+    font-weight: bold;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    text-shadow: 0 0 10px var(--phosphor-glow), 0 0 30px var(--phosphor-glow);
+  }
+
+  header .subtitle {
+    font-size: 11px;
+    color: var(--phosphor-dim);
+    letter-spacing: 2px;
+    margin-top: 4px;
+  }
+
+  .input-section {
+    background: var(--bg-light);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--phosphor);
+    padding: 16px;
+    margin-bottom: 20px;
+    position: relative;
+  }
+
+  .input-section label {
+    display: block;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--phosphor-dim);
+    margin-bottom: 8px;
+  }
+
+  #input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--phosphor-dim);
+    color: var(--phosphor);
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 15px;
+    padding: 8px 0;
+    outline: none;
+    resize: none;
+    transition: border-color 0.3s;
+  }
+
+  #input:focus {
+    border-bottom-color: var(--phosphor);
+    box-shadow: 0 1px 8px var(--phosphor-glow);
+  }
+
+  #input::placeholder {
+    color: var(--phosphor-dim);
+    opacity: 0.5;
+  }
+
+  .controls {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+
+  .controls button {
+    background: transparent;
+    border: 1px solid var(--phosphor-dim);
+    color: var(--phosphor);
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 11px;
+    padding: 4px 12px;
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+  }
+
+  .controls button:hover, .controls button:focus {
+    background: var(--phosphor);
+    color: var(--bg);
+    box-shadow: 0 0 10px var(--phosphor-glow);
+    outline: none;
+  }
+
+  .controls button.active {
+    background: var(--phosphor);
+    color: var(--bg);
+    box-shadow: 0 0 10px var(--phosphor-glow);
+  }
+
+  .shift-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 12px;
+  }
+
+  .shift-control input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--border);
+    height: 4px;
+    border-radius: 0;
+    outline: none;
+    flex: 1;
+    max-width: 200px;
+  }
+
+  .shift-control input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--phosphor);
+    width: 12px;
+    height: 12px;
+    cursor: pointer;
+    box-shadow: 0 0 6px var(--phosphor-glow);
+  }
+
+  .shift-control input[type="range"]::-moz-range-thumb {
+    background: var(--phosphor);
+    width: 12px;
+    height: 12px;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 0 6px var(--phosphor-glow);
+  }
+
+  .shift-val {
+    color: var(--amber);
+    font-weight: bold;
+    min-width: 30px;
+    text-align: right;
+  }
+
+  .output-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .output-block {
+    background: var(--bg-light);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--phosphor-dim);
+    padding: 12px;
+    position: relative;
+    transition: border-left-color 0.3s;
+  }
+
+  .output-block:hover {
+    border-left-color: var(--phosphor);
+  }
+
+  .output-block .label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--phosphor-dim);
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .output-block .bits {
+    font-size: 11px;
+    color: var(--phosphor-dim);
+    opacity: 0.6;
+  }
+
+  .output-block .value {
+    font-size: 14px;
+    word-break: break-all;
+    line-height: 1.5;
+    min-height: 20px;
+    white-space: pre-wrap;
+  }
+
+  .copy-btn {
+    background: transparent;
+    border: 1px solid var(--phosphor-dim);
+    color: var(--phosphor-dim);
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 9px;
+    padding: 2px 8px;
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+
+  .copy-btn:hover, .copy-btn:focus {
+    border-color: var(--phosphor);
+    color: var(--bg);
+    background: var(--phosphor);
+    outline: none;
+  }
+
+  .copy-btn.copied {
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+
+  .status-bar {
+    margin-top: 20px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--phosphor-dim);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .status-bar .cursor-indicator::after {
+    content: '█';
+    animation: blink 1s infinite;
+    color: var(--phosphor);
+  }
+
+  .clear-btn {
+    background: transparent;
+    border: 1px solid #833333;
+    color: #ff6666;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 11px;
+    padding: 4px 12px;
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+  }
+
+  .clear-btn:hover, .clear-btn:focus {
+    background: #ff6666;
+    color: var(--bg);
+    outline: none;
+  }
+
+  footer {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--phosphor-dim);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    text-align: center;
+  }
+
+  .mode-label {
+    display: inline-block;
+    background: var(--phosphor);
+    color: var(--bg);
+    padding: 1px 6px;
+    font-size: 9px;
+    letter-spacing: 1px;
+    margin-left: 8px;
+  }
+
+  @media (max-width: 600px) {
+    body { padding: 12px; font-size: 13px; }
+    header h1 { font-size: 16px; letter-spacing: 2px; }
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>&gt; Tiny Base Kit_</h1>
+      <div class="subtitle">// RETRO TERMINAL ENCODING UTILITY v1.0</div>
+    </header>
+
+    <div class="input-section">
+      <label for="input">[ INPUT_BUFFER ]</label>
+      <textarea id="input" rows="3" placeholder="> Type something to encode..."></textarea>
+      <div class="controls">
+        <button id="btn-clear" class="clear-btn">[ CLR ]</button>
+        <button id="btn-sample">&lt; SAMPLE &gt;</button>
+      </div>
+      <div class="shift-control" id="shift-control">
+        <span>CAESAR_SHIFT:</span>
+        <input type="range" id="shift" min="1" max="25" value="13">
+        <span class="shift-val" id="shift-val">13</span>
+      </div>
+    </div>
+
+    <div class="output-grid" id="output-grid">
+      <div class="output-block">
+        <div class="label">
+          <span>[ BINARY ]</span>
+          <span class="bits" id="bin-bits"></span>
+        </div>
+        <div class="value" id="binary">—</div>
+        <button class="copy-btn" data-target="binary">[ COPY ]</button>
+      </div>
+
+      <div class="output-block">
+        <div class="label"><span>[ HEX ]</span></div>
+        <div class="value" id="hex">—</div>
+        <button class="copy-btn" data-target="hex">[ COPY ]</button>
+      </div>
+
+      <div class="output-block">
+        <div class="label"><span>[ OCTAL ]</span></div>
+        <div class="value" id="octal">—</div>
+        <button class="copy-btn" data-target="octal">[ COPY ]</button>
+      </div>
+
+      <div class="output-block">
+        <div class="label"><span>[ BASE64 ]</span></div>
+        <div class="value" id="base64">—</div>
+        <button class="copy-btn" data-target="base64">[ COPY ]</button>
+      </div>
+
+      <div class="output-block">
+        <div class="label">
+          <span>[ ROT13 / CAESAR ]</span>
+          <span class="mode-label" id="mode-label">ROT13</span>
+        </div>
+        <div class="value" id="rot">—</div>
+        <button class="copy-btn" data-target="rot">[ COPY ]</button>
+      </div>
+
+      <div class="output-block">
+        <div class="label"><span>[ URL ENCODED ]</span></div>
+        <div class="value" id="url">—</div>
+        <button class="copy-btn" data-target="url">[ COPY ]</button>
+      </div>
+    </div>
+
+    <div class="status-bar">
+      <span class="cursor-indicator">READY</span>
+      <span id="char-count">0 chars</span>
+    </div>
+
+    <footer>
+      © 2026 Aether Lab // Tiny Base Kit // All processing local
+    </footer>
+  </div>
+
+<script>
+(function() {
+  'use strict';
+
+  const input = document.getElementById('input');
+  const shiftSlider = document.getElementById('shift');
+  const shiftVal = document.getElementById('shift-val');
+  const shiftControl = document.getElementById('shift-control');
+  const modeLabel = document.getElementById('mode-label');
+  const charCount = document.getElementById('char-count');
+
+  const outputs = {
+    binary: document.getElementById('binary'),
+    hex: document.getElementById('hex'),
+    octal: document.getElementById('octal'),
+    base64: document.getElementById('base64'),
+    rot: document.getElementById('rot'),
+    url: document.getElementById('url')
+  };
+
+  const binBits = document.getElementById('bin-bits');
+
+  function toBinary(str) {
+    return Array.from(str).map(c =>
+      c.charCodeAt(0).toString(2).padStart(8, '0')
+    ).join(' ');
+  }
+
+  function toHex(str) {
+    return Array.from(str).map(c =>
+      c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')
+    ).join(' ');
+  }
+
+  function toOctal(str) {
+    return Array.from(str).map(c =>
+      c.charCodeAt(0).toString(8).padStart(3, '0')
+    ).join(' ');
+  }
+
+  function toBase64(str) {
+    try {
+      return btoa(unescape(encodeURIComponent(str)));
+    } catch (e) {
+      return 'ERROR';
+    }
+  }
+
+  function toRot(str, shift) {
+    return Array.from(str).map(c => {
+      const code = c.charCodeAt(0);
+      if (code >= 65 && code <= 90) {
+        return String.fromCharCode(((code - 65 + shift) % 26) + 65);
+      } else if (code >= 97 && code <= 122) {
+        return String.fromCharCode(((code - 97 + shift) % 26) + 97);
+      }
+      return c;
+    }).join('');
+  }
+
+  function toUrlEncoded(str) {
+    return encodeURIComponent(str);
+  }
+
+  let shift = 13;
+
+  shiftSlider.addEventListener('input', (e) => {
+    shift = parseInt(e.target.value, 10);
+    shiftVal.textContent = shift;
+    modeLabel.textContent = shift === 13 ? 'ROT13' : `CAESAR+${shift}`;
+    update();
+  });
+
+  function update() {
+    const text = input.value;
+    charCount.textContent = `${text.length} chars`;
+
+    if (!text) {
+      Object.values(outputs).forEach(el => el.textContent = '—');
+      binBits.textContent = '';
+      return;
+    }
+
+    outputs.binary.textContent = toBinary(text);
+    outputs.hex.textContent = toHex(text);
+    outputs.octal.textContent = toOctal(text);
+    outputs.base64.textContent = toBase64(text);
+    outputs.rot.textContent = toRot(text, shift);
+    outputs.url.textContent = toUrlEncoded(text);
+
+    const bitCount = text.length * 8;
+    binBits.textContent = `${bitCount} bits / ${Math.ceil(bitCount / 8)} bytes`;
+  }
+
+  input.addEventListener('input', update);
+
+  // Copy buttons
+  document.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetId = btn.dataset.target;
+      const text = outputs[targetId].textContent;
+      if (!text || text === '—') return;
+
+      navigator.clipboard.writeText(text).then(() => {
+        const original = btn.textContent;
+        btn.textContent = '[ COPIED! ]';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = original;
+          btn.classList.remove('copied');
+        }, 1500);
+      }).catch(() => {
+        // Fallback
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        btn.textContent = '[ COPIED! ]';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = '[ COPY ]';
+          btn.classList.remove('copied');
+        }, 1500);
+      });
+    });
+  });
+
+  // Clear
+  document.getElementById('btn-clear').addEventListener('click', () => {
+    input.value = '';
+    update();
+    input.focus();
+  });
+
+  // Sample
+  document.getElementById('btn-sample').addEventListener('click', () => {
+    const samples = [
+      'Hello, World!',
+      'The quick brown fox jumps over the lazy dog.',
+      'Aether Lab 2026',
+      'npm install curiosity',
+      'git push origin main',
+      '01101000 01100101 01101100 01101100 01101111',
+      'Never gonna give you up, never gonna let you down.',
+      '🎨💻✨🚀',
+    ];
+    input.value = samples[Math.floor(Math.random() * samples.length)];
+    update();
+    input.focus();
+  });
+
+  // Keyboard shortcut: Ctrl+Shift+C copies all outputs
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && e.key === 'C') {
+      e.preventDefault();
+      const allText = Object.entries(outputs)
+        .map(([key, el]) => `[${key.toUpperCase()}]\n${el.textContent}`)
+        .join('\n\n');
+      navigator.clipboard.writeText(allText).then(() => {
+        // brief visual feedback on status bar
+        const original = charCount.textContent;
+        charCount.textContent = 'ALL COPIED!';
+        charCount.style.color = 'var(--amber)';
+        setTimeout(() => {
+          charCount.textContent = original;
+          charCount.style.color = '';
+        }, 1500);
+      });
+    }
+  });
+
+  // Initial render
+  update();
+})();
+</script>
+</body>
+</html>
