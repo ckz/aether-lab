@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gravity Garden</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #aaa;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #ui > * { pointer-events: auto; }
+  .panel {
+    background: rgba(0,0,0,0.7);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+    backdrop-filter: blur(8px);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .panel h1 {
+    font-size: 16px;
+    font-weight: bold;
+    color: #fff;
+    margin-bottom: 6px;
+    letter-spacing: 2px;
+  }
+  .btn-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  .btn {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #ccc;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    transition: all 0.2s;
+  }
+  .btn:hover { background: rgba(255,255,255,0.18); color: #fff; }
+  .btn.active { background: rgba(100,180,255,0.25); border-color: rgba(100,180,255,0.6); color: #fff; }
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .slider-row label { font-size: 12px; min-width: 50px; color: #888; }
+  .slider-row input[type=range] {
+    flex: 1;
+    accent-color: #6af;
+    height: 4px;
+  }
+  .slider-row .val { font-size: 12px; color: #6af; min-width: 30px; text-align: right; }
+  .palette-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    display: inline-block; border: 1px solid rgba(255,255,255,0.3);
+    cursor: pointer; transition: transform 0.2s;
+  }
+  .palette-dot:hover { transform: scale(1.3); }
+  #stats {
+    position: fixed;
+    bottom: 12px;
+    left: 16px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.3);
+    z-index: 10;
+  }
+  #hint {
+    position: fixed;
+    bottom: 12px;
+    right: 16px;
+    font-size: 11px;
+    color: rgba(255,255,255,0.25);
+    z-index: 10;
+    text-align: right;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <div class="panel">
+    <h1>✦ GRAVITY GARDEN</h1>
+    <div>Click to plant · Drag to fling · Space to pause</div>
+  </div>
+  <div class="panel">
+    <div style="margin-bottom:4px;color:#888;font-size:11px;">PALETTE</div>
+    <div class="btn-row" id="palette-row"></div>
+  </div>
+  <div class="panel">
+    <div class="slider-row">
+      <label>GRAVITY</label>
+      <input type="range" id="gravity" min="1" max="100" value="30">
+      <span class="val" id="g-val">0.30</span>
+    </div>
+    <div class="slider-row">
+      <label>TRAILS</label>
+      <input type="range" id="trails" min="1" max="100" value="85">
+      <span class="val" id="t-val">0.85</span>
+    </div>
+    <div class="slider-row">
+      <label>MASS</label>
+      <input type="range" id="mass" min="5" max="100" value="30">
+      <span class="val" id="m-val">30</span>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="btn-row">
+      <button class="btn" onclick="clearAll()">Clear</button>
+      <button class="btn" onclick="spawnCluster()">Cluster</button>
+      <button class="btn" onclick="spawnOrbit()">Orbiter</button>
+      <button class="btn" id="pause-btn" onclick="togglePause()">Pause</button>
+      <button class="btn" onclick="toggleMerge()">Merge</button>
+    </div>
+  </div>
+</div>
+
+<div id="stats"></div>
+<div id="hint">
+  Click — plant a star<br>
+  Drag — fling it<br>
+  Right-click — delete<br>
+  Scroll — mass
+</div>
+
+<canvas id="c"></canvas>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Palettes ---
+const palettes = {
+  nebula:  { name:'Nebula',  bg:'#000010', colors:['#ff6b9d','#c44dff','#6b5bff','#5b9fff','#ff6bb5'], glow:'#c44dff' },
+  aurora:  { name:'Aurora',  bg:'#000a08', colors:['#00ffa3','#00d4aa','#00b4d8','#48cae4','#90e0ef'], glow:'#00ffa3' },
+  ember:   { name:'Ember',   bg:'#0a0000', colors:['#ff4500','#ff6a00','#ff9500','#ffbe0b','#ff006e'], glow:'#ff6a00' },
+  ocean:   { name:'Ocean',   bg:'#000510', colors:['#0077b6','#00b4d8','#48cae4','#90e0ef','#caf0f8'], glow:'#00b4d8' },
+  void:    { name:'Void',    bg:'#020208', colors:['#e0e0ff','#a0a0ff','#7070ff','#4040cc','#2020aa'], glow:'#8888ff' },
+  gold:    { name:'Gold',    bg:'#080500', colors:['#ffd700','#ffb700','#ff9500','#ff7700','#ffe066'], glow:'#ffd700' },
+};
+let currentPalette = 'nebula';
+let pal = palettes[currentPalette];
+
+// --- State ---
+let bodies = [];
+let sparks = [];
+let paused = false;
+let mergeEnabled = true;
+let G = 0.30;
+let trailAlpha = 0.85;
+let baseMass = 30;
+let dragging = null;
+let dragStart = null;
+let dragCurrent = null;
+let mousePos = { x: 0, y: 0 };
+let selectedBody = null;
+
+// --- Body ---
+class Body {
+  constructor(x, y, vx, vy, mass, color) {
+    this.x = x; this.y = y;
+    this.vx = vx; this.vy = vy;
+    this.mass = mass;
+    this.radius = Math.max(2, Math.sqrt(mass) * 1.2);
+    this.color = color || pal.colors[Math.floor(Math.random() * pal.colors.length)];
+    this.trail = [];
+    this.maxTrail = Math.floor(60 + Math.random() * 60);
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    this.age = 0;
+    this.id = Body.nextId++;
+  }
+  update(dt) {
+    this.age++;
+    this.pulsePhase += 0.03;
+    this.trail.push({ x: this.x, y: this.y });
+    if (this.trail.length > this.maxTrail) this.trail.shift();
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+  }
+  draw() {
+    const pulse = 1 + Math.sin(this.pulsePhase) * 0.2;
+    const r = this.radius * pulse;
+
+    // trail
+    if (this.trail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(this.trail[0].x, this.trail[0].y);
+      for (let i = 1; i < this.trail.length; i++) {
+        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+      }
+      ctx.strokeStyle = this.color + '40';
+      ctx.lineWidth = Math.max(1, this.radius * 0.3);
+      ctx.stroke();
+    }
+
+    // glow
+    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r * 6);
+    grad.addColorStop(0, this.color + '60');
+    grad.addColorStop(0.4, this.color + '15');
+    grad.addColorStop(1, this.color + '00');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r * 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // core
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // hot center
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+Body.nextId = 0;
+
+// --- Sparks ---
+class Spark {
+  constructor(x, y, color) {
+    this.x = x; this.y = y;
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 4;
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed;
+    this.life = 1;
+    this.decay = 0.01 + Math.random() * 0.03;
+    this.color = color || '#fff';
+    this.size = 0.5 + Math.random() * 2;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+    this.life -= this.decay;
+  }
+  draw() {
+    ctx.fillStyle = this.color;
+    ctx.globalAlpha = Math.max(0, this.life);
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// --- Gravity ---
+function applyGravity() {
+  for (let i = 0; i < bodies.length; i++) {
+    for (let j = i + 1; j < bodies.length; j++) {
+      const a = bodies[i], b = bodies[j];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const minDist = (a.radius + b.radius) * 1.5;
+      if (dist < minDist) {
+        if (mergeEnabled) {
+          mergeBodies(a, b, i, j);
+          j--; continue;
+        }
+      }
+      if (dist < 1) continue;
+      const f = G * a.mass * b.mass / (dist * dist);
+      const fx = f * dx / dist;
+      const fy = f * dy / dist;
+      a.vx += fx / a.mass;
+      a.vy += fy / a.mass;
+      b.vx -= fx / b.mass;
+      b.vy -= fy / b.mass;
+    }
+  }
+}
+
+function mergeBodies(a, b, ai, bi) {
+  const totalMass = a.mass + b.mass;
+  const nx = (a.x * a.mass + b.x * b.mass) / totalMass;
+  const ny = (a.y * a.mass + b.y * b.mass) / totalMass;
+  const nvx = (a.vx * a.mass + b.vx * b.mass) / totalMass;
+  const nvy = (a.vy * a.mass + b.vy * b.mass) / totalMass;
+  const bigger = a.mass >= b.mass ? a : b;
+  const color = bigger.color;
+  for (let k = 0; k < 20; k++) {
+    sparks.push(new Spark(nx, ny, color));
+  }
+  a.x = nx; a.y = ny; a.vx = nvx; a.vy = nvy;
+  a.mass = totalMass;
+  a.radius = Math.max(2, Math.sqrt(totalMass) * 1.2);
+  bodies.splice(bi, 1);
+}
+
+// --- Helpers ---
+function dist(x1, y1, x2, y2) {
+  return Math.sqrt((x2-x1)**2 + (y2-y1)**2);
+}
+
+function spawnStar(x, y, vx, vy, mass) {
+  const color = pal.colors[Math.floor(Math.random() * pal.colors.length)];
+  bodies.push(new Body(x, y, vx, vy, mass || baseMass, color));
+}
+
+function spawnCluster(cx, cy, count, spread) {
+  cx = cx || W/2 + (Math.random()-0.5)*200;
+  cy = cy || H/2 + (Math.random()-0.5)*200;
+  count = count || 8 + Math.floor(Math.random() * 8);
+  spread = spread || 100;
+  // central heavy star
+  spawnStar(cx, cy, 0, 0, baseMass * 3);
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const d = spread * (0.3 + Math.random() * 0.7);
+    const x = cx + Math.cos(angle) * d;
+    const y = cy + Math.sin(angle) * d;
+    // orbital velocity
+    const speed = Math.sqrt(G * baseMass * 3 / d) * (0.7 + Math.random() * 0.6);
+    const tangent = angle + Math.PI/2;
+    const vx = Math.cos(tangent) * speed;
+    const vy = Math.sin(tangent) * speed;
+    spawnStar(x, y, vx, vy, baseMass * (0.3 + Math.random() * 0.7));
+  }
+}
+
+function spawnOrbit() {
+  // spawn a star in a stable orbit around the nearest heavy body
+  if (bodies.length === 0) { spawnCluster(); return; }
+  const heavy = bodies.reduce((a, b) => a.mass > b.mass ? a : b);
+  const d = 80 + Math.random() * 150;
+  const angle = Math.random() * Math.PI * 2;
+  const x = heavy.x + Math.cos(angle) * d;
+  const y = heavy.y + Math.sin(angle) * d;
+  const speed = Math.sqrt(G * heavy.mass / d) * (0.8 + Math.random() * 0.4);
+  const tangent = angle + Math.PI/2;
+  spawnStar(x, y, Math.cos(tangent) * speed + heavy.vx * 0.3, Math.sin(tangent) * speed + heavy.vy * 0.3, baseMass * 0.4);
+}
+
+// --- Mouse ---
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 2) return; // right click handled separately
+  const x = e.clientX, y = e.clientY;
+  // check if clicking a body
+  for (let b of bodies) {
+    if (dist(x, y, b.x, b.y) < b.radius * 3) {
+      dragging = b;
+      selectedBody = b;
+      return;
+    }
+  }
+  dragStart = { x, y };
+  dragCurrent = { x, y };
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  mousePos.x = e.clientX;
+  mousePos.y = e.clientY;
+  if (dragStart && !dragging) {
+    dragCurrent = { x: e.clientX, y: e.clientY };
+  }
+  if (dragging) {
+    dragging.x = e.clientX;
+    dragging.y = e.clientY;
+    dragging.vx = 0;
+    dragging.vy = 0;
+    dragging.trail = [];
+  }
+});
+
+canvas.addEventListener('mouseup', (e) => {
+  if (e.button === 2) return;
+  if (dragging) {
+    dragging = null;
+    return;
+  }
+  if (dragStart) {
+    const dx = dragStart.x - dragCurrent.x;
+    const dy = dragStart.y - dragCurrent.y;
+    const speed = Math.sqrt(dx*dx + dy*dy) * 0.02;
+    const angle = Math.atan2(dy, dx);
+    spawnStar(dragStart.x, dragStart.y, Math.cos(angle)*speed, Math.sin(angle)*speed);
+    dragStart = null;
+    dragCurrent = null;
+  }
+});
+
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  const x = e.clientX, y = e.clientY;
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    if (dist(x, y, bodies[i].x, bodies[i].y) < bodies[i].radius * 4) {
+      const c = bodies[i].color;
+      for (let k = 0; k < 30; k++) sparks.push(new Spark(bodies[i].x, bodies[i].y, c));
+      bodies.splice(i, 1);
+      return;
+    }
+  }
+});
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  document.getElementById('mass').value = Math.max(5, Math.min(100, baseMass + (e.deltaY > 0 ? -5 : 5)));
+  baseMass = parseInt(document.getElementById('mass').value);
+  document.getElementById('m-val').textContent = baseMass;
+}, { passive: false });
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); togglePause(); }
+  if (e.code === 'KeyC') clearAll();
+  if (e.code === 'KeyS') spawnCluster();
+});
+
+// --- UI ---
+function buildPaletteRow() {
+  const row = document.getElementById('palette-row');
+  row.innerHTML = '';
+  for (const [key, p] of Object.entries(palettes)) {
+    const dot = document.createElement('span');
+    dot.className = 'palette-dot';
+    dot.style.background = `linear-gradient(135deg, ${p.colors[0]}, ${p.colors[2]}, ${p.colors[4]})`;
+    dot.title = p.name;
+    if (key === currentPalette) dot.style.outline = '2px solid white';
+    dot.onclick = () => {
+      currentPalette = key;
+      pal = palettes[key];
+      document.body.style.background = pal.bg;
+      buildPaletteRow();
+    };
+    row.appendChild(dot);
+  }
+}
+buildPaletteRow();
+
+document.getElementById('gravity').oninput = function() {
+  G = this.value / 100;
+  document.getElementById('g-val').textContent = G.toFixed(2);
+};
+document.getElementById('trails').oninput = function() {
+  trailAlpha = this.value / 100;
+  document.getElementById('t-val').textContent = trailAlpha.toFixed(2);
+};
+document.getElementById('mass').oninput = function() {
+  baseMass = parseInt(this.value);
+  document.getElementById('m-val').textContent = baseMass;
+};
+
+function clearAll() {
+  for (let b of bodies) {
+    for (let k = 0; k < 15; k++) sparks.push(new Spark(b.x, b.y, b.color));
+  }
+  bodies = [];
+}
+function togglePause() {
+  paused = !paused;
+  document.getElementById('pause-btn').textContent = paused ? 'Play' : 'Pause';
+  document.getElementById('pause-btn').classList.toggle('active', paused);
+}
+function toggleMerge() {
+  mergeEnabled = !mergeEnabled;
+  event.target.classList.toggle('active', mergeEnabled);
+}
+function spawnCluster() {
+  spawnCluster(W/2 + (Math.random()-0.5)*200, H/2 + (Math.random()-0.5)*200);
+}
+
+document.body.style.background = pal.bg;
+
+// --- Main Loop ---
+let lastTime = performance.now();
+function loop(now) {
+  requestAnimationFrame(loop);
+  const rawDt = (now - lastTime) / 16.667;
+  lastTime = now;
+  const dt = Math.min(rawDt, 3);
+
+  if (!paused) {
+    // physics substeps for stability
+    const steps = 2;
+    for (let s = 0; s < steps; s++) {
+      applyGravity();
+      for (let b of bodies) b.update(dt / steps);
+    }
+
+    // wrap around edges
+    for (let b of bodies) {
+      if (b.x < -50) b.x = W + 50;
+      if (b.x > W + 50) b.x = -50;
+      if (b.y < -50) b.y = H + 50;
+      if (b.y > H + 50) b.y = -50;
+    }
+
+    // sparks
+    for (let s of sparks) s.update();
+    sparks = sparks.filter(s => s.life > 0);
+    if (sparks.length > 500) sparks.splice(0, sparks.length - 500);
+
+    // auto-cleanup if too many bodies
+    if (bodies.length > 80) {
+      bodies.sort((a, b) => a.mass - b.mass);
+      bodies.splice(0, bodies.length - 80);
+    }
+  }
+
+  // --- Render ---
+  // fade background
+  ctx.fillStyle = pal.bg;
+  ctx.globalAlpha = 1 - trailAlpha * 0.85;
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 1;
+
+  // grid dots (subtle)
+  ctx.fillStyle = 'rgba(255,255,255,0.015)';
+  const gridSize = 60;
+  for (let x = gridSize; x < W; x += gridSize) {
+    for (let y = gridSize; y < H; y += gridSize) {
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+
+  // bodies
+  for (let b of bodies) b.draw();
+
+  // sparks
+  for (let s of sparks) s.draw();
+
+  // drag line
+  if (dragStart && dragCurrent) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(dragStart.x, dragStart.y);
+    ctx.lineTo(dragCurrent.x, dragCurrent.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // preview star
+    ctx.fillStyle = pal.glow + '80';
+    ctx.beginPath();
+    ctx.arc(dragStart.x, dragStart.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // velocity indicator
+    const dx = dragStart.x - dragCurrent.x;
+    const dy = dragStart.y - dragCurrent.y;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    if (len > 5) {
+      ctx.strokeStyle = pal.glow;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(dragStart.x, dragStart.y);
+      ctx.lineTo(dragStart.x + dx * 0.5, dragStart.y + dy * 0.5);
+      ctx.stroke();
+    }
+  }
+
+  // stats
+  document.getElementById('stats').textContent =
+    `BODIES: ${bodies.length}  SPARKS: ${sparks.length}  G: ${G.toFixed(2)}`;
+}
+
+// --- Seed with a solar system ---
+setTimeout(() => {
+  // Sun
+  spawnStar(W/2, H/2, 0, 0, baseMass * 4);
+  bodies[0].color = pal.glow;
+  bodies[0].maxTrail = 200;
+  // planets
+  const orbits = [100, 160, 220, 290, 370];
+  for (let r of orbits) {
+    const angle = Math.random() * Math.PI * 2;
+    const x = W/2 + Math.cos(angle) * r;
+    const y = H/2 + Math.sin(angle) * r;
+    const speed = Math.sqrt(G * bodies[0].mass / r);
+    const tangent = angle + Math.PI/2;
+    spawnStar(x, y, Math.cos(tangent)*speed, Math.sin(tangent)*speed, baseMass * (0.15 + Math.random()*0.25));
+  }
+}, 100);
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
