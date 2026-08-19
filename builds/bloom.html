@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bloom — Generative Flower Garden</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #060d10;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #aab;
+  }
+  canvas { display: block; cursor: crosshair; }
+
+  .ui {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    background: rgba(8, 16, 20, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(100, 180, 160, 0.2);
+    border-radius: 10px;
+    padding: 18px 22px;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    min-width: 210px;
+    user-select: none;
+  }
+  .ui h2 {
+    font-size: 13px;
+    font-weight: normal;
+    color: #8fd4c0;
+    letter-spacing: 0.35em;
+    margin-bottom: 4px;
+  }
+  .ui .sub {
+    font-size: 9px;
+    opacity: 0.4;
+    margin-bottom: 16px;
+    letter-spacing: 0.15em;
+  }
+  .ui label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    opacity: 0.7;
+  }
+  .ui label span.val {
+    color: #8fd4c0;
+    opacity: 0.8;
+  }
+  .ui .palette-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .swatch {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all .25s;
+  }
+  .swatch.active {
+    border-color: #fff;
+    box-shadow: 0 0 12px rgba(255,255,255,0.3);
+    transform: scale(1.15);
+  }
+  .swatch:hover { transform: scale(1.1); }
+  .keys {
+    margin-top: 16px;
+    opacity: 0.35;
+    font-size: 9px;
+    line-height: 1.9;
+  }
+  .count {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(100,180,160,0.15);
+    opacity: 0.5;
+    font-size: 9px;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="ui">
+  <h2>Bloom</h2>
+  <div class="sub">Generative Flower Garden</div>
+  <label>Palette</label>
+  <div class="palette-row" id="palettes"></div>
+  <label style="margin-top:14px">Wind <span class="val" id="windVal">0.5</span></label>
+  <label>Growth <span class="val" id="growthVal">1.0</span></label>
+  <div class="keys">
+    CLICK / DRAG — plant<br>
+    SPACE — clear<br>
+    1-5 — palette<br>
+    W — wind burst<br>
+    H — toggle UI
+  </div>
+  <div class="count" id="count">0 flowers</div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Palettes ---
+const palettes = [
+  { name: 'Spring',  bg: ['#0a1a14','#061210'], stem: '#2d6b4a', petals: ['#f4a0c0','#f7c4d0','#e896b8','#fce4ec','#f8bbd0'], leaf: '#3a8c5c', center: '#ffd54f' },
+  { name: 'Sunset',  bg: ['#1a0f0a','#120a06'], stem: '#6b4a2d', petals: ['#ff6b35','#ff8c42','#ff5e62','#ffa07a','#ff7043'], leaf: '#8c5c3a', center: '#ffe082' },
+  { name: 'Moonlight', bg: ['#0f0f1a','#0a0a14'], stem: '#4a4a6b', petals: ['#b39ddb','#ce93d8','#9c7cb0','#e1bee7','#7e57c2'], leaf: '#5c5c8c', center: '#fff9c4' },
+  { name: 'Neon',    bg: ['#0a0a14','#050510'], stem: '#1a3a2a', petals: ['#00ffc8','#00e5ff','#76ff03','#18ffff','#64ffda'], leaf: '#1b5e20', center: '#ffffff' },
+  { name: 'Autumn',  bg: ['#1a120a','#120c06'], stem: '#5c3d2e', petals: ['#d4783b','#c0392b','#e67e22','#f39c12','#d35400'], leaf: '#6b8e3a', center: '#f9e79f' }
+];
+let palIdx = 0;
+let palette = palettes[0];
+const palRow = document.getElementById('palettes');
+palettes.forEach((p, i) => {
+  const s = document.createElement('div');
+  s.className = 'swatch' + (i === 0 ? ' active' : '');
+  s.style.background = `linear-gradient(135deg, ${p.petals[0]}, ${p.petals[2]})`;
+  s.title = p.name;
+  s.onclick = () => { palIdx = i; palette = p; document.querySelectorAll('.swatch').forEach((x,j) => x.classList.toggle('active', j===i)); };
+  palRow.appendChild(s);
+});
+
+// --- State ---
+let flowers = [];
+let wind = 0;
+let windTarget = 0;
+let growthRate = 1.0;
+let showUI = true;
+let mouse = { x: -999, y: -999, down: false, justMoved: false };
+let pollen = [];
+
+// --- Flower ---
+class Flower {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.targetH = 60 + Math.random() * 140;
+    this.h = 0;
+    this.swayPhase = Math.random() * Math.PI * 2;
+    this.swaySpeed = 0.003 + Math.random() * 0.004;
+    this.swayAmp = 8 + Math.random() * 16;
+    this.petalCount = 4 + Math.floor(Math.random() * 5); // 4-8
+    this.petalSize = 8 + Math.random() * 14;
+    this.stemCurve = (Math.random() - 0.5) * 30;
+    this.leafSide = Math.random() > 0.5 ? 1 : -1;
+    this.leafH = 0.25 + Math.random() * 0.35;
+    this.leafSize = 6 + Math.random() * 8;
+    this.color = palette.petals[Math.floor(Math.random() * palette.petals.length)];
+    this.rotation = (Math.random() - 0.5) * 0.5;
+    this.born = performance.now();
+    this.age = 0;
+    // bud state
+    this.bloomProgress = 0;
+    this.bloomDelay = 300 + Math.random() * 400; // ms after reaching full height
+    this.bloomStart = 0;
+    this.blooming = false;
+    this.bloomComplete = false;
+  }
+  update(now, windForce) {
+    this.age = now - this.born;
+    // grow
+    if (this.h < this.targetH) {
+      this.h += (this.targetH - this.h) * 0.02 * growthRate;
+      if (this.h > this.targetH * 0.95) {
+        if (!this.blooming) {
+          this.blooming = true;
+          this.bloomStart = now;
+        }
+      }
+    }
+    // bloom
+    if (this.blooming && !this.bloomComplete) {
+      const elapsed = now - this.bloomStart - this.bloomDelay;
+      if (elapsed > 0) {
+        this.bloomProgress = Math.min(1, elapsed / 800);
+        if (this.bloomProgress >= 1) this.bloomComplete = true;
+      }
+    }
+    // sway
+    this.swayPhase += this.swaySpeed;
+  }
+  sway() {
+    return Math.sin(this.swayPhase) * this.swayAmp + wind * 20 * (this.h / this.targetH);
+  }
+  draw(ctx, now) {
+    if (this.h < 1) return;
+    const sx = this.x;
+    const sy = this.y;
+    const sway = this.sway();
+    const tipX = sx + this.stemCurve + sway;
+    const tipY = sy - this.h;
+    const midX = sx + this.stemCurve * 0.5 + sway * 0.5;
+    const midY = sy - this.h * 0.5;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    // stem
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.quadraticCurveTo(midX, midY, tipX, tipY);
+    ctx.strokeStyle = palette.stem;
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+
+    // leaf
+    if (this.h > 15) {
+      const lf = this.h * this.leafH;
+      const lx = sx + this.stemCurve * 0.5 + sway * 0.45;
+      const ly = sy - lf;
+      const ldir = this.leafSide;
+      const ls = this.leafSize * Math.min(1, this.h / this.targetH);
+      ctx.beginPath();
+      ctx.moveTo(lx, ly);
+      ctx.quadraticCurveTo(lx + ldir * ls * 1.2, ly - ls * 0.5, lx + ldir * ls * 0.3, ly + ls * 0.3);
+      ctx.quadraticCurveTo(lx + ldir * ls * 0.6, ly + ls * 0.1, lx, ly);
+      ctx.fillStyle = palette.leaf;
+      ctx.globalAlpha = 0.75;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      // leaf vein
+      ctx.beginPath();
+      ctx.moveTo(lx, ly);
+      ctx.lineTo(lx + ldir * ls * 0.7, ly + ls * 0.05);
+      ctx.strokeStyle = palette.leaf;
+      ctx.globalAlpha = 0.4;
+      ctx.lineWidth = 0.6;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // petals (blooming)
+    if (this.bloomProgress > 0) {
+      const bp = this.bloomProgress;
+      const ease = 1 - Math.pow(1 - bp, 3); // ease-out cubic
+      const pCount = this.petalCount;
+      const pSize = this.petalSize * ease;
+      const angleOffset = this.rotation + now * 0.0002;
+
+      for (let i = 0; i < pCount; i++) {
+        const angle = (i / pCount) * Math.PI * 2 + angleOffset;
+        const px = tipX + Math.cos(angle) * pSize * 0.3;
+        const py = tipY + Math.sin(angle) * pSize * 0.3;
+        const cp1x = px + Math.cos(angle - 0.5) * pSize * 1.1;
+        const cp1y = py + Math.sin(angle - 0.5) * pSize * 1.1;
+        const cp2x = px + Math.cos(angle + 0.5) * pSize * 1.1;
+        const cp2y = py + Math.sin(angle + 0.5) * pSize * 1.1;
+        const endX = px + Math.cos(angle) * pSize * 0.15;
+        const endY = py + Math.sin(angle) * pSize * 0.15;
+
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, endX, endY);
+        ctx.closePath();
+        ctx.fillStyle = this.color;
+        ctx.globalAlpha = 0.8 * ease;
+        ctx.fill();
+        // petal outline glow
+        ctx.strokeStyle = this.color;
+        ctx.globalAlpha = 0.2 * ease;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+
+      // center
+      if (ease > 0.3) {
+        const cr = 2 + pSize * 0.15;
+        ctx.beginPath();
+        ctx.arc(tipX, tipY, cr * ease, 0, Math.PI * 2);
+        ctx.fillStyle = palette.center;
+        ctx.globalAlpha = 0.9 * ease;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // bud (not yet blooming)
+    if (!this.bloomComplete && this.h > this.targetH * 0.7) {
+      const budProgress = Math.min(1, this.h / this.targetH);
+      ctx.beginPath();
+      ctx.arc(tipX + sway * 0.3, tipY, 4 * budProgress, 0, Math.PI * 2);
+      ctx.fillStyle = this.color;
+      ctx.globalAlpha = 0.5 * budProgress;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+  }
+}
+
+// --- Pollen ---
+class Pollen {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 0.5;
+    this.vy = -0.3 - Math.random() * 0.8;
+    this.life = 1;
+    this.decay = 0.005 + Math.random() * 0.01;
+    this.size = 0.8 + Math.random() * 1.5;
+  }
+  update() {
+    this.x += this.vx + Math.sin(this.y * 0.02) * 0.3;
+    this.y += this.vy;
+    this.vx += (Math.random() - 0.5) * 0.05;
+    this.vy -= 0.003;
+    this.life -= this.decay;
+  }
+  draw(ctx) {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = palette.center;
+    ctx.globalAlpha = this.life * 0.6;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// --- Input ---
+function getPos(e) {
+  const t = e.touches ? e.touches[0] : e;
+  return { x: t.clientX, y: t.clientY };
+}
+
+function plant(x, y) {
+  flowers.push(new Flower(x, y));
+  // spawn pollen burst
+  for (let i = 0; i < 8; i++) pollen.push(new Pollen(x, y - 20));
+}
+
+canvas.addEventListener('mousedown', e => { mouse.down = true; plant(e.clientX, e.clientY); });
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.justMoved = true;
+  if (mouse.down && Math.random() < 0.3) plant(e.clientX, e.clientY);
+});
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mouseleave', () => mouse.down = false);
+
+canvas.addEventListener('touchstart', e => { e.preventDefault(); mouse.down = true; plant(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY;
+  if (mouse.down && Math.random() < 0.3) plant(e.touches[0].clientX, e.touches[0].clientY);
+}, {passive:false});
+canvas.addEventListener('touchend', () => mouse.down = false);
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); flowers = []; pollen = []; }
+  if (e.key >= '1' && e.key <= '5') {
+    palIdx = parseInt(e.key) - 1;
+    palette = palettes[palIdx];
+    document.querySelectorAll('.swatch').forEach((x,j) => x.classList.toggle('active', j===palIdx));
+  }
+  if (e.key === 'w' || e.key === 'W') { windTarget = 2 + Math.random() * 3; }
+  if (e.key === 'h' || e.key === 'H') {
+    showUI = !showUI;
+    document.querySelector('.ui').style.display = showUI ? '' : 'none';
+  }
+});
+
+// --- Stars / ambient ---
+const stars = [];
+for (let i = 0; i < 80; i++) {
+  stars.push({ x: Math.random(), y: Math.random() * 0.6, s: 0.5 + Math.random() * 1.2, p: Math.random() * Math.PI * 2 });
+}
+
+// --- Render ---
+const countEl = document.getElementById('count');
+const windEl = document.getElementById('windVal');
+const growthEl = document.getElementById('growthVal');
+
+function drawBackground(now) {
+  // gradient sky
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, palette.bg[0]);
+  g.addColorStop(1, palette.bg[1]);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  // stars
+  stars.forEach(s => {
+    const twinkle = 0.4 + 0.6 * Math.sin(now * 0.001 + s.p);
+    ctx.beginPath();
+    ctx.arc(s.x * W, s.y * H, s.s * twinkle, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = twinkle * 0.35;
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  // ground gradient
+  const groundY = H * 0.88;
+  const gg = ctx.createLinearGradient(0, groundY - 30, 0, H);
+  gg.addColorStop(0, 'transparent');
+  gg.addColorStop(1, palette.bg[0] + '44');
+  ctx.fillStyle = gg;
+  ctx.fillRect(0, groundY - 30, W, H - groundY + 30);
+}
+
+function frame(now) {
+  // wind decay
+  windTarget *= 0.998;
+  wind += (windTarget - wind) * 0.02;
+
+  // mouse pollen
+  if (mouse.justMoved && flowers.length > 0 && Math.random() < 0.4) {
+    pollen.push(new Pollen(mouse.x + (Math.random()-0.5)*30, mouse.y + (Math.random()-0.5)*30));
+    mouse.justMoved = false;
+  }
+
+  drawBackground(now);
+
+  // update & draw flowers
+  // sort by y for depth
+  flowers.sort((a, b) => a.y - b.y);
+  flowers.forEach(f => { f.update(now, wind); f.draw(ctx, now); });
+
+  // pollen
+  pollen = pollen.filter(p => p.life > 0);
+  pollen.forEach(p => { p.update(); p.draw(ctx); });
+  // cap pollen
+  if (pollen.length > 300) pollen.splice(0, pollen.length - 300);
+
+  // cursor glow
+  if (mouse.x > 0 && mouse.y > 0) {
+    const rg = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 50);
+    rg.addColorStop(0, palette.center + '15');
+    rg.addColorStop(1, 'transparent');
+    ctx.fillStyle = rg;
+    ctx.fillRect(mouse.x - 50, mouse.y - 50, 100, 100);
+  }
+
+  // UI
+  countEl.textContent = flowers.filter(f => f.bloomComplete).length + ' blooming · ' + flowers.length + ' total';
+  windEl.textContent = wind.toFixed(1);
+  growthEl.textContent = growthRate.toFixed(1);
+
+  requestAnimationFrame(frame);
+}
+
+// seed a few initial flowers
+function seedGarden() {
+  const cx = W / 2, cy = H * 0.85;
+  const count = 12;
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI + Math.PI + (Math.random()-0.5)*0.6;
+    const dist = 40 + Math.random() * 200;
+    const x = cx + Math.cos(angle) * dist;
+    const y = cy + Math.random() * 30;
+    if (y > H * 0.75 && y < H) {
+      const f = new Flower(x, y);
+      f.born = performance.now() - Math.random() * 3000; // stagger
+      f.h = f.targetH; // pre-grown
+      f.bloomStart = f.born;
+      f.bloomDelay = 0;
+      f.bloomProgress = 1;
+      f.bloomComplete = true;
+      flowers.push(f);
+    }
+  }
+}
+
+seedGarden();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
