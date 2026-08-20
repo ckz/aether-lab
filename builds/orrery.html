@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orrery — Celestial Mechanics</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: radial-gradient(ellipse at center, #0a0a1a 0%, #000005 100%);
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #aaccff;
+    user-select: none;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    font-size: 12px;
+    line-height: 1.7;
+    pointer-events: none;
+    text-shadow: 0 0 6px rgba(100,180,255,0.6);
+    max-width: 260px;
+  }
+  #info {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(10, 15, 30, 0.9);
+    border: 1px solid rgba(100, 180, 255, 0.3);
+    border-radius: 8px;
+    padding: 14px 22px;
+    font-size: 13px;
+    line-height: 1.6;
+    text-align: center;
+    display: none;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 0 30px rgba(50, 120, 255, 0.2);
+    max-width: 500px;
+  }
+  #info h3 {
+    color: #ffd;
+    margin-bottom: 6px;
+    font-size: 15px;
+    letter-spacing: 2px;
+  }
+  #info .data {
+    color: #aac;
+    font-size: 12px;
+  }
+  #controls {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    font-size: 11px;
+    color: #668;
+    text-align: right;
+    line-height: 1.7;
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<canvas id="sky"></canvas>
+<div id="ui">
+  <div id="clock"></div>
+  <div id="speed"></div>
+</div>
+<div id="info"></div>
+<div id="controls">
+  <div>SCROLL — zoom</div>
+  <div>DRAG — pan</div>
+  <div>CLICK planet — info</div>
+  <div>[SPACE] pause</div>
+  <div>[R] reset</div>
+  <div>[F] toggle trails</div>
+</div>
+
+<script>
+const canvas = document.getElementById('sky');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Stars background
+const stars = [];
+for (let i = 0; i < 600; i++) {
+  stars.push({
+    x: Math.random() * 4000 - 2000,
+    y: Math.random() * 4000 - 2000,
+    r: Math.random() * 1.3 + 0.2,
+    b: Math.random() * 0.6 + 0.4,
+    tw: Math.random() * Math.PI * 2
+  });
+}
+
+// Planet data — relative scale for visual purposes
+// Real orbital periods (Earth years) and semi-major axes (AU)
+const planets = [
+  {
+    name: 'Mercury',
+    period: 0.24,
+    au: 0.39,
+    color: '#b0a090',
+    glow: '#ffcc88',
+    size: 3,
+    info: { diameter: '4,879 km', distance: '0.39 AU', period: '88 days', fact: 'Closest planet to the Sun. A day lasts 59 Earth days.' }
+  },
+  {
+    name: 'Venus',
+    period: 0.62,
+    au: 0.72,
+    color: '#e8c580',
+    glow: '#ffddaa',
+    size: 5.5,
+    info: { diameter: '12,104 km', distance: '0.72 AU', period: '225 days', fact: 'Hottest planet (460°C). Rotates backwards.' }
+  },
+  {
+    name: 'Earth',
+    period: 1.0,
+    au: 1.0,
+    color: '#6ba3d6',
+    glow: '#88ccff',
+    size: 6,
+    info: { diameter: '12,742 km', distance: '1.0 AU', period: '365.25 days', fact: 'Our home. Only known planet with life.' }
+  },
+  {
+    name: 'Mars',
+    period: 1.88,
+    au: 1.52,
+    color: '#c07850',
+    glow: '#ff9955',
+    size: 4,
+    info: { diameter: '6,779 km', distance: '1.52 AU', period: '687 days', fact: 'Home to Olympus Mons, the tallest volcano in the solar system.' }
+  },
+  {
+    name: 'Jupiter',
+    period: 11.86,
+    au: 5.2,
+    color: '#d4a574',
+    glow: '#ffcc88',
+    size: 16,
+    info: { diameter: '139,820 km', distance: '5.2 AU', period: '11.9 years', fact: 'Great Red Spot is a storm raging for 350+ years.' }
+  },
+  {
+    name: 'Saturn',
+    period: 29.46,
+    au: 9.54,
+    color: '#e8d5a3',
+    glow: '#ffe8b0',
+    size: 13,
+    ring: true,
+    info: { diameter: '116,460 km', distance: '9.54 AU', period: '29.5 years', fact: 'Its rings are mostly water ice, only ~10m thick.' }
+  },
+  {
+    name: 'Uranus',
+    period: 84.01,
+    au: 19.2,
+    color: '#a0d8d0',
+    glow: '#88ffee',
+    size: 8,
+    info: { diameter: '50,724 km', distance: '19.2 AU', period: '84 years', fact: 'Rotates on its side (97° tilt). Has 13 faint rings.' }
+  },
+  {
+    name: 'Neptune',
+    period: 164.8,
+    au: 30.06,
+    color: '#5588cc',
+    glow: '#6699ff',
+    size: 7.5,
+    info: { diameter: '49,244 km', distance: '30.06 AU', period: '165 years', fact: 'Wind speeds reach 2,100 km/h — fastest in solar system.' }
+  }
+];
+
+// State
+let scale = 60; // pixels per AU
+let offsetX = 0, offsetY = 0;
+let time = 0;
+let speed = 1;
+let paused = false;
+let showTrails = true;
+let dragging = false;
+let dragStart = { x: 0, y: 0 };
+let dragOffset = { x: 0, y: 0 };
+let selectedPlanet = null;
+let sunGlow = 0;
+
+// Mouse
+let mouse = { x: cx, y: cy };
+
+function screenToWorld(sx, sy) {
+  return {
+    x: (sx - cx - offsetX) / scale,
+    y: (sy - cy - offsetY) / scale
+  };
+}
+
+function worldToScreen(wx, wy) {
+  return {
+    x: wx * scale + cx + offsetX,
+    y: wy * scale + cy + offsetY
+  };
+}
+
+// Event handlers
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY > 0 ? 0.9 : 1.1;
+  const newScale = Math.max(15, Math.min(200, scale * factor));
+  // Zoom towards mouse
+  const mx = e.clientX - cx - offsetX;
+  const my = e.clientY - cy - offsetY;
+  offsetX -= mx * (newScale / scale - 1);
+  offsetY -= my * (newScale / scale - 1);
+  scale = newScale;
+}, { passive: false });
+
+canvas.addEventListener('mousedown', e => {
+  dragging = true;
+  dragStart = { x: e.clientX, y: e.clientY };
+  dragOffset = { x: offsetX, y: offsetY };
+});
+
+window.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  if (dragging) {
+    offsetX = dragOffset.x + (e.clientX - dragStart.x);
+    offsetY = dragOffset.y + (e.clientY - dragStart.y);
+  }
+});
+
+window.addEventListener('mouseup', e => {
+  if (dragging && Math.abs(e.clientX - dragStart.x) < 5 && Math.abs(e.clientY - dragStart.y) < 5) {
+    checkClick(e.clientX, e.clientY);
+  }
+  dragging = false;
+});
+
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') { paused = !paused; }
+  if (e.code === 'KeyR') { scale = 60; offsetX = 0; offsetY = 0; time = 0; selectedPlanet = null; document.getElementById('info').style.display = 'none'; }
+  if (e.code === 'KeyF') { showTrails = !showTrails; }
+});
+
+function checkClick(mx, my) {
+  let closest = null;
+  let closestDist = 30;
+  for (const p of planets) {
+    const angle = (time * 0.5 / p.period) % (Math.PI * 2);
+    const wx = Math.cos(angle) * p.au;
+    const wy = Math.sin(angle) * p.au * 0.6; // slight tilt
+    const s = worldToScreen(wx, wy);
+    const d = Math.hypot(mx - s.x, my - s.y);
+    const hitRadius = Math.max(p.size * scale * 0.3 + 10, 15);
+    if (d < hitRadius && d < closestDist) {
+      closestDist = d;
+      closest = p;
+    }
+  }
+  if (closest) {
+    selectedPlanet = closest;
+    const infoDiv = document.getElementById('info');
+    infoDiv.innerHTML = `<h3>${closest.name}</h3>
+      <div class="data">Diameter: ${closest.info.diameter}</div>
+      <div class="data">Orbit: ${closest.info.distance}</div>
+      <div class="data">Period: ${closest.info.period}</div>
+      <div class="data" style="margin-top:6px;color:#ccd;font-style:italic;">${closest.info.fact}</div>`;
+    infoDiv.style.display = 'block';
+  } else {
+    selectedPlanet = null;
+    document.getElementById('info').style.display = 'none';
+  }
+}
+
+// Planet trails
+const trailLength = 200;
+const trails = planets.map(p => []);
+
+function drawStarfield() {
+  ctx.fillStyle = '#000005';
+  ctx.fillRect(0, 0, W, H);
+  for (const s of stars) {
+    const sx = ((s.x + offsetX * 0.1) % (W + 100)) ;
+    const sy = ((s.y + offsetY * 0.1) % (H + 100));
+    const alpha = s.b * (0.6 + 0.4 * Math.sin(time * 2 + s.tw));
+    ctx.fillStyle = `rgba(220,230,255,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawSun() {
+  // Outer glow
+  const pulse = 1 + 0.05 * Math.sin(time * 3);
+  const grad = ctx.createRadialGradient(cx + offsetX, cy + offsetY, 0, cx + offsetX, cy + offsetY, 80 * pulse);
+  grad.addColorStop(0, 'rgba(255,240,200,1)');
+  grad.addColorStop(0.15, 'rgba(255,200,80,0.9)');
+  grad.addColorStop(0.4, 'rgba(255,140,40,0.4)');
+  grad.addColorStop(0.7, 'rgba(255,80,20,0.08)');
+  grad.addColorStop(1, 'rgba(255,50,0,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(cx + offsetX, cy + offsetY, 80 * pulse, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Core
+  const core = ctx.createRadialGradient(cx + offsetX, cy + offsetY, 0, cx + offsetX, cy + offsetY, 22);
+  core.addColorStop(0, 'rgba(255,255,240,1)');
+  core.addColorStop(0.5, 'rgba(255,230,180,0.95)');
+  core.addColorStop(1, 'rgba(255,180,60,0.6)');
+  ctx.fillStyle = core;
+  ctx.beginPath();
+  ctx.arc(cx + offsetX, cy + offsetY, 22, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawOrbitPath(planet) {
+  ctx.strokeStyle = 'rgba(80,120,180,0.08)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  const segments = 120;
+  for (let i = 0; i <= segments; i++) {
+    const a = (i / segments) * Math.PI * 2;
+    const wx = Math.cos(a) * planet.au;
+    const wy = Math.sin(a) * planet.au * 0.6;
+    const s = worldToScreen(wx, wy);
+    if (i === 0) ctx.moveTo(s.x, s.y);
+    else ctx.lineTo(s.x, s.y);
+  }
+  ctx.closePath();
+  ctx.stroke();
+}
+
+function drawPlanet(planet, index) {
+  const angle = (time * 0.5 / planet.period) % (Math.PI * 2);
+  const wx = Math.cos(angle) * planet.au;
+  const wy = Math.sin(angle) * planet.au * 0.6;
+  const s = worldToScreen(wx, wy);
+  const px = s.x, py = s.y;
+  const pSize = planet.size;
+
+  // Trail
+  if (showTrails) {
+    trails[index].push({ x: px, y: py });
+    if (trails[index].length > trailLength) trails[index].shift();
+    ctx.beginPath();
+    for (let i = 0; i < trails[index].length; i++) {
+      const t = trails[index][i];
+      const alpha = (i / trails[index].length) * 0.5;
+      if (i === 0) ctx.moveTo(t.x, t.y);
+      else ctx.lineTo(t.x, t.y);
+    }
+    ctx.strokeStyle = planet.glow.replace(')', `,0.25)`).replace('rgb', 'rgba');
+    // simpler approach
+    ctx.strokeStyle = planet.color + '55';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  // Planet glow
+  const glowGrad = ctx.createRadialGradient(px, py, pSize * 0.5, px, py, pSize * 3);
+  glowGrad.addColorStop(0, planet.glow + '44');
+  glowGrad.addColorStop(1, planet.glow + '00');
+  ctx.fillStyle = glowGrad;
+  ctx.beginPath();
+  ctx.arc(px, py, pSize * 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Saturn ring
+  if (planet.ring) {
+    ctx.strokeStyle = 'rgba(220,200,150,0.35)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.ellipse(px, py, pSize * 2.2, pSize * 0.7, -0.2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(200,180,130,0.2)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(px, py, pSize * 2.8, pSize * 0.5, -0.2, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Planet body
+  const bodyGrad = ctx.createRadialGradient(px - pSize * 0.3, py - pSize * 0.3, pSize * 0.1, px, py, pSize);
+  bodyGrad.addColorStop(0, '#fff');
+  bodyGrad.addColorStop(0.3, planet.color);
+  bodyGrad.addColorStop(1, '#000');
+  ctx.fillStyle = bodyGrad;
+  ctx.beginPath();
+  ctx.arc(px, py, pSize, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Name label
+  ctx.fillStyle = 'rgba(150,200,255,0.55)';
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText(planet.name, px, py - pSize - 6);
+
+  // Highlight if selected
+  if (selectedPlanet === planet) {
+    ctx.strokeStyle = 'rgba(255,255,200,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.arc(px, py, pSize + 8, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+// Clock
+function updateClock() {
+  const earthYears = (time * 0.5).toFixed(2);
+  document.getElementById('clock').textContent = `T+ ${earthYears} Earth years`;
+  const sp = speed === 0 ? 'paused' : `${speed}x`;
+  document.getElementById('speed').textContent = `Speed: ${sp}`;
+}
+
+// Main render loop
+let lastFrame = performance.now();
+function render(now) {
+  const dt = (now - lastFrame) / 1000;
+  lastFrame = now;
+
+  if (!paused) {
+    time += dt * speed * 0.3;
+  }
+
+  ctx.clearRect(0, 0, W, H);
+  drawStarfield();
+  drawSun();
+
+  for (let i = 0; i < planets.length; i++) {
+    drawOrbitPath(planets[i]);
+  }
+
+  for (let i = 0; i < planets.length; i++) {
+    drawPlanet(planets[i], i);
+  }
+
+  updateClock();
+  requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>
