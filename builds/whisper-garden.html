@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Whisper Garden — Sound-to-Flower Generator</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a14;
+    font-family: 'Courier New', monospace;
+    color: #ccc;
+    overflow: hidden;
+    height: 100vh;
+    cursor: crosshair;
+  }
+  canvas {
+    display: block;
+    position: absolute;
+    top: 0; left: 0;
+  }
+  #ui {
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    text-align: center;
+    pointer-events: none;
+    opacity: 0.75;
+    transition: opacity 0.5s;
+  }
+  #ui:hover { opacity: 1; }
+  #ui h1 {
+    font-size: 1.1rem;
+    font-weight: normal;
+    letter-spacing: 0.4em;
+    color: #c8c8ff;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  #ui .sub {
+    font-size: 0.65rem;
+    opacity: 0.5;
+    letter-spacing: 0.2em;
+  }
+  #controls {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    pointer-events: all;
+  }
+  .btn {
+    background: rgba(20,18,40,0.7);
+    border: 1px solid rgba(150,130,255,0.3);
+    color: #aab;
+    font-family: 'Courier New', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    padding: 8px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s;
+    backdrop-filter: blur(4px);
+  }
+  .btn:hover {
+    background: rgba(30,25,65,0.9);
+    border-color: rgba(180,160,255,0.6);
+    color: #fff;
+    box-shadow: 0 0 20px rgba(100,80,200,0.2);
+  }
+  .btn.active {
+    background: rgba(60,50,120,0.7);
+    border-color: rgba(200,180,255,0.7);
+    color: #fff;
+    box-shadow: 0 0 25px rgba(120,100,220,0.35);
+  }
+  #stats {
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    z-index: 10;
+    font-size: 0.65rem;
+    opacity: 0.4;
+    letter-spacing: 0.1em;
+    text-align: right;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <h1>Whisper Garden</h1>
+  <div class="sub">click to plant a flower from sound · each frequency blooms a unique bloom</div>
+</div>
+
+<div id="stats">
+  <div id="flower-count">flowers: 0</div>
+  <div id="freq-display">freq: —</div>
+</div>
+
+<div id="controls">
+  <button class="btn active" data-mode="pentatonic">Pentatonic</button>
+  <button class="btn" data-mode="chromatic">Chromatic</button>
+  <button class="btn" data-mode="drones">Drones</button>
+  <button class="btn" data-mode="nature">Nature</button>
+  <button class="btn" id="clear-btn">Clear</button>
+  <button class="btn" id="wind-btn">Wind</button>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+// ─── Setup ───────────────────────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  drawBackground();
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ─── Audio Context ───────────────────────────────────────────────────────
+let audioCtx = null;
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+// ─── Sound Design ────────────────────────────────────────────────────────
+const SCALES = {
+  pentatonic: [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25, 783.99, 880.00],
+  chromatic:  [261.63, 277.18, 293.66, 311.13, 329.63, 349.23, 369.99, 392.00, 415.30, 440.00,
+               466.16, 493.88, 523.25, 554.37, 587.33, 622.25, 659.25, 698.46, 739.99, 783.99],
+  drones:      [55.00, 82.41, 110.00, 146.83, 220.00, 329.63, 440.00, 587.33],
+  nature:      [196.00, 220.00, 261.63, 293.66, 329.63, 392.00, 440.00, 523.25,
+                   246.94, 293.66, 349.23, 392.00, 440.00, 523.25, 587.33, 659.25]
+};
+
+let currentMode = 'pentatonic';
+
+function playNote(freq, pan = 0) {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+
+  // Main tone
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(freq, now);
+  osc.frequency.exponentialRampToValueAtTime(freq * 1.005, now + 0.1);
+  osc.frequency.exponentialRampToValueAtTime(freq * 0.998, now + 1.5);
+
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.15, now + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 2.5);
+
+  // Harmonic overtone
+  const osc2 = audioCtx.createOscillator();
+  const gain2 = audioCtx.createGain();
+  osc2.type = 'sine';
+  osc2.frequency.setValueAtTime(freq * 2, now);
+  gain2.gain.setValueAtTime(0, now);
+  gain2.gain.linearRampToValueAtTime(0.04, now + 0.05);
+  gain2.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+
+  // Pan
+  const panner = audioCtx.createStereoPanner();
+  panner.pan.value = Math.max(-1, Math.min(1, pan));
+
+  const panner2 = audioCtx.createStereoPanner();
+  panner2.pan.value = Math.max(-1, Math.min(1, pan));
+
+  // Reverb-like delay
+  const delay = audioCtx.createDelay();
+  delay.delayTime.value = 0.25;
+  const feedback = audioCtx.createGain();
+  feedback.gain.value = 0.15;
+  const filter = audioCtx.createBiquadFilter();
+  filter.frequency.value = 2000;
+  filter.type = 'lowpass';
+
+  osc.connect(gain);
+  gain.connect(panner);
+  panner.connect(audioCtx.destination);
+  panner.connect(delay);
+  delay.connect(filter);
+  filter.connect(feedback);
+  feedback.connect(delay);
+  filter.connect(audioCtx.destination);
+
+  osc2.connect(gain2);
+  gain2.connect(panner2);
+  panner2.connect(audioCtx.destination);
+
+  osc.start(now);
+  osc.stop(now + 3);
+  osc2.start(now);
+  osc2.stop(now + 1.5);
+}
+
+// ─── Flower System ───────────────────────────────────────────────────────
+const flowers = [];
+
+class Flower {
+  constructor(x, y, freq) {
+    this.x = x;
+    this.y = y;
+    this.freq = freq;
+    this.scale = 0;
+    this.targetScale = 0.6 + Math.random() * 0.8;
+    this.rotation = Math.random() * Math.PI * 2;
+    this.rotSpeed = (Math.random() - 0.5) * 0.003;
+    this.petalCount = 5 + Math.floor(Math.random() * 7);
+    this.innerPetals = 1 + Math.floor(Math.random() * 3);
+    this.hue = this.freqToHue(freq);
+    this.phase = Math.random() * Math.PI * 2;
+    this.life = 1;
+    this.maxLife = 800 + Math.random() * 600;
+    this.age = 0;
+    this.growSpeed = 0.008 + Math.random() * 0.012;
+    this.stemHeight = 20 + Math.random() * 40;
+    this.stemCurve = (Math.random() - 0.5) * 30;
+    this.leafAngle = Math.random() * Math.PI * 2;
+    this.breathPhase = Math.random() * Math.PI * 2;
+    this.breathSpeed = 0.02 + Math.random() * 0.02;
+    this.type = Math.floor(Math.random() * 4); // 0: round, 1: spiky, 2: layered, 3: star
+    this.particles = [];
+    this.fullyGrown = false;
+  }
+
+  freqToHue(freq) {
+    // Map frequency to hue — low = warm (red/orange), high = cool (blue/purple)
+    // Use log scale since frequencies span octaves
+    const minF = 55, maxF = 880;
+    const logMin = Math.log(minF), logMax = Math.log(maxF);
+    const t = (Math.log(freq) - logMin) / (logMax - logMin);
+    return t * 280 + 320; // 320-600 range (pink through red to orange) — wait, let me redo
+  }
+
+  update() {
+    this.age++;
+    this.phase += 0.01;
+    this.breathPhase += this.breathSpeed;
+    this.rotation += this.rotSpeed;
+
+    if (this.scale < this.targetScale) {
+      this.scale += (this.targetScale - this.scale) * this.growSpeed * 2;
+      if (this.targetScale - this.scale < 0.01) {
+        this.scale = this.targetScale;
+        this.fullyGrown = true;
+      }
+    }
+
+    // Spawn glow particles when fully grown
+    if (this.fullyGrown && Math.random() < 0.08 && this.life > 0.3) {
+      this.particles.push({
+        x: this.x + (Math.random() - 0.5) * 20 * this.scale,
+        y: this.y - this.stemHeight * this.scale + (Math.random() - 0.5) * 20,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: -0.2 - Math.random() * 0.4,
+        life: 1,
+        size: 1 + Math.random() * 2,
+        hue: this.hue + (Math.random() - 0.5) * 30
+      });
+    }
+
+    // Update particles
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= 0.015;
+      if (p.life <= 0) this.particles.splice(i, 1);
+    }
+
+    // Fade
+    if (this.age > this.maxLife * 0.7) {
+      this.life -= 0.003;
+    }
+  }
+
+  draw(ctx) {
+    const breath = 1 + Math.sin(this.breathPhase) * 0.05;
+    const alpha = Math.max(0, this.life);
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation);
+    ctx.scale(this.scale * breath, this.scale * breath);
+    ctx.globalAlpha = alpha;
+
+    // Stem
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(this.stemCurve, -this.stemHeight * 0.5, 0, -this.stemHeight);
+    ctx.strokeStyle = `hsla(${this.hue + 40}, 30%, 25%, ${alpha * 0.6})`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Leaves
+    const leafY = -this.stemHeight * 0.5;
+    ctx.beginPath();
+    ctx.ellipse(this.stemCurve * 0.7, leafY, 8, 4, this.leafAngle, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${this.hue + 50}, 35%, 28%, ${alpha * 0.5})`;
+    ctx.fill();
+
+    // Flower head at top of stem
+    const fx = 0, fy = -this.stemHeight;
+
+    // Glow
+    const glowGrad = ctx.createRadialGradient(fx, fy, 0, fx, fy, 25);
+    glowGrad.addColorStop(0, `hsla(${this.hue}, 70%, 55%, ${alpha * 0.3})`);
+    glowGrad.addColorStop(1, `hsla(${this.hue}, 70%, 55%, 0)`);
+    ctx.fillStyle = glowGrad;
+    ctx.fillRect(-30, -this.stemHeight - 30, 60, 60);
+
+    // Petals
+    for (let ring = 0; ring < this.innerPetals + 1; ring++) {
+      const rPetals = ring === 0 ? this.petalCount : Math.max(3, this.petalCount - 2);
+      const rSize = ring === 0 ? 12 : 7 - ring * 1.5;
+      const rHue = this.hue + ring * 15;
+
+      for (let i = 0; i < rPetals; i++) {
+        const angle = (i / rPetals) * Math.PI * 2 + ring * 0.3;
+        const px = fx + Math.cos(angle) * (ring === 0 ? 0 : 6);
+        const py = fy + Math.sin(angle) * (ring === 0 ? 0 : 6);
+
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(angle);
+
+        const petalAlpha = alpha * (1 - ring * 0.2);
+        const petalGrad = ctx.createLinearGradient(0, 0, rSize, 0);
+        petalGrad.addColorStop(0, `hsla(${rHue}, 70%, 65%, ${petalAlpha * 0.9})`);
+        petalGrad.addColorStop(1, `hsla(${rHue + 20}, 80%, 50%, ${petalAlpha * 0.3})`);
+
+        ctx.beginPath();
+        if (this.type === 0) {
+          // Round petal
+          ctx.ellipse(rSize * 0.6, 0, rSize, rSize * 0.5, 0, 0, Math.PI * 2);
+        } else if (this.type === 1) {
+          // Pointed petal
+          ctx.moveTo(0, 0);
+          ctx.quadraticCurveTo(rSize * 0.5, -rSize * 0.4, rSize * 1.2, 0);
+          ctx.quadraticCurveTo(rSize * 0.5, rSize * 0.4, 0, 0);
+        } else if (this.type === 2) {
+          // Wide petal
+          ctx.moveTo(0, -rSize * 0.4);
+          ctx.quadraticCurveTo(rSize, -rSize * 0.3, rSize * 1.1, 0);
+          ctx.quadraticCurveTo(rSize, rSize * 0.3, 0, rSize * 0.4);
+          ctx.quadraticCurveTo(-rSize * 0.3, 0, 0, -rSize * 0.4);
+        } else {
+          // Star petal
+          ctx.moveTo(0, 0);
+          ctx.lineTo(rSize * 0.5, -rSize * 0.3);
+          ctx.lineTo(rSize * 1.1, 0);
+          ctx.lineTo(rSize * 0.5, rSize * 0.3);
+          ctx.closePath();
+        }
+        ctx.fillStyle = petalGrad;
+        ctx.fill();
+
+        ctx.restore();
+      }
+    }
+
+    // Center
+    const centerGrad = ctx.createRadialGradient(fx, fy, 0, fx, fy, 4);
+    centerGrad.addColorStop(0, `hsla(${this.hue + 60}, 80%, 80%, ${alpha})`);
+    centerGrad.addColorStop(1, `hsla(${this.hue + 30}, 60%, 50%, ${alpha * 0.7})`);
+    ctx.beginPath();
+    ctx.arc(fx, fy, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = centerGrad;
+    ctx.fill();
+
+    ctx.restore();
+
+    // Draw particles (in screen space)
+    for (const p of this.particles) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${p.hue}, 70%, 65%, ${p.life * 0.6})`;
+      ctx.fill();
+    }
+  }
+}
+
+// ─── Background Stars ────────────────────────────────────────────────────
+const stars = [];
+for (let i = 0; i < 120; i++) {
+  stars.push({
+    x: Math.random() * 2000,
+    y: Math.random() * 2000,
+    size: 0.3 + Math.random() * 1.2,
+    twinkle: Math.random() * Math.PI * 2,
+    twinkleSpeed: 0.01 + Math.random() * 0.03
+  });
+}
+
+function drawBackground() {
+  // Gradient background
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#0a0a18');
+  grad.addColorStop(1, '#0d0d24');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  for (const s of stars) {
+    s.twinkle += s.twinkleSpeed;
+    const a = 0.3 + Math.sin(s.twinkle) * 0.25;
+    ctx.fillStyle = `rgba(200,210,255,${a})`;
+    ctx.fillRect(s.x % W, s.y % H, s.size, s.size);
+  }
+}
+
+// ─── Wind Particles ───────────────────────────────────────────────────────
+let windActive = false;
+const windParticles = [];
+
+function spawnWindParticle() {
+  if (!windActive) return;
+  const angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.6;
+  const speed = 1 + Math.random() * 2;
+  windParticles.push({
+    x: Math.random() * W,
+    y: H + 10,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
+    life: 1,
+    size: 1 + Math.random() * 2,
+    hue: Math.random() * 60 + 180
+  });
+}
+
+function updateWindParticles() {
+  for (let i = windParticles.length - 1; i >= 0; i--) {
+    const p = windParticles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy -= 0.02; // gentle lift
+    p.life -= 0.005;
+    if (p.life <= 0 || p.y < -20) windParticles.splice(i, 1);
+  }
+}
+
+function drawWindParticles() {
+  for (const p of windParticles) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${p.hue}, 40%, 70%, ${p.life * 0.4})`;
+    ctx.fill();
+  }
+}
+
+// ─── Input ───────────────────────────────────────────────────────────────
+let mouseX = 0, mouseY = 0;
+
+canvas.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+});
+
+canvas.addEventListener('click', (e) => {
+  initAudio();
+  const x = e.clientX;
+  const y = e.clientY;
+  const scale = SCALES[currentMode];
+  const freqIndex = Math.floor(Math.random() * scale.length);
+  const freq = scale[freqIndex];
+  const pan = (x / W) * 2 - 1;
+  playNote(freq, pan);
+  const flower = new Flower(x, y, freq);
+  flowers.push(flower);
+  updateStats();
+});
+
+// Touch support
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  initAudio();
+  const t = e.touches[0];
+  const scale = SCALES[currentMode];
+  const freqIndex = Math.floor(Math.random() * scale.length);
+  const freq = scale[freqIndex];
+  const pan = (t.clientX / W) * 2 - 1;
+  playNote(freq, pan);
+  const flower = new Flower(t.clientX, t.clientY, freq);
+  flowers.push(flower);
+  updateStats();
+});
+
+// ─── Controls ────────────────────────────────────────────────────────────
+document.querySelectorAll('.btn[data-mode]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.btn[data-mode]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentMode = btn.dataset.mode;
+  });
+});
+
+document.getElementById('clear-btn').addEventListener('click', () => {
+  flowers.length = 0;
+  windParticles.length = 0;
+  updateStats();
+});
+
+document.getElementById('wind-btn').addEventListener('click', (e) => {
+  windActive = !windActive;
+  e.target.classList.toggle('active', windActive);
+});
+
+// ─── Stats ───────────────────────────────────────────────────────────────
+function updateStats() {
+  document.getElementById('flower-count').textContent = `flowers: ${flowers.length}`;
+}
+
+function showFreq(freq) {
+  const note = freqToNote(freq);
+  document.getElementById('freq-display').textContent = `freq: ${freq.toFixed(1)} Hz (${note})`;
+}
+
+function freqToNote(freq) {
+  const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const midi = 12 * Math.log2(freq / 440) + 69;
+  const noteName = notes[Math.round(midi) % 12];
+  const octave = Math.floor(Math.round(midi) / 12) - 1;
+  return `${noteName}${octave}`;
+}
+
+// ─── Main Loop ───────────────────────────────────────────────────────────
+function animate() {
+  // Fade effect (creates soft trails)
+  ctx.fillStyle = 'rgba(10, 10, 20, 0.08)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Redraw background stars occasionally
+  if (Math.random() < 0.02) {
+    drawBackground();
+  }
+
+  // Wind particles
+  if (windActive && Math.random() < 0.3) spawnWindParticle();
+  updateWindParticles();
+  drawWindParticles();
+
+  // Flowers
+  for (let i = flowers.length - 1; i >= 0; i--) {
+    flowers[i].update();
+    flowers[i].draw(ctx);
+    if (flowers[i].life <= 0) {
+      flowers.splice(i, 1);
+      updateStats();
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+
+// Start
+drawBackground();
+animate();
+</script>
+</body>
+</html>
