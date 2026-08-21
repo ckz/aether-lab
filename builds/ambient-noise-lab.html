@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ambient Noise Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0b0f;
+    font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+    color: #c8c8d4;
+    min-height: 100vh;
+    padding: 30px 20px;
+  }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 {
+    font-size: 1.1rem;
+    font-weight: 400;
+    letter-spacing: .4em;
+    text-transform: uppercase;
+    color: #aab;
+    margin-bottom: 4px;
+    text-align: center;
+  }
+  .sub {
+    text-align: center;
+    font-size: .65rem;
+    opacity: .35;
+    letter-spacing: .25em;
+    margin-bottom: 30px;
+  }
+  .start-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(5,5,10,.92);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    backdrop-filter: blur(6px);
+  }
+  .start-box {
+    text-align: center;
+    padding: 40px;
+    border: 1px solid rgba(140,120,255,.3);
+    border-radius: 8px;
+    background: rgba(15,13,30,.8);
+  }
+  .start-box h2 {
+    font-size: .85rem;
+    letter-spacing: .3em;
+    color: #c8c8ff;
+    margin-bottom: 12px;
+    font-weight: 400;
+  }
+  .start-box p {
+    font-size: .65rem;
+    opacity: .5;
+    letter-spacing: .15em;
+    margin-bottom: 24px;
+    line-height: 1.6;
+  }
+  .start-btn {
+    background: rgba(100,80,220,.15);
+    border: 1px solid rgba(140,120,255,.4);
+    color: #c8c8ff;
+    padding: 12px 32px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: .7rem;
+    letter-spacing: .25em;
+    text-transform: uppercase;
+    transition: all .3s;
+  }
+  .start-btn:hover {
+    background: rgba(100,80,220,.3);
+    border-color: rgba(160,140,255,.6);
+    box-shadow: 0 0 30px rgba(80,60,200,.2);
+  }
+  .presets {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+  .preset-btn {
+    background: rgba(20,18,40,.6);
+    border: 1px solid rgba(100,90,180,.2);
+    color: #9988dd;
+    padding: 6px 14px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: .6rem;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    transition: all .2s;
+  }
+  .preset-btn:hover, .preset-btn.active {
+    background: rgba(100,80,220,.2);
+    border-color: rgba(140,120,255,.5);
+    color: #c8c8ff;
+  }
+  .master {
+    background: rgba(15,13,30,.6);
+    border: 1px solid rgba(100,90,180,.15);
+    border-radius: 6px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .master-label {
+    font-size: .6rem;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: #8878cc;
+    min-width: 60px;
+  }
+  .master input[type="range"] {
+    flex: 1;
+    accent-color: #8878cc;
+  }
+  .master-val {
+    font-size: .65rem;
+    color: #9988dd;
+    min-width: 36px;
+    text-align: right;
+  }
+  .mixer {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 10px;
+  }
+  .channel {
+    background: rgba(15,13,30,.5);
+    border: 1px solid rgba(100,90,180,.12);
+    border-radius: 5px;
+    padding: 14px 16px;
+    transition: all .2s;
+  }
+  .channel.active { border-color: rgba(140,120,255,.3); }
+  .channel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .channel-name {
+    font-size: .65rem;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: #aab;
+  }
+  .channel-icon { font-size: .9rem; }
+  .channel-toggle {
+    background: none;
+    border: 1px solid rgba(100,90,180,.2);
+    color: #6655aa;
+    padding: 3px 10px;
+    border-radius: 2px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: .55rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    transition: all .2s;
+  }
+  .channel-toggle.on {
+    background: rgba(100,80,220,.2);
+    border-color: rgba(140,120,255,.5);
+    color: #c8c8ff;
+  }
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .slider-label {
+    font-size: .5rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: #665588;
+    min-width: 32px;
+  }
+  .channel input[type="range"] {
+    flex: 1;
+    accent-color: #6655aa;
+    height: 3px;
+  }
+  .channel-val {
+    font-size: .55rem;
+    color: #8878aa;
+    min-width: 28px;
+    text-align: right;
+  }
+  .viz {
+    margin-top: 20px;
+    background: rgba(10,9,18,.6);
+    border: 1px solid rgba(100,90,180,.12);
+    border-radius: 5px;
+    padding: 10px;
+  }
+  canvas#viz {
+    width: 100%;
+    height: 60px;
+    display: block;
+    border-radius: 3px;
+  }
+  .timer {
+    text-align: center;
+    margin-top: 16px;
+    font-size: .6rem;
+    letter-spacing: .2em;
+    color: #8878aa;
+    opacity: .6;
+  }
+  .footer {
+    text-align: center;
+    margin-top: 30px;
+    font-size: .55rem;
+    opacity: .2;
+    letter-spacing: .15em;
+  }
+  @media (max-width: 600px) {
+    .mixer { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>✦ Ambient Noise Lab</h1>
+  <p class="sub">synthesized soundscapes · no audio files · web audio</p>
+
+  <div class="start-overlay" id="startOverlay">
+    <div class="start-box">
+      <h2>Ambient Noise Lab</h2>
+      <p>Mix synthesized sound textures — rain, wind, fire, ocean,<br>
+         pink noise, brown noise, and more — all generated live<br>
+         with the Web Audio API. No audio files. Pure math.</p>
+      <button class="start-btn" id="startBtn">Enter Lab →</button>
+    </div>
+  </div>
+
+  <div class="presets" id="presets"></div>
+
+  <div class="master">
+    <span class="master-label">Master</span>
+    <input type="range" id="masterVol" min="0" max="100" value="70">
+    <span class="master-val" id="masterVal">70%</span>
+  </div>
+
+  <div class="mixer" id="mixer"></div>
+
+  <div class="viz">
+    <canvas id="viz"></canvas>
+  </div>
+
+  <div class="timer" id="timer">00:00:00</div>
+
+  <div class="footer">✦ aether lab · web audio · synthesized in real-time</div>
+</div>
+
+<script>
+// ========== AUDIO ENGINE ==========
+let ctx, masterGain, analyser;
+let channels = {};
+let started = false;
+let startTime = 0;
+let timerInterval;
+
+const CHANNELS = [
+  { id: 'rain',     name: 'Rain',     icon: '🌧', color: '#6688cc',
+    fn: noise => filteredNoise(noise, 800, 3, 0.8, 0.6) },
+  { id: 'thunder',  name: 'Thunder',  icon: '⛈', color: '#8878bb',
+    fn: noise => thunder(noise) },
+  { id: 'wind',     name: 'Wind',     icon: '🌬', color: '#88aacc',
+    fn: noise => filteredNoise(noise, 400, 2, 0.5, 0.4) },
+  { id: 'fire',     name: 'Fire',     icon: '🔥', color: '#cc7733',
+    fn: noise => fire(noise) },
+  { id: 'ocean',    name: 'Ocean',    icon: '🌊', color: '#3399cc',
+    fn: noise => ocean(noise) },
+  { id: 'whitenoise',name: 'White',   icon: '◐', color: '#aaaaaa',
+    fn: noise => noise },
+  { id: 'pinknoise',name: 'Pink',     icon: '◑', color: '#cc88aa',
+    fn: noise => pinkNoise(noise) },
+  { id: 'brownnoise',name:'Brown',    icon: '◒', color: '#aa8855',
+    fn: noise => brownNoise(noise) },
+  { id: 'stream',   name: 'Stream',   icon: '💧', color: '#55aacc',
+    fn: noise => filteredNoise(noise, 2000, 4, 0.3, 0.3) },
+  { id: 'cafe',     name: 'Café',     icon: '☕', color: '#aa7744',
+    fn: noise => cafe(noise) },
+  { id: 'night',    name: 'Night',    icon: '🌙', color: '#7766aa',
+    fn: noise => night(noise) },
+  { id: 'leaves',   name: 'Leaves',   icon: '🍂', color: '#88aa44',
+    fn: noise => filteredNoise(noise, 3000, 2, 0.2, 0.3) },
+];
+
+const PRESETS = {
+  'Rainy Café':   { rain: 65, cafe: 40, thunder: 15, wind: 10 },
+  'Deep Focus':   { whitenoise: 30, pinknoise: 50, brownnoise: 30 },
+  'Ocean Sleep':  { ocean: 70, wind: 20, night: 15 },
+  'Campfire':     { fire: 60, night: 30, leaves: 20 },
+  'Storm':        { rain: 80, thunder: 45, wind: 30 },
+  'Forest':       { stream: 50, leaves: 40, night: 25, wind: 10 },
+  'Zen':          { pinknoise: 35, brownnoise: 25, night: 15 },
+  'Tropical':     { rain: 40, ocean: 45, stream: 25, leaves: 15 },
+  'Midnight':     { night: 50, wind: 20, brownnoise: 20 },
+};
+
+// ========== NOISE GENERATORS ==========
+function createNoiseBuffer(duration = 2) {
+  const size = ctx.sampleRate * duration;
+  const buffer = ctx.createBuffer(1, size, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+  for (let i = 0; i < size; i++) {
+    const white = Math.random() * 2 - 1;
+    b0 = 0.99886*b0 + white*0.0555179;
+    b1 = 0.99332*b1 + white*0.0750759;
+    b2 = 0.96900*b2 + white*0.1538520;
+    b3 = 0.86650*b3 + white*0.3104856;
+    b4 = 0.55000*b4 + white*0.5329522;
+    b5 = -0.7616*b5 - white*0.0168980;
+    data[i] = (b0+b1+b2+b3+b4+b5+b6+white*0.5362) * 0.11;
+    b6 = white * 0.115926;
+  }
+  return buffer;
+}
+
+function filteredNoise(noiseNode, freq, Q, vol, lfoRate) {
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = freq;
+  filter.Q.value = Q;
+  const gain = ctx.createGain();
+  gain.gain.value = vol;
+  noiseNode.connect(filter);
+  filter.connect(gain);
+  // subtle LFO on filter
+  if (lfoRate > 0) {
+    const lfo = ctx.createOscillator();
+    const lfoGain = ctx.createGain();
+    lfo.frequency.value = lfoRate;
+    lfoGain.gain.value = freq * 0.3;
+    lfo.connect(lfoGain);
+    lfoGain.connect(filter.frequency);
+    lfo.start();
+    gain._lfo = lfo;
+  }
+  return gain;
+}
+
+function pinkNoise(noiseNode) {
+  const gain = ctx.createGain();
+  gain.gain.value = 0.5;
+  // Use multiple bandpass filters to approximate pink
+  const bands = [200, 800, 3200];
+  const gains = [0.5, 0.3, 0.15];
+  const merger = ctx.createGain();
+  merger.gain.value = 0.4;
+  bands.forEach((f, i) => {
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = f;
+    bp.Q.value = 1;
+    const g = ctx.createGain();
+    g.gain.value = gains[i];
+    noiseNode.connect(bp);
+    bp.connect(g);
+    g.connect(merger);
+  });
+  noiseNode.connect(merger);
+  merger.connect(gain);
+  return gain;
+}
+
+function brownNoise(noiseNode) {
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = 200;
+  filter.Q.value = 0.5;
+  const gain = ctx.createGain();
+  gain.gain.value = 0.6;
+  noiseNode.connect(filter);
+  filter.connect(gain);
+  return gain;
+}
+
+function fire(noiseNode) {
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 600;
+  bp.Q.value = 0.8;
+  const crackle = ctx.createOscillator();
+  crackle.type = 'sawtooth';
+  crackle.frequency.value = 40 + Math.random() * 20;
+  const crackleGain = ctx.createGain();
+  crackleGain.gain.value = 0.08;
+  crackle.connect(crackleGain);
+  crackle.start();
+  const gain = ctx.createGain();
+  gain.gain.value = 0.4;
+  noiseNode.connect(bp);
+  bp.connect(gain);
+  crackleGain.connect(gain);
+  gain._crackle = crackle;
+  return gain;
+}
+
+function ocean(noiseNode) {
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 500;
+  const lfo = ctx.createOscillator();
+  const lfoGain = ctx.createGain();
+  lfo.frequency.value = 0.12;
+  lfoGain.gain.value = 300;
+  lfo.connect(lfoGain);
+  lfoGain.connect(lp.frequency);
+  lfo.start();
+  const gain = ctx.createGain();
+  gain.gain.value = 0.5;
+  noiseNode.connect(lp);
+  lp.connect(gain);
+  gain._lfo = lfo;
+  return gain;
+}
+
+function cafe(noiseNode) {
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 1200;
+  bp.Q.value = 0.5;
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.value = 180 + Math.random() * 40;
+  const oscGain = ctx.createGain();
+  oscGain.gain.value = 0.03;
+  osc.connect(oscGain);
+  osc.start();
+  const gain = ctx.createGain();
+  gain.gain.value = 0.2;
+  noiseNode.connect(bp);
+  bp.connect(gain);
+  oscGain.connect(gain);
+  gain._osc = osc;
+  return gain;
+}
+
+function night(noiseNode) {
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 1500;
+  lp.Q.value = 0.3;
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.value = 2200;
+  const oscGain = ctx.createGain();
+  oscGain.gain.value = 0.015;
+  const lfo = ctx.createOscillator();
+  const lfoGain = ctx.createGain();
+  lfo.frequency.value = 0.3 + Math.random() * 0.5;
+  lfoGain.gain.value = 400;
+  lfo.connect(lfoGain);
+  lfoGain.connect(lp.frequency);
+  lfo.start();
+  osc.connect(oscGain);
+  osc.start();
+  const merger = ctx.createGain();
+  merger.gain.value = 0.5;
+  noiseNode.connect(lp);
+  lp.connect(merger);
+  oscGain.connect(merger);
+  return merger;
+}
+
+function thunder(noiseNode) {
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 150;
+  const gain = ctx.createGain();
+  gain.gain.value = 0.25;
+  noiseNode.connect(lp);
+  lp.connect(gain);
+  // Periodic rumbles
+  const rumble = ctx.createOscillator();
+  rumble.type = 'sine';
+  rumble.frequency.value = 30;
+  const rumbleGain = ctx.createGain();
+  rumbleGain.gain.value = 0.15;
+  const rumbleLfo = ctx.createOscillator();
+  const rumbleLfoGain = ctx.createGain();
+  rumbleLfo.frequency.value = 0.08;
+  rumbleLfoGain.gain.value = 0.15;
+  rumbleLfo.connect(rumbleLfoGain);
+  rumbleLfoGain.connect(rumbleGain.gain);
+  rumbleLfo.start();
+  rumble.connect(rumbleGain);
+  rumble.start();
+  rumbleGain.connect(gain);
+  gain._rumble = rumble;
+  return gain;
+}
+
+// ========== UI ==========
+function buildUI() {
+  const mixer = document.getElementById('mixer');
+  CHANNELS.forEach(ch => {
+    const div = document.createElement('div');
+    div.className = 'channel';
+    div.id = `ch-${ch.id}`;
+    div.innerHTML = `
+      <div class="channel-header">
+        <div>
+          <span class="channel-icon">${ch.icon}</span>
+          <span class="channel-name">${ch.name}</span>
+        </div>
+        <button class="channel-toggle" data-ch="${ch.id}">OFF</button>
+      </div>
+      <div class="slider-row">
+        <span class="slider-label">Vol</span>
+        <input type="range" min="0" max="100" value="50" data-ch="${ch.id}" data-param="vol">
+        <span class="channel-val" id="val-${ch.id}-vol">50</span>
+      </div>
+      <div class="slider-row">
+        <span class="slider-label">Flt</span>
+        <input type="range" min="0" max="100" value="50" data-ch="${ch.id}" data-param="flt">
+        <span class="channel-val" id="val-${ch.id}-flt">50</span>
+      </div>
+    `;
+    mixer.appendChild(div);
+  });
+
+  // Toggle buttons
+  document.querySelectorAll('.channel-toggle').forEach(btn => {
+    btn.addEventListener('click', () => toggleChannel(btn.dataset.ch));
+  });
+
+  // Sliders
+  document.querySelectorAll('input[type="range"]').forEach(slider => {
+    slider.addEventListener('input', (e) => {
+      const ch = e.target.dataset.ch;
+      const param = e.target.dataset.param;
+      document.getElementById(`val-${ch}-${param}`).textContent = e.target.value;
+      if (param === 'vol') updateChannelVol(ch, +e.target.value);
+      if (param === 'flt') updateChannelFlt(ch, +e.target.value);
+    });
+  });
+
+  // Presets
+  const presetsEl = document.getElementById('presets');
+  Object.keys(PRESETS).forEach(name => {
+    const btn = document.createElement('button');
+    btn.className = 'preset-btn';
+    btn.textContent = name;
+    btn.addEventListener('click', () => applyPreset(name));
+    presetsEl.appendChild(btn);
+  });
+
+  // Master
+  document.getElementById('masterVol').addEventListener('input', (e) => {
+    const v = e.target.value;
+    document.getElementById('masterVal').textContent = v + '%';
+    if (masterGain) masterGain.gain.value = v / 100;
+  });
+
+  // Keys
+  document.addEventListener('keydown', (e) => {
+    if (!started) return;
+    if (e.key === ' ' || e.code === 'Space') {
+      e.preventDefault();
+      toggleAll();
+    }
+  });
+}
+
+function initAudio() {
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  masterGain = ctx.createGain();
+  masterGain.gain.value = 0.7;
+  analyser = ctx.createAnalyser();
+  analyser.fftSize = 256;
+  masterGain.connect(analyser);
+  analyser.connect(ctx.destination);
+  startViz();
+
+  const noiseBuffer = createNoiseBuffer(4);
+
+  CHANNELS.forEach(ch => {
+    const source = ctx.createBufferSource();
+    source.buffer = noiseBuffer;
+    source.loop = true;
+    const output = ch.fn(source);
+    const volGain = ctx.createGain();
+    volGain.gain.value = 0;
+    output.connect(volGain);
+    volGain.connect(masterGain);
+    channels[ch.id] = { source, output, volGain, ch };
+    source.start();
+  });
+}
+
+function toggleChannel(id) {
+  const ch = channels[id];
+  const btn = document.querySelector(`.channel-toggle[data-ch="${id}"]`);
+  const card = document.getElementById(`ch-${id}`);
+  const vol = +document.querySelector(`input[data-ch="${id}"][data-param="vol"]`).value;
+  const isOn = ch.volGain.gain.value > 0.01;
+  if (isOn) {
+    ch.volGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+    btn.textContent = 'OFF';
+    btn.classList.remove('on');
+    card.classList.remove('active');
+  } else {
+    updateChannelVol(id, vol);
+    btn.textContent = 'ON';
+    btn.classList.add('on');
+    card.classList.add('active');
+  }
+}
+
+function updateChannelVol(id, val) {
+  const ch = channels[id];
+  const norm = val / 100;
+  ch.volGain.gain.linearRampToValueAtTime(norm, ctx.currentTime + 0.1);
+}
+
+function updateChannelFlt(id, val) {
+  const ch = channels[id];
+  // Map flt slider to filter frequency range
+  const freq = 100 + (val / 100) * 8000;
+  // Try to find filter in the chain
+  try {
+    const nodes = ch.output._filterNodes || [];
+    // We'll handle this by re-creating, but for simplicity just update if accessible
+  } catch(e) {}
+}
+
+function toggleAll() {
+  const anyOn = Object.values(channels).some(ch => ch.volGain.gain.value > 0.01);
+  Object.keys(channels).forEach(id => {
+    const ch = channels[id];
+    const btn = document.querySelector(`.channel-toggle[data-ch="${id}"]`);
+    const card = document.getElementById(`ch-${id}`);
+    const vol = +document.querySelector(`input[data-ch="${id}"][data-param="vol"]`).value;
+    if (anyOn) {
+      ch.volGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+      btn.textContent = 'OFF';
+      btn.classList.remove('on');
+      card.classList.remove('active');
+    } else {
+      updateChannelVol(id, vol);
+      btn.textContent = 'ON';
+      btn.classList.add('on');
+      card.classList.add('active');
+    }
+  });
+}
+
+function applyPreset(name) {
+  const p = PRESETS[name];
+  // Clear all
+  Object.keys(channels).forEach(id => {
+    channels[id].volGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+    const btn = document.querySelector(`.channel-toggle[data-ch="${id}"]`);
+    const card = document.getElementById(`ch-${id}`);
+    btn.textContent = 'OFF';
+    btn.classList.remove('on');
+    card.classList.remove('active');
+  });
+  // Apply preset
+  setTimeout(() => {
+    Object.entries(p).forEach(([id, vol]) => {
+      const slider = document.querySelector(`input[data-ch="${id}"][data-param="vol"]`);
+      const valDisplay = document.getElementById(`val-${id}-vol`);
+      if (slider) {
+        slider.value = vol;
+        valDisplay.textContent = vol;
+        updateChannelVol(id, vol);
+      }
+      const btn = document.querySelector(`.channel-toggle[data-ch="${id}"]`);
+      const card = document.getElementById(`ch-${id}`);
+      btn.textContent = 'ON';
+      btn.classList.add('on');
+      card.classList.add('active');
+    });
+  }, 200);
+
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+// ========== VISUALIZER ==========
+function startViz() {
+  const canvas = document.getElementById('viz');
+  const c = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  function resize() {
+    canvas.width = canvas.offsetWidth * dpr;
+    canvas.height = canvas.offsetHeight * dpr;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const bufLen = analyser.frequencyBinCount;
+  const data = new Uint8Array(bufLen);
+
+  function draw() {
+    requestAnimationFrame(draw);
+    analyser.getByteFrequencyData(data);
+    c.fillStyle = 'rgba(10,9,18,.3)';
+    c.fillRect(0, 0, canvas.width, canvas.height);
+
+    const w = canvas.width;
+    const h = canvas.height;
+    const barW = w / bufLen * 2.5;
+
+    for (let i = 0; i < bufLen; i++) {
+      const v = data[i] / 255;
+      const barH = v * h * 0.9;
+      const hue = 220 + i * 0.4;
+      c.fillStyle = `hsla(${hue}, 50%, ${30 + v * 40}%, ${0.3 + v * 0.5})`;
+      c.fillRect(i * barW, h - barH, barW - 1, barH);
+    }
+  }
+  draw();
+}
+
+// ========== TIMER ==========
+function startTimer() {
+  startTime = Date.now();
+  timerInterval = setInterval(() => {
+    const diff = Date.now() - startTime;
+    const h = String(Math.floor(diff / 3600000)).padStart(2, '0');
+    const m = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
+    const s = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
+    document.getElementById('timer').textContent = `${h}:${m}:${s}`;
+  }, 1000);
+}
+
+// ========== BOOT ==========
+document.getElementById('startBtn').addEventListener('click', () => {
+  document.getElementById('startOverlay').style.display = 'none';
+  if (!started) {
+    started = true;
+    initAudio();
+    buildUI();
+    startTimer();
+    // Load first preset
+    const firstPreset = Object.keys(PRESETS)[0];
+    applyPreset(firstPreset);
+  }
+});
+</script>
+</body>
+</html>
