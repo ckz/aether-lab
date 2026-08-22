@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Quick Diff — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a14;
+    font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+    color: #ccc;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  header {
+    padding: 16px 28px;
+    border-bottom: 1px solid rgba(100,90,180,.2);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  header h1 {
+    font-size: 1rem;
+    font-weight: normal;
+    letter-spacing: .3em;
+    text-transform: uppercase;
+    color: #aab;
+  }
+  header h1 span { color: #8877cc; }
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  button {
+    background: rgba(60,50,120,.25);
+    border: 1px solid rgba(140,120,255,.2);
+    color: #ccc;
+    padding: 6px 14px;
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: .7rem;
+    letter-spacing: .1em;
+    cursor: pointer;
+    transition: all .2s;
+    text-transform: uppercase;
+  }
+  button:hover {
+    background: rgba(80,65,160,.35);
+    border-color: rgba(150,130,255,.45);
+    color: #fff;
+  }
+  button.primary {
+    background: rgba(100,80,220,.3);
+    border-color: rgba(140,120,255,.4);
+    color: #e0d8ff;
+  }
+  button.primary:hover {
+    background: rgba(120,100,240,.4);
+    box-shadow: 0 0 20px rgba(100,80,220,.25);
+  }
+  .stats {
+    font-size: .65rem;
+    color: #8877bb;
+    letter-spacing: .12em;
+    padding: 4px 12px;
+    border: 1px solid rgba(100,90,180,.15);
+    border-radius: 3px;
+    background: rgba(20,18,40,.5);
+  }
+  .stats .added { color: #5faf7f; }
+  .stats .removed { color: #e05c5c; }
+  .main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: rgba(100,90,180,.1);
+    min-height: 0;
+  }
+  .panel {
+    background: #0a0a14;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .panel-header {
+    padding: 8px 16px;
+    font-size: .6rem;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: #6655aa;
+    border-bottom: 1px solid rgba(100,90,180,.15);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(18,16,36,.8);
+  }
+  .panel-header .label { opacity: .7; }
+  textarea {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #ccc;
+    font-family: inherit;
+    font-size: .75rem;
+    line-height: 1.6;
+    padding: 14px;
+    resize: none;
+    outline: none;
+    tab-size: 2;
+  }
+  textarea::placeholder { color: rgba(180,170,220,.25); }
+  .diff-area {
+    flex: 1;
+    overflow: auto;
+    padding: 0;
+    background: rgba(10,10,20,.5);
+    position: relative;
+  }
+  .diff-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .72rem;
+    line-height: 1.55;
+  }
+  .diff-table td {
+    padding: 0 10px;
+    vertical-align: top;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .diff-table .ln {
+    color: rgba(100,90,180,.35);
+    text-align: right;
+    user-select: none;
+    min-width: 36px;
+    padding-right: 12px;
+    border-right: 1px solid rgba(100,90,180,.1);
+  }
+  .diff-table tr.added { background: rgba(60,140,90,.08); }
+  .diff-table tr.added .ln { color: rgba(95,175,127,.5); }
+  .diff-table tr.removed { background: rgba(200,70,70,.08); }
+  .diff-table tr.removed .ln { color: rgba(224,92,92,.5); }
+  .diff-table tr.changed { background: rgba(220,140,50,.06); }
+  .diff-table tr.changed .ln { color: rgba(220,160,60,.5); }
+  .diff-table tr.unchanged { opacity: .55; }
+  .diff-table tr.unchanged .ln { opacity: .3; }
+  .diff-table td .add { background: rgba(95,175,127,.2); color: #8fdfaa; border-radius: 2px; padding: 1px 2px; }
+  .diff-table td .del { background: rgba(224,92,92,.2); color: #f09090; border-radius: 2px; padding: 1px 2px; }
+  .empty-state {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(160,150,200,.25);
+    font-size: .75rem;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    pointer-events: none;
+  }
+  .sync-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: rgba(18,16,36,.8);
+    border-top: 1px solid rgba(100,90,180,.15);
+  }
+  .sync-row label {
+    font-size: .6rem;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: #6655aa;
+    opacity: .7;
+  }
+  .sync-row input[type="checkbox"] {
+    accent-color: #8877cc;
+    cursor: pointer;
+  }
+  .sync-row span {
+    font-size: .6rem;
+    color: rgba(140,130,200,.5);
+    letter-spacing: .1em;
+  }
+  footer {
+    padding: 8px 28px;
+    font-size: .55rem;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: rgba(100,90,180,.3);
+    border-top: 1px solid rgba(100,90,180,.1);
+    display: flex;
+    justify-content: space-between;
+  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: rgba(10,10,20,.5); }
+  ::-webkit-scrollbar-thumb { background: rgba(100,90,180,.25); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(120,100,200,.4); }
+  .panel-divider {
+    width: 4px;
+    background: rgba(100,90,180,.25);
+    cursor: col-resize;
+    transition: background .2s;
+  }
+  .panel-divider:hover { background: rgba(140,120,255,.5); }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>Quick</span> Diff</h1>
+  <div class="toolbar">
+    <span class="stats" id="stats">ready</span>
+    <button onclick="runDiff()" class="primary">Compare</button>
+    <button onclick="clearAll()">Clear</button>
+    <button onclick="loadSample()">Sample</button>
+    <button onclick="copyLeft()">Copy Left</button>
+    <button onclick="copyRight()">Copy Right</button>
+  </div>
+</header>
+<div class="main">
+  <div class="panel">
+    <div class="panel-header">
+      <span class="label">Original</span>
+      <span id="left-info">—</span>
+    </div>
+    <textarea id="left" placeholder="Paste original text here..." spellcheck="false"></textarea>
+  </div>
+  <div class="panel-divider"></div>
+  <div class="panel">
+    <div class="panel-header">
+      <span class="label">Modified</span>
+      <span id="right-info">—</span>
+    </div>
+    <textarea id="right" placeholder="Paste modified text here..." spellcheck="false"></textarea>
+  </div>
+</div>
+<div class="sync-row">
+  <label>Sync scroll</label>
+  <input type="checkbox" id="sync" checked onchange="syncScroll=this.checked">
+  <span>Tab inserts spaces · Ctrl+Enter to compare · Esc to clear</span>
+</div>
+<footer>
+  <span>Aether Lab · Quick Diff</span>
+  <span id="time"></span>
+</footer>
+
+<script>
+const leftEl = document.getElementById('left');
+const rightEl = document.getElementById('right');
+const statsEl = document.getElementById('stats');
+const leftInfo = document.getElementById('left-info');
+const rightInfo = document.getElementById('right-info');
+let syncScroll = true;
+let lastDiffResult = null;
+
+// Handle tab key in textareas
+[leftEl, rightEl].forEach(el => {
+  el.addEventListener('keydown', e => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      el.value = el.value.substring(0, start) + '  ' + el.value.substring(end);
+      el.selectionStart = el.selectionEnd = start + 2;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      runDiff();
+    }
+    if (e.key === 'Escape') {
+      clearAll();
+    }
+  });
+});
+
+// Sync scrolling between textareas
+[leftEl, rightEl].forEach(el => {
+  el.addEventListener('scroll', () => {
+    if (!syncScroll) return;
+    const other = el === leftEl ? rightEl : leftEl;
+    const ratio = el.scrollTop / (el.scrollHeight - el.clientHeight || 1);
+    other.scrollTop = ratio * (other.scrollHeight - other.clientHeight);
+  });
+});
+
+function wordDiff(a, b) {
+  // Simple word-level diff using LCS-based approach
+  const wordsA = tokenize(a);
+  const wordsB = tokenize(b);
+  const result = [];
+  const lcs = longestCommonSubsequence(wordsA, wordsB);
+  let i = 0, j = 0, k = 0;
+  while (i < wordsA.length || j < wordsB.length) {
+    if (k < lcs.length && wordsA[i] === lcs[k] && wordsB[j] === lcs[k]) {
+      result.push({ type: 'same', text: wordsA[i] });
+      i++; j++; k++;
+    } else if (k < lcs.length && wordsA[i] === lcs[k]) {
+      result.push({ type: 'add', text: wordsB[j] });
+      j++;
+    } else if (k < lcs.length && wordsB[j] === lcs[k]) {
+      result.push({ type: 'del', text: wordsA[i] });
+      i++;
+    } else {
+      // Both differ
+      result.push({ type: 'del', text: wordsA[i] || '' });
+      result.push({ type: 'add', text: wordsB[j] || '' });
+      i++; j++;
+    }
+  }
+  // Merge adjacent same-type for cleaner output
+  return mergeTokens(result);
+}
+
+function tokenize(text) {
+  // Split into words and whitespace/newlines
+  const tokens = [];
+  const regex = /\S+|\s+/g;
+  let m;
+  while ((m = regex.exec(text)) !== null) {
+    tokens.push(m[0]);
+  }
+  return tokens;
+}
+
+function longestCommonSubsequence(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({length: m + 1}, () => new Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i-1] === b[j-1]) dp[i][j] = dp[i-1][j-1] + 1;
+      else dp[i][j] = Math.max(dp[i-1][j], dp[i][j-1]);
+    }
+  }
+  // Backtrack
+  const result = [];
+  let i = m, j = n;
+  while (i > 0 && j > 0) {
+    if (a[i-1] === b[j-1]) {
+      result.unshift(a[i-1]);
+      i--; j--;
+    } else if (dp[i-1][j] > dp[i][j-1]) {
+      i--;
+    } else {
+      j--;
+    }
+  }
+  return result;
+}
+
+function mergeTokens(tokens) {
+  const merged = [];
+  for (const t of tokens) {
+    if (merged.length && merged[merged.length-1].type === t.type) {
+      merged[merged.length-1].text += t.text;
+    } else {
+      merged.push({...t});
+    }
+  }
+  return merged;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function renderDiff(leftText, rightText) {
+  const leftLines = leftText.split('\n');
+  const rightLines = rightText.split('\n');
+  const table = document.createElement('table');
+  table.className = 'diff-table';
+
+  // Build line mapping using word-level comparison
+  const lw = leftText, rw = rightText;
+  const wordResult = wordDiff(lw, rw);
+
+  // Reconstruct approximate line-by-line diff from word diff
+  // Strategy: split both texts into lines, then compare line-by-line
+  // using simple equality first, then word-diff for changed lines
+  const maxLines = Math.max(leftLines.length, rightLines.length);
+  let added = 0, removed = 0, changed = 0;
+
+  for (let i = 0; i < maxLines; i++) {
+    const ll = leftLines[i] || '';
+    const rl = rightLines[i] || '';
+    const tr = document.createElement('tr');
+
+    if (i >= leftLines.length) {
+      // Added line
+      tr.className = 'added';
+      added++;
+      const lnL = document.createElement('td'); lnL.className = 'ln'; lnL.textContent = '';
+      const contentL = document.createElement('td'); contentL.textContent = '';
+      const lnR = document.createElement('td'); lnR.className = 'ln'; lnR.textContent = (i + 1);
+      const contentR = document.createElement('td'); contentR.innerHTML = highlightWords(rl, rl, 'add');
+      tr.appendChild(lnL); tr.appendChild(contentL); tr.appendChild(lnR); tr.appendChild(contentR);
+    } else if (i >= rightLines.length) {
+      // Removed line
+      tr.className = 'removed';
+      removed++;
+      const lnL = document.createElement('td'); lnL.className = 'ln'; lnL.textContent = (i + 1);
+      const contentL = document.createElement('td'); contentL.innerHTML = highlightWords(ll, ll, 'del');
+      const lnR = document.createElement('td'); lnR.className = 'ln'; lnR.textContent = '';
+      const contentR = document.createElement('td'); contentR.textContent = '';
+      tr.appendChild(lnL); tr.appendChild(contentL); tr.appendChild(lnR); tr.appendChild(contentR);
+    } else if (ll === rl) {
+      // Unchanged
+      tr.className = 'unchanged';
+      const lnL = document.createElement('td'); lnL.className = 'ln'; lnL.textContent = (i + 1);
+      const contentL = document.createElement('td'); contentL.textContent = ll;
+      const lnR = document.createElement('td'); lnR.className = 'ln'; lnR.textContent = (i + 1);
+      const contentR = document.createElement('td'); contentR.textContent = rl;
+      tr.appendChild(lnL); tr.appendChild(contentL); tr.appendChild(lnR); tr.appendChild(contentR);
+    } else {
+      // Changed — show both sides with word diff
+      tr.className = 'changed';
+      changed++;
+      const lnL = document.createElement('td'); lnL.className = 'ln'; lnL.textContent = (i + 1);
+      const contentL = document.createElement('td'); contentL.innerHTML = highlightWords(ll, rl, 'del');
+      const lnR = document.createElement('td'); lnR.className = 'ln'; lnR.textContent = (i + 1);
+      const contentR = document.createElement('td'); contentR.innerHTML = highlightWords(rl, ll, 'add');
+      tr.appendChild(lnL); tr.appendChild(contentL); tr.appendChild(lnR); tr.appendChild(contentR);
+    }
+    table.appendChild(tr);
+  }
+
+  return { table, added, removed, changed };
+}
+
+function highlightWords(source, other, type) {
+  // Simple heuristic: find words that differ and highlight them
+  const sw = tokenize(source);
+  const ow = new Set(tokenize(other).filter(w => !/^\s+$/.test(w)));
+  const cls = type === 'add' ? 'add' : 'del';
+  return escapeHtml(source).split(/(\s+)/).map(token => {
+    if (/^\s+$/.test(token)) return token;
+    // Highlight if word appears in other text's word set with same case or lowercase match
+    const lower = token.toLowerCase();
+    const inOther = [...ow].some(w => w.toLowerCase() === lower || w === token);
+    if (!inOther && token.length > 0) {
+      return `<span class="${cls}">${escapeHtml(token)}</span>`;
+    }
+    return escapeHtml(token);
+  }).join('');
+}
+
+function runDiff() {
+  const left = leftEl.value;
+  const right = rightEl.value;
+  if (!left && !right) {
+    statsEl.innerHTML = 'enter text to compare';
+    return;
+  }
+  lastDiffResult = renderDiff(left, right);
+  // Clear and show diff below textareas
+  const main = document.querySelector('.main');
+  // Remove existing diff view
+  const existing = document.getElementById('diff-output');
+  if (existing) existing.remove();
+
+  const diffWrap = document.createElement('div');
+  diffWrap.id = 'diff-output';
+  diffWrap.style.cssText = 'flex:1;display:flex;flex-direction:column;min-height:0;background:#0a0a14;';
+  diffWrap.innerHTML = `
+    <div style="padding:6px 16px;font-size:.55rem;letter-spacing:.2em;text-transform:uppercase;color:#6655aa;border-bottom:1px solid rgba(100,90,180,.15);background:rgba(18,16,36,.8);">
+      <span style="color:#6655aa;opacity:.7;">Diff Output</span>
+      <span style="float:right;font-size:.55rem;color:rgba(140,130,200,.5);letter-spacing:.1em;">${escapeHtml(left.split('\\n').length)} → ${escapeHtml(right.split('\\n').length)} lines</span>
+    </div>
+    <div style="flex:1;overflow:auto;" id="diff-scroll"></div>
+  `;
+  main.appendChild(diffWrap);
+  document.getElementById('diff-scroll').appendChild(lastDiffResult.table);
+
+  const { added, removed, changed } = lastDiffResult;
+  statsEl.innerHTML = `<span class="added">+${added}</span> · <span class="removed">−${removed}</span> · <span style="color:#dc8c3c;">~${changed}</span> changed`;
+}
+
+function clearAll() {
+  leftEl.value = '';
+  rightEl.value = '';
+  leftInfo.textContent = '—';
+  rightInfo.textContent = '—';
+  statsEl.innerHTML = 'ready';
+  const existing = document.getElementById('diff-output');
+  if (existing) existing.remove();
+  lastDiffResult = null;
+  leftEl.focus();
+}
+
+function copyLeft() {
+  navigator.clipboard.writeText(leftEl.value).then(() => flashCopy('left'));
+}
+function copyRight() {
+  navigator.clipboard.writeText(rightEl.value).then(() => flashCopy('right'));
+}
+function flashCopy(which) {
+  const el = which === 'left' ? leftEl : rightEl;
+  el.style.boxShadow = 'inset 0 0 0 1px rgba(95,175,127,.4)';
+  setTimeout(() => el.style.boxShadow = 'none', 400);
+}
+
+function loadSample() {
+  leftEl.value = `function fibonacci(n) {
+  if (n <= 1) return n;
+  return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+function main() {
+  const result = fibonacci(10);
+  console.log("Result:", result);
+  return result;
+}`;
+  rightEl.value = `function fibonacci(n, memo = {}) {
+  if (n in memo) return memo[n];
+  if (n <= 1) return n;
+  memo[n] = fibonacci(n - 1, memo) + fibonacci(n - 2, memo);
+  return memo[n];
+}
+
+async function main() {
+  const result = fibonacci(40);
+  console.log("Result:", result);
+  return result;
+}`;
+  leftInfo.textContent = 'sample.txt';
+  rightInfo.textContent = 'sample-memoized.txt';
+  runDiff();
+  leftEl.focus();
+}
+
+// Update line counts on input
+[leftEl, rightEl].forEach((el, idx) => {
+  el.addEventListener('input', () => {
+    const lines = el.value.split('\n').length;
+    const info = idx === 0 ? leftInfo : rightInfo;
+    info.textContent = el.value ? `${lines} lines` : '—';
+  });
+});
+
+// Clock
+function updateClock() {
+  document.getElementById('time').textContent = new Date().toLocaleTimeString('en-US', {hour12: false});
+}
+updateClock();
+setInterval(updateClock, 30000);
+
+// Focus left on load
+leftEl.focus();
+</script>
+</body>
+</html>
