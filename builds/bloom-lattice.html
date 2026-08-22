@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bloom Lattice — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050510;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #889;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  .hud {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    letter-spacing: .25em;
+    text-transform: uppercase;
+    color: #667;
+    pointer-events: none;
+    z-index: 10;
+    text-align: center;
+  }
+  .hud .title {
+    font-size: 13px;
+    color: #99a;
+    letter-spacing: .4em;
+    margin-bottom: 6px;
+  }
+  .controls {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    font-size: 10px;
+    letter-spacing: .15em;
+    color: #556;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .controls span {
+    padding: 4px 12px;
+    border: 1px solid rgba(80,70,150,.2);
+    border-radius: 2px;
+  }
+</style>
+</head>
+<body>
+<div class="hud">
+  <div class="title">Bloom Lattice</div>
+  Click to plant · Hold to grow · Keys 1-3 palette · C clear · Space pause
+</div>
+<div class="controls">
+  <span>CLICK plant</span>
+  <span>HOLD grow</span>
+  <span>1-3 palette</span>
+  <span>C clear</span>
+  <span>SPACE pause</span>
+</div>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+let paused = false;
+let mouse = { x: W/2, y: H/2, down: false };
+let paletteIdx = 0;
+
+const palettes = [
+  { bg: [5,5,16], colors: ['#ff6b9d','#c44dff','#4dc9f6','#f9ca24','#ff9ff3'], glow: 'rgba(200,100,255,0.04)' },
+  { bg: [8,12,8], colors: ['#00ff87','#60efff','#0061ff','#a8ff00','#00d4aa'], glow: 'rgba(0,255,136,0.04)' },
+  { bg: [16,8,4], colors: ['#ff6b35','#f7c948','#ff2e63','#ffa62b','#ffd166'], glow: 'rgba(255,107,53,0.04)' }
+];
+
+let blooms = [];
+let particles = [];
+let connections = [];
+
+class Bloom {
+  constructor(x, y, power = 1) {
+    this.x = x;
+    this.y = y;
+    this.power = power;
+    this.age = 0;
+    this.maxAge = 600 + Math.random() * 400;
+    this.color = palettes[paletteIdx].colors[Math.floor(Math.random() * palettes[palettes[paletteIdx].colors.length])];
+    this.rgb = hexToRgb(this.color);
+    this.branches = [];
+    this.maxBranches = 3 + Math.floor(Math.random() * 3);
+    this.branchTimer = 0;
+    this.petalPhase = Math.random() * Math.PI * 2;
+    this.size = 0;
+    this.targetSize = 15 + Math.random() * 25 * power;
+    this.alive = true;
+    this.pulsePhase = 0;
+    this.generateBranches();
+  }
+  generateBranches() {
+    const count = this.maxBranches;
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 / count) * i + Math.random() * 0.3;
+      this.branches.push({
+        angle,
+        length: 0,
+        targetLength: 40 + Math.random() * 100 * this.power,
+        speed: 0.3 + Math.random() * 0.5,
+        thickness: 1 + Math.random() * 2,
+        sway: Math.random() * Math.PI * 2,
+        swaySpeed: 0.005 + Math.random() * 0.01,
+        swayAmount: 5 + Math.random() * 15,
+        children: []
+      });
+    }
+  }
+  update() {
+    this.age++;
+    this.petalPhase += 0.008;
+    this.pulsePhase += 0.03;
+    this.size += (this.targetSize - this.size) * 0.02;
+    if (this.age > this.maxAge * 0.7) {
+      this.size *= 0.995;
+    }
+    this.branchTimer++;
+    for (const b of this.branches) {
+      b.sway += b.swaySpeed;
+      if (b.length < b.targetLength) {
+        b.length += b.speed * (mouse.down ? 1.8 : 1);
+      }
+      if (this.branchTimer > 60 && b.length > b.targetLength * 0.5 && b.children.length < 2) {
+        if (Math.random() < 0.008) {
+          b.children.push({
+            offset: 0.3 + Math.random() * 0.4,
+            length: 0,
+            targetLength: 15 + Math.random() * 30 * this.power,
+            angle: (Math.random() - 0.5) * 1.2,
+            sway: Math.random() * Math.PI * 2,
+            swaySpeed: 0.01 + Math.random() * 0.015
+          });
+        }
+      }
+      for (const c of b.children) {
+        c.sway += c.swaySpeed;
+      }
+      if (this.age > this.maxAge) this.alive = false;
+    }
+  }
+  draw(ctx) {
+    const fadeIn = Math.min(1, this.age / 60);
+    const fadeOut = this.age > this.maxAge * 0.7 ? Math.max(0, 1 - (this.age - this.maxAge * 0.7) / (this.maxAge * 0.3)) : 1;
+    const alpha = fadeIn * fadeOut;
+    const pulse = 1 + Math.sin(this.pulsePhase) * 0.15;
+    const s = this.size * pulse;
+
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.petalPhase * 0.1);
+
+    for (const b of this.branches) {
+      const sway = Math.sin(b.sway) * b.swayAmount * (mouse.down ? 2 : 1);
+      const endX = Math.cos(b.angle) * b.length + Math.cos(b.angle + 1) * sway;
+      const endY = Math.sin(b.angle) * b.length + Math.sin(b.angle + 1) * sway;
+
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(endX, endY);
+      ctx.strokeStyle = `rgba(${this.rgb.r},${this.rgb.g},${this.rgb.b},${0.5 * alpha})`;
+      ctx.lineWidth = b.thickness * pulse;
+      ctx.shadowColor = this.color;
+      ctx.shadowBlur = 15 * alpha;
+      ctx.stroke();
+
+      for (const c of b.children) {
+        const childX = endX + Math.cos(b.angle + c.angle + Math.sin(c.sway) * 0.5) * c.length;
+        const childY = endY + Math.sin(b.angle + c.angle + Math.sin(c.sway) * 0.5) * c.length;
+        if (c.length < c.targetLength) c.length += 0.15;
+
+        ctx.beginPath();
+        ctx.moveTo(endX, endY);
+        ctx.lineTo(childX, childY);
+        ctx.strokeStyle = `rgba(${this.rgb.r},${this.rgb.g},${this.rgb.b},${0.3 * alpha})`;
+        ctx.lineWidth = b.thickness * 0.5 * pulse;
+        ctx.stroke();
+
+        if (Math.random() < 0.03 * alpha) {
+          addParticle(childX + this.x, childY + this.y, this.color, 1);
+        }
+      }
+
+      if (b.length > b.targetLength * 0.6 && Math.random() < 0.02 * alpha) {
+        const tipX = endX + this.x;
+        const tipY = endY + this.y;
+        addParticle(tipX, tipY, this.color, 1.5);
+      }
+    }
+
+    ctx.beginPath();
+    ctx.arc(0, 0, s * 0.4, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${this.rgb.r},${this.rgb.g},${this.rgb.b},${0.7 * alpha})`;
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 30 * alpha * pulse;
+    ctx.fill();
+
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI * 2 / 6) * i + this.petalPhase * 0.3;
+      const r = s * 0.7;
+      const px = Math.cos(a) * r;
+      const py = Math.sin(a) * r;
+      ctx.beginPath();
+      ctx.arc(px, py, s * 0.15 * pulse, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${this.rgb.r},${this.rgb.g},${this.rgb.b},${0.35 * alpha})`;
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+}
+
+class Particle {
+  constructor(x, y, color, size = 1) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 2;
+    this.vy = (Math.random() - 0.5) * 2;
+    this.life = 1;
+    this.decay = 0.003 + Math.random() * 0.01;
+    this.color = color;
+    this.rgb = hexToRgb(color);
+    this.size = size * (0.5 + Math.random() * 1.5);
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+    this.life -= this.decay;
+    if (mouse.down) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const d = Math.sqrt(dx*dx + dy*dy);
+      if (d < 200 && d > 1) {
+        this.vx += (dx/d) * 0.05;
+        this.vy += (dy/d) * 0.05;
+      }
+    }
+  }
+  draw(ctx) {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${this.rgb.r},${this.rgb.g},${this.rgb.b},${this.life * 0.6})`;
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 8 * this.life;
+    ctx.fill();
+  }
+}
+
+function addParticle(x, y, color, size) {
+  particles.push(new Particle(x, y, color, size));
+  if (particles.length > 500) particles.shift();
+}
+
+function hexToRgb(hex) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  } : { r: 255, g: 255, b: 255 };
+}
+
+canvas.addEventListener('mousedown', e => {
+  mouse.down = true;
+  blooms.push(new Bloom(e.clientX, e.clientY, 0.6 + Math.random() * 0.4));
+  for (let i = 0; i < 20; i++) {
+    addParticle(e.clientX, e.clientY, palettes[paletteIdx].colors[Math.floor(Math.random() * palettes[paletteIdx].colors.length)]);
+  }
+});
+
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mouseleave', () => mouse.down = false);
+
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  if (mouse.down && Math.random() < 0.3) {
+    const bloom = new Bloom(e.clientX + (Math.random()-0.5)*30, e.clientY + (Math.random()-0.5)*30, 0.3);
+    blooms.push(bloom);
+  }
+});
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.down = true;
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  blooms.push(new Bloom(t.clientX, t.clientY, 0.6 + Math.random() * 0.4));
+  for (let i = 0; i < 20; i++) {
+    addParticle(t.clientX, t.clientY, palettes[paletteIdx].colors[Math.floor(Math.random() * palettes[paletteIdx].colors.length)]);
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  if (Math.random() < 0.3) {
+    blooms.push(new Bloom(t.clientX + (Math.random()-0.5)*30, t.clientY + (Math.random()-0.5)*30, 0.3));
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', () => mouse.down = false);
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'c' || e.key === 'C') {
+    blooms = [];
+    particles = [];
+  }
+  if (e.key === ' ') {
+    paused = !paused;
+    e.preventDefault();
+  }
+  if (['1','2','3'].includes(e.key)) {
+    paletteIdx = parseInt(e.key) - 1;
+  }
+});
+
+let growTimer = 0;
+let autoBloomTimer = 0;
+const GOLDEN = 1.618033988749895;
+
+function drawBackground() {
+  const bg = palettes[paletteIdx].bg;
+  ctx.fillStyle = `rgba(${bg[0]},${bg[1]},${bg[2]},0.15)`;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawConnections() {
+  for (let i = 0; i < blooms.length; i++) {
+    for (let j = i + 1; j < blooms.length; j++) {
+      const a = blooms[i], b = blooms[j];
+      if (!a.alive || !b.alive) continue;
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      const d = Math.sqrt(dx*dx + dy*dy);
+      if (d < 180) {
+        const alpha = (1 - d/180) * 0.08 * Math.min(a.size, b.size) / 20;
+        const midX = (a.x + b.x) / 2 + Math.sin(Date.now() * 0.001 + i) * 10;
+        const midY = (a.y + b.y) / 2 + Math.cos(Date.now() * 0.001 + j) * 10;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.quadraticCurveTo(midX, midY, b.x, b.y);
+        const c1 = a.rgb, c2 = b.rgb;
+        const grad = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+        grad.addColorStop(0, `rgba(${c1.r},${c1.g},${c1.b},${alpha})`);
+        grad.addColorStop(1, `rgba(${c2.r},${c2.g},${c2.b},${alpha})`);
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 0.5;
+        ctx.shadowBlur = 0;
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+function animate() {
+  if (!paused) {
+    drawBackground();
+
+    drawConnections();
+
+    if (mouse.down) {
+      growTimer++;
+      if (growTimer % 8 === 0) {
+        addParticle(
+          mouse.x + (Math.random() - 0.5) * 40,
+          mouse.y + (Math.random() - 0.5) * 40,
+          palettes[paletteIdx].colors[Math.floor(Math.random() * palettes[paletteIdx].colors.length)]
+        );
+      }
+    } else {
+      growTimer = 0;
+    }
+
+    autoBloomTimer++;
+    if (autoBloomTimer > 300 + Math.random() * 200 && blooms.length < 12) {
+      autoBloomTimer = 0;
+      const x = W * 0.15 + Math.random() * W * 0.7;
+      const y = H * 0.15 + Math.random() * H * 0.7;
+      blooms.push(new Bloom(x, y, 0.4 + Math.random() * 0.3));
+    }
+
+    blooms = blooms.filter(b => b.alive);
+    for (const bloom of blooms) {
+      bloom.update();
+      bloom.draw(ctx);
+    }
+
+    particles = particles.filter(p => p.life > 0);
+    for (const p of particles) {
+      p.update();
+      p.draw(ctx);
+    }
+
+    if (Math.random() < 0.02) {
+      const b = blooms[Math.floor(Math.random() * blooms.length)];
+      if (b) addParticle(b.x + (Math.random()-0.5)*100, b.y + (Math.random()-0.5)*100, b.color, 0.8);
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+
+ctx.fillStyle = `rgb(${palettes[paletteIdx].bg.join(',')})`;
+ctx.fillRect(0, 0, W, H);
+
+blooms.push(new Bloom(W/2, H/2, 1.2));
+setTimeout(() => blooms.push(new Bloom(W * 0.3, H * 0.4, 0.7)), 400);
+setTimeout(() => blooms.push(new Bloom(W * 0.7, H * 0.6, 0.7)), 800);
+
+animate();
+</script>
+</body>
+</html>
