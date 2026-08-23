@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosmic Breath — Generative Sacred Geometry</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+    height: 100vh;
+    width: 100vw;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0; left: 0;
+  }
+  #info {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(180, 200, 255, 0.6);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 10;
+    text-align: center;
+  }
+  #breath-indicator {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    border: 1px solid rgba(180, 200, 255, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #breath-dot {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(120, 180, 255, 0.8), transparent);
+    transition: transform 2s ease-in-out, opacity 2s ease-in-out;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="breath-indicator"><div id="breath-dot"></div></div>
+<div id="info">move mouse to shape the breath · click to shift the pattern</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+let mouse = { x: cx, y: cy, tx: cx, ty: cy };
+window.addEventListener('mousemove', e => {
+  mouse.tx = e.clientX;
+  mouse.ty = e.clientY;
+});
+
+let patternShift = 0;
+window.addEventListener('click', () => { patternShift += Math.PI / 6; });
+
+// Color palettes for different "breath states"
+const palettes = [
+  ['#4a9eff', '#7b5fff', '#ff5fa2', '#ffb84a', '#5fffdb'], // cosmic
+  ['#ff6b6b', '#ffa07a', '#ffd93d', '#6bcb77', '#4d96ff'], // sunset
+  ['#e0aaff', '#c77dff', '#9d4edd', '#7b2cbf', '#5a189a'], // violet
+  ['#64dfdf', '#48bfe3', '#5390d9', '#6930c3', '#7400b8'], // deep sea
+];
+
+// Particles for the field
+class Particle {
+  constructor() { this.reset(); }
+  reset() {
+    this.angle = Math.random() * Math.PI * 2;
+    this.radius = Math.random() * Math.min(W, H) * 0.4 + 20;
+    this.speed = 0.0005 + Math.random() * 0.002;
+    this.size = 0.5 + Math.random() * 1.5;
+    this.opacity = 0.1 + Math.random() * 0.4;
+    this.hueOffset = Math.random() * 60 - 30;
+    this.life = 0;
+    this.maxLife = 200 + Math.random() * 300;
+  }
+  update(breathScale, mx, my) {
+    this.life++;
+    const breathInfluence = 1 + (breathScale - 0.5) * 0.5;
+    const mouseDist = Math.hypot(
+      cx + Math.cos(this.angle) * this.radius * breathInfluence - mx,
+      cy + Math.sin(this.angle) * this.radius * breathInfluence - my
+    );
+    const mouseForce = Math.max(0, 1 - mouseDist / 200) * 0.02;
+    this.angle += this.speed * breathInfluence + mouseForce;
+    if (this.life > this.maxLife) this.reset();
+  }
+  draw(ctx, breathScale, palette, time) {
+    const r = this.radius * breathScale;
+    const x = cx + Math.cos(this.angle) * r;
+    const y = cy + Math.sin(this.angle) * r;
+    const fadeIn = Math.min(1, this.life / 30);
+    const fadeOut = Math.min(1, (this.maxLife - this.life) / 50);
+    const alpha = this.opacity * fadeIn * fadeOut;
+    const colorIdx = Math.floor((this.angle / (Math.PI * 2) * palette.length + time * 0.1) % palette.length);
+    const color = palette[((colorIdx % palette.length) + palette.length) % palette.length];
+    ctx.fillStyle = color;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(x, y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+const particles = Array.from({ length: 300 }, () => new Particle());
+
+function drawSacredGeometry(ctx, time, breathScale, palette, layer) {
+  const sides = 6 + layer;
+  const baseRadius = 80 + layer * 50;
+  const rotation = time * 0.0003 * (layer % 2 === 0 ? 1 : -1) + patternShift;
+  const r = baseRadius * breathScale;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rotation);
+
+  // Glow effect
+  const colorIdx = layer % palette.length;
+  ctx.shadowBlur = 20 + Math.sin(time * 0.002) * 10;
+  ctx.shadowColor = palette[colorIdx];
+
+  // Draw polygon
+  ctx.beginPath();
+  for (let i = 0; i <= sides; i++) {
+    const angle = (i / sides) * Math.PI * 2;
+    const wobble = Math.sin(time * 0.003 + i * 0.5) * 5;
+    const px = Math.cos(angle) * (r + wobble);
+    const py = Math.sin(angle) * (r + wobble);
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+
+  // Stroke with gradient
+  const grad = ctx.createLinearGradient(-r, -r, r, r);
+  grad.addColorStop(0, palette[layer % palette.length]);
+  grad.addColorStop(0.5, palette[(layer + 1) % palette.length]);
+  grad.addColorStop(1, palette[layer % palette.length]);
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = 1.5;
+  ctx.globalAlpha = 0.3 + Math.sin(time * 0.001 + layer) * 0.2;
+  ctx.stroke();
+
+  // Inner connecting lines
+  if (layer > 0) {
+    ctx.globalAlpha = 0.15;
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < sides; i++) {
+      const angle = (i / sides) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+}
+
+function drawFlowerOfLife(ctx, time, breathScale, palette) {
+  const baseR = 40 * breathScale;
+  const centerX = cx + (mouse.x - cx) * 0.05;
+  const centerY = cy + (mouse.y - cy) * 0.05;
+
+  ctx.save();
+  ctx.globalAlpha = 0.12;
+  ctx.strokeStyle = palette[0];
+  ctx.lineWidth = 0.8;
+
+  // Center circle
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, baseR, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Surrounding circles (Flower of Life pattern)
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2 + time * 0.0002;
+    const ox = centerX + Math.cos(angle) * baseR;
+    const oy = centerY + Math.sin(angle) * baseR;
+    ctx.beginPath();
+    ctx.arc(ox, oy, baseR, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+let time = 0;
+
+function animate() {
+  time++;
+
+  // Smooth mouse follow
+  mouse.x += (mouse.tx - mouse.x) * 0.05;
+  mouse.y += (mouse.ty - mouse.y) * 0.05;
+
+  // Breath cycle (4 seconds in, 4 seconds out)
+  const breathCycle = (Math.sin(time * 0.005) + 1) / 2; // 0 to 1
+  const breathScale = 0.85 + breathCycle * 0.3;
+
+  // Update breath indicator
+  const breathDot = document.getElementById('breath-dot');
+  if (breathDot) {
+    const scale = 0.8 + breathCycle * 0.6;
+    breathDot.style.transform = `scale(${scale})`;
+    breathDot.style.opacity = 0.4 + breathCycle * 0.6;
+  }
+
+  // Clear with trail effect
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.15)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Select palette based on breath phase
+  const paletteIdx = Math.floor(breathCycle * palettes.length) % palettes.length;
+  const palette = palettes[paletteIdx];
+
+  // Draw multiple layers of sacred geometry
+  for (let layer = 0; layer < 5; layer++) {
+    drawSacredGeometry(ctx, time, breathScale, palette, layer);
+  }
+
+  // Flower of Life pattern (subtle)
+  drawFlowerOfLife(ctx, time, breathScale, palette);
+
+  // Draw particles orbiting
+  particles.forEach(p => {
+    p.update(breathScale, mouse.x, mouse.y);
+    p.draw(ctx, breathScale, palette, time);
+  });
+
+  // Center glow
+  const glowGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 200 * breathScale);
+  glowGrad.addColorStop(0, `rgba(120, 180, 255, ${0.05 + breathCycle * 0.05})`);
+  glowGrad.addColorStop(0.5, `rgba(120, 180, 255, 0.02)`);
+  glowGrad.addColorStop(1, 'transparent');
+  ctx.fillStyle = glowGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Mouse influence glow
+  const mouseGlow = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 150);
+  mouseGlow.addColorStop(0, `rgba(180, 200, 255, 0.03)`);
+  mouseGlow.addColorStop(1, 'transparent');
+  ctx.fillStyle = mouseGlow;
+  ctx.fillRect(0, 0, W, H);
+
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>
