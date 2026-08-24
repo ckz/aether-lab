@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gravity Loom</title>
+<style>
+  * { margin: 0; padding: 0; }
+  body {
+    background: #050508;
+    overflow: hidden;
+    cursor: crosshair;
+    font-family: 'Courier New', monospace;
+  }
+  canvas { display: block; }
+  .info {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(140,120,255,.45);
+    font-size: 11px;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    pointer-events: none;
+    text-align: center;
+  }
+  .controls {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+  }
+  .controls button {
+    background: rgba(20,18,40,.7);
+    border: 1px solid rgba(100,90,180,.25);
+    color: #9988dd;
+    padding: 6px 14px;
+    font-size: 10px;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 3px;
+    font-family: inherit;
+    transition: all .3s;
+  }
+  .controls button:hover {
+    border-color: rgba(150,130,255,.5);
+    color: #c8c8ff;
+    background: rgba(30,25,65,.7);
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="info">Click to weave · Move to guide the loom · Hold to attract</div>
+<div class="controls">
+  <button onclick="clearAnchors()">Clear</button>
+  <button onclick="seedPattern()">Seed</button>
+  <button onclick="cyclePalette()">Palette</button>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Palettes
+const palettes = [
+  { name: 'Nebula', colors: ['#4a1a6b', '#8b2fc9', '#c74bdb', '#f0a0ff', '#6a3d9a'] },
+  { name: 'Ocean', colors: ['#0a2a4a', '#0d5c8f', '#1ca3c4', '#5edbff', '#0a3d5c'] },
+  { name: 'Ember', colors: ['#2a0a0a', '#8b1a1a', '#db4b1a', '#ff9a4a', '#8b3a0a'] },
+  { name: 'Forest', colors: ['#0a2a0a', '#1a6b2a', '#3a9a4a', '#7adb6a', '#1a4a1a'] },
+  { name: 'Frost', colors: ['#0a1a2a', '#2a5a7a', '#5aaccc', '#aad4f0', '#3a7a9a'] },
+  { name: 'Aurora', colors: ['#0a2a1a', '#2a8a4a', '#4adbaa', '#aaffdd', '#2a6a5a'] },
+];
+let paletteIdx = 0;
+
+function cyclePalette() {
+  paletteIdx = (paletteIdx + 1) % palettes.length;
+}
+
+// Anchor points - invisible gravity wells that threads connect
+let anchors = [];
+let mouse = { x: W/2, y: H/2, held: false, active: false };
+
+class Anchor {
+  constructor(x, y, vx = 0, vy = 0) {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.mass = 0.8 + Math.random() * 2.2;
+    this.phase = Math.random() * Math.PI * 2;
+    this.breathSpeed = 0.3 + Math.random() * 0.7;
+    this.life = 1;
+    this.maxLife = 600 + Math.random() * 600;
+    this.age = 0;
+    this.colorIdx = Math.floor(Math.random() * 5);
+    this.driftX = (Math.random() - 0.5) * 0.15;
+    this.driftY = (Math.random() - 0.5) * 0.15;
+  }
+  update() {
+    this.age++;
+    if (this.age > this.maxLife * 0.7) {
+      this.life = Math.max(0, 1 - (this.age - this.maxLife * 0.7) / (this.maxLife * 0.3));
+    }
+    this.phase += 0.008 * this.breathSpeed;
+    // Gentle drift
+    this.vx += this.driftX * 0.01;
+    this.vy += this.driftY * 0.01;
+    // Mouse attraction
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 1;
+      const force = mouse.held ? 0.8 : 0.15;
+      this.vx += (dx / dist) * force * this.mass / (dist * 0.05 + 1);
+      this.vy += (dy / dist) * force * this.mass / (dist * 0.05 + 1);
+    }
+    // Damping
+    this.vx *= 0.96;
+    this.vy *= 0.96;
+    this.x += this.vx;
+    this.y += this.vy;
+    // Bounce off edges with soft push
+    const margin = 60;
+    if (this.x < margin) this.vx += 0.3;
+    if (this.x > W - margin) this.vx -= 0.3;
+    if (this.y < margin) this.vy += 0.3;
+    if (this.y > H - margin) this.vy -= 0.3;
+    // Clamp
+    this.x = Math.max(20, Math.min(W - 20, this.x));
+    this.y = Math.max(20, Math.min(H - 20, this.y));
+  }
+}
+
+// Seed initial pattern - sacred geometry-ish
+function seedPattern() {
+  anchors = [];
+  const cx = W / 2, cy = H / 2;
+  const count = 12;
+  const radius = Math.min(W, H) * 0.25;
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2;
+    const r = radius * (0.8 + 0.2 * Math.sin(angle * 3));
+    anchors.push(new Anchor(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r));
+  }
+  // Inner ring
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2 + 0.3;
+    const r = radius * 0.4;
+    anchors.push(new Anchor(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r));
+  }
+  // Center
+  anchors.push(new Anchor(cx, cy, 0, 0));
+}
+
+// Initialize
+seedPattern();
+
+// Mouse
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mousedown', e => {
+  mouse.held = true;
+  // Spawn anchor at click
+  for (let i = 0; i < 3; i++) {
+    anchors.push(new Anchor(
+      e.clientX + (Math.random() - 0.5) * 30,
+      e.clientY + (Math.random() - 0.5) * 30,
+      (Math.random() - 0.5) * 2,
+      (Math.random() - 0.5) * 2
+    ));
+  }
+  // Limit anchors
+  if (anchors.length > 60) anchors = anchors.slice(-60);
+});
+canvas.addEventListener('mouseup', () => mouse.held = false);
+canvas.addEventListener('mouseleave', () => { mouse.active = false; mouse.held = false; });
+
+// Touch support
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+  mouse.held = true; mouse.active = true;
+  for (let i = 0; i < 3; i++) {
+    anchors.push(new Anchor(t.clientX + (Math.random()-0.5)*30, t.clientY + (Math.random()-0.5)*30, (Math.random()-0.5)*2, (Math.random()-0.5)*2));
+  }
+  if (anchors.length > 60) anchors = anchors.slice(-60);
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+});
+canvas.addEventListener('touchend', e => {
+  mouse.held = false; mouse.active = false;
+});
+
+function clearAnchors() {
+  anchors = [];
+  seedPattern();
+}
+
+// Thread connections - each anchor connects to 2-3 nearest neighbors
+function drawThreads() {
+  const pal = palettes[paletteIdx].colors;
+  const t = Date.now() * 0.001;
+
+  // Update anchors
+  anchors = anchors.filter(a => a.life > 0.01);
+  anchors.forEach(a => a.update());
+
+  // Auto-seed if too empty
+  if (anchors.length < 4 && Math.random() < 0.02) {
+    anchors.push(new Anchor(Math.random() * W, Math.random() * H));
+  }
+
+  // Draw threads between nearby anchors
+  for (let i = 0; i < anchors.length; i++) {
+    const a = anchors[i];
+    for (let j = i + 1; j < anchors.length; j++) {
+      const b = anchors[j];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const maxDist = Math.min(W, H) * 0.35;
+
+      if (dist < maxDist) {
+        const alpha = (1 - dist / maxDist) * 0.4 * Math.min(a.life, b.life);
+        const colorIdx = (a.colorIdx + b.colorIdx) % 5;
+        const pulse = 0.7 + 0.3 * Math.sin(t * 1.5 + a.phase + b.phase);
+
+        // Bezier curve with control point displaced perpendicular
+        const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
+        const perpX = -(dy / (dist + 1)) * Math.sin(t + a.phase) * 20;
+        const perpY = (dx / (dist + 1)) * Math.cos(t + b.phase) * 20;
+
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.quadraticCurveTo(mx + perpX, my + perpY, b.x, b.y);
+        ctx.strokeStyle = pal[colorIdx];
+        ctx.globalAlpha = alpha * pulse;
+        ctx.lineWidth = 1 + (1 - dist / maxDist) * 1.5;
+        ctx.stroke();
+
+        // Glow at midpoint
+        if (dist < maxDist * 0.6) {
+          const glowAlpha = alpha * 0.3 * pulse;
+          const grd = ctx.createRadialGradient(mx + perpX, my + perpY, 0, mx + perpX, my + perpY, 15);
+          grd.addColorStop(0, pal[(colorIdx + 1) % 5]);
+          grd.addColorStop(1, 'transparent');
+          ctx.fillStyle = grd;
+          ctx.globalAlpha = glowAlpha;
+          ctx.beginPath();
+          ctx.arc(mx + perpX, my + perpY, 15, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+  }
+
+  // Draw anchor nodes
+  anchors.forEach(a => {
+    const breathe = 2 + Math.sin(a.phase) * 1.5;
+    const pal2 = palettes[paletteIdx].colors;
+    const col = pal2[a.colorIdx];
+
+    // Outer glow
+    const grd = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, 12 * a.mass);
+    grd.addColorStop(0, col);
+    grd.addColorStop(0.5, col.replace(')', ', 0.3)').replace('rgb', 'rgba').replace('#', 'rgba('));
+    grd.addColorStop(1, 'transparent');
+    ctx.fillStyle = grd;
+    ctx.globalAlpha = 0.5 * a.life;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, 12 * a.mass, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Core
+    ctx.fillStyle = col;
+    ctx.globalAlpha = 0.9 * a.life;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, breathe * a.mass * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.globalAlpha = 1;
+}
+
+// Ambient dust particles
+const dust = [];
+for (let i = 0; i < 80; i++) {
+  dust.push({
+    x: Math.random() * W,
+    y: Math.random() * H,
+    vx: (Math.random() - 0.5) * 0.3,
+    vy: (Math.random() - 0.5) * 0.3,
+    size: 0.5 + Math.random() * 1.5,
+    alpha: 0.1 + Math.random() * 0.3,
+    phase: Math.random() * Math.PI * 2
+  });
+}
+
+function drawDust() {
+  const pal = palettes[paletteIdx].colors;
+  const t = Date.now() * 0.001;
+  dust.forEach(d => {
+    d.x += d.vx + Math.sin(t + d.phase) * 0.1;
+    d.y += d.vy + Math.cos(t + d.phase) * 0.1;
+    d.phase += 0.005;
+    if (d.x < 0) d.x = W;
+    if (d.x > W) d.x = 0;
+    if (d.y < 0) d.y = H;
+    if (d.y > H) d.y = 0;
+
+    ctx.fillStyle = pal[Math.floor((d.phase / Math.PI) % 5)];
+    ctx.globalAlpha = d.alpha * (0.5 + 0.5 * Math.sin(t * 2 + d.phase));
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, d.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+
+// Main loop
+let lastTime = 0;
+function animate(time) {
+  const dt = Math.min(32, time - lastTime);
+  lastTime = time;
+
+  // Fade trail
+  ctx.fillStyle = 'rgba(5,5,8,0.12)';
+  ctx.fillRect(0, 0, W, H);
+
+  drawThreads();
+  drawDust();
+
+  requestAnimationFrame(animate);
+}
+
+// Start
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
