@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ferrofluid</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #050508; }
+  canvas { display: block; cursor: none; }
+  .ui {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    background: rgba(8,8,18,.75);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(180,160,255,.15);
+    border-radius: 40px;
+    padding: 10px 22px;
+    font-family: 'SF Mono', 'Courier New', monospace;
+    font-size: 11px;
+    color: rgba(200,190,255,.7);
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    z-index: 10;
+    user-select: none;
+  }
+  .ui .sep { width: 1px; height: 16px; background: rgba(180,160,255,.15); }
+  .ui .mode { color: #c8b8ff; cursor: pointer; transition: color .2s; }
+  .ui .mode:hover { color: #fff; }
+  .ui .mode.active { color: #fff; text-shadow: 0 0 8px rgba(180,150,255,.6); }
+  .ui .palette { display: flex; gap: 6px; align-items: center; }
+  .swatch {
+    width: 14px; height: 14px; border-radius: 50%;
+    cursor: pointer; border: 2px solid transparent;
+    transition: all .2s;
+  }
+  .swatch:hover, .swatch.active { border-color: #fff; box-shadow: 0 0 8px currentColor; }
+  .info {
+    position: fixed;
+    top: 20px; left: 24px;
+    font-family: 'SF Mono', 'Courier New', monospace;
+    font-size: 10px;
+    color: rgba(180,160,255,.4);
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    z-index: 10;
+    user-select: none;
+  }
+  .cursor-dot {
+    position: fixed;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 100;
+    mix-blend-mode: screen;
+    box-shadow: 0 0 12px currentColor, 0 0 24px currentColor;
+    transition: width .15s, height .15s;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="info">ferrofluid // click to attract // hold to repel // scroll for strength</div>
+<div class="ui">
+  <span class="mode active" data-mode="attract">ATTRACT</span>
+  <span class="mode" data-mode="repel">REPEL</span>
+  <span class="sep"></span>
+  <span class="palette">
+    <span class="swatch active" data-pal="mercury" style="background:#c8d0ff;color:#c8d0ff" title="Mercury"></span>
+    <span class="swatch" data-pal="oil" style="background:#ff6a00;color:#ff6a00" title="Oil Slick"></span>
+    <span class="swatch" data-pal="neon" style="background:#00ffaa;color:#00ffaa" title="Neon"></span>
+    <span class="swatch" data-pal="plasma" style="background:#ff0080;color:#ff0080" title="Plasma"></span>
+    <span class="swatch" data-pal="arctic" style="background:#00c8ff;color:#00c8ff" title="Arctic"></span>
+  </span>
+</div>
+<div class="cursor-dot" id="dot"></div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Ferrofluid simulation ---
+const PALETTES = {
+  mercury:  { h: [210, 240], s: [40, 80], l: [50, 85], bg: '#050508' },
+  oil:      { h: [20, 50],   s: [80, 100], l: [35, 65], bg: '#080505' },
+  neon:     { h: [140, 200], s: [80, 100], l: [40, 70], bg: '#040808' },
+  plasma:   { h: [280, 340], s: [70, 100], l: [35, 65], bg: '#080408' },
+  arctic:   { h: [180, 220], s: [60, 90],  l: [40, 75], bg: '#04080a' }
+};
+
+let pal = PALETTES.mercury;
+let mouse = { x: W/2, y: H/2, active: false, mode: 'attract', strength: 1 };
+
+const NUM_PARTICLES = 800;
+const particles = [];
+const FIELD_RES = 8;
+let field = [];
+
+class Particle {
+  constructor() { this.reset(true); }
+  reset(initial) {
+    this.x = Math.random() * W;
+    this.y = initial ? Math.random() * H : Math.random() * H;
+    this.vx = 0; this.vy = 0;
+    this.baseX = this.x; this.baseY = this.y;
+    this.size = 1 + Math.random() * 2.5;
+    this.hueOff = Math.random();
+    this.life = 0.6 + Math.random() * 0.4;
+    this.phase = Math.random() * Math.PI * 2;
+  }
+  update(dt) {
+    // Sample field
+    const gx = Math.floor(this.x / FIELD_RES);
+    const gy = Math.floor(this.y / FIELD_RES);
+    const idx = gy * Math.ceil(W / FIELD_RES) + gx;
+    if (field[idx]) {
+      this.vx += field[idx].x * dt * 0.6;
+      this.vy += field[idx].y * dt * 0.6;
+    }
+
+    // Mouse interaction
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx*dx + dy*dy) + 1;
+      const radius = 180 * mouse.strength;
+      if (dist < radius) {
+        const force = (1 - dist / radius) * 4 * mouse.strength;
+        const angle = Math.atan2(dy, dx);
+        const dir = mouse.mode === 'attract' ? 1 : -1;
+        this.vx += Math.cos(angle) * force * dir;
+        this.vy += Math.sin(angle) * force * dir;
+        // Spiky displacement — ferrofluid character
+        const spike = Math.sin(dist * 0.08 + this.phase) * force * 0.8;
+        this.vx += Math.cos(angle + Math.PI/2) * spike;
+        this.vy += Math.sin(angle + Math.PI/2) * spike;
+      }
+    }
+
+    // Return to rest
+    const restForce = 0.02;
+    this.vx += (this.baseX - this.x) * restForce * dt;
+    this.vy += (this.baseY - this.y) * restForce * dt;
+
+    // Damping
+    this.vx *= 0.88;
+    this.vy *= 0.88;
+
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+
+    // Wrap
+    if (this.x < -20) this.x = W + 20;
+    if (this.x > W + 20) this.x = -20;
+    if (this.y < -20) this.y = H + 20;
+    if (this.y > H + 20) this.y = -20;
+  }
+  draw(ctx) {
+    const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
+    const h = pal.h[0] + this.hueOff * (pal.h[1] - pal.h[0]);
+    const s = pal.s[0] + Math.min(speed * 15, pal.s[1] - pal.s[0]);
+    const l = pal.l[0] + Math.min(speed * 20, pal.l[1] - pal.l[0]);
+    const alpha = this.life * (0.4 + Math.min(speed * 0.6, 0.6));
+    ctx.fillStyle = `hsla(${h},${s}%,${l}%,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * (1 + speed * 0.4), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+for (let i = 0; i < NUM_PARTICLES; i++) particles.push(new Particle());
+
+// Build initial field
+function buildField() {
+  field = [];
+  const cols = Math.ceil(W / FIELD_RES) + 1;
+  const rows = Math.ceil(H / FIELD_RES) + 1;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      field.push({ x: 0, y: 0 });
+    }
+  }
+}
+
+function curlNoise(x, y, t) {
+  // Simple 2D curl of pseudo-noise for fluid-like motion
+  const eps = 0.01;
+  const n1 = Math.sin(x * 0.008 + t) * Math.cos(y * 0.006 + t * 0.7);
+  const n2 = Math.sin((x + eps) * 0.008 + t) * Math.cos(y * 0.006 + t * 0.7);
+  const n3 = Math.sin(x * 0.008 + t) * Math.cos((y + eps) * 0.006 + t * 0.7);
+  const dx = (n2 - n1) / eps;
+  const dy = (n3 - n1) / eps;
+  const mag = Math.sqrt(dx*dx + dy*dy) + 1;
+  return { x: -dy / mag, y: dx / mag };
+}
+
+let time = 0, last = performance.now();
+function frame(now) {
+  let dt = (now - last) / 16.67;
+  last = now;
+  if (dt > 3) dt = 3;
+  time += 0.008 * dt;
+
+  // Update field
+  const cols = Math.ceil(W / FIELD_RES) + 1;
+  for (let y = 0; y < field.length / cols; y++) {
+    for (let x = 0; x < cols; x++) {
+      const idx = y * cols + x;
+      if (field[idx]) {
+        const f = curlNoise(x * FIELD_RES, y * FIELD_RES, time);
+        field[idx].x = f.x * 0.6;
+        field[idx].y = f.y * 0.6;
+      }
+    }
+  }
+
+  // Fade background
+  ctx.fillStyle = pal.bg + 'f0';
+  ctx.fillRect(0, 0, W, H);
+
+  // Update & draw particles
+  for (const p of particles) {
+    p.update(dt);
+    p.draw(ctx);
+  }
+
+  // Mouse glow
+  if (mouse.active) {
+    const r = 180 * mouse.strength;
+    const grad = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, r);
+    const hue = pal.h[0];
+    grad.addColorStop(0, `hsla(${hue},60%,60%,0.06)`);
+    grad.addColorStop(1, `hsla(${hue},60%,60%,0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(mouse.x, mouse.y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  requestAnimationFrame(frame);
+}
+
+buildField();
+requestAnimationFrame(frame);
+
+// --- Interaction ---
+const dot = document.getElementById('dot');
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY;
+  dot.style.left = (e.clientX - 4) + 'px';
+  dot.style.top = (e.clientY - 4) + 'px';
+});
+canvas.addEventListener('mouseenter', () => { mouse.active = true; dot.style.opacity = '1'; });
+canvas.addEventListener('mouseleave', () => { mouse.active = false; dot.style.opacity = '0'; });
+canvas.addEventListener('mousedown', () => { mouse.mode = 'repel'; dot.style.transform = 'scale(1.6)'; });
+canvas.addEventListener('mouseup', () => { mouse.mode = 'attract'; dot.style.transform = 'scale(1)'; });
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  mouse.strength = Math.max(0.3, Math.min(2.5, mouse.strength - e.deltaY * 0.001));
+}, { passive: false });
+
+// Touch
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+  mouse.active = true; mouse.mode = 'attract';
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+}, { passive: false });
+canvas.addEventListener('touchend', () => { mouse.active = false; });
+
+// UI
+document.querySelectorAll('.mode').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    mouse.mode = btn.dataset.mode;
+  });
+});
+document.querySelectorAll('.swatch').forEach(sw => {
+  sw.addEventListener('click', () => {
+    document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+    sw.classList.add('active');
+    pal = PALETTES[sw.dataset.pal];
+  });
+});
+</script>
+</body>
+</html>
