@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pulse Orchard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a14;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 10px;
+    z-index: 10;
+    background: rgba(10,10,20,.7);
+    padding: 8px 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(100,100,180,.2);
+    backdrop-filter: blur(10px);
+  }
+  .btn {
+    background: rgba(30,25,60,.8);
+    color: #aab;
+    border: 1px solid rgba(100,90,180,.3);
+    padding: 6px 14px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: .7rem;
+    letter-spacing: .12em;
+    transition: all .3s;
+    text-transform: uppercase;
+  }
+  .btn:hover {
+    background: rgba(60,50,120,.9);
+    color: #fff;
+    border-color: rgba(150,130,255,.5);
+  }
+  .btn.active {
+    background: rgba(80,60,180,.9);
+    color: #fff;
+    border-color: rgba(180,160,255,.6);
+  }
+  #info {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(180,180,220,.5);
+    font-size: .65rem;
+    letter-spacing: .15em;
+    text-align: center;
+    pointer-events: none;
+  }
+  #stats {
+    position: fixed;
+    top: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(180,180,220,.4);
+    font-size: .6rem;
+    letter-spacing: .1em;
+    text-align: center;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="ui">
+  <button class="btn active" data-palette="0">Spring</button>
+  <button class="btn" data-palette="1">Summer</button>
+  <button class="btn" data-palette="2">Autumn</button>
+  <button class="btn" data-palette="3">Winter</button>
+  <button class="btn" data-palette="4">Cosmic</button>
+  <button class="btn" id="clearBtn">Clear</button>
+</div>
+<div id="stats"></div>
+<div id="info">Click to plant · Hold to water · Right-click to remove</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Palettes
+const PALETTES = [
+  { // Spring
+    sky: [25, 30, 55], ground: [20, 35, 25], grass: [45, 75, 40],
+    trunk: [60, 45, 30], leaf: [80, 160, 70], fruit: ['#ff6b8a','#ffaa5c','#ffe066','#ff8fab','#ffb3c6'],
+    flower: ['#fff','#ffd6e8','#ffe066','#ffb3c6','#c8e6ff'], ambient: '#ffeef5',
+    bgStars: false, glow: '#ffb3c6'
+  },
+  { // Summer
+    sky: [20, 35, 60], ground: [25, 40, 20], grass: [35, 70, 30],
+    trunk: [70, 50, 30], leaf: [50, 140, 45], fruit: ['#ff4d4d','#ff8c00','#ffd700','#dc143c','#8b4513'],
+    flower: ['#fff','#ffeb3b','#ff9800','#f44336','#e91e63'], ambient: '#fff8e1',
+    bgStars: false, glow: '#ffeb3b'
+  },
+  { // Autumn
+    sky: [35, 25, 45], ground: [40, 30, 20], grass: [80, 60, 30],
+    trunk: [55, 40, 25], leaf: [200, 100, 30], fruit: ['#8b4513','#d2691e','#ff6347','#ff4500','#a0522d'],
+    flower: ['#ffd700','#ff8c00','#ff4500','#8b0000','#ff6347'], ambient: '#ffe4c4',
+    bgStars: false, glow: '#ff8c00'
+  },
+  { // Winter
+    sky: [15, 20, 40], ground: [30, 35, 45], grass: [60, 70, 85],
+    trunk: [50, 45, 40], leaf: [120, 150, 170], fruit: ['#c0c0c0','#e8e8ff','#b0c4de','#d8d8ff','#f0f8ff'],
+    flower: ['#fff','#e8e8ff','#d8d8ff','#c0c0c0','#b0c4de'], ambient: '#e8e8ff',
+    bgStars: true, glow: '#d8d8ff'
+  },
+  { // Cosmic
+    sky: [8, 5, 25], ground: [10, 8, 20], grass: [25, 20, 50],
+    trunk: [30, 20, 50], leaf: [80, 50, 160], fruit: ['#ff00ff','#00ffff','#ff00aa','#aa00ff','#00aaff'],
+    flower: ['#ff00ff','#00ffff','#ff00aa','#aa00ff','#00aaff'], ambient: '#ff88ff',
+    bgStars: true, glow: '#aa00ff'
+  }
+];
+
+let currentPalette = 0;
+let trees = [];
+let particles = [];
+let fruits = [];
+let butterflies = [];
+let groundBlades = [];
+let time = 0;
+let dayTime = 0; // 0-1 day cycle
+let mouseX = W/2, mouseY = H/2;
+let mouseDown = false;
+let rightDown = false;
+let waterTarget = null;
+
+// Tree class
+class Tree {
+  constructor(x, y, palette) {
+    this.x = x;
+    this.y = y;
+    this.palette = palette;
+    this.seed = Math.random() * 1000;
+    this.age = 0;
+    this.maxAge = 800 + Math.random() * 400;
+    this.trunkHeight = 60 + Math.random() * 80;
+    this.trunkWidth = 4 + Math.random() * 6;
+    this.branches = 3 + Math.floor(Math.random() * 3); // 3-5 main branches
+    this.fruitType = Math.floor(Math.random() * 5);
+    this.swayPhase = Math.random() * Math.PI * 2;
+    this.swaySpeed = 0.3 + Math.random() * 0.4;
+    this.leafDensity = 0.6 + Math.random() * 0.4;
+    this.growing = true;
+    this.growSpeed = 0.3 + Math.random() * 0.3;
+    this.fruitTimer = 0;
+    this.fruitReady = false;
+    this.fruitsOnTree = [];
+    this.sway = 0;
+  }
+
+  update(dt, windStrength) {
+    if (this.growing) {
+      this.age += this.growSpeed * dt * 60;
+      if (this.age >= this.maxAge) {
+        this.age = this.maxAge;
+        this.growing = false;
+        this.fruitTimer = 120 + Math.random() * 180;
+      }
+    } else {
+      this.swayPhase += this.swaySpeed * dt;
+      this.sway = Math.sin(this.swayPhase) * windStrength * 8;
+      
+      // Fruit timer
+      if (this.fruitsOnTree.length < 3 && !this.fruitReady) {
+        this.fruitTimer -= dt * 60;
+        if (this.fruitTimer <= 0) {
+          this.fruitReady = true;
+        }
+      }
+      
+      // Drop fruit occasionally
+      if (Math.random() < 0.0005 && this.fruitsOnTree.length > 0) {
+        const fi = Math.floor(Math.random() * this.fruitsOnTree.length);
+        const f = this.fruitsOnTree[fi];
+        fruits.push(new Fruit(f.x + this.x, f.y + this.y, f.color, this.palette));
+        this.fruitsOnTree.splice(fi, 1);
+      }
+      
+      // Grow new fruit
+      if (this.fruitReady && this.fruitsOnTree.length < 3) {
+        this.fruitsOnTree.push({
+          x: (Math.random() - 0.5) * this.trunkHeight * 0.6,
+          y: -this.trunkHeight * (0.4 + Math.random() * 0.3),
+          color: PALETTES[this.palette].fruit[this.fruitType],
+          size: 3 + Math.random() * 3,
+          phase: Math.random() * Math.PI * 2
+        });
+        this.fruitReady = false;
+        this.fruitTimer = 200 + Math.random() * 300;
+      }
+    }
+  }
+
+  draw(ctx) {
+    const p = PALETTES[this.palette];
+    const growth = Math.min(1, this.age / this.maxAge);
+    
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,.15)';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, this.trunkWidth * 3, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Trunk
+    this.drawBranch(ctx, 0, 0, -this.trunkHeight * growth, this.trunkWidth * growth, -Math.PI/2, this.branches, growth, 0);
+    
+    // Fruits
+    if (!this.growing) {
+      for (const f of this.fruitsOnTree) {
+        ctx.fillStyle = f.color;
+        ctx.shadowColor = f.color;
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(f.x + this.sway * (f.y / -this.trunkHeight), f.y, f.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+    
+    ctx.restore();
+  }
+
+  drawBranch(ctx, x, y, len, width, angle, depth, growth, branchIndex) {
+    if (depth <= 0 || width < 0.5) return;
+    if (growth < (this.branches - depth) / this.branches) return;
+    
+    const sway = this.sway * (1 - depth / this.branches);
+    const endX = x + Math.cos(angle) * len + sway;
+    const endY = y + Math.sin(angle) * len;
+    
+    const p = PALETTES[this.palette];
+    
+    // Draw branch
+    ctx.strokeStyle = p.trunk.join(',');
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+    
+    // Sub-branches
+    if (depth > 1 && growth > 0.5) {
+      const spread = 0.5 + (this.seed % 1) * 0.4;
+      const count = depth > 2 ? 2 : 1;
+      for (let i = 0; i < count; i++) {
+        const newAngle = angle + (i === 0 ? -spread : spread) * (0.8 + (this.seed * (i+1) % 1) * 0.4);
+        const newLen = len * (0.6 + (this.seed * (i+2) % 1) * 0.2);
+        const newWidth = width * 0.65;
+        this.drawBranch(ctx, endX, endY, newLen, newWidth, newAngle, depth - 1, growth, i);
+      }
+    }
+    
+    // Leaves / foliage at branch tips
+    if (depth <= 2 && growth > 0.6) {
+      const leafSize = (8 + (this.seed % 1) * 12) * growth * this.leafDensity;
+      const leafAlpha = growth * this.leafDensity;
+      
+      // Glow
+      const gradient = ctx.createRadialGradient(endX, endY, 0, endX, endY, leafSize * 2);
+      gradient.addColorStop(0, `rgba(${p.leaf[0]},${p.leaf[1]},${p.leaf[2]},${leafAlpha * 0.6})`);
+      gradient.addColorStop(1, `rgba(${p.leaf[0]},${p.leaf[1]},${p.leaf[2]},0)`);
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(endX, endY, leafSize * 2, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Leaf cluster
+      ctx.fillStyle = `rgba(${p.leaf[0]},${p.leaf[1]},${p.leaf[2]},${leafAlpha})`;
+      for (let i = 0; i < 5; i++) {
+        const lx = endX + (Math.sin(this.seed * i) * leafSize);
+        const ly = endY + (Math.cos(this.seed * i) * leafSize);
+        ctx.beginPath();
+        ctx.arc(lx, ly, leafSize * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  contains(px, py) {
+    const dx = px - this.x;
+    const dy = py - this.y;
+    return Math.sqrt(dx*dx + dy*dy) < this.trunkHeight * 0.8;
+  }
+}
+
+class Fruit {
+  constructor(x, y, color, palette) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 2;
+    this.vy = -2 - Math.random() * 2;
+    this.color = color;
+    this.life = 1;
+    this.decay = 0.003 + Math.random() * 0.003;
+    this.size = 4 + Math.random() * 4;
+    this.palette = palette;
+  }
+  update(dt) {
+    this.vy += 0.1 * dt * 60;
+    this.x += this.vx * dt * 60;
+    this.y += this.vy * dt * 60;
+    this.life -= this.decay * dt * 60;
+    if (this.y > H - 20) {
+      this.y = H - 20;
+      this.vy *= -0.3;
+      this.vx *= 0.8;
+    }
+  }
+  draw(ctx) {
+    const p = PALETTES[this.palette];
+    ctx.fillStyle = this.color;
+    ctx.globalAlpha = Math.max(0, this.life);
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  }
+}
+
+class Butterfly {
+  constructor() {
+    this.x = Math.random() * W;
+    this.y = 100 + Math.random() * (H - 200);
+    this.vx = (Math.random() - 0.5) * 1.5;
+    this.vy = (Math.random() - 0.5) * 1;
+    this.phase = Math.random() * Math.PI * 2;
+    this.wingSpeed = 8 + Math.random() * 4;
+    this.size = 3 + Math.random() * 3;
+    this.color = ['#ff88cc','#ffcc44','#88ccff','#ffaa66','#aaffaa'][Math.floor(Math.random()*5)];
+    this.life = 1;
+  }
+  update(dt, mx, my) {
+    this.phase += this.wingSpeed * dt;
+    // Wander
+    this.vx += (Math.random() - 0.5) * 0.1 * dt * 60;
+    this.vy += (Math.random() - 0.5) * 0.1 * dt * 60;
+    // Attraction to mouse
+    const dx = mx - this.x;
+    const dy = my - this.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < 200 && dist > 10) {
+      this.vx += (dx / dist) * 0.05 * dt * 60;
+      this.vy += (dy / dist) * 0.05 * dt * 60;
+    }
+    this.vx *= 0.99;
+    this.vy *= 0.99;
+    this.x += this.vx * dt * 60;
+    this.y += this.vy * dt * 60;
+    // Wrap
+    if (this.x < 0) this.x = W;
+    if (this.x > W) this.x = 0;
+    if (this.y < 50) this.y = H - 100;
+    if (this.y > H - 30) this.y = 50;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    const wingFlap = Math.sin(this.phase) * 0.7 + 0.3;
+    ctx.fillStyle = this.color;
+    ctx.globalAlpha = 0.7 * this.life;
+    // Wings
+    ctx.beginPath();
+    ctx.ellipse(-this.size, 0, this.size * wingFlap, this.size * 0.5, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(this.size, 0, this.size * wingFlap, this.size * 0.5, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    // Body
+    ctx.fillStyle = 'rgba(40,30,50,.8)';
+    ctx.fillRect(-0.5, -this.size * 0.4, 1, this.size * 0.8);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+}
+
+// Ground blade
+class GroundBlade {
+  constructor(x) {
+    this.x = x;
+    this.y = H - 10 - Math.random() * 20;
+    this.height = 8 + Math.random() * 15;
+    this.phase = Math.random() * Math.PI * 2;
+    this.speed = 1 + Math.random() * 2;
+  }
+  draw(ctx, wind, time) {
+    const sway = Math.sin(time * this.speed + this.phase) * wind * 3;
+    ctx.strokeStyle = `rgba(${PALETTES[currentPalette].grass[0]},${PALETTES[currentPalette].grass[1]},${PALETTES[currentPalette].grass[2]},0.6)`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y);
+    ctx.quadraticCurveTo(this.x + sway, this.y - this.height * 0.6, this.x + sway * 1.5, this.y - this.height);
+    ctx.stroke();
+  }
+}
+
+// Initialize ground
+for (let i = 0; i < 300; i++) {
+  groundBlades.push(new GroundBlade(Math.random() * W));
+}
+
+// Seed some trees
+for (let i = 0; i < 5; i++) {
+  trees.push(new Tree(150 + Math.random() * (W - 300), H - 40 - Math.random() * 20, currentPalette));
+}
+
+// Seed butterflies
+for (let i = 0; i < 8; i++) {
+  butterflies.push(new Butterfly());
+}
+
+// Planting cooldown
+let lastPlant = 0;
+
+// Mouse events
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 0) mouseDown = true;
+  if (e.button === 2) rightDown = true;
+});
+canvas.addEventListener('mouseup', (e) => {
+  if (e.button === 0) mouseDown = false;
+  if (e.button === 2) rightDown = false;
+});
+canvas.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+});
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('touchstart', (e) => {
+  mouseDown = true;
+  mouseX = e.touches[0].clientX;
+  mouseY = e.touches[0].clientY;
+});
+canvas.addEventListener('touchend', () => mouseDown = false);
+canvas.addEventListener('touchmove', (e) => {
+  mouseX = e.touches[0].clientX;
+  mouseY = e.touches[0].clientY;
+});
+
+// Palette buttons
+document.querySelectorAll('.btn[data-palette]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.btn[data-palette]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentPalette = parseInt(btn.dataset.palette);
+    // Update all existing trees
+    trees.forEach(t => t.palette = currentPalette);
+  });
+});
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  trees = [];
+  fruits = [];
+});
+
+// Main loop
+let lastTime = performance.now();
+
+function drawSky(ctx, p, dayProgress) {
+  // Sky gradient
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
+  const dayBright = 0.4 + 0.6 * Math.sin(dayProgress * Math.PI); // Brightest at midday
+  const r = Math.floor(p.sky[0] * (0.7 + 0.3 * dayBright));
+  const g = Math.floor(p.sky[1] * (0.7 + 0.3 * dayBright));
+  const b = Math.floor(p.sky[2] * (0.7 + 0.3 * dayBright));
+  skyGrad.addColorStop(0, `rgb(${r},${g},${b})`);
+  skyGrad.addColorStop(1, `rgb(${Math.floor(p.ground[0]*0.5)},${Math.floor(p.ground[1]*0.5)},${Math.floor(p.ground[2]*0.5)})`);
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Stars for winter/cosmic
+  if (p.bgStars) {
+    for (let i = 0; i < 150; i++) {
+      const sx = (Math.sin(i * 127.1 + time * 0.1) * 0.5 + 0.5) * W;
+      const sy = (Math.cos(i * 311.7) * 0.5 + 0.5) * H * 0.7;
+      const twinkle = 0.3 + 0.7 * Math.abs(Math.sin(time * 2 + i));
+      ctx.fillStyle = `rgba(200,200,255,${twinkle * 0.6})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  
+  // Sun/Moon
+  const celestialY = 60 + 100 * Math.sin(dayProgress * Math.PI);
+  const celestialX = W * 0.5 + Math.cos(dayProgress * Math.PI) * W * 0.3;
+  if (dayBright > 0.5) {
+    // Sun
+    const sunGrad = ctx.createRadialGradient(celestialX, celestialY, 0, celestialX, celestialY, 40);
+    sunGrad.addColorStop(0, 'rgba(255,255,200,.9)');
+    sunGrad.addColorStop(0.3, 'rgba(255,220,150,.4)');
+    sunGrad.addColorStop(1, 'rgba(255,200,100,0)');
+    ctx.fillStyle = sunGrad;
+    ctx.beginPath();
+    ctx.arc(celestialX, celestialY, 40, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    // Moon
+    ctx.fillStyle = 'rgba(220,220,255,.8)';
+    ctx.beginPath();
+    ctx.arc(celestialX, celestialY, 20, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(180,180,220,.3)';
+    ctx.beginPath();
+    ctx.arc(celestialX - 6, celestialY - 2, 15, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawGround(ctx, p, wind) {
+  // Ground gradient
+  const groundGrad = ctx.createLinearGradient(0, H - 60, 0, H);
+  groundGrad.addColorStop(0, `rgb(${p.ground[0]},${p.ground[1]},${p.ground[2]})`);
+  groundGrad.addColorStop(1, `rgb(${Math.floor(p.ground[0]*0.7)},${Math.floor(p.ground[1]*0.7)},${Math.floor(p.ground[2]*0.7)})`);
+  ctx.fillStyle = groundGrad;
+  ctx.fillRect(0, H - 60, W, 60);
+  
+  // Grass blades
+  for (const blade of groundBlades) {
+    blade.draw(ctx, wind, time);
+  }
+}
+
+function animate(timestamp) {
+  const rawDt = (timestamp - lastTime) / 1000;
+  const dt = Math.min(rawDt, 0.1);
+  lastTime = timestamp;
+  time += dt;
+  dayTime = (dayTime + dt * 0.01) % 1; // Slow day cycle
+  
+  const p = PALETTES[currentPalette];
+  const wind = 0.5 + 0.5 * Math.sin(time * 0.5) * Math.cos(time * 0.3);
+  
+  // Clear
+  ctx.clearRect(0, 0, W, H);
+  
+  // Sky
+  drawSky(ctx, p, dayTime);
+  
+  // Ground
+  drawGround(ctx, p, wind);
+  
+  // Update & draw trees (sorted by Y)
+  trees.sort((a, b) => a.y - b.y);
+  for (const tree of trees) {
+    tree.update(dt, wind);
+    tree.draw(ctx);
+  }
+  
+  // Fruits
+  fruits = fruits.filter(f => f.life > 0);
+  for (const f of fruits) {
+    f.update(dt);
+    f.draw(ctx);
+  }
+  
+  // Butterflies
+  if (butterflies.length < 12 && Math.random() < 0.005) {
+    butterflies.push(new Butterfly());
+  }
+  for (const b of butterflies) {
+    b.update(dt, mouseX, mouseY);
+    b.draw(ctx);
+  }
+  butterflies = butterflies.filter(b => b.life > 0);
+  
+  // Particles (ambient pollen/spores)
+  if (Math.random() < 0.1) {
+    particles.push({
+      x: Math.random() * W,
+      y: H - 20,
+      vx: (Math.random() - 0.5) * 0.5 + wind * 0.3,
+      vy: -0.3 - Math.random() * 0.5,
+      life: 1,
+      decay: 0.003 + Math.random() * 0.004,
+      size: 1 + Math.random() * 2,
+      color: p.flower[Math.floor(Math.random() * p.flower.length)]
+    });
+  }
+  particles = particles.filter(pt => pt.life > 0);
+  for (const pt of particles) {
+    pt.x += pt.vx * dt * 60;
+    pt.y += pt.vy * dt * 60;
+    pt.vx += (Math.random() - 0.5) * 0.1;
+    pt.life -= pt.decay * dt * 60;
+    ctx.fillStyle = pt.color;
+    ctx.globalAlpha = pt.life * 0.5;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  
+  // Mouse interaction
+  if (mouseDown && mouseY > H - 80) {
+    // Plant tree
+    const now = performance.now();
+    if (now - lastPlant > 500) {
+      // Check not too close to existing trees
+      let tooClose = false;
+      for (const t of trees) {
+        const dx = t.x - mouseX;
+        const dy = t.y - mouseY;
+        if (Math.sqrt(dx*dx + dy*dy) < 60) { tooClose = true; break; }
+      }
+      if (!tooClose && trees.length < 25) {
+        trees.push(new Tree(mouseX, mouseY, currentPalette));
+        lastPlant = now;
+      }
+    }
+  }
+  
+  // Right-click remove
+  if (rightDown) {
+    for (let i = trees.length - 1; i >= 0; i--) {
+      if (trees[i].contains(mouseX, mouseY)) {
+        trees.splice(i, 1);
+        break;
+      }
+    }
+    rightDown = false;
+  }
+  
+  // Stats
+  document.getElementById('stats').textContent = 
+    `Trees: ${trees.length} · Fruits: ${fruits.length} · Butterflies: ${butterflies.length} · Palette: ${['Spring','Summer','Autumn','Winter','Cosmic'][currentPalette]}`;
+  
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
