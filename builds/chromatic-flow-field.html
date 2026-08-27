@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Chromatic Flow Field</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #050510; overflow: hidden; font-family: ui-monospace, "Fira Code", monospace; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    .ui {
+      position: fixed; left: 16px; bottom: 16px; color: #c9f0ff; background: rgba(10, 12, 30, 0.55);
+      padding: 10px 12px; border-radius: 10px; backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.08);
+      user-select: none; pointer-events: none;
+    }
+    .title { font-weight: 700; letter-spacing: 0.08em; }
+    .meta { opacity: 0.8; font-size: 12px; margin-top: 4px; }
+    .hint { opacity: 0.6; font-size: 11px; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div class="ui">
+    <div class="title">Chromatic Flow Field</div>
+    <div class="meta" id="meta">particles: 0</div>
+    <div class="hint">click / touch to attract</div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    const meta = document.getElementById('meta');
+
+    let W, H, dpr;
+    function resize() {
+      dpr = Math.max(1, devicePixelRatio || 1);
+      W = innerWidth; H = innerHeight;
+      canvas.width = W * dpr; canvas.height = H * dpr;
+      canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    addEventListener('resize', resize);
+    resize();
+
+    // Simplex-ish noise from sin/cos lattice
+    const TAU = Math.PI * 2;
+    function flowAngle(x, y, t) {
+      const a = x * 0.0025 + t * 0.08;
+      const b = y * 0.0025 - t * 0.06;
+      const c = (x + y) * 0.0018 + Math.sin(t * 0.12) * 1.2;
+      return Math.sin(a) * Math.cos(b) * TAU + c;
+    }
+
+    class Particle {
+      constructor() { this.reset(true); }
+      reset(initial) {
+        this.x = Math.random() * W;
+        this.y = initial ? Math.random() * H : (Math.random() < 0.5 ? -10 : H + 10);
+        this.vx = 0; this.vy = 0;
+        this.life = 200 + Math.random() * 320;
+        this.age = initial ? Math.random() * this.life | 0 : 0;
+        this.hue = Math.random() * 360;
+        this.size = 0.6 + Math.random() * 1.4;
+        this.speed = 0.4 + Math.random() * 1.1;
+      }
+      update(t, attractor) {
+        const angle = flowAngle(this.x, this.y, t);
+        let ax = Math.cos(angle) * 0.35;
+        let ay = Math.sin(angle) * 0.35;
+        if (attractor.active) {
+          const dx = attractor.x - this.x, dy = attractor.y - this.y;
+          const d = Math.hypot(dx, dy) + 0.0001;
+          const f = Math.min(1.2, 120 / d);
+          ax += (dx / d) * f * 0.25;
+          ay += (dy / d) * f * 0.25;
+        }
+        this.vx = this.vx * 0.96 + ax * this.speed;
+        this.vy = this.vy * 0.96 + ay * this.speed;
+        this.x += this.vx;
+        this.y += this.vy;
+        this.hue = (this.hue + 0.04) % 360;
+        this.age++;
+        if (this.age > this.life || this.x < -40 || this.x > W + 40 || this.y < -40 || this.y > H + 40) this.reset(false);
+      }
+      draw() {
+        const life = 1 - this.age / this.life;
+        const alpha = life * 0.7;
+        ctx.fillStyle = `hsla(${this.hue}, 90%, 64%, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * life, 0, TAU);
+        ctx.fill();
+      }
+    }
+
+    const COUNT = Math.min(1400, (innerWidth * innerHeight) / 900 | 0);
+    const particles = Array.from({ length: COUNT }, () => new Particle());
+    const attractor = { x: W / 2, y: H / 2, active: false };
+    addEventListener('pointermove', e => { attractor.x = e.clientX; attractor.y = e.clientY; attractor.active = true; });
+    addEventListener('pointerleave', () => { attractor.active = false; });
+    addEventListener('pointerdown', () => { attractor.active = true; });
+
+    let last = performance.now();
+    function frame(now) {
+      const t = now * 0.001;
+      const dt = Math.min(50, now - last); last = now;
+      ctx.fillStyle = 'rgba(5, 5, 16, 0.12)';
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalCompositeOperation = 'lighter';
+      for (const p of particles) { p.update(t, attractor); p.draw(); }
+      ctx.globalCompositeOperation = 'source-over';
+      meta.textContent = `particles: ${particles.length}`;
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>
