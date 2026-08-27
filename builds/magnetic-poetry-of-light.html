@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Magnetic Poetry of Light</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #050510; }
+  canvas { display: block; cursor: crosshair; }
+  #ui {
+    position: fixed; top: 16px; left: 16px; z-index: 10;
+    font-family: 'Courier New', monospace; font-size: 11px;
+    color: rgba(180, 200, 255, .6); letter-spacing: .08em;
+    pointer-events: none; user-select: none;
+  }
+  #ui .title { font-size: 13px; color: rgba(200, 220, 255, .8); margin-bottom: 4px; letter-spacing: .15em; }
+  #ui .line { margin: 2px 0; }
+  #ui .key { color: rgba(255, 200, 100, .6); }
+  #controls {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    z-index: 10; display: flex; gap: 10px; align-items: center;
+    font-family: 'Courier New', monospace; font-size: 10px;
+    color: rgba(180, 200, 255, .5); letter-spacing: .08em;
+    pointer-events: auto;
+  }
+  #controls button {
+    background: rgba(30, 25, 60, .5); border: 1px solid rgba(100, 120, 255, .2);
+    color: rgba(180, 200, 255, .6); padding: 6px 14px; border-radius: 3px;
+    cursor: pointer; font-family: inherit; font-size: 10px; letter-spacing: .1em;
+    transition: all .2s;
+  }
+  #controls button:hover { border-color: rgba(150, 130, 255, .5); color: #c8c8ff; }
+  #controls button.active { border-color: rgba(200, 160, 80, .5); color: #e8c878; }
+  .palette-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    margin: 0 2px; vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="ui">
+  <div class="title">MAGNETIC POETRY OF LIGHT</div>
+  <div class="line">particles trace invisible fields</div>
+  <div class="line"><span class="key">MOVE</span> — guide the magnet</div>
+  <div class="line"><span class="key">CLICK</span> — place/remove magnet</div>
+  <div class="line"><span class="key">SCROLL</span> — adjust trail length</div>
+  <div class="line"><span class="key">1-5</span> — switch palette</div>
+  <div class="line"><span class="key">C</span> — clear trails</div>
+  <div class="line"><span class="key">SPACE</span> — pause/resume</div>
+  <div class="line">particles: <span id="pcount">0</span></div>
+</div>
+<div id="controls">
+  <button id="btnPalette">PALETTE</button>
+  <button id="btnDensity">DENSITY</button>
+  <button id="btnClear">CLEAR</button>
+  <button id="btnPause">PAUSE</button>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+
+  let W, H, DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+  function resize() {
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // --- Palettes ---
+  const PALETTES = [
+    { name: 'Aurora', colors: ['#00ffc8', '#00b4ff', '#b14dff', '#ff4da6', '#ffad3b'], bg: '#050510' },
+    { name: 'Ember', colors: ['#ff4d1a', '#ff8c1a', '#ffc83b', '#fff0a0', '#ff6020'], bg: '#0a0505' },
+    { name: 'Frost', colors: ['#e0f0ff', '#a0d8ff', '#60b8ff', '#c0e8ff', '#ffffff'], bg: '#030810' },
+    { name: 'Toxic', colors: ['#00ff66', '#a0ff00', '#ffff00', '#00ffcc', '#88ff44'], bg: '#030a05' },
+    { name: 'Nebula', colors: ['#c084fc', '#f472b6', '#818cf8', '#e879f9', '#60a5fa'], bg: '#08050f' },
+  ];
+
+  let paletteIdx = 0;
+  let densityIdx = 2; // 0=light, 1=medium, 2=heavy, 3=extreme
+  const DENSITIES = [1200, 2500, 5000, 9000];
+  const DENSITY_NAMES = ['LIGHT', 'MEDIUM', 'HEAVY', 'EXTREME'];
+  let trailAlpha = 0.018;
+  let paused = false;
+
+  // --- Magnets ---
+  const magnets = [
+    { x: 0.35, y: 0.5, strength: 1.0, phase: 0 },
+    { x: 0.65, y: 0.5, strength: -1.0, phase: Math.PI },
+    { x: 0.5, y: 0.3, strength: 0.7, phase: Math.PI * 0.5 },
+  ];
+  let mouseMagnet = { x: W / 2, y: H / 2, active: false, strength: 1.5, phase: 0 };
+  let placingMagnet = null;
+
+  // --- Particles ---
+  let particles = [];
+  const PARTICLE_LIFE = 180;
+
+  function initParticles(count) {
+    particles = [];
+    for (let i = 0; i < count; i++) {
+      particles.push(createParticle(null));
+    }
+  }
+
+  function createParticle(magnet) {
+    let x, y;
+    if (magnet) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = Math.random() * 30 + 5;
+      x = magnet.x * W + Math.cos(angle) * dist;
+      y = magnet.y * H + Math.sin(angle) * dist;
+    } else {
+      x = Math.random() * W;
+      y = Math.random() * H;
+    }
+    return {
+      x, y,
+      vx: 0, vy: 0,
+      life: Math.random() * PARTICLE_LIFE,
+      maxLife: PARTICLE_LIFE + Math.random() * 60,
+      color: null,
+      prevX: x, prevY: y,
+    };
+  }
+
+  function respawnParticle(p) {
+    const m = magnets[Math.floor(Math.random() * magnets.length)];
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * 40 + 10;
+    p.x = m.x * W + Math.cos(angle) * dist;
+    p.y = m.y * H + Math.sin(angle) * dist;
+    p.vx = 0; p.vy = 0;
+    p.life = 0;
+    p.maxLife = PARTICLE_LIFE + Math.random() * 60;
+    p.color = null;
+    p.prevX = p.x; p.prevY = p.y;
+  }
+
+  // --- Physics ---
+  function getField(x, y, time) {
+    let fx = 0, fy = 0;
+    const allMagnets = [...magnets];
+    if (mouseMagnet.active) allMagnets.push({ ...mouseMagnet, x: mouseMagnet.x / W, y: mouseMagnet.y / H });
+
+    for (const m of allMagnets) {
+      const mx = m.x * W, my = m.y * H;
+      const dx = mx - x, dy = my - y;
+      const distSq = dx * dx + dy * dy + 100;
+      const dist = Math.sqrt(distSq);
+      const strength = m.strength * 8000;
+      // Dipole-ish field: perpendicular component + radial
+      const perpX = -dy / dist;
+      const perpY = dx / dist;
+      const radialX = dx / dist;
+      const radialY = dy / dist;
+      const mix = 0.6;
+      fx += (perpX * mix + radialX * (1 - mix)) * strength / distSq;
+      fy += (perpY * mix + radialY * (1 - mix)) * strength / distSq;
+    }
+    return { fx, fy };
+  }
+
+  // --- Update ---
+  let time = 0;
+  let lastFrame = performance.now();
+
+  function update(dt) {
+    time += dt * 0.001;
+
+    // Animate magnets
+    for (const m of magnets) {
+      m.x += Math.sin(time * 0.3 + m.phase) * 0.15 * dt * 0.06;
+      m.y += Math.cos(time * 0.25 + m.phase) * 0.15 * dt * 0.06;
+      m.x = Math.max(0.05, Math.min(0.95, m.x));
+      m.y = Math.max(0.05, Math.min(0.95, m.y));
+    }
+
+    const count = DENSITIES[densityIdx];
+    while (particles.length < count) {
+      particles.push(createParticle(magnets[0]));
+    }
+    while (particles.length > count) {
+      particles.pop();
+    }
+
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      p.prevX = p.x; p.prevY = p.y;
+
+      const field = getField(p.x, p.y, time);
+      p.vx += field.fx * dt * 0.01;
+      p.vy += field.fy * dt * 0.01;
+      // Damping
+      p.vx *= 0.98;
+      p.vy *= 0.98;
+      // Speed cap
+      const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+      const maxSpeed = 6;
+      if (speed > maxSpeed) {
+        p.vx = (p.vx / speed) * maxSpeed;
+        p.vy = (p.vy / speed) * maxSpeed;
+      }
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life += 1;
+
+      // Respawn if dead or out of bounds
+      if (p.life > p.maxLife || p.x < -20 || p.x > W + 20 || p.y < -20 || p.y > H + 20) {
+        respawnParticle(p);
+      }
+    }
+  }
+
+  // --- Draw ---
+  function draw() {
+    const pal = PALETTES[paletteIdx];
+    ctx.fillStyle = pal.bg;
+    ctx.globalAlpha = trailAlpha;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+
+    // Draw magnetic poles
+    for (const m of magnets) {
+      const mx = m.x * W, my = m.y * H;
+      const isNorth = m.strength > 0;
+      const color = isNorth ? pal.colors[0] : pal.colors[2];
+      const radius = isNorth ? 8 : 7;
+
+      // Glow
+      const glow = ctx.createRadialGradient(mx, my, 0, mx, my, 40);
+      glow.addColorStop(0, color + '40');
+      glow.addColorStop(1, 'transparent');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(mx, my, 40, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Core
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(mx, my, radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Label
+      ctx.fillStyle = color + '88';
+      ctx.font = '9px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText(isNorth ? 'N' : 'S', mx, my - 14);
+    }
+
+    // Draw mouse magnet
+    if (mouseMagnet.active) {
+      const mx = mouseMagnet.x, my = mouseMagnet.y;
+      const color = mouseMagnet.strength > 0 ? pal.colors[1] : pal.colors[3];
+      const glow = ctx.createRadialGradient(mx, my, 0, mx, my, 30);
+      glow.addColorStop(0, color + '30');
+      glow.addColorStop(1, 'transparent');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(mx, my, 30, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = color + 'aa';
+      ctx.beginPath();
+      ctx.arc(mx, my, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Draw particle trails
+    ctx.lineCap = 'round';
+    for (const p of particles) {
+      const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+      const lifeRatio = p.life / p.maxLife;
+      const fadeIn = Math.min(1, p.life / 20);
+      const fadeOut = 1 - Math.pow(lifeRatio, 2);
+      const alpha = fadeIn * fadeOut * 0.7;
+
+      if (alpha < 0.01) continue;
+
+      // Color based on speed
+      const speedNorm = Math.min(speed / 4, 1);
+      const colorIdx = Math.floor(speedNorm * (pal.colors.length - 1));
+      const nextIdx = Math.min(colorIdx + 1, pal.colors.length - 1);
+      const frac = (speedNorm * (pal.colors.length - 1)) - colorIdx;
+
+      const c1 = hexToRgb(pal.colors[colorIdx]);
+      const c2 = hexToRgb(pal.colors[nextIdx]);
+      const r = Math.round(c1.r + (c2.r - c1.r) * frac);
+      const g = Math.round(c1.g + (c2.g - c1.g) * frac);
+      const b = Math.round(c1.b + (c2.b - c1.b) * frac);
+
+      ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
+      ctx.lineWidth = 1 + speedNorm * 1.5;
+      ctx.beginPath();
+      ctx.moveTo(p.prevX, p.prevY);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+    }
+
+    // Connecting threads near magnet pairs
+    ctx.strokeStyle = pal.colors[0] + '08';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < magnets.length; i++) {
+      for (let j = i + 1; j < magnets.length; j++) {
+        const m1 = magnets[i], m2 = magnets[j];
+        const dx = m2.x * W - m1.x * W;
+        const dy = m2.y * H - m1.y * H;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const segments = 20;
+        ctx.beginPath();
+        for (let s = 0; s <= segments; s++) {
+          const t = s / segments;
+          const x = m1.x * W + dx * t;
+          const y = m1.y * H + dy * t;
+          const wave = Math.sin(t * Math.PI * 4 + time * 2) * dist * 0.05;
+          const px = -dy / dist * wave;
+          const py = dx / dist * wave;
+          if (s === 0) ctx.moveTo(x + px, y + py);
+          else ctx.lineTo(x + px, y + py);
+        }
+        ctx.stroke();
+      }
+    }
+  }
+
+  function hexToRgb(hex) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return { r, g, b };
+  }
+
+  // --- Loop ---
+  let animId;
+  function loop(now) {
+    animId = requestAnimationFrame(loop);
+    const dt = Math.min(now - lastFrame, 50);
+    lastFrame = now;
+    if (!paused) {
+      update(dt);
+      draw();
+    }
+    document.getElementById('pcount').textContent = particles.length;
+  }
+
+  // --- Input ---
+  canvas.addEventListener('mousemove', (e) => {
+    mouseMagnet.x = e.clientX;
+    mouseMagnet.y = e.clientY;
+    mouseMagnet.active = true;
+  });
+  canvas.addEventListener('mouseleave', () => { mouseMagnet.active = false; });
+
+  canvas.addEventListener('click', (e) => {
+    if (placingMagnet !== null) {
+      // remove by index? simpler: toggle placement
+      placingMagnet = null;
+    }
+    // Place a temporary magnet that drifts away
+    const m = {
+      x: e.clientX / W, y: e.clientY / H,
+      strength: (Math.random() > 0.5 ? 1 : -1) * 0.8,
+      phase: Math.random() * Math.PI * 2,
+      life: 300,
+    };
+    magnets.push(m);
+    // Fade out over time
+    const fadeInterval = setInterval(() => {
+      m.strength *= 0.985;
+      m.life--;
+      if (m.life <= 0 || Math.abs(m.strength) < 0.01) {
+        const idx = magnets.indexOf(m);
+        if (idx > -1) magnets.splice(idx, 1);
+        clearInterval(fadeInterval);
+      }
+    }, 16);
+  });
+
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    trailAlpha = Math.max(0.004, Math.min(0.08, trailAlpha + (e.deltaY > 0 ? 0.003 : -0.003)));
+  }, { passive: false });
+
+  document.addEventListener('keydown', (e) => {
+    const key = e.key.toLowerCase();
+    if (key >= '1' && key <= '5') {
+      paletteIdx = parseInt(key) - 1;
+      document.body.style.background = PALETTES[paletteIdx].bg;
+    }
+    if (key === 'c') {
+      ctx.fillStyle = PALETTES[paletteIdx].bg;
+      ctx.fillRect(0, 0, W, H);
+    }
+    if (key === ' ') {
+      e.preventDefault();
+      paused = !paused;
+      document.getElementById('btnPause').textContent = paused ? 'RESUME' : 'PAUSE';
+      document.getElementById('btnPause').classList.toggle('active', paused);
+    }
+  });
+
+  // --- UI Buttons ---
+  document.getElementById('btnPalette').addEventListener('click', () => {
+    paletteIdx = (paletteIdx + 1) % PALETTES.length;
+    document.body.style.background = PALETTES[paletteIdx].bg;
+  });
+
+  document.getElementById('btnDensity').addEventListener('click', () => {
+    densityIdx = (densityIdx + 1) % DENSITIES.length;
+    document.getElementById('btnDensity').textContent = 'DENSITY: ' + DENSITY_NAMES[densityIdx];
+  });
+  document.getElementById('btnDensity').textContent = 'DENSITY: ' + DENSITY_NAMES[densityIdx];
+
+  document.getElementById('btnClear').addEventListener('click', () => {
+    ctx.fillStyle = PALETTES[paletteIdx].bg;
+    ctx.fillRect(0, 0, W, H);
+  });
+
+  document.getElementById('btnPause').addEventListener('click', () => {
+    paused = !paused;
+    document.getElementById('btnPause').textContent = paused ? 'RESUME' : 'PAUSE';
+    document.getElementById('btnPause').classList.toggle('active', paused);
+  });
+
+  // --- Init ---
+  initParticles(DENSITIES[densityIdx]);
+  document.body.style.background = PALETTES[0].bg;
+  lastFrame = performance.now();
+  loop(lastFrame);
+
+})();
+</script>
+</body>
+</html>
