@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosmic Spore Web</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #05050a;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #7a6a9a;
+  }
+  canvas { display: block; cursor: none; }
+  .ui {
+    position: fixed;
+    top: 20px;
+    left: 24px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .ui h1 {
+    font-size: 1.1rem;
+    font-weight: normal;
+    letter-spacing: .4em;
+    color: #b8a8e8;
+    text-shadow: 0 0 20px rgba(160,120,255,.5);
+    margin-bottom: 6px;
+  }
+  .ui .sub {
+    font-size: .65rem;
+    opacity: .45;
+    letter-spacing: .25em;
+    color: #8a7aaa;
+  }
+  .hint {
+    position: fixed;
+    bottom: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: .65rem;
+    letter-spacing: .25em;
+    color: #6a5a8a;
+    opacity: .5;
+    pointer-events: none;
+    transition: opacity 2s;
+  }
+  .controls {
+    position: fixed;
+    top: 20px;
+    right: 24px;
+    z-index: 10;
+    font-size: .65rem;
+    letter-spacing: .15em;
+    color: #7a6a9a;
+    text-align: right;
+    line-height: 1.9;
+  }
+  .controls .key {
+    color: #b8a8e8;
+    opacity: .7;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div class="ui">
+  <h1>COSMIC SPORE WEB</h1>
+  <div class="sub">luminous fungal constellations</div>
+</div>
+<div class="controls">
+  <div><span class="key">MOVE</span> guide the field</div>
+  <div><span class="key">CLICK</span> release spore burst</div>
+  <div><span class="key">HOLD</span> grow connections</div>
+  <div><span class="key">1-5</span> palette</div>
+  <div><span class="key">C</span> clear</div>
+  <div><span class="key">G</span> toggle grid</div>
+</div>
+<div class="hint" id="hint">click to plant spores · move to guide · hold to weave</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const hint = document.getElementById('hint');
+
+let W, H, DPR;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.scale(DPR, DPR);
+}
+resize();
+window.addEventListener('resize', resize);
+
+const palettes = [
+  { name: 'biolum', colors: ['#9f7aea','#48bb78','#00d4aa','#a78bfa','#34d399'], bg: '#050f0a', glow: 'rgba(72,187,120,.08)' },
+  { name: 'nebula', colors: ['#ed64a6','#9f7aea','#4fd1c5','#f6ad55','#fc8181'], bg: '#0f0510', glow: 'rgba(237,100,166,.08)' },
+  { name: 'arctic', colors: ['#63b3ed','#90cdf4','#b4e1ff','#a3bffa','#c3dafe'], bg: '#05080f', glow: 'rgba(99,179,237,.08)' },
+  { name: 'ember', colors: ['#f6ad55','#fc8181','#fbd38d','#feb2b2','#faf089'], bg: '#0f0805', glow: 'rgba(246,173,85,.08)' },
+  { name: 'void', colors: ['#e2e8f0','#a0aec0','#718096','#cbd5e0','#ecc94b'], bg: '#050508', glow: 'rgba(226,232,240,.06)' }
+];
+let palIdx = 0;
+let pal = palettes[0];
+
+function setPalette(i) {
+  palIdx = (i + palettes.length) % palettes.length;
+  pal = palettes[palIdx];
+}
+
+const mouse = { x: W/2, y: H/2, px: W/2, py: H/2, vx: 0, vy: 0, down: false, active: false };
+canvas.addEventListener('mousemove', e => {
+  mouse.px = mouse.x; mouse.py = mouse.y;
+  mouse.x = e.clientX; mouse.y = e.clientY;
+  mouse.vx = mouse.x - mouse.px; mouse.vy = mouse.y - mouse.py;
+  mouse.active = true;
+  hint.style.opacity = '0';
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.px = mouse.x; mouse.py = mouse.y;
+  mouse.x = t.clientX; mouse.y = t.clientY;
+  mouse.vx = mouse.x - mouse.px; mouse.vy = mouse.y - mouse.py;
+  mouse.active = true;
+  hint.style.opacity = '0';
+}, { passive: false });
+canvas.addEventListener('mousedown', () => mouse.down = true);
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('touchstart', e => {
+  mouse.down = true;
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+  mouse.active = true;
+  hint.style.opacity = '0';
+});
+canvas.addEventListener('touchend', () => mouse.down = false);
+window.addEventListener('keydown', e => {
+  if (e.key >= '1' && e.key <= '5') setPalette(parseInt(e.key) - 1);
+  if (e.key === 'c' || e.key === 'C') spores = [];
+  if (e.key === 'g' || e.key === 'G') showGrid = !showGrid;
+});
+
+let showGrid = false;
+
+class Spore {
+  constructor(x, y, burst = false) {
+    this.x = x;
+    this.y = y;
+    const angle = Math.random() * Math.PI * 2;
+    const speed = burst ? (1 + Math.random() * 3) : (0.2 + Math.random() * 0.6);
+    this.vx = Math.cos(angle) * speed + (Math.random() - 0.5) * 0.5;
+    this.vy = Math.sin(angle) * speed + (Math.random() - 0.5) * 0.5;
+    this.life = 1;
+    this.decay = burst ? (0.004 + Math.random() * 0.008) : (0.0003 + Math.random() * 0.0008);
+    this.size = burst ? (2 + Math.random() * 3) : (1 + Math.random() * 2.5);
+    this.color = pal.colors[Math.floor(Math.random() * pal.colors.length)];
+    this.pulse = Math.random() * Math.PI * 2;
+    this.pulseSpeed = 0.02 + Math.random() * 0.03;
+    this.wander = Math.random() * 0.02;
+    this.wanderAngle = Math.random() * Math.PI * 2;
+    this.connected = false;
+  }
+  update() {
+    this.wanderAngle += (Math.random() - 0.5) * 0.3;
+    this.vx += Math.cos(this.wanderAngle) * this.wander * 0.1;
+    this.vy += Math.sin(this.wanderAngle) * this.wander * 0.1;
+    this.vx *= 0.995;
+    this.vy *= 0.995;
+    const dx = mouse.x - this.x;
+    const dy = mouse.y - this.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 150 && mouse.active) {
+      const force = (150 - dist) / 150 * 0.03;
+      this.vx += (dx / dist) * force;
+      this.vy += (dy / dist) * force;
+    }
+    if (mouse.down && dist < 250) {
+      const force = (250 - dist) / 250 * 0.08;
+      this.vx -= (dx / dist) * force;
+      this.vy -= (dy / dist) * force;
+    }
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= this.decay;
+    this.pulse += this.pulseSpeed;
+    if (this.x < -50) this.x = W + 50;
+    if (this.x > W + 50) this.x = -50;
+    if (this.y < -50) this.y = H + 50;
+    if (this.y > H + 50) this.y = -50;
+    return this.life > 0;
+  }
+  draw() {
+    const pulseFactor = 0.6 + Math.sin(this.pulse) * 0.4;
+    const alpha = this.life * 0.7 * pulseFactor;
+    const glowSize = this.size * 3;
+    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, glowSize);
+    grad.addColorStop(0, this.color + hexAlpha(alpha));
+    grad.addColorStop(0.4, this.color + hexAlpha(alpha * 0.4));
+    grad.addColorStop(1, this.color + '00');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, glowSize, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff' + hexAlpha(alpha * 0.9);
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function hexAlpha(a) {
+  return Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, '0');
+}
+
+let spores = [];
+let filaments = [];
+
+function addSpore(x, y, burst = false) {
+  spores.push(new Spore(x, y, burst));
+  if (spores.length > 600) spores.splice(0, spores.length - 600);
+}
+
+for (let i = 0; i < 80; i++) {
+  addSpore(Math.random() * W, Math.random() * H);
+}
+
+function updateFilaments() {
+  const maxDist = 100;
+  const newFilaments = [];
+  for (let i = 0; i < spores.length; i++) {
+    for (let j = i + 1; j < spores.length; j++) {
+      const dx = spores[i].x - spores[j].x;
+      const dy = spores[i].y - spores[j].y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < maxDist) {
+        const alpha = (1 - dist / maxDist) * 0.25 * Math.min(spores[i].life, spores[j].life);
+        if (alpha > 0.02) {
+          newFilaments.push({ x1: spores[i].x, y1: spores[i].y, x2: spores[j].x, y2: spores[j].y, alpha, c1: spores[i].color, c2: spores[j].color });
+        }
+      }
+    }
+  }
+  filaments = newFilaments.slice(-800);
+}
+
+function drawFilaments() {
+  ctx.lineWidth = 0.6;
+  for (const f of filaments) {
+    const grad = ctx.createLinearGradient(f.x1, f.y1, f.x2, f.y2);
+    grad.addColorStop(0, f.c1 + hexAlpha(f.alpha));
+    grad.addColorStop(1, f.c2 + hexAlpha(f.alpha));
+    ctx.strokeStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(f.x1, f.y1);
+    ctx.lineTo(f.x2, f.y2);
+    ctx.stroke();
+  }
+}
+
+function drawGrid() {
+  if (!showGrid) return;
+  ctx.strokeStyle = 'rgba(120,100,180,.06)';
+  ctx.lineWidth = 0.5;
+  const spacing = 60;
+  for (let x = 0; x < W; x += spacing) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = 0; y < H; y += spacing) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+}
+
+function drawMouse() {
+  if (!mouse.active) return;
+  const grad = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 25);
+  grad.addColorStop(0, 'rgba(200,180,255,.25)');
+  grad.addColorStop(1, 'rgba(200,180,255,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(mouse.x, mouse.y, 25, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+let holdTimer = 0;
+let lastBurst = 0;
+
+function animate() {
+  ctx.fillStyle = pal.bg + '18';
+  ctx.fillRect(0, 0, W, H);
+  drawGrid();
+  if (mouse.active) drawMouse();
+  if (mouse.down) {
+    holdTimer++;
+    if (holdTimer % 4 === 0) {
+      for (let i = 0; i < 3; i++) addSpore(mouse.x + (Math.random()-0.5)*30, mouse.y + (Math.random()-0.5)*30);
+    }
+  } else {
+    holdTimer = 0;
+  }
+  spores = spores.filter(s => s.update());
+  spores.forEach(s => s.draw());
+  updateFilaments();
+  drawFilaments();
+  const now = Date.now();
+  if (mouse.down && now - lastBurst > 300) {
+    for (let i = 0; i < 12; i++) addSpore(mouse.x + (Math.random()-0.5)*20, mouse.y + (Math.random()-0.5)*20, true);
+    lastBurst = now;
+  }
+  if (spores.length < 50 && Math.random() < 0.05) {
+    addSpore(Math.random() * W, Math.random() * H);
+  }
+  requestAnimationFrame(animate);
+}
+animate();
+
+setPalette(0);
+</script>
+</body>
+</html>
