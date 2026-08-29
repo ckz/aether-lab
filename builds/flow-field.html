@@ -3,206 +3,168 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Aether Flow Field</title>
+<title>Flow Field — Generative Art</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body {
-    width: 100%; height: 100%;
-    background: #050510;
-    overflow: hidden;
-    font-family: 'Courier New', monospace;
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a0f; }
+  canvas { display: block; position: absolute; top: 0; left: 0; }
+  .controls {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 12px; z-index: 10; align-items: center;
+    background: rgba(10, 10, 15, 0.7); backdrop-filter: blur(10px);
+    padding: 10px 20px; border-radius: 40px; border: 1px solid rgba(255,255,255,0.1);
   }
-  canvas { display: block; }
-  #ui {
-    position: fixed;
-    top: 16px;
-    left: 16px;
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 11px;
-    z-index: 10;
-    pointer-events: none;
-    letter-spacing: 0.5px;
+  .controls button {
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+    color: #e0e0e0; padding: 6px 16px; border-radius: 20px; cursor: pointer;
+    font-size: 13px; transition: all 0.2s;
   }
-  #title {
-    position: fixed;
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: rgba(255, 255, 255, 0.15);
-    font-size: 10px;
-    letter-spacing: 4px;
-    text-transform: uppercase;
-    z-index: 10;
-    pointer-events: none;
-    font-family: 'Courier New', monospace;
+  .controls button:hover { background: rgba(255,255,255,0.18); }
+  .controls label { color: #aaa; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+  .controls input[type="range"] { width: 80px; accent-color: #7b68ee; }
+  .hint {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.35); font: 13px/1.4 'SF Mono', monospace; z-index: 10;
+    pointer-events: none; transition: opacity 1s;
   }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="ui">
-  <div>particles: <span id="pcount">0</span></div>
-  <div>field: simplex noise</div>
-  <div>press SPACE to respawn</div>
-  <div>click to attract</div>
+<div class="hint" id="hint">Move your mouse to sculpt the flow</div>
+<div class="controls">
+  <label>Particles <input type="range" id="count" min="500" max="5000" value="2000"></label>
+  <button id="reset">⟳ Regenerate</button>
+  <button id="pause">⏸ Pause</button>
 </div>
-<div id="title">✦ AETHER FLOW FIELD ✦</div>
 <script>
 (() => {
   const canvas = document.getElementById('c');
   const ctx = canvas.getContext('2d');
-  const pcountEl = document.getElementById('pcount');
-  let W, H;
-  const resize = () => {
-    W = canvas.width = window.innerWidth;
-    H = canvas.height = window.innerHeight;
-  };
-  resize();
-  window.addEventListener('resize', () => { resize(); init(); });
-
-  // Mouse attraction
-  let mouse = { x: -9999, y: -9999, active: false };
-  window.addEventListener('mousemove', e => {
-    mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
-  });
-  window.addEventListener('mouseleave', () => { mouse.active = false; });
-  window.addEventListener('mousedown', () => { mouse.active = true; });
-  window.addEventListener('mouseup', () => { mouse.active = false; });
-  window.addEventListener('touchmove', e => {
-    mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY; mouse.active = true;
-  });
-  window.addEventListener('touchend', () => { mouse.active = false; });
-
-  // Simplex-like noise (simplified)
-  // Using a permutation table approach
-  const perm = new Uint8Array(512);
-  const grad = [[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]];
-  const seed = () => {
-    const p = new Uint8Array(256);
-    for (let i = 0; i < 256; i++) p[i] = i;
-    // Fisher-Yates shuffle with seeded-ish random
-    for (let i = 255; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [p[i], p[j]] = [p[j], p[i]];
-    }
-    for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
-  };
-  seed();
-  window.addEventListener('keydown', e => {
-    if (e.code === 'Space') { seed(); init(); }
-  });
-
-  const noise = (x, y) => {
-    const X = Math.floor(x) & 255;
-    const Y = Math.floor(y) & 255;
-    const xf = x - Math.floor(x);
-    const yf = y - Math.floor(y);
-    const u = xf * xf * (3 - 2 * xf);
-    const v = yf * yf * (3 - 2 * yf);
-    const a = perm[X + perm[Y]] & 7;
-    const b = perm[X + 1 + perm[Y]] & 7;
-    const c = perm[X + perm[Y + 1]] & 7;
-    const d = perm[X + 1 + perm[Y + 1]] & 7;
-    const g = (arr, t) => arr[0] * t[0] + arr[1] * t[1];
-    const lerp = (t, a0, a1) => a0 + t * (a1 - a0);
-    return lerp(v,
-      lerp(u, g(grad[a], [xf, yf]), g(grad[b], [xf - 1, yf])),
-      lerp(u, g(grad[c], [xf, yf - 1]), g(grad[d], [xf - 1, yf - 1]))
-    );
-  };
-
-  // Particle config
-  const CONFIG = {
-    count: 1800,
-    speed: 1.2,
-    noiseScale: 0.003,
-    lifeDecay: 0.005,
-    hueBase: 200,
-    hueRange: 120,
-    trailAlpha: 0.02,
-    width: 1.4,
-  };
-
+  let W, H, DPR;
+  let mouse = { x: -1000, y: -1000, vx: 0, vy: 0, px: -1000, py: -1000 };
   let particles = [];
-  let frame = 0;
+  let time = 0;
+  let paused = false;
+  let PARTICLE_COUNT = 2000;
+  let seed;
+
+  const PALETTES = [
+    ['#0a0a0f', '#1a1a2e', '#7b68ee', '#ee6c4d', '#f8f9fa'],
+    ['#0d1117', '#161b22', '#58a6ff', '#bc8cff', '#e6edf3'],
+    ['#0a0a0a', '#1b2838', '#4ecdc4', '#ff6b6b', '#f7fff7'],
+    ['#0f0f23', '#1a1a40', '#e040fb', '#ffea00', '#ffffff'],
+    ['#0c0c1d', '#1c1c3a', '#00e5ff', '#ff4081', '#f0f0f0'],
+  ];
+
+  let palette = PALETTES[Math.floor(Math.random() * PALETTES.length)];
+
+  function rand(s) { const x = Math.sin(seed + s) * 10000; return x - Math.floor(x); }
+
+  function resize() {
+    DPR = window.devicePixelRatio || 1;
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W * DPR; canvas.height = H * DPR;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+
+  function flowAngle(x, y, t) {
+    const s = 0.003;
+    const a = rand(1) * Math.PI * 2;
+    const b = rand(2) * 0.5 + 0.5;
+    const c = rand(3) * 0.5 + 0.5;
+    const d = rand(4) * 0.002 + 0.001;
+    return Math.sin(x * s * b + t * d) * Math.cos(y * s * c + t * d * 0.7) * Math.PI * 2
+         + Math.cos((x + y) * s * 0.5 + t * d * 1.3) * Math.PI;
+  }
+
+  function mouseForce(x, y) {
+    const dx = x - mouse.x, dy = y - mouse.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const radius = 180;
+    if (dist > radius) return { fx: 0, fy: 0 };
+    const strength = (1 - dist / radius) * 0.8;
+    const nx = dx / (dist + 0.001), ny = dy / (dist + 0.001);
+    return { fx: mouse.vx * nx * strength, fy: mouse.vy * ny * strength };
+  }
 
   class Particle {
     constructor() { this.reset(true); }
-    reset(initial = false) {
-      this.x = Math.random() * W;
-      this.y = Math.random() * H;
-      this.life = 0.4 + Math.random() * 0.6;
-      this.maxLife = this.life;
-      this.hueOffset = Math.random() * CONFIG.hueRange;
-      this.speedVar = 0.6 + Math.random() * 0.8;
-      if (initial) this.life = Math.random();
+    reset(initial) {
+      this.x = rand(this._i = Math.random() * 9999) * W;
+      this.y = rand(this._i + 1) * H;
+      this.life = initial ? Math.random() * 200 : 0;
+      this.maxLife = 150 + rand(this._i + 2) * 200;
+      this.speed = 0.4 + rand(this._i + 3) * 1.2;
+      this.hue = rand(this._i + 4);
     }
     update() {
-      const n = noise(this.x * CONFIG.noiseScale, this.y * CONFIG.noiseScale + frame * 0.001);
-      const angle = n * Math.PI * 4;
-      const spd = CONFIG.speed * this.speedVar;
-      let vx = Math.cos(angle) * spd;
-      let vy = Math.sin(angle) * spd;
-
-      // Mouse attraction
-      if (mouse.active) {
-        const dx = mouse.x - this.x;
-        const dy = mouse.y - this.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 250 && dist > 1) {
-          const force = 0.04 * (1 - dist / 250);
-          vx += (dx / dist) * force * 50;
-          vy += (dy / dist) * force * 50;
-        }
-      }
-
-      this.x += vx;
-      this.y += vy;
-      this.life -= CONFIG.lifeDecay;
-
-      if (this.life <= 0 || this.x < -20 || this.x > W + 20 || this.y < -20 || this.y > H + 20) {
-        this.reset();
+      const angle = flowAngle(this.x, this.y, time);
+      let vx = Math.cos(angle) * this.speed;
+      let vy = Math.sin(angle) * this.speed;
+      const mf = mouseForce(this.x, this.y);
+      vx += mf.fx; vy += mf.fy;
+      this.x += vx; this.y += vy; this.life++;
+      if (this.x < -10 || this.x > W + 10 || this.y < -10 || this.y > H + 10 || this.life > this.maxLife) {
+        this.reset(false);
       }
     }
     draw() {
-      const alpha = (this.life / this.maxLife) * 0.7;
-      const hue = (CONFIG.hueBase + this.hueOffset + frame * 0.05) % 360;
-      ctx.beginPath();
-      ctx.strokeStyle = `hsla(${hue}, 85%, 60%, ${alpha})`;
-      ctx.lineWidth = CONFIG.width;
-      ctx.moveTo(this.x - Math.cos(frame * 0.01) * 0.3, this.y - Math.sin(frame * 0.01) * 0.3);
-      ctx.lineTo(this.x, this.y);
-      ctx.stroke();
+      const progress = this.life / this.maxLife;
+      const alpha = Math.sin(progress * Math.PI) * 0.7;
+      const ci = Math.floor(this.hue * (palette.length - 2)) + 1;
+      ctx.fillStyle = palette[ci] + Math.round(alpha * 255).toString(16).padStart(2, '0');
+      ctx.fillRect(this.x, this.y, 1.2, 1.2);
     }
   }
 
   function init() {
-    particles = [];
-    for (let i = 0; i < CONFIG.count; i++) particles.push(new Particle());
-    pcountEl.textContent = CONFIG.count;
+    seed = Math.random() * 10000;
+    palette = PALETTES[Math.floor(Math.random() * PALETTES.length)];
+    particles = Array.from({ length: PARTICLE_COUNT }, () => new Particle());
+    time = 0;
   }
 
   function animate() {
-    // Fade trails
-    ctx.fillStyle = `rgba(5, 5, 16, ${CONFIG.trailAlpha})`;
-    ctx.fillRect(0, 0, W, H);
-
-    // Subtle vignette (every 60 frames to save perf)
-    if (frame % 60 === 0) {
-      const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * 0.6);
-      grad.addColorStop(0, 'transparent');
-      grad.addColorStop(1, 'rgba(5, 5, 16, 0.01)');
-      ctx.fillStyle = grad;
+    if (!paused) {
+      ctx.fillStyle = palette[0] + '12';
       ctx.fillRect(0, 0, W, H);
+      for (const p of particles) { p.update(); p.draw(); }
+      time++;
     }
-
-    for (const p of particles) { p.update(); p.draw(); }
-    frame++;
     requestAnimationFrame(animate);
   }
 
-  init();
-  animate();
+  window.addEventListener('resize', resize);
+  window.addEventListener('mousemove', e => {
+    mouse.vx = (e.clientX - mouse.px) * 0.3; mouse.vy = (e.clientY - mouse.py) * 0.3;
+    mouse.px = mouse.x; mouse.py = mouse.y; mouse.x = e.clientX; mouse.y = e.clientY;
+    const hint = document.getElementById('hint');
+    if (hint && time < 300) hint.style.opacity = Math.max(0, 1 - time / 200);
+  });
+  window.addEventListener('touchmove', e => {
+    const t = e.touches[0];
+    mouse.vx = (t.clientX - mouse.px) * 0.3; mouse.vy = (t.clientY - mouse.py) * 0.3;
+    mouse.px = mouse.x; mouse.py = mouse.y; mouse.x = t.clientX; mouse.y = t.clientY;
+  }, { passive: true });
+
+  document.getElementById('reset').onclick = () => {
+    ctx.clearRect(0, 0, W, H);
+    init();
+  };
+  document.getElementById('pause').onclick = () => {
+    paused = !paused;
+    document.getElementById('pause').textContent = paused ? '▶ Resume' : '⏸ Pause';
+  };
+  document.getElementById('count').oninput = e => {
+    PARTICLE_COUNT = +e.target.value;
+    const diff = PARTICLE_COUNT - particles.length;
+    if (diff > 0) for (let i = 0; i < diff; i++) particles.push(new Particle());
+    else particles.splice(PARTICLE_COUNT);
+  };
+
+  resize(); init(); animate();
 })();
 </script>
 </body>
