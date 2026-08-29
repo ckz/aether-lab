@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Echo Drift</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #88aacc;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+  canvas {
+    display: block;
+    cursor: crosshair;
+  }
+  #hud {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    right: 16px;
+    display: flex;
+    justify-content: space-between;
+    pointer-events: none;
+    font-size: 13px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    opacity: 0.9;
+    z-index: 10;
+  }
+  #hud span {
+    background: rgba(0,0,0,0.6);
+    padding: 6px 12px;
+    border: 1px solid rgba(100,150,200,0.2);
+  }
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+    text-align: center;
+    padding: 40px;
+  }
+  #overlay h1 {
+    font-size: clamp(2rem, 6vw, 4rem);
+    font-weight: normal;
+    letter-spacing: 0.6em;
+    color: #aaccff;
+    margin-bottom: 12px;
+    text-shadow: 0 0 40px rgba(100,160,255,0.5);
+  }
+  #overlay .sub {
+    font-size: clamp(0.7rem, 2vw, 0.85rem);
+    opacity: 0.5;
+    letter-spacing: 0.4em;
+    margin-bottom: 40px;
+  }
+  #overlay .body {
+    font-size: clamp(0.7rem, 1.8vw, 0.8rem);
+    line-height: 2;
+    opacity: 0.7;
+    max-width: 500px;
+    letter-spacing: 0.1em;
+  }
+  #overlay .body kbd {
+    border: 1px solid rgba(100,150,200,0.4);
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-family: inherit;
+    color: #aaccff;
+  }
+  #overlay button {
+    margin-top: 36px;
+    background: transparent;
+    border: 1px solid rgba(100,150,200,0.4);
+    color: #aaccff;
+    padding: 14px 40px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.4s;
+  }
+  #overlay button:hover {
+    background: rgba(100,150,200,0.1);
+    border-color: rgba(100,150,200,0.8);
+    box-shadow: 0 0 30px rgba(100,150,200,0.2);
+  }
+  #pulse-counter {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    opacity: 0.4;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #hint {
+    position: fixed;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 10;
+    transition: opacity 0.8s;
+  }
+  #hint.show {
+    opacity: 0.5;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <span id="level-display">LEVEL 01</span>
+  <span id="pulse-display">PULSE × 5</span>
+  <span id="score-display">SCORE 0000</span>
+</div>
+
+<div id="hint">CLICK TO SEND A PULSE</div>
+<div id="pulse-counter"></div>
+
+<div id="overlay">
+  <h1>ECHO DRIFT</h1>
+  <div class="sub">a game of light & silence</div>
+  <div class="body">
+    You are a pulse of light in a silent cave.<br>
+    The walls are invisible — until your pulse finds them.<br><br>
+    <kbd>CLICK</kbd> to emit a pulse that reveals the world<br>
+    Navigate to the <span style="color:#88ffaa">green exit</span><br>
+    Avoid <span style="color:#ff6666">red hazards</span><br>
+    Collect <span style="color:#ffdd88">gold orbs</span> for points<br>
+    Reach the exit before your pulses run out
+  </div>
+  <button onclick="startGame()">Enter the Cave</button>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Game state
+let state = 'menu'; // menu, playing, win, lose
+let level = 1;
+let maxPulses = 5;
+let pulsesLeft = 5;
+let score = 0;
+let totalScore = 0;
+let player, exitZone, hazards, orbs, walls;
+let pulses = [];
+let particles = [];
+let revealedCells = new Set();
+let visibilityRadius = 0;
+let darknessAlpha = 1;
+let lastTime = 0;
+let gameTime = 0;
+let showHintTimer = 3;
+let levelTransition = 0;
+let winFlash = 0;
+
+// Input
+let mouse = { x: 0, y: 0, down: false };
+canvas.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+canvas.addEventListener('mousedown', e => { mouse.down = true; onPulse(e.clientX, e.clientY); });
+canvas.addEventListener('mouseup', () => { mouse.down = false; });
+canvas.addEventListener('touchstart', e => { e.preventDefault(); mouse.down = true; const t = e.touches[0]; mouse.x = t.clientX; mouse.y = t.clientY; onPulse(t.clientX, t.clientY); }, { passive: false });
+canvas.addEventListener('touchmove', e => { e.preventDefault(); const t = e.touches[0]; mouse.x = t.clientX; mouse.y = t.clientY; }, { passive: false });
+canvas.addEventListener('touchend', () => { mouse.down = false; });
+
+function onPulse(x, y) {
+  if (state !== 'playing' || pulsesLeft <= 0) return;
+  pulsesLeft--;
+  updateHUD();
+  
+  // Emit pulse
+  pulses.push({
+    x, y,
+    radius: 0,
+    maxRadius: Math.max(W, H) * 1.5,
+    speed: 600,
+    life: 1,
+    trail: []
+  });
+  
+  // Spawn particle burst
+  for (let i = 0; i < 30; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = Math.random() * 150 + 50;
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * s,
+      vy: Math.sin(a) * s,
+      life: 1,
+      decay: 1.5 + Math.random() * 2,
+      size: 1 + Math.random() * 2
+    });
+  }
+}
+
+function generateLevel(lvl) {
+  // Player starts at random edge
+  const side = Math.floor(Math.random() * 4);
+  let px, py;
+  switch(side) {
+    case 0: px = 80 + Math.random() * 100; py = 80 + Math.random() * (H - 160); break;
+    case 1: px = W - 80 - Math.random() * 100; py = 80 + Math.random() * (H - 160); break;
+    case 2: px = 80 + Math.random() * (W - 160); py = 80 + Math.random() * 100; break;
+    case 3: px = 80 + Math.random() * (W - 160); py = H - 80 - Math.random() * 100; break;
+  }
+  
+  // Exit zone far from player
+  let ex, ey;
+  const attempts = 20;
+  for (let i = 0; i < attempts; i++) {
+    ex = 100 + Math.random() * (W - 200);
+    ey = 100 + Math.random() * (H - 200);
+    const dist = Math.hypot(ex - px, ey - py);
+    if (dist > Math.min(W, H) * 0.4) break;
+  }
+  
+  player = { x: px, y: py, vx: 0, vy: 0, trail: [] };
+  exitZone = { x: ex, y: ey, radius: 50 + lvl * 5, pulse: 0 };
+  
+  // Walls - irregular polygon corridors
+  walls = [];
+  const numWalls = 8 + lvl * 2;
+  for (let i = 0; i < numWalls; i++) {
+    const wx = 150 + Math.random() * (W - 300);
+    const wy = 150 + Math.random() * (H - 300);
+    const wlen = 80 + Math.random() * 200;
+    const wang = Math.random() * Math.PI * 2;
+    const wthick = 8 + Math.random() * 12;
+    
+    // Create wall as line segment with thickness
+    walls.push({
+      x1: wx - Math.cos(wang) * wlen/2,
+      y1: wy - Math.sin(wang) * wlen/2,
+      x2: wx + Math.cos(wang) * wlen/2,
+      y2: wy + Math.sin(wang) * wlen/2,
+      thick: wthick,
+      angle: wang
+    });
+  }
+  
+  // Add some arena border walls (short)
+  const margin = 60;
+  for (let i = 0; i < 6; i++) {
+    const bx = margin + Math.random() * (W - margin*2);
+    const by = margin + Math.random() * (H - margin*2);
+    const blen = 40 + Math.random() * 100;
+    const bang = Math.random() * Math.PI * 2;
+    walls.push({
+      x1: bx - Math.cos(bang) * blen/2,
+      y1: by - Math.sin(bang) * blen/2,
+      x2: bx + Math.cos(bang) * blen/2,
+      y2: by + Math.sin(bang) * blen/2,
+      thick: 6 + Math.random() * 8,
+      angle: bang
+    });
+  }
+  
+  // Hazards
+  hazards = [];
+  const numHazards = 2 + Math.floor(lvl / 2);
+  for (let i = 0; i < numHazards; i++) {
+    let hx, hy;
+    for (let a = 0; a < 10; a++) {
+      hx = 150 + Math.random() * (W - 300);
+      hy = 150 + Math.random() * (H - 300);
+      if (Math.hypot(hx - px, hy - py) > 200 && Math.hypot(hx - ex, hy - ey) > 150) break;
+    }
+    hazards.push({
+      x: hx, y: hy,
+      radius: 25 + Math.random() * 25 + lvl * 3,
+      pulse: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 0.5,
+      orbitRadius: 30 + Math.random() * 40,
+      orbitAngle: Math.random() * Math.PI * 2,
+      orbitSpeed: 0.5 + Math.random() * 1
+    });
+  }
+  
+  // Orbs
+  orbs = [];
+  const numOrbs = 3 + Math.floor(lvl / 2);
+  for (let i = 0; i < numOrbs; i++) {
+    let ox, oy;
+    for (let a = 0; a < 15; a++) {
+      ox = 100 + Math.random() * (W - 200);
+      oy = 100 + Math.random() * (H - 200);
+      const d2p = Math.hypot(ox - px, oy - py);
+      const d2e = Math.hypot(ox - ex, oy - ey);
+      if (d2p > 120 && d2e > 100) break;
+    }
+    orbs.push({
+      x: ox, y: oy,
+      radius: 10,
+      collected: false,
+      bob: Math.random() * Math.PI * 2,
+      glow: 0
+    });
+  }
+  
+  // Reset pulses
+  maxPulses = Math.max(4, 8 - lvl);
+  pulsesLeft = maxPulses;
+  pulses = [];
+  particles = [];
+  revealedCells.clear();
+  visibilityRadius = 0;
+  showHintTimer = 2;
+}
+
+function startGame() {
+  document.getElementById('overlay').style.display = 'none';
+  state = 'playing';
+  level = 1;
+  totalScore = 0;
+  generateLevel(level);
+  updateHUD();
+  lastTime = performance.now();
+  requestAnimationFrame(loop);
+}
+
+function updateHUD() {
+  document.getElementById('level-display').textContent = `LEVEL ${String(level).padStart(2,'0')}`;
+  document.getElementById('pulse-display').textContent = `PULSE × ${pulsesLeft}`;
+  document.getElementById('score-display').textContent = `SCORE ${String(totalScore).padStart(4,'0')}`;
+}
+
+function loop(now) {
+  const dt = Math.min(0.05, (now - lastTime) / 1000);
+  lastTime = now;
+  gameTime += dt;
+  
+  update(dt);
+  render();
+  
+  if (state === 'playing' || state === 'win' || state === 'lose') {
+    requestAnimationFrame(loop);
+  }
+}
+
+function update(dt) {
+  // Update pulses
+  for (let p of pulses) {
+    p.radius += p.speed * dt;
+    p.life = 1 - (p.radius / p.maxRadius);
+    if (p.life > 0) {
+      // Reveal walls
+      for (let w of walls) {
+        const dist = distToSegment(p.x, p.y, w.x1, w.y1, w.x2, w.y2);
+        if (dist < p.radius + w.thick) {
+          revealedCells.add(w);
+        }
+      }
+    }
+  }
+  pulses = pulses.filter(p => p.life > 0);
+  
+  // Update particles
+  for (let pt of particles) {
+    pt.x += pt.vx * dt;
+    pt.y += pt.vy * dt;
+    pt.vx *= 0.96;
+    pt.vy *= 0.96;
+    pt.life -= pt.decay * dt;
+  }
+  particles = particles.filter(pt => pt.life > 0);
+  
+  // Spawn ambient dust occasionally
+  if (Math.random() < dt * 3 && particles.length < 200) {
+    particles.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      vx: (Math.random() - 0.5) * 20,
+      vy: (Math.random() - 0.5) * 20,
+      life: 1,
+      decay: 0.3 + Math.random() * 0.5,
+      size: 0.5 + Math.random()
+    });
+  }
+  
+  if (state !== 'playing') return;
+  
+  // Show hint
+  if (showHintTimer > 0) {
+    showHintTimer -= dt;
+    document.getElementById('hint').classList.toggle('show', showHintTimer > 0);
+  }
+  
+  // Player movement - drift toward mouse slowly
+  const dx = mouse.x - player.x;
+  const dy = mouse.y - player.y;
+  const dist = Math.hypot(dx, dy);
+  const speed = 280;
+  if (dist > 5) {
+    player.vx += (dx / dist) * speed * dt * 1.5;
+    player.vy += (dy / dist) * speed * dt * 1.5;
+  }
+  // Damping
+  player.vx *= Math.pow(0.02, dt);
+  player.vy *= Math.pow(0.02, dt);
+  player.x += player.vx * dt;
+  player.y += player.vy * dt;
+  
+  // Wall collision
+  for (let w of walls) {
+    const d = distToSegment(player.x, player.y, w.x1, w.y1, w.x2, w.y2);
+    if (d < w.thick + 6) {
+      // Push out
+      const nx = w.y2 - w.y1;
+      const ny = -(w.x2 - w.x1);
+      const len = Math.hypot(nx, ny) || 1;
+      const nnx = nx / len;
+      const nny = ny / len;
+      player.x += nnx * (w.thick + 6 - d);
+      player.y += nny * (w.thick + 6 - d);
+      // Bounce
+      const dot = player.vx * nnx + player.vy * nny;
+      player.vx -= 1.5 * dot * nnx;
+      player.vy -= 1.5 * dot * nny;
+    }
+  }
+  
+  // Boundaries
+  player.x = Math.max(20, Math.min(W - 20, player.x));
+  player.y = Math.max(20, Math.min(H - 20, player.y));
+  
+  // Trail
+  player.trail.push({ x: player.x, y: player.y, life: 1 });
+  if (player.trail.length > 60) player.trail.shift();
+  for (let t of player.trail) t.life -= dt * 1.5;
+  
+  // Exit zone
+  exitZone.pulse += dt * 3;
+  const distToExit = Math.hypot(player.x - exitZone.x, player.y - exitZone.y);
+  if (distToExit < exitZone.radius) {
+    // Win level
+    state = 'win';
+    winFlash = 1;
+    score += pulsesLeft * 100 + Math.floor(100 / (gameTime + 1));
+    totalScore += score;
+    levelTransition = 2;
+    
+    // Burst particles
+    for (let i = 0; i < 50; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = Math.random() * 300 + 100;
+      particles.push({
+        x: exitZone.x, y: exitZone.y,
+        vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+        life: 1, decay: 1 + Math.random(), size: 1 + Math.random() * 3
+      });
+    }
+  }
+  
+  // Hazards
+  for (let h of hazards) {
+    h.pulse += dt * 2;
+    h.orbitAngle += h.orbitSpeed * dt;
+    const hx = h.x + Math.cos(h.orbitAngle) * h.orbitRadius;
+    const hy = h.y + Math.sin(h.orbitAngle) * h.orbitRadius;
+    h.cx = hx; h.cy = hy;
+    const d2h = Math.hypot(player.x - hx, player.y - hy);
+    if (d2h < h.radius + 8) {
+      state = 'lose';
+      levelTransition = 2.5;
+      // Red burst
+      for (let i = 0; i < 40; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const s = Math.random() * 200 + 80;
+        particles.push({
+          x: player.x, y: player.y,
+          vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+          life: 1, decay: 1.5 + Math.random(), size: 1 + Math.random() * 2
+        });
+      }
+    }
+  }
+  
+  // Orbs
+  for (let o of orbs) {
+    if (o.collected) continue;
+    o.bob += dt * 2;
+    o.glow = 0.6 + Math.sin(o.bob * 3) * 0.4;
+    const d2o = Math.hypot(player.x - o.x, player.y - o.y);
+    if (d2o < o.radius + 15) {
+      o.collected = true;
+      totalScore += 50;
+      score += 50;
+      updateHUD();
+      for (let i = 0; i < 20; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const s = Math.random() * 150 + 50;
+        particles.push({
+          x: o.x, y: o.y,
+          vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+          life: 1, decay: 2 + Math.random(), size: 1 + Math.random() * 2
+        });
+      }
+    }
+  }
+  
+  // Level transition
+  if (levelTransition > 0) {
+    levelTransition -= dt;
+    if (levelTransition <= 0 && state === 'win') {
+      level++;
+      generateLevel(level);
+      updateHUD();
+      state = 'playing';
+      gameTime = 0;
+    }
+  }
+  
+  // Check lose condition - out of pulses
+  if (pulsesLeft <= 0 && pulses.length === 0 && state === 'playing') {
+    // Give a grace period, then check if they're lost
+    if (gameTime > 8) {
+      // If they haven't found exit in a while and no pulses left...
+      // Actually let's make it so they can still explore, just can't reveal new walls
+      // But if they've been stuck for too long...
+      if (distToExit > 300 && gameTime > 15) {
+        // Gentle nudge - don't force lose, just make it harder
+      }
+    }
+  }
+}
+
+function render() {
+  // Deep background
+  ctx.fillStyle = '#020208';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Ambient fog based on revealed areas
+  ctx.fillStyle = `rgba(10, 15, 30, 0.15)`;
+  for (let i = 0; i < 30; i++) {
+    const fx = (Math.sin(gameTime * 0.3 + i) * 0.5 + 0.5) * W;
+    const fy = (Math.cos(gameTime * 0.2 + i * 1.3) * 0.5 + 0.5) * H;
+    ctx.beginPath();
+    ctx.arc(fx, fy, 80 + Math.sin(gameTime + i) * 30, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Render walls
+  for (let w of walls) {
+    const revealed = revealedCells.has(w);
+    const dist = Math.hypot(mouse.x - (w.x1+w.x2)/2, mouse.y - (w.y1+w.y2)/2);
+    const proximityFade = Math.max(0, 1 - dist / (W * 0.4));
+    
+    if (revealed || proximityFade > 0.05) {
+      const alpha = revealed ? 0.7 : proximityFade * 0.5;
+      ctx.strokeStyle = `rgba(120, 160, 200, ${alpha})`;
+      ctx.lineWidth = w.thick;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(w.x1, w.y1);
+      ctx.lineTo(w.x2, w.y2);
+      ctx.stroke();
+      
+      // Edge glow
+      if (revealed) {
+        ctx.strokeStyle = `rgba(150, 200, 255, ${alpha * 0.3})`;
+        ctx.lineWidth = w.thick + 6;
+        ctx.beginPath();
+        ctx.moveTo(w.x1, w.y1);
+        ctx.lineTo(w.x2, w.y2);
+        ctx.stroke();
+      }
+    }
+  }
+  
+  // Render exit zone
+  const exitAlpha = 0.4 + Math.sin(exitZone.pulse) * 0.2;
+  ctx.fillStyle = `rgba(100, 255, 150, ${exitAlpha * 0.15})`;
+  ctx.beginPath();
+  ctx.arc(exitZone.x, exitZone.y, exitZone.radius, 0, Math.PI * 2);
+  ctx.fill();
+  
+  ctx.strokeStyle = `rgba(100, 255, 150, ${exitAlpha})`;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 8]);
+  ctx.lineDashOffset = -gameTime * 20;
+  ctx.beginPath();
+  ctx.arc(exitZone.x, exitZone.y, exitZone.radius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  
+  // Inner exit glow
+  const grad = ctx.createRadialGradient(exitZone.x, exitZone.y, 0, exitZone.x, exitZone.y, exitZone.radius);
+  grad.addColorStop(0, `rgba(150, 255, 200, ${exitAlpha * 0.3})`);
+  grad.addColorStop(1, 'rgba(100, 255, 150, 0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(exitZone.x, exitZone.y, exitZone.radius, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Render hazards
+  for (let h of hazards) {
+    if (!h.cx) continue;
+    const hAlpha = 0.5 + Math.sin(h.pulse) * 0.3;
+    ctx.fillStyle = `rgba(255, 80, 80, ${hAlpha * 0.2})`;
+    ctx.beginPath();
+    ctx.arc(h.cx, h.cy, h.radius, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.strokeStyle = `rgba(255, 100, 100, ${hAlpha})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(h.cx, h.cy, h.radius * 0.7, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Rotating danger indicator
+    for (let i = 0; i < 4; i++) {
+      const a = h.pulse + (i / 4) * Math.PI * 2;
+      const ix = h.cx + Math.cos(a) * h.radius * 0.85;
+      const iy = h.cy + Math.sin(a) * h.radius * 0.85;
+      ctx.fillStyle = `rgba(255, 120, 120, ${hAlpha})`;
+      ctx.beginPath();
+      ctx.arc(ix, iy, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  
+  // Render orbs
+  for (let o of orbs) {
+    if (o.collected) continue;
+    const oy = o.y + Math.sin(o.bob) * 8;
+    ctx.fillStyle = `rgba(255, 220, 120, ${o.glow * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(o.x, oy, o.radius * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.fillStyle = `rgba(255, 240, 180, ${o.glow})`;
+    ctx.beginPath();
+    ctx.arc(o.x, oy, o.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Render pulses
+  for (let p of pulses) {
+    const alpha = p.life * 0.5;
+    ctx.strokeStyle = `rgba(150, 200, 255, ${alpha})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    ctx.strokeStyle = `rgba(180, 220, 255, ${alpha * 0.3})`;
+    ctx.lineWidth = 12;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Center flash
+    ctx.fillStyle = `rgba(200, 230, 255, ${p.life * 0.8})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Render particles
+  ctx.globalCompositeOperation = 'lighter';
+  for (let pt of particles) {
+    const a = pt.life * 0.8;
+    ctx.fillStyle = `rgba(150, 200, 255, ${a})`;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  
+  // Render player
+  if (state !== 'lose') {
+    // Trail
+    for (let i = 0; i < player.trail.length; i++) {
+      const t = player.trail[i];
+      if (t.life <= 0) continue;
+      const a = t.life * 0.5;
+      const s = 3 + t.life * 3;
+      ctx.fillStyle = `rgba(120, 180, 255, ${a})`;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, s, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    // Player glow
+    const pGrad = ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, 30);
+    pGrad.addColorStop(0, 'rgba(180, 220, 255, 0.5)');
+    pGrad.addColorStop(1, 'rgba(100, 160, 255, 0)');
+    ctx.fillStyle = pGrad;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, 30, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Player core
+    ctx.fillStyle = '#ddeeff';
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Bright center
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Win flash
+  if (winFlash > 0) {
+    ctx.fillStyle = `rgba(100, 255, 150, ${winFlash * 0.15})`;
+    ctx.fillRect(0, 0, W, H);
+    winFlash -= dt * 0.8;
+  }
+  
+  // Lose screen
+  if (state === 'lose' && levelTransition > 0) {
+    ctx.fillStyle = `rgba(255, 50, 50, ${Math.min(1, levelTransition * 0.5)})`;
+    ctx.fillRect(0, 0, W, H);
+    
+    ctx.fillStyle = '#ff6666';
+    ctx.font = 'clamp(1.5rem, 5vw, 3rem) "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.letterSpacing = '0.4em';
+    ctx.fillText('SIGNAL LOST', W/2, H/2);
+    
+    ctx.fillStyle = '#ff9999';
+    ctx.font = 'clamp(0.7rem, 2vw, 0.9rem) "Courier New", monospace';
+    ctx.fillText('CLICK TO TRY AGAIN', W/2, H/2 + 50);
+    ctx.textAlign = 'start';
+  }
+  
+  // Win screen
+  if (state === 'win' && levelTransition > 0) {
+    ctx.fillStyle = `rgba(100, 255, 200, ${Math.min(1, levelTransition * 0.5)})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+  
+  // Level transition
+  if (levelTransition > 0 && state === 'win') {
+    ctx.fillStyle = '#aaffcc';
+    ctx.font = 'clamp(1.2rem, 4vw, 2.5rem) "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`LEVEL ${level} COMPLETE`, W/2, H/2);
+    ctx.font = 'clamp(0.6rem, 1.5vw, 0.8rem) "Courier New", monospace';
+    ctx.fillStyle = '#88ffbb';
+    ctx.fillText(`+${pulsesLeft * 100} BONUS`, W/2, H/2 + 40);
+    ctx.textAlign = 'start';
+  }
+}
+
+// Distance from point to line segment
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx*dx + dy*dy;
+  if (lenSq === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1)*dx + (py - y1)*dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  const cx = x1 + t * dx;
+  const cy = y1 + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+
+// Lose click handler
+canvas.addEventListener('click', e => {
+  if (state === 'lose') {
+    // Restart current level
+    state = 'playing';
+    generateLevel(level);
+    updateHUD();
+    gameTime = 0;
+  }
+});
+
+// Initial render
+ctx.fillStyle = '#020208';
+ctx.fillRect(0, 0, W, H);
+</script>
+</body>
+</html>
