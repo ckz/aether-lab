@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Moss Garden — A Tiny Terrarium</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a1a;
+    color: #c8d6c0;
+    font-family: 'Georgia', serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-x: hidden;
+  }
+  h1 {
+    font-weight: normal;
+    font-size: 1.6em;
+    margin: 20px 0 5px;
+    letter-spacing: 0.05em;
+    color: #a8c898;
+  }
+  .subtitle {
+    font-size: 0.85em;
+    color: #6a8060;
+    margin-bottom: 15px;
+    font-style: italic;
+  }
+  #garden-container {
+    position: relative;
+    width: 600px;
+    height: 400px;
+    background: radial-gradient(ellipse at 50% 120%, #1a2a15 0%, #0d150a 70%, #060a05 100%);
+    border: 2px solid #2a3a22;
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: crosshair;
+    box-shadow: inset 0 0 80px rgba(0,0,0,0.7), 0 0 30px rgba(40, 80, 30, 0.15);
+  }
+  canvas { display: block; }
+  #controls {
+    margin-top: 15px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 600px;
+  }
+  button {
+    background: #1f2f18;
+    color: #b8d0a8;
+    border: 1px solid #3a5a2a;
+    padding: 8px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.85em;
+    transition: all 0.2s;
+  }
+  button:hover {
+    background: #2a4020;
+    border-color: #5a8a3a;
+    color: #d8f0c8;
+  }
+  button.active {
+    background: #3a6030;
+    border-color: #7ab860;
+    color: #ffffff;
+    box-shadow: 0 0 12px rgba(100, 180, 60, 0.3);
+  }
+  #info {
+    margin-top: 12px;
+    font-size: 0.8em;
+    color: #5a7a4a;
+    text-align: center;
+    max-width: 600px;
+    line-height: 1.5;
+  }
+  #stats {
+    margin-top: 8px;
+    font-size: 0.75em;
+    color: #4a6a3a;
+    text-align: center;
+  }
+  .tooltip {
+    position: absolute;
+    background: rgba(10, 20, 5, 0.9);
+    color: #d8f0c8;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.75em;
+    pointer-events: none;
+    border: 1px solid #3a5a2a;
+    display: none;
+    z-index: 10;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<h1>🌿 Moss Garden</h1>
+<div class="subtitle">a tiny terrarium — click to tend it</div>
+<div id="garden-container">
+  <canvas id="garden"></canvas>
+  <div class="tooltip" id="tooltip"></div>
+</div>
+<div id="controls">
+  <button data-tool="plant-moss" class="active">🌱 Plant Moss</button>
+  <button data-tool="water">💧 Water</button>
+  <button data-tool="fern">🌿 Fern</button>
+  <button data-tool="flower">🌸 Flower</button>
+  <button data-tool="stone">🪨 Stone</button>
+  <button data-tool="spore">✨ Spores</button>
+  <button data-tool="clear">🗑 Clear</button>
+</div>
+<div id="info">Click or drag on the garden to tend it. Tools: moss, ferns, flowers, stones, spores. Water to nurture growth.</div>
+<div id="stats"></div>
+
+<script>
+const canvas = document.getElementById('garden');
+const ctx = canvas.getContext('2d');
+const container = document.getElementById('garden-container');
+const tooltip = document.getElementById('tooltip');
+
+let W, H;
+function resize() {
+  const rect = container.getBoundingClientRect();
+  W = rect.width; H = rect.height;
+  canvas.width = W * devicePixelRatio;
+  canvas.height = H * devicePixelRatio;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+resize();
+window.addEventListener('resize', () => { resize(); });
+
+// --- State ---
+let entities = [];
+let particles = [];
+let mouse = { x: 0, y: 0, down: false };
+let currentTool = 'plant-moss';
+let time = 0;
+
+// --- Entity classes ---
+class Moss {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.size = 2 + Math.random() * 4;
+    this.growth = 0;
+    this.maxGrowth = 0.4 + Math.random() * 0.6;
+    this.watered = 0;
+    this.color = `hsl(${100 + Math.random()*30}, ${40 + Math.random()*20}%, ${25 + Math.random()*15}%)`;
+    this.seed = Math.random() * 100;
+  }
+  update(dt) {
+    this.growth += (this.maxGrowth - this.growth) * 0.002 * (1 + this.watered * 2);
+    this.watered *= 0.995;
+    if (this.growth > 0.3 && Math.random() < 0.0005 * (1 + this.watered * 5)) {
+      // Spawn new moss nearby
+      const angle = Math.random() * Math.PI * 2;
+      const dist = this.size * (1 + this.growth);
+      const nx = this.x + Math.cos(angle) * dist;
+      const ny = this.y + Math.sin(angle) * dist;
+      if (nx > 0 && nx < W && ny > 0 && ny < H) {
+        entities.push(new Moss(nx, ny));
+      }
+    }
+  }
+  draw(ctx) {
+    const s = this.size * this.growth;
+    if (s < 0.5) return;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    // Clump shape
+    const points = 6 + Math.floor(this.seed) % 4;
+    for (let i = 0; i < points; i++) {
+      const a = (i / points) * Math.PI * 2;
+      const r = s * (0.7 + 0.3 * Math.sin(this.seed + i * 1.5 + time * 0.3));
+      const px = this.x + Math.cos(a) * r;
+      const py = this.y + Math.sin(a) * r * 0.7;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    // Highlight
+    if (this.growth > 0.6) {
+      ctx.fillStyle = `hsla(${110 + Math.random()*20}, 50%, 50%, 0.3)`;
+      ctx.beginPath();
+      ctx.arc(this.x - s*0.2, this.y - s*0.15, s * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  contains(px, py) { return Math.hypot(this.x - px, this.y - py) < this.size * 2; }
+}
+
+class Fern {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.growth = 0;
+    this.maxGrowth = 0.5 + Math.random() * 0.5;
+    this.watered = 0;
+    this.height = 30 + Math.random() * 50;
+    this.lean = (Math.random() - 0.5) * 0.3;
+    this.color = `hsl(${90 + Math.random()*30}, ${50 + Math.random()*20}%, ${20 + Math.random()*15}%)`;
+    this.seed = Math.random() * 100;
+  }
+  update(dt) {
+    this.growth += (this.maxGrowth - this.growth) * 0.0015 * (1 + this.watered * 3);
+    this.watered *= 0.997;
+  }
+  draw(ctx) {
+    if (this.growth < 0.1) return;
+    const h = this.height * this.growth;
+    const sway = Math.sin(time * 0.5 + this.seed) * 3;
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y);
+    const topX = this.x + sway + this.lean * h;
+    const topY = this.y - h;
+    ctx.quadraticCurveTo(this.x + sway * 0.5, this.y - h * 0.5, topX, topY);
+    ctx.stroke();
+    // Fronds
+    const fronds = 5 + Math.floor(this.seed) % 4;
+    for (let i = 1; i < fronds; i++) {
+      const t = i / fronds;
+      const fx = this.x + (topX - this.x) * t + sway * t;
+      const fy = this.y + (topY - this.y) * t;
+      const side = (i % 2 === 0 ? 1 : -1) * (1 - t * 0.3);
+      const frondLen = 8 * this.growth * (1 - t * 0.5);
+      ctx.strokeStyle = `hsla(${100 + t*20}, ${50}%, ${25 + t*10}%, 0.7)`;
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(fx, fy);
+      ctx.quadraticCurveTo(fx + side * frondLen, fy - frondLen * 0.3, fx + side * frondLen * 1.2, fy - frondLen * 0.1);
+      ctx.stroke();
+    }
+  }
+  contains(px, py) { return Math.hypot(this.x - px, this.y - py) < 30; }
+}
+
+class Flower {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.growth = 0;
+    this.maxGrowth = 0.3 + Math.random() * 0.7;
+    this.watered = 0;
+    this.height = 20 + Math.random() * 30;
+    this.petals = 4 + Math.floor(Math.random() * 3);
+    this.hue = Math.random() * 360;
+    this.stemColor = `hsl(${100 + Math.random()*30}, 40%, 22%)`;
+  }
+  update(dt) {
+    this.growth += (this.maxGrowth - this.growth) * 0.001 * (1 + this.watered * 4);
+    this.watered *= 0.998;
+  }
+  draw(ctx) {
+    if (this.growth < 0.15) return;
+    const h = this.height * this.growth;
+    const sway = Math.sin(time * 0.6 + this.x) * 2;
+    // Stem
+    ctx.strokeStyle = this.stemColor;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y);
+    ctx.quadraticCurveTo(this.x + sway * 0.5, this.y - h * 0.5, this.x + sway, this.y - h);
+    ctx.stroke();
+    // Flower head
+    if (this.growth > 0.4) {
+      const headX = this.x + sway;
+      const headY = this.y - h;
+      const petalSize = 6 * this.growth;
+      for (let i = 0; i < this.petals; i++) {
+        const a = (i / this.petals) * Math.PI * 2 + time * 0.2;
+        ctx.fillStyle = `hsla(${this.hue + Math.sin(time*0.3+i)*10}, 60%, 60%, 0.8)`;
+        ctx.beginPath();
+        ctx.ellipse(headX + Math.cos(a) * petalSize * 0.5, headY + Math.sin(a) * petalSize * 0.5, petalSize * 0.6, petalSize * 0.35, a, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Center
+      ctx.fillStyle = `hsla(45, 80%, 60%, 0.9)`;
+      ctx.beginPath();
+      ctx.arc(headX, headY, petalSize * 0.25, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  contains(px, py) { return Math.hypot(this.x - px, this.y - py) < 25; }
+}
+
+class Stone {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.size = 5 + Math.random() * 15;
+    this.seed = Math.random() * 100;
+  }
+  update(dt) {}
+  draw(ctx) {
+    ctx.fillStyle = `hsl(30, 5%, ${20 + (this.seed % 15)}%)`;
+    ctx.beginPath();
+    const pts = 6;
+    for (let i = 0; i < pts; i++) {
+      const a = (i / pts) * Math.PI * 2;
+      const r = this.size * (0.7 + 0.3 * Math.sin(this.seed + i * 2));
+      const px = this.x + Math.cos(a) * r;
+      const py = this.y + Math.sin(a) * r * 0.7;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    // Shadow/highlight
+    ctx.fillStyle = `hsla(30, 5%, 30%, 0.4)`;
+    ctx.beginPath();
+    ctx.ellipse(this.x - this.size*0.15, this.y + this.size*0.1, this.size*0.5, this.size*0.2, 0, 0, Math.PI*2);
+    ctx.fill();
+  }
+  contains(px, py) { return Math.hypot(this.x - px, this.y - py) < this.size + 5; }
+}
+
+class SporeParticle {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.vx = (Math.random() - 0.5) * 1.5;
+    this.vy = -Math.random() * 1.5 - 0.3;
+    this.life = 1;
+    this.decay = 0.003 + Math.random() * 0.008;
+    this.size = 1 + Math.random() * 2.5;
+    this.hue = 80 + Math.random() * 60;
+  }
+  update(dt) {
+    this.x += this.vx + Math.sin(time * 2 + this.x * 0.05) * 0.3;
+    this.y += this.vy;
+    this.vy += 0.003; // float up gently
+    this.life -= this.decay;
+  }
+  draw(ctx) {
+    if (this.life <= 0) return;
+    ctx.fillStyle = `hsla(${this.hue}, 60%, 70%, ${this.life * 0.6})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fill();
+    // Glow
+    ctx.fillStyle = `hsla(${this.hue}, 70%, 80%, ${this.life * 0.15})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  get dead() { return this.life <= 0; }
+}
+
+// --- Watering particles ---
+let waterParticles = [];
+class WaterDrop {
+  constructor(x, y) {
+    this.x = x + (Math.random() - 0.5) * 30;
+    this.y = y - 10;
+    this.targetY = y + Math.random() * 30;
+    this.vy = 0.5 + Math.random() * 1;
+    this.life = 1;
+  }
+  update(dt) {
+    this.y += this.vy;
+    this.vy += 0.05;
+    if (this.y >= this.targetY) {
+      this.life = 0;
+      // Splash ring
+      for (let i = 0; i < 3; i++) {
+        waterParticles.push(new SporeParticle(this.x, this.y));
+      }
+    }
+  }
+  draw(ctx) {
+    ctx.fillStyle = `rgba(150, 200, 255, ${this.life * 0.5})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  get dead() { return this.life <= 0; }
+}
+
+// --- Init with some starting moss ---
+function initGarden() {
+  for (let i = 0; i < 30; i++) {
+    entities.push(new Moss(Math.random() * W, Math.random() * H * 0.8 + H * 0.1));
+  }
+  // A few stones
+  for (let i = 0; i < 5; i++) {
+    entities.push(new Stone(Math.random() * W, Math.random() * H * 0.6 + H * 0.25));
+  }
+}
+initGarden();
+
+// --- Interaction ---
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+canvas.addEventListener('mousedown', (e) => {
+  mouse.down = true;
+  const pos = getPos(e);
+  handleTool(pos.x, pos.y);
+});
+canvas.addEventListener('mousemove', (e) => {
+  const pos = getPos(e);
+  mouse.x = pos.x; mouse.y = pos.y;
+  if (mouse.down) handleTool(pos.x, pos.y, true);
+  updateTooltip(pos);
+});
+canvas.addEventListener('mouseup', () => { mouse.down = false; });
+canvas.addEventListener('mouseleave', () => {
+  mouse.down = false;
+  tooltip.style.display = 'none';
+});
+
+function handleTool(x, y, drag = false) {
+  const threshold = drag ? 8 : 12;
+  if (currentTool === 'plant-moss') {
+    if (!drag) entities.push(new Moss(x, y));
+  } else if (currentTool === 'water') {
+    if (!drag) {
+      for (let i = 0; i < 8; i++) waterParticles.push(new WaterDrop(x, y));
+    } else {
+      // Water nearby entities
+      entities.forEach(e => {
+        if (Math.hypot(e.x - x, e.y - y) < 40) {
+          e.watered = Math.min(1, e.watered + 0.3);
+        }
+      });
+    }
+  } else if (currentTool === 'fern') {
+    if (!drag) entities.push(new Fern(x, y));
+  } else if (currentTool === 'flower') {
+    if (!drag) entities.push(new Flower(x, y));
+  } else if (currentTool === 'stone') {
+    if (!drag) entities.push(new Stone(x, y));
+  } else if (currentTool === 'spore') {
+    for (let i = 0; i < 15; i++) particles.push(new SporeParticle(x, y));
+  } else if (currentTool === 'clear') {
+    // Remove nearest entity
+    let nearest = null, minD = 30;
+    entities.forEach(e => {
+      const d = Math.hypot(e.x - x, e.y - y);
+      if (d < minD) { minD = d; nearest = e; }
+    });
+    if (nearest) entities = entities.filter(e => e !== nearest);
+  }
+}
+
+function updateTooltip(pos) {
+  const near = entities.find(e => e.contains(pos.x, pos.y));
+  if (near) {
+    let name = 'unknown';
+    if (near instanceof Moss) name = `moss (growth: ${(near.growth*100).toFixed(0)}%)`;
+    else if (near instanceof Fern) name = `fern (growth: ${(near.growth*100).toFixed(0)}%)`;
+    else if (near instanceof Flower) name = `flower (growth: ${(near.growth*100).toFixed(0)}%)`;
+    else if (near instanceof Stone) name = 'stone';
+    tooltip.textContent = name;
+    tooltip.style.display = 'block';
+    tooltip.style.left = (pos.x + 12) + 'px';
+    tooltip.style.top = (pos.y - 25) + 'px';
+  } else {
+    tooltip.style.display = 'none';
+  }
+}
+
+// --- Controls ---
+document.querySelectorAll('button[data-tool]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('button[data-tool]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentTool = btn.dataset.tool;
+  });
+});
+
+// --- Main loop ---
+function drawBackground() {
+  // Subtle vignette + base
+  const grad = ctx.createRadialGradient(W/2, H*1.1, H*0.2, W/2, H/2, H*0.9);
+  grad.addColorStop(0, '#1a2a12');
+  grad.addColorStop(0.6, '#0d180a');
+  grad.addColorStop(1, '#050a04');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  // Ground gradient
+  const ground = ctx.createLinearGradient(0, H * 0.5, 0, H);
+  ground.addColorStop(0, 'transparent');
+  ground.addColorStop(0.5, 'hsla(30, 20%, 8%, 0.3)');
+  ground.addColorStop(1, 'hsla(30, 15%, 5%, 0.6)');
+  ctx.fillStyle = ground;
+  ctx.fillRect(0, H * 0.5, W, H * 0.5);
+  // Ambient dust / atmosphere
+  ctx.fillStyle = `hsla(100, 20%, 15%, 0.02)`;
+  for (let i = 0; i < 3; i++) {
+    const dx = (Math.sin(time * 0.1 + i * 2) * 0.5 + 0.5) * W;
+    const dy = (Math.cos(time * 0.08 + i * 1.5) * 0.3 + 0.4) * H;
+    ctx.beginPath();
+    ctx.arc(dx, dy, 60 + i * 20, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function update() {
+  time += 0.016;
+  entities.forEach(e => e.update(0.016));
+  particles = particles.filter(p => { p.update(0.016); return !p.dead; });
+  waterParticles = waterParticles.filter(p => { p.update(0.016); return !p.dead; });
+  // Limit particles
+  if (particles.length > 300) particles.splice(0, particles.length - 300);
+  if (waterParticles.length > 100) waterParticles.splice(0, waterParticles.length - 100);
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  drawBackground();
+  // Sort: stones first (back), then plants, then particles (front)
+  const order = { 'Stone': 0, 'Moss': 1, 'Fern': 2, 'Flower': 3 };
+  const sorted = [...entities].sort((a, b) => (order[a.constructor.name] || 1) - (order[b.constructor.name] || 1));
+  sorted.forEach(e => e.draw(ctx));
+  particles.forEach(p => p.draw(ctx));
+  waterParticles.forEach(p => p.draw(ctx));
+}
+
+function loop() {
+  update();
+  draw();
+  // Update stats
+  const moss = entities.filter(e => e instanceof Moss).length;
+  const ferns = entities.filter(e => e instanceof Fern).length;
+  const flowers = entities.filter(e => e instanceof Flower).length;
+  const stones = entities.filter(e => e instanceof Stone).length;
+  document.getElementById('stats').textContent =
+    `🌿 ${moss} moss · 🌱 ${ferns} ferns · 🌸 ${flowers} flowers · 🪨 ${stones} stones · ✨ ${particles.length} spores`;
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
