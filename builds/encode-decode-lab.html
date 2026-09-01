@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Encode/Decode Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1117;
+    color: #c9d1d9;
+    font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+    font-size: 13px;
+    padding: 24px;
+    min-height: 100vh;
+  }
+  h1 {
+    font-size: 1rem;
+    font-weight: 500;
+    letter-spacing: .25em;
+    text-transform: uppercase;
+    color: #58a6ff;
+    margin-bottom: 4px;
+  }
+  .sub {
+    font-size: .7rem;
+    color: #6e7681;
+    letter-spacing: .15em;
+    margin-bottom: 20px;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 800px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+  .panel {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 14px;
+  }
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .panel-title {
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .2em;
+    color: #8b949e;
+  }
+  textarea {
+    width: 100%;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    color: #c9d1d9;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 10px;
+    resize: vertical;
+    min-height: 90px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  textarea:focus { border-color: #58a6ff; }
+  .controls {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+  button {
+    background: #21262d;
+    color: #c9d1d9;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    padding: 5px 12px;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: .08em;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all .15s;
+  }
+  button:hover {
+    background: #30363d;
+    border-color: #58a6ff;
+    color: #58a6ff;
+  }
+  button.primary {
+    background: #1f6feb;
+    border-color: #1f6feb;
+    color: #fff;
+  }
+  button.primary:hover {
+    background: #388bfd;
+    border-color: #388bfd;
+  }
+  .toolbar {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+    padding: 10px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+  }
+  .toolbar-label {
+    font-size: .65rem;
+    text-transform: uppercase;
+    letter-spacing: .15em;
+    color: #6e7681;
+    display: flex;
+    align-items: center;
+    margin-right: 4px;
+  }
+  .stats {
+    font-size: 11px;
+    color: #6e7681;
+    margin-top: 6px;
+    letter-spacing: .05em;
+  }
+  .stats span { color: #58a6ff; }
+  .swap-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: -6px 0;
+  }
+  .swap-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    padding: 0;
+    font-size: 16px;
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #8b949e;
+    cursor: pointer;
+  }
+  .swap-btn:hover {
+    background: #30363d;
+    color: #58a6ff;
+    border-color: #58a6ff;
+  }
+  .output-panel textarea {
+    background: #010409;
+    color: #3fb950;
+    border-color: #21262d;
+  }
+  .copy-toast {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    background: #238636;
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 11px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    opacity: 0;
+    transition: opacity .3s;
+    pointer-events: none;
+    z-index: 100;
+  }
+  .copy-toast.show { opacity: 1; }
+  .section-title {
+    font-size: .75rem;
+    text-transform: uppercase;
+    letter-spacing: .2em;
+    color: #58a6ff;
+    margin: 18px 0 10px 0;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #21262d;
+  }
+  .quick-section {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 14px;
+    margin-bottom: 14px;
+  }
+</style>
+</head>
+<body>
+<h1>Encode/Decode Lab</h1>
+<p class="sub">instant transforms for developers</p>
+
+<div class="quick-section">
+  <div class="toolbar-label" style="margin-bottom:8px;display:block;">Quick Transform</div>
+  <div class="toolbar">
+    <button onclick="quickTransform('urlEncode')" title="Percent-encode">URL Encode</button>
+    <button onclick="quickTransform('urlDecode')" title="Percent-decode">URL Decode</button>
+    <button onclick="quickTransform('base64Encode')" title="Base64 encode">Base64 Encode</button>
+    <button onclick="quickTransform('base64Decode')" title="Base64 decode">Base64 Decode</button>
+    <button onclick="quickTransform('htmlEncode')" title="Escape HTML entities">HTML Encode</button>
+    <button onclick="quickTransform('htmlDecode')" title="Unescape HTML entities">HTML Decode</button>
+    <button onclick="quickTransform('hexEncode')" title="Convert to hex">Hex</button>
+    <button onclick="quickTransform('hexDecode')" title="Convert from hex">Unhex</button>
+    <button onclick="quickTransform('rot13')" title="ROT13 cipher">ROT13</button>
+    <button onclick="quickTransform('jwtDecode')" title="Decode JWT token (no verify)">JWT Decode</button>
+    <button onclick="quickTransform('jsonPrettify')" title="Pretty-print JSON">JSON Prettify</button>
+    <button onclick="quickTransform('jsonMinify')" title="Minify JSON">JSON Minify</button>
+    <button onclick="clearAll()" style="margin-left:auto;color:#f85149;border-color:#f8514966;">Clear</button>
+  </div>
+</div>
+
+<div class="layout">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">Input</div>
+      <button onclick="copyInput()" style="font-size:10px;padding:3px 8px;">Copy</button>
+    </div>
+    <textarea id="input" placeholder="Paste or type something..." spellcheck="false"></textarea>
+    <div class="stats" id="inputStats">0 chars · 0 words · 0 lines</div>
+  </div>
+
+  <div class="panel output-panel">
+    <div class="panel-header">
+      <div class="panel-title">Output</div>
+      <button onclick="copyOutput()" class="primary" style="font-size:10px;padding:3px 8px;">Copy</button>
+    </div>
+    <textarea id="output" placeholder="Result appears here..." readonly spellcheck="false"></textarea>
+    <div class="stats" id="outputStats">ready</div>
+  </div>
+</div>
+
+<div class="copy-toast" id="toast">Copied!</div>
+
+<script>
+const input = document.getElementById('input');
+const output = document.getElementById('output');
+const inputStats = document.getElementById('inputStats');
+const outputStats = document.getElementById('outputStats');
+const toast = document.getElementById('toast');
+
+let toastTimer;
+
+function showToast(msg = 'Copied!') {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 1400);
+}
+
+function updateStats() {
+  const text = input.value;
+  const chars = text.length;
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const lines = text ? text.split('\n').length : 0;
+  inputStats.innerHTML = `<span>${chars}</span> chars · <span>${words}</span> words · <span>${lines}</span> lines`;
+
+  const out = output.value;
+  outputStats.innerHTML = out ? `<span>${out.length}</span> chars · <span>${Buffer ? btoa(unescape(encodeURIComponent(out))).length : 0}</span> bytes` : 'ready';
+}
+
+input.addEventListener('input', updateStats);
+
+function copyInput() {
+  if (!input.value) return;
+  navigator.clipboard.writeText(input.value).then(() => showToast('Input copied!'));
+}
+function copyOutput() {
+  if (!output.value) return;
+  navigator.clipboard.writeText(output.value).then(() => showToast('Output copied!'));
+}
+
+function urlEncode(str) {
+  return encodeURIComponent(str);
+}
+function urlDecode(str) {
+  try { return decodeURIComponent(str); }
+  catch(e) { return 'Error: malformed URI sequence'; }
+}
+function base64Encode(str) {
+  try { return btoa(unescape(encodeURIComponent(str))); }
+  catch(e) { return 'Error: ' + e.message; }
+}
+function base64Decode(str) {
+  try { return decodeURIComponent(escape(atob(str.trim()))); }
+  catch(e) { return 'Error: invalid base64'; }
+}
+function htmlEncode(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
+function htmlDecode(str) {
+  const doc = new DOMParser().parseFromString(str, 'text/html');
+  return doc.documentElement.textContent;
+}
+function hexEncode(str) {
+  return Array.from(new TextEncoder().encode(str)).map(b => b.toString(16).padStart(2,'0')).join(' ');
+}
+function hexDecode(str) {
+  try {
+    const bytes = str.trim().split(/[\s]+/).map(h => parseInt(h, 16));
+    if (bytes.some(isNaN)) return 'Error: invalid hex';
+    return new TextDecoder().decode(new Uint8Array(bytes));
+  } catch(e) { return 'Error: ' + e.message; }
+}
+function rot13(str) {
+  return str.replace(/[a-zA-Z]/g, c => {
+    const base = c <= 'Z' ? 65 : 97;
+    return String.fromCharCode((c.charCodeAt(0) - base + 13) % 26 + base);
+  });
+}
+function jwtDecode(str) {
+  const parts = str.trim().split('.');
+  if (parts.length < 2) return 'Error: not a JWT (needs 3 dot-separated parts)';
+  try {
+    const payload = JSON.parse(atob(parts[1].replace(/-/g,'+').replace(/_/g,'/')));
+    return JSON.stringify(payload, null, 2) + '\n\n// header: ' + JSON.stringify(JSON.parse(atob(parts[0].replace(/-/g,'+').replace(/_/g,'/'))), null, 2);
+  } catch(e) { return 'Error: invalid JWT payload'; }
+}
+function jsonPrettify(str) {
+  try { return JSON.stringify(JSON.parse(str), null, 2); }
+  catch(e) { return 'Error: ' + e.message; }
+}
+function jsonMinify(str) {
+  try { return JSON.stringify(JSON.parse(str)); }
+  catch(e) { return 'Error: ' + e.message; }
+}
+
+function quickTransform(fn) {
+  const text = input.value;
+  if (!text) { output.value = ''; updateStats(); return; }
+  const transforms = {
+    urlEncode: urlEncode, urlDecode: urlDecode,
+    base64Encode: base64Encode, base64Decode: base64Decode,
+    htmlEncode: htmlEncode, htmlDecode: htmlDecode,
+    hexEncode: hexEncode, hexDecode: hexDecode,
+    rot13: rot13, jwtDecode: jwtDecode,
+    jsonPrettify: jsonPrettify, jsonMinify: jsonMinify
+  };
+  output.value = transforms[fn](text);
+  updateStats();
+}
+
+function clearAll() {
+  input.value = '';
+  output.value = '';
+  updateStats();
+}
+
+// sample
+input.value = 'Hello <world> & "friends"!\nhttps://example.com/path?q=test\n{"key":"value","nested":{"arr":[1,2,3]}}';
+updateStats();
+quickTransform('urlEncode');
+</script>
+</body>
+</html>
