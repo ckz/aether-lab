@@ -1,475 +1,316 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flow Garden — Perlin Particle Meadow</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #05060f;
-    overflow: hidden;
-    font-family: 'Courier New', monospace;
-    color: #c8d0e0;
-    cursor: none;
-  }
-  canvas { display: block; }
-  #ui {
-    position: fixed;
-    top: 16px;
-    left: 16px;
-    font-size: 12px;
-    opacity: 0.6;
-    pointer-events: none;
-    z-index: 10;
-    line-height: 1.7;
-  }
-  #ui h1 {
-    font-size: 13px;
-    letter-spacing: 3px;
-    color: #7ae8c0;
-    margin-bottom: 6px;
-    text-transform: uppercase;
-  }
-  #controls {
-    position: fixed;
-    bottom: 16px;
-    right: 16px;
-    font-size: 11px;
-    opacity: 0.45;
-    pointer-events: none;
-    text-align: right;
-    z-index: 10;
-  }
-  #custom-cursor {
-    position: fixed;
-    pointer-events: none;
-    z-index: 100;
-    width: 28px;
-    height: 28px;
-    border: 1px solid rgba(180, 220, 255, 0.5);
-    border-radius: 50%;
-    transform: translate(-50%, -50%);
-    transition: width 0.2s, height 0.2s, border-color 0.2s;
-  }
-  #custom-cursor::after {
-    content: '';
-    position: absolute;
-    top: 50%; left: 50%;
-    width: 3px; height: 3px;
-    background: rgba(200, 220, 255, 0.8);
-    border-radius: 50%;
-    transform: translate(-50%, -50%);
-  }
-  #fps {
-    position: fixed;
-    top: 16px;
-    right: 16px;
-    font-size: 11px;
-    opacity: 0.3;
-    z-index: 10;
-  }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flow Garden — Aether Curiosity Build</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #050a12;
+      overflow: hidden;
+      font-family: 'Georgia', 'Times New Roman', serif;
+      cursor: crosshair;
+    }
+    canvas { display: block; }
+    #overlay {
+      position: fixed;
+      top: 24px;
+      left: 28px;
+      color: rgba(220, 230, 255, 0.85);
+      pointer-events: none;
+      z-index: 10;
+      letter-spacing: 0.04em;
+    }
+    #overlay h1 {
+      font-size: 20px;
+      font-weight: normal;
+      margin-bottom: 6px;
+      text-shadow: 0 0 18px rgba(140,180,255,0.4);
+    }
+    #overlay p {
+      font-size: 12px;
+      opacity: 0.55;
+    }
+    #hint {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(200,210,240,0.45);
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      pointer-events: none;
+      transition: opacity 1.2s;
+    }
+  </style>
 </head>
 <body>
-<canvas id="canvas"></canvas>
-<div id="custom-cursor"></div>
-<div id="ui">
-  <h1>Flow Garden</h1>
-  <div id="stats">particles: 0 &nbsp;|&nbsp; season: Spring</div>
-  <div id="season-progress">season progress: ░░░░░░░░░░</div>
-</div>
-<div id="controls">
-  drag — push wind<br>
-  click — plant bloom<br>
-  hold click — irradiate<br>
-  space — pause / resume<br>
-  S — save PNG<br>
-  C — cycle palette
-</div>
-<div id="fps">-- fps</div>
+  <div id="overlay">
+    <h1>✦ Flow Garden</h1>
+    <p>generative particles · move mouse to bloom</p>
+  </div>
+  <div id="hint">click anywhere to reset · move to disturb</div>
+  <canvas id="canvas"></canvas>
+  <script>
+    (() => {
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      const hint = document.getElementById('hint');
 
-<script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-const cursor = document.getElementById('custom-cursor');
-const statsEl = document.getElementById('stats');
-const seasonEl = document.getElementById('season-progress');
-const fpsEl = document.getElementById('fps');
+      let W, H, dpr;
+      let particles = [];
+      const MAX_PARTICLES = 1800;
+      const TRAIL_ALPHA = 0.045;
+      let mouse = { x: -9999, y: -9999, active: false };
+      let time = 0;
+      let frameCount = 0;
 
-let W, H, DPR;
-function resize() {
-  DPR = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth;
-  H = window.innerHeight;
-  canvas.width = W * DPR;
-  canvas.height = H * DPR;
-  canvas.style.width = W + 'px';
-  canvas.style.height = H + 'px';
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-}
-resize();
-window.addEventListener('resize', resize);
+      // Color palettes that shift over time
+      const palettes = [
+        ['#ff6ec7','#7873f5','#4deeea','#ffe66d','#ff9a76'],
+        ['#7ee8fa','#80ecb8','#f6d365','#fda085','#a18cd1'],
+        ['#fbc2eb','#a6c1ee','#fdcbf1','#e6dee9','#d4fc79'],
+        ['#ff9a9e','#fad0c4','#ffecd2','#fcb69f','#ffecd2'],
+        ['#a1c4fd','#c2e9fb','#e0c3fc','#8ec5fc','#4facfe'],
+      ];
+      let currentPalette = palettes[0];
+      let paletteIndex = 0;
 
-// ─── Perlin noise (classic 2D implementation) ───
-const Perlin = (() => {
-  const perm = new Uint8Array(512);
-  const p = new Uint8Array(256);
-  for (let i = 0; i < 256; i++) p[i] = i;
-  for (let i = 255; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [p[i], p[j]] = [p[j], p[i]];
-  }
-  for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
-
-  function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
-  function lerp(t, a, b) { return a + t * (b - a); }
-  function grad(hash, x, y, z) {
-    const h = hash & 15;
-    const u = h < 8 ? x : y;
-    const v = h < 4 ? y : h === 12 || h === 14 ? x : z;
-    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
-  }
-
-  return {
-    noise2D(x, y) {
-      const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
-      x -= Math.floor(x); y -= Math.floor(y);
-      const u = fade(x), v = fade(y);
-      const A = perm[X] + Y, B = perm[X + 1] + Y;
-      return lerp(v,
-        lerp(u, grad(perm[A], x, y, 0), grad(perm[B], x - 1, y, 0)),
-        lerp(u, grad(perm[A + 1], x, y - 1, 0), grad(perm[B + 1], x - 1, y - 1, 0))
-      );
-    },
-    fbm(x, y, octaves = 4) {
-      let val = 0, amp = 1, freq = 1, max = 0;
-      for (let i = 0; i < octaves; i++) {
-        val += amp * this.noise2D(x * freq, y * freq);
-        max += amp;
-        amp *= 0.5;
-        freq *= 2.0;
+      function resize() {
+        dpr = Math.min(window.devicePixelRatio || 1, 2);
+        W = window.innerWidth;
+        H = window.innerHeight;
+        canvas.width = W * dpr;
+        canvas.height = H * dpr;
+        canvas.style.width = W + 'px';
+        canvas.style.height = H + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        // Soft fade on resize
+        ctx.fillStyle = 'rgba(5,10,18,0.9)';
+        ctx.fillRect(0, 0, W, H);
       }
-      return val / max;
-    }
-  };
-})();
 
-// ─── Seasons ───
-const seasons = [
-  { name: 'Spring',  bg: [8, 14, 30],    particleColors: ['#8ef0c8', '#c0f0d0', '#a0e8f0', '#f0d890', '#e8c8f0'], wind: 0.0004 },
-  { name: 'Summer',  bg: [5, 10, 20],    particleColors: ['#f0e870', '#f0c830', '#f09030', '#60e890', '#90d0f0'], wind: 0.0006 },
-  { name: 'Autumn',  bg: [14, 8, 6],     particleColors: ['#f08050', '#e0a030', '#c06030', '#f0d060', '#a07050'], wind: 0.0007 },
-  { name: 'Winter',  bg: [10, 12, 20],   particleColors: ['#c0e0ff', '#e0f0ff', '#a0c8f0', '#ffffff', '#d0d8e8'], wind: 0.0003 },
-];
-
-// ─── Color palettes ───
-const palettes = [
-  { name: 'Meadow',  base: [120, 70, 60], range: 80 },
-  { name: 'Sunset',  base: [20, 80, 65],  range: 60 },
-  { name: 'Deep',    base: [220, 60, 55], range: 70 },
-  { name: 'Forest',  base: [140, 50, 45], range: 60 },
-  { name: 'Coral',   base: [350, 70, 65], range: 70 },
-  { name: 'Frost',   base: [200, 40, 80], range: 50 },
-];
-
-let currentPalette = 0;
-
-// ─── Particles ───
-const MAX_PARTICLES = 1200;
-const particles = [];
-
-class Particle {
-  constructor(x, y, isBloom = false) {
-    this.x = x || Math.random() * W;
-    this.y = y || Math.random() * H;
-    this.vx = 0;
-    this.vy = 0;
-    this.age = 0;
-    this.maxAge = isBloom ? 80 + Math.random() * 120 : Infinity;
-    this.size = isBloom ? 1.5 + Math.random() * 2.5 : 0.8 + Math.random() * 1.5;
-    this.isBloom = isBloom;
-    this.hueOffset = (Math.random() - 0.5) * 40;
-    this.life = 1;
-    this.bloom = isBloom;
-    this.trail = [];
-  }
-
-  update(dt, time) {
-    const season = seasons[currentSeason];
-    const pal = palettes[currentPalette];
-
-    // Noise-driven flow
-    const noiseScale = 0.0018;
-    const n = Perlin.fbm(this.x * noiseScale + time * 0.15, this.y * noiseScale + time * 0.1, 4);
-    const angle = n * Math.PI * 4 + time * season.wind;
-    const speed = 0.7 + Math.abs(n) * 1.5;
-
-    this.vx += Math.cos(angle) * speed * 0.12;
-    this.vy += Math.sin(angle) * speed * 0.12;
-
-    // Mouse wind
-    const mdx = this.x - mouse.x;
-    const mdy = this.y - mouse.y;
-    const mDist = Math.sqrt(mdx * mdx + mdy * mdy) + 1;
-    if (mDist < mouse.radius && mouse.down) {
-      const force = (1 - mDist / mouse.radius) * mouse.strength;
-      this.vx += (mdx / mDist) * force;
-      this.vy += (mdy / mDist) * force;
-    }
-
-    // Gentle damping
-    this.vx *= 0.97;
-    this.vy *= 0.97;
-
-    this.x += this.vx * dt;
-    this.y += this.vy * dt;
-
-    // Lifecycle — particles age and change color
-    if (!this.bloom) {
-      this.age += dt;
-      this.life = Math.min(1, this.age / 600);
-      const hueShift = this.age * 0.15;
-      this.currentHue = (pal.base[0] + this.hueOffset + hueShift) % 360;
-      this.currentSat = pal.base[1];
-      this.currentLit = pal.base[2] - this.life * 15;
-    } else {
-      this.age += dt;
-      this.life = Math.max(0, 1 - this.age / this.maxAge);
-      this.currentHue = (pal.base[0] + this.hueOffset + 30) % 360;
-      this.currentSat = pal.base[1] + 10;
-      this.currentLit = pal.base[2] + 15;
-    }
-
-    // Wrap
-    const margin = 20;
-    if (this.x < -margin) this.x = W + margin;
-    if (this.x > W + margin) this.x = -margin;
-    if (this.y < -margin) this.y = H + margin;
-    if (this.y > H + margin) this.y = -margin;
-
-    // Trail
-    this.trail.push({ x: this.x, y: this.y });
-    if (this.trail.length > 8) this.trail.shift();
-  }
-
-  draw(ctx) {
-    const alpha = this.bloom ? this.life * 0.9 : Math.sin(this.life * Math.PI) * 0.75;
-    const h = this.currentHue, s = this.currentSat, l = this.currentLit;
-    const size = this.size * (this.bloom ? (1 + this.life * 1.5) : 1);
-
-    // Trail
-    if (this.trail.length > 1) {
-      ctx.beginPath();
-      ctx.moveTo(this.trail[0].x, this.trail[0].y);
-      for (let i = 1; i < this.trail.length; i++) {
-        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+      // Simple hash-based noise for flow field
+      function noise(x, y, t) {
+        const a = Math.sin(x * 0.012 + t * 0.4) * Math.cos(y * 0.018 + t * 0.3);
+        const b = Math.sin((x + y) * 0.009 + t * 0.25) * 1.3;
+        const c = Math.cos(x * 0.006 - y * 0.015 + t * 0.35) * 0.9;
+        return (a + b + c) * Math.PI * 2;
       }
-      ctx.strokeStyle = `hsla(${h}, ${s}%, ${l}%, ${alpha * 0.25})`;
-      ctx.lineWidth = size * 0.4;
-      ctx.stroke();
-    }
 
-    // Glow halo
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, size * 3, 0, Math.PI * 2);
-    ctx.fillStyle = `hsla(${h}, ${s}%, ${l}%, ${alpha * 0.08})`;
-    ctx.fill();
+      function getColor(alpha = 0.9) {
+        const palette = currentPalette;
+        const idx = Math.floor(Math.random() * palette.length);
+        const hex = palette[idx];
+        // Parse hex to rgba
+        const r = parseInt(hex.slice(1,3), 16);
+        const g = parseInt(hex.slice(3,5), 16);
+        const b = parseInt(hex.slice(5,7), 16);
+        return `rgba(${r},${g},${b},${alpha})`;
+      }
 
-    // Core
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, size, 0, Math.PI * 2);
-    ctx.fillStyle = `hsla(${h}, ${s}%, ${l}%, ${alpha})`;
-    ctx.fill();
+      class Particle {
+        constructor(x, y, burst = false) {
+          this.x = x ?? Math.random() * W;
+          this.y = y ?? Math.random() * H;
+          this.vx = 0;
+          this.vy = 0;
+          this.life = burst ? Math.random() * 60 + 30 : Math.random() * 300 + 200;
+          this.maxLife = this.life;
+          this.size = Math.random() * 1.6 + 0.4;
+          this.color = getColor(0.8);
+          this.burst = burst;
+        }
 
-    // Bright center
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, size * 0.4, 0, Math.PI * 2);
-    ctx.fillStyle = `hsla(${h}, ${s - 10}%, ${Math.min(95, l + 30)}%, ${alpha})`;
-    ctx.fill();
-  }
-}
+        update() {
+          const angle = noise(this.x, this.y, time);
+          const speed = 0.8 + Math.sin(time * 0.5) * 0.3;
 
-// ─── Bloom bursts ───
-const blooms = [];
+          this.vx += Math.cos(angle) * speed * 0.15;
+          this.vy += Math.sin(angle) * speed * 0.15;
 
-function spawnBloom(x, y, count = 60) {
-  for (let i = 0; i < count; i++) {
-    if (particles.length < MAX_PARTICLES + 200) {
-      const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.5;
-      const speed = 1.5 + Math.random() * 3.5;
-      const p = new Particle(x, y, true);
-      p.vx = Math.cos(angle) * speed;
-      p.vy = Math.sin(angle) * speed;
-      p.size = 1.2 + Math.random() * 2.8;
-      blooms.push(p);
-    }
-  }
-}
+          // Mouse interaction
+          if (mouse.active) {
+            const dx = this.x - mouse.x;
+            const dy = this.y - mouse.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 140) {
+              const force = (140 - dist) / 140;
+              const pushAngle = Math.atan2(dy, dx) + (Math.sin(time * 3) * 0.5);
+              this.vx += Math.cos(pushAngle) * force * 1.2;
+              this.vy += Math.sin(pushAngle) * force * 1.2;
+            }
+          }
 
-// ─── Mouse state ───
-const mouse = { x: W / 2, y: H / 2, radius: 180, strength: 0.6, down: false };
+          // Damping
+          this.vx *= 0.94;
+          this.vy *= 0.94;
 
-canvas.addEventListener('mousemove', e => {
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
-  cursor.style.left = e.clientX + 'px';
-  cursor.style.top = e.clientY + 'px';
-});
-canvas.addEventListener('mousedown', e => {
-  mouse.down = true;
-  mouse.strength = e.button === 2 ? -1.2 : 0.8;
-  cursor.style.width = '48px';
-  cursor.style.height = '48px';
-  cursor.style.borderColor = 'rgba(255, 180, 100, 0.7)';
-  if (e.button === 0) spawnBloom(e.clientX, e.clientY, 40);
-});
-canvas.addEventListener('mouseup', () => {
-  mouse.down = false;
-  mouse.strength = 0;
-  cursor.style.width = '28px';
-  cursor.style.height = '28px';
-  cursor.style.borderColor = 'rgba(180, 220, 255, 0.5)';
-});
-canvas.addEventListener('contextmenu', e => e.preventDefault());
+          this.x += this.vx;
+          this.y += this.vy;
+          this.life--;
 
-// Touch
-canvas.addEventListener('touchstart', e => {
-  e.preventDefault();
-  const t = e.touches[0];
-  mouse.x = t.clientX; mouse.y = t.clientY;
-  mouse.down = true; mouse.strength = 0.8;
-  spawnBloom(t.clientX, t.clientY, 40);
-}, { passive: false });
-canvas.addEventListener('touchmove', e => {
-  e.preventDefault();
-  const t = e.touches[0];
-  mouse.x = t.clientX; mouse.y = t.clientY;
-}, { passive: false });
-canvas.addEventListener('touchend', () => { mouse.down = false; mouse.strength = 0; });
+          // Wrap edges
+          if (this.x < -10) this.x = W + 10;
+          if (this.x > W + 10) this.x = -10;
+          if (this.y < -10) this.y = H + 10;
+          if (this.y > H + 10) this.y = -10;
+        }
 
-// Keyboard
-document.addEventListener('keydown', e => {
-  if (e.code === 'Space') { paused = !paused; e.preventDefault(); }
-  if (e.key === 's' || e.key === 'S') savePNG();
-  if (e.key === 'c' || e.key === 'C') {
-    currentPalette = (currentPalette + 1) % palettes.length;
-    cursor.style.borderColor = `hsla(${palettes[currentPalette].base[0]}, 60%, 70%, 0.6)`;
-  }
-});
+        draw() {
+          const lifeRatio = this.life / this.maxLife;
+          const alpha = lifeRatio * 0.85;
+          ctx.strokeStyle = this.color.replace(/[\d.]+\)$/, `${alpha})`);
+          ctx.lineWidth = this.size * lifeRatio;
+          ctx.beginPath();
+          ctx.moveTo(this.x - this.vx * 2, this.y - this.vy * 2);
+          ctx.lineTo(this.x, this.y);
+          ctx.stroke();
+        }
 
-function savePNG() {
-  const link = document.createElement('a');
-  link.download = `flow-garden-${Date.now()}.png`;
-  link.href = canvas.toDataURL('image/png');
-  link.click();
-}
+        dead() {
+          return this.life <= 0;
+        }
+      }
 
-// ─── State ───
-let currentSeason = 0;
-let seasonTimer = 0;
-let paused = false;
-let time = 0;
-let lastTime = performance.now();
-let fpsSmooth = 60;
+      function init() {
+        particles = [];
+        for (let i = 0; i < MAX_PARTICLES; i++) {
+          particles.push(new Particle());
+        }
+        paletteIndex = Math.floor(Math.random() * palettes.length);
+        currentPalette = palettes[paletteIndex];
+        // Clear
+        ctx.fillStyle = '#050a12';
+        ctx.fillRect(0, 0, W, H);
+      }
 
-// Seed ambient particles
-for (let i = 0; i < 800; i++) {
-  particles.push(new Particle());
-}
+      function burst(x, y, count = 150) {
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const speed = Math.random() * 3 + 1;
+          const p = new Particle(x, y, true);
+          p.vx = Math.cos(angle) * speed;
+          p.vy = Math.sin(angle) * speed;
+          p.size = Math.random() * 2 + 0.6;
+          particles.push(p);
+        }
+        // Trim if over limit
+        while (particles.length > MAX_PARTICLES + 400) {
+          particles.shift();
+        }
+      }
 
-// ─── Background star field ───
-const stars = Array.from({ length: 180 }, () => ({
-  x: Math.random() * 2000,
-  y: Math.random() * 2000,
-  size: Math.random() * 1.2,
-  twinkle: Math.random() * Math.PI * 2,
-  speed: 0.5 + Math.random() * 1.5,
-}));
+      function drawConnections() {
+        // Draw subtle connections between nearby particles (sparse for performance)
+        ctx.lineWidth = 0.3;
+        const maxDist = 50;
+        const step = 4; // Check every 4th particle
+        for (let i = 0; i < particles.length; i += step) {
+          const a = particles[i];
+          if (a.life < 20) continue;
+          for (let j = i + step; j < particles.length; j += step) {
+            const b = particles[j];
+            if (b.life < 20) continue;
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+            const dist = dx * dx + dy * dy;
+            if (dist < maxDist * maxDist) {
+              const alpha = (1 - Math.sqrt(dist) / maxDist) * 0.12 * (a.life / a.maxLife);
+              ctx.strokeStyle = `rgba(180,200,255,${alpha})`;
+              ctx.beginPath();
+              ctx.moveTo(a.x, a.y);
+              ctx.lineTo(b.x, b.y);
+              ctx.stroke();
+            }
+          }
+        }
+      }
 
-// ─── Main loop ───
-function loop(now) {
-  requestAnimationFrame(loop);
+      function animate() {
+        frameCount++;
+        time += 0.008;
 
-  const rawDt = (now - lastTime) / 16.667;
-  const dt = Math.min(rawDt, 3);
-  lastTime = now;
-  fpsSmooth = fpsSmooth * 0.95 + (1 / rawDt) * 0.05;
-  if (Math.floor(now / 500) !== Math.floor((now - 16) / 500)) {
-    fpsEl.textContent = Math.round(fpsSmooth) + ' fps';
-  }
+        // Palette shift every ~15 seconds
+        if (frameCount % 900 === 0) {
+          paletteIndex = (paletteIndex + 1) % palettes.length;
+          currentPalette = palettes[paletteIndex];
+        }
 
-  if (paused) return;
+        // Soft trail fade
+        ctx.fillStyle = `rgba(5,10,18,${TRAIL_ALPHA})`;
+        ctx.fillRect(0, 0, W, H);
 
-  time += 0.004 * dt;
+        // Update & draw particles
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i];
+          p.update();
+          if (p.dead()) {
+            particles.splice(i, 1);
+            // Respawn
+            if (particles.length < MAX_PARTICLES) {
+              particles.push(new Particle());
+            }
+          } else {
+            p.draw();
+          }
+        }
 
-  // Season timer
-  seasonTimer += dt;
-  const SEASON_DURATION = 2400; // ~4 min per season at 60fps
-  if (seasonTimer > SEASON_DURATION) {
-    seasonTimer = 0;
-    currentSeason = (currentSeason + 1) % seasons.length;
-  }
-  const seasonProgress = seasonTimer / SEASON_DURATION;
+        // Sparse connections every other frame for performance
+        if (frameCount % 2 === 0 && particles.length < 1500) {
+          drawConnections();
+        }
 
-  // Update season display
-  const season = seasons[currentSeason];
-  const pct = Math.floor(seasonProgress * 10);
-  statsEl.innerHTML = `particles: ${particles.length + blooms.length} &nbsp;|&nbsp; season: ${season.name}`;
-  seasonEl.innerHTML = `season progress: ${'█'.repeat(pct)}${'░'.repeat(10 - pct)} <span style="opacity:0.5">${Math.floor(seasonProgress * 100)}%</span>`;
+        // Maintain particle count
+        while (particles.length < MAX_PARTICLES) {
+          particles.push(new Particle());
+        }
 
-  // Background fade (creates trail ghosting)
-  const bg = season.bg;
-  ctx.fillStyle = `rgba(${bg[0]}, ${bg[1]}, ${bg[2]}, 0.12)`;
-  ctx.fillRect(0, 0, W, H);
+        requestAnimationFrame(animate);
+      }
 
-  // Stars
-  for (const s of stars) {
-    s.twinkle += s.speed * 0.02 * dt;
-    const alpha = 0.15 + 0.15 * Math.sin(s.twinkle);
-    ctx.beginPath();
-    ctx.arc(s.x % W, s.y % H, s.size, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(200, 220, 255, ${alpha})`;
-    ctx.fill();
-  }
+      // Events
+      window.addEventListener('resize', resize);
+      window.addEventListener('mousemove', e => {
+        mouse.x = e.clientX;
+        mouse.y = e.clientY;
+        mouse.active = true;
+        // Fade hint on first move
+        if (hint.style.opacity !== '0') {
+          hint.style.opacity = '0';
+        }
+      });
+      window.addEventListener('mouseleave', () => { mouse.active = false; });
+      window.addEventListener('touchmove', e => {
+        mouse.x = e.touches[0].clientX;
+        mouse.y = e.touches[0].clientY;
+        mouse.active = true;
+        if (hint.style.opacity !== '0') hint.style.opacity = '0';
+      }, { passive: true });
+      window.addEventListener('touchend', () => { mouse.active = false; });
+      window.addEventListener('click', e => {
+        burst(e.clientX, e.clientY, 200);
+      });
 
-  // Update + draw particles
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-    p.update(dt, time);
-    if (p.life <= 0 && !p.bloom) {
-      // Respawn at random location to maintain count
-      p.x = Math.random() * W;
-      p.y = Math.random() * H;
-      p.age = 0;
-      p.life = 0;
-      p.trail = [];
-    }
-    p.draw(ctx);
-  }
+      // Keyboard shortcut: space to burst at center
+      window.addEventListener('keydown', e => {
+        if (e.code === 'Space') {
+          e.preventDefault();
+          burst(W / 2, H / 2, 300);
+        }
+        if (e.code === 'KeyR') {
+          init();
+        }
+      });
 
-  // Bloom particles
-  for (let i = blooms.length - 1; i >= 0; i--) {
-    const p = blooms[i];
-    p.update(dt, time);
-    if (p.life <= 0) {
-      blooms.splice(i, 1);
-    } else {
-      p.draw(ctx);
-    }
-  }
+      resize();
+      init();
+      animate();
 
-  // Maintain particle count
-  while (particles.length < 800) {
-    particles.push(new Particle());
-  }
-}
-
-requestAnimationFrame(loop);
-
-// Initial background
-ctx.fillStyle = `rgb(${seasons[0].bg.join(',')})`;
-ctx.fillRect(0, 0, W, H);
-</script>
+      // Fade hint after 8 seconds
+      setTimeout(() => { hint.style.opacity = '0'; }, 8000);
+    })();
+  </script>
 </body>
 </html>
