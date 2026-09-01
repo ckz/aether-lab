@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Star Drift</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000010;
+    overflow: hidden;
+    font-family: 'Georgia', serif;
+    cursor: none;
+    user-select: none;
+  }
+  canvas { display: block; }
+  #hud {
+    position: fixed;
+    top: 20px;
+    left: 0; right: 0;
+    text-align: center;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #score {
+    color: #aaddff;
+    font-size: 18px;
+    letter-spacing: 4px;
+    text-shadow: 0 0 12px #4488cc88;
+  }
+  #level {
+    color: #ffaa66;
+    font-size: 13px;
+    letter-spacing: 3px;
+    margin-top: 4px;
+    text-shadow: 0 0 8px #ff884488;
+  }
+  #start-screen, #gameover-screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at center, #000022 0%, #000008 100%);
+    z-index: 100;
+    transition: opacity 0.8s;
+  }
+  #gameover-screen { display: none; }
+  h1 {
+    color: #ddeeff;
+    font-size: 52px;
+    font-weight: 300;
+    letter-spacing: 14px;
+    text-shadow: 0 0 40px #6699cc, 0 0 80px #33669944;
+    margin-bottom: 12px;
+  }
+  .subtitle {
+    color: #7799bb;
+    font-size: 15px;
+    letter-spacing: 4px;
+    margin-bottom: 50px;
+  }
+  .btn {
+    background: transparent;
+    border: 1px solid #4488cc88;
+    color: #aaddff;
+    padding: 14px 44px;
+    font-size: 16px;
+    font-family: 'Georgia', serif;
+    letter-spacing: 5px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.3s;
+  }
+  .btn:hover {
+    background: #4488cc22;
+    border-color: #88bbff;
+    text-shadow: 0 0 12px #88bbff;
+  }
+  .instructions {
+    color: #5577aa;
+    font-size: 13px;
+    letter-spacing: 2px;
+    margin-top: 30px;
+    text-align: center;
+    line-height: 2;
+  }
+  #final-score {
+    color: #ffcc88;
+    font-size: 28px;
+    letter-spacing: 6px;
+    margin: 20px 0;
+    text-shadow: 0 0 20px #ff994488;
+  }
+  #constellations-found {
+    color: #88aacc;
+    font-size: 14px;
+    letter-spacing: 3px;
+    margin-bottom: 30px;
+  }
+  .twinkle { animation: twinkle 2s ease-in-out infinite; }
+  @keyframes twinkle {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div id="score">0</div>
+  <div id="level">DRIFTING</div>
+</div>
+
+<div id="start-screen">
+  <h1 class="twinkle">STAR DRIFT</h1>
+  <div class="subtitle">a meditative voyage through falling light</div>
+  <button class="btn" onclick="startGame()">BEGIN</button>
+  <div class="instructions">
+    MOVE your ship through falling stars<br>
+    COLLECT constellation patterns for bonus points<br>
+    AVOID the dark space dust<br>
+    CLICK to pulse — push away nearby dust<br>
+    HOLD SPACE to slow time
+  </div>
+</div>
+
+<div id="gameover-screen">
+  <h1>DRIFT ENDED</h1>
+  <div id="final-score">0</div>
+  <div id="constellations-found">constellations: 0</div>
+  <button class="btn" onclick="restartGame()">DRIFT AGAIN</button>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Palette ---
+const palettes = [
+  { bg: '#000010', star: '#ffffff', glow: '#6699cc', dust: '#331122', ship: '#88bbff', const: '#ffcc88' },
+  { bg: '#050010', star: '#ffeebb', glow: '#9966cc', dust: '#220033', ship: '#cc99ff', const: '#88ffcc' },
+  { bg: '#000a10', star: '#eeffff', glow: '#66ccaa', dust: '#112211', ship: '#88ffdd', const: '#ffdd88' },
+  { bg: '#0a0008', star: '#ffddee', glow: '#cc6688', dust: '#220011', ship: '#ff99bb', const: '#ddff88' },
+];
+
+let palette = palettes[0];
+
+// --- State ---
+let running = false;
+let score = 0;
+let level = 0;
+let levelTimer = 0;
+const LEVEL_DURATION = 1200; // frames
+let timeSlow = 1;
+let slowEnergy = 100;
+let frame = 0;
+let constellationsFound = 0;
+let shakeAmount = 0;
+let comboCount = 0;
+let comboTimer = 0;
+
+// --- Mouse ---
+const mouse = { x: W/2, y: H/2, down: false, clickBurst: 0 };
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+canvas.addEventListener('mousedown', () => { mouse.down = true; mouse.clickBurst = 1; });
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+}, { passive: false });
+canvas.addEventListener('touchstart', e => {
+  mouse.clickBurst = 1;
+  mouse.down = true;
+});
+canvas.addEventListener('touchend', () => mouse.down = false);
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') e.preventDefault();
+});
+document.addEventListener('keyup', e => {
+  if (e.code === 'Space') e.preventDefault();
+});
+
+// --- Star field background ---
+const bgStars = [];
+for (let i = 0; i < 200; i++) {
+  bgStars.push({
+    x: Math.random() * 2000,
+    y: Math.random() * 2000,
+    r: Math.random() * 1.2 + 0.2,
+    twinkle: Math.random() * Math.PI * 2,
+    speed: Math.random() * 0.3 + 0.1,
+  });
+}
+
+// --- Falling stars (collectible) ---
+const stars = [];
+function spawnStar() {
+  const constellations = [
+    [[0,0], [15,-20], [30,0]], // triangle
+    [[0,0], [10,-15], [20,0], [10,15]], // diamond
+    [[0,0], [-12,-12], [12,-12]], // small triangle
+    [[0,0], [10,0], [5,-18]], // tiny triangle
+  ];
+  const c = constellations[Math.floor(Math.random() * constellations.length)];
+  return {
+    x: Math.random() * (W - 100) + 50,
+    y: -30,
+    vx: (Math.random() - 0.5) * 0.3,
+    vy: Math.random() * 1.2 + 0.8 + level * 0.15,
+    pattern: c,
+    size: Math.random() * 0.5 + 0.8,
+    collected: false,
+    alpha: 0,
+  };
+}
+
+// --- Space dust (obstacle) ---
+const dust = [];
+function spawnDust() {
+  return {
+    x: Math.random() * W,
+    y: -20,
+    vx: (Math.random() - 0.5) * 0.8,
+    vy: Math.random() * 1.5 + 0.8 + level * 0.12,
+    r: Math.random() * 12 + 6,
+    alive: true,
+    alpha: 0.6 + Math.random() * 0.4,
+    pulse: Math.random() * Math.PI * 2,
+  };
+}
+
+// --- Particles ---
+const particles = [];
+function spawnParticles(x, y, count, color, life = 40) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 3 + 1;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life,
+      maxLife: life,
+      color,
+      r: Math.random() * 2.5 + 0.5,
+    });
+  }
+}
+
+// --- Ship ---
+const ship = { x: W/2, y: H * 0.75, tx: W/2, ty: H * 0.75 };
+
+// --- Floating score texts ---
+const floats = [];
+function addFloat(x, y, text, color = '#ffffff') {
+  floats.push({ x, y, text, color, life: 60, vy: -1.2 });
+}
+
+// --- Constellations collected counter ---
+let totalConstellations = 0;
+
+// --- Difficulty scaling ---
+function getSpawnRate() {
+  return Math.max(30, 90 - level * 8);
+}
+function getDustRate() {
+  return Math.max(60, 180 - level * 12);
+}
+
+// --- Reset ---
+function resetGame() {
+  stars.length = 0;
+  dust.length = 0;
+  particles.length = 0;
+  floats.length = 0;
+  score = 0;
+  level = 0;
+  levelTimer = 0;
+  timeSlow = 1;
+  slowEnergy = 100;
+  frame = 0;
+  constellationsFound = 0;
+  shakeAmount = 0;
+  comboCount = 0;
+  comboTimer = 0;
+  palette = palettes[Math.floor(Math.random() * palettes.length)];
+  document.getElementById('score').textContent = '0';
+  document.getElementById('level').textContent = 'DRIFTING';
+}
+
+// --- Start / Restart ---
+function startGame() {
+  resetGame();
+  running = true;
+  document.getElementById('start-screen').style.opacity = '0';
+  setTimeout(() => document.getElementById('start-screen').style.display = 'none', 800);
+}
+
+function restartGame() {
+  resetGame();
+  running = true;
+  document.getElementById('gameover-screen').style.display = 'none';
+}
+
+function endGame() {
+  running = false;
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('constellations-found').textContent = 'constellations: ' + constellationsFound;
+  const go = document.getElementById('gameover-screen');
+  go.style.display = 'flex';
+  setTimeout(() => go.style.opacity = '1', 10);
+}
+
+// --- Main loop ---
+function update() {
+  if (!running) return;
+  frame++;
+
+  // Level progression
+  levelTimer++;
+  if (levelTimer >= LEVEL_DURATION) {
+    levelTimer = 0;
+    level++;
+    const names = ['DRIFTING', 'WANDERING', 'GLIDING', 'SOARING', 'CRUISING', 'ASCENDING', 'TRANSCENDING'];
+    document.getElementById('level').textContent = names[Math.min(level, names.length - 1)];
+    spawnParticles(W/2, H/2, 40, palette.glow, 60);
+  }
+
+  // Time slow
+  if (keys['Space'] && slowEnergy > 0) {
+    timeSlow = Math.max(0.3, timeSlow - 0.02);
+    slowEnergy = Math.max(0, slowEnergy - 0.5);
+  } else {
+    timeSlow = Math.min(1, timeSlow + 0.01);
+    slowEnergy = Math.min(100, slowEnergy + 0.15);
+  }
+
+  // Ship follows mouse smoothly
+  const lerp = 0.08 * timeSlow;
+  ship.x += (mouse.x - ship.x) * lerp;
+  ship.y += (mouse.y - ship.y) * lerp;
+
+  // Click burst
+  if (mouse.clickBurst > 0) {
+    spawnParticles(ship.x, ship.y, 20, palette.ship, 30);
+    // push dust
+    for (const d of dust) {
+      if (!d.alive) continue;
+      const dx = d.x - ship.x, dy = d.y - ship.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 150) {
+        const force = (150 - dist) / 150 * 6;
+        d.vx += (dx / dist) * force;
+        d.vy += (dy / dist) * force;
+      }
+    }
+    mouse.clickBurst--;
+  }
+
+  // Combo decay
+  if (comboTimer > 0) {
+    comboTimer--;
+  } else {
+    comboCount = 0;
+  }
+
+  // Shake decay
+  shakeAmount *= 0.92;
+
+  // Spawn stars
+  if (frame % getSpawnRate() === 0) stars.push(spawnStar());
+  // Spawn dust
+  if (frame % getDustRate() === 0) dust.push(spawnDust());
+
+  // Update stars
+  for (let i = stars.length - 1; i >= 0; i--) {
+    const s = stars[i];
+    s.alpha = Math.min(1, s.alpha + 0.04);
+    s.x += s.vx * timeSlow;
+    s.y += s.vy * timeSlow;
+
+    // Check collection
+    const dx = s.x - ship.x, dy = s.y - ship.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 28 * s.size) {
+      // Collected!
+      const points = Math.floor(10 * s.size * (1 + comboCount * 0.3));
+      score += points;
+      comboCount++;
+      comboTimer = 90;
+      constellationsFound++;
+      document.getElementById('score').textContent = score;
+      spawnParticles(s.x, s.y, 15, palette.const, 35);
+      addFloat(s.x, s.y, '+' + points, palette.const);
+      if (comboCount > 1) addFloat(s.x, s.y - 20, comboCount + 'x', '#ffcc66');
+      stars.splice(i, 1);
+      continue;
+    }
+
+    // Off screen
+    if (s.y > H + 40 || s.x < -40 || s.x > W + 40) {
+      stars.splice(i, 1);
+      comboCount = 0;
+    }
+  }
+
+  // Update dust
+  for (let i = dust.length - 1; i >= 0; i--) {
+    const d = dust[i];
+    d.pulse += 0.03 * timeSlow;
+    d.x += d.vx * timeSlow;
+    d.y += d.vy * timeSlow;
+    d.vx *= 0.995;
+    d.vy *= 0.995;
+
+    // Check collision with ship
+    const dx = d.x - ship.x, dy = d.y - ship.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < d.r + 10 && d.alive) {
+      d.alive = false;
+      shakeAmount = 8;
+      spawnParticles(ship.x, ship.y, 25, '#ff4466', 40);
+      score = Math.max(0, score - 15);
+      comboCount = 0;
+      document.getElementById('score').textContent = score;
+      addFloat(ship.x, ship.y, '-15', '#ff4466');
+    }
+
+    // Off screen
+    if (d.y > H + 40 || d.x < -40 || d.x > W + 40) {
+      dust.splice(i, 1);
+    }
+  }
+
+  // Update particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx * timeSlow;
+    p.y += p.vy * timeSlow;
+    p.vx *= 0.97;
+    p.vy *= 0.97;
+    p.life--;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+
+  // Update floats
+  for (let i = floats.length - 1; i >= 0; i--) {
+    const f = floats[i];
+    f.y += f.vy * timeSlow;
+    f.life--;
+    if (f.life <= 0) floats.splice(i, 1);
+  }
+
+  // Update bg stars
+  for (const s of bgStars) {
+    s.twinkle += 0.02;
+    s.y += s.speed * timeSlow;
+    if (s.y > H + 10) {
+      s.y = -10;
+      s.x = Math.random() * W;
+    }
+  }
+}
+
+function draw() {
+  // Background with shake
+  const sx = (Math.random() - 0.5) * shakeAmount;
+  const sy = (Math.random() - 0.5) * shakeAmount;
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  // Background
+  ctx.fillStyle = palette.bg;
+  ctx.fillRect(-10, -10, W + 20, H + 20);
+
+  // Background stars
+  for (const s of bgStars) {
+    const alpha = 0.3 + Math.sin(s.twinkle) * 0.3;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#8899cc';
+    ctx.beginPath();
+    ctx.arc(s.x % W, s.y % H, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Nebula glow blobs
+  const nebulaTime = frame * 0.003;
+  for (let i = 0; i < 3; i++) {
+    const nx = W * (0.2 + 0.3 * i) + Math.sin(nebulaTime + i) * 80;
+    const ny = H * 0.4 + Math.cos(nebulaTime * 0.7 + i) * 100;
+    const grad = ctx.createRadialGradient(nx, ny, 0, nx, ny, 200);
+    grad.addColorStop(0, palette.glow + '15');
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fillRect(nx - 200, ny - 200, 400, 400);
+  }
+
+  if (!running && document.getElementById('start-screen').style.display !== 'none') return;
+
+  // Dust
+  for (const d of dust) {
+    if (!d.alive) continue;
+    const alpha = d.alpha * (0.6 + Math.sin(d.pulse) * 0.4);
+    const grad = ctx.createRadialGradient(d.x, d.y, 0, d.x, d.y, d.r);
+    grad.addColorStop(0, palette.dust + '00');
+    grad.addColorStop(0.6, palette.dust + Math.floor(alpha * 180).toString(16).padStart(2, '0'));
+    grad.addColorStop(1, palette.dust + '00');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Stars
+  for (const s of stars) {
+    // Glow
+    const grad = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, 20 * s.size);
+    grad.addColorStop(0, palette.star + 'cc');
+    grad.addColorStop(0.3, palette.glow + '66');
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 20 * s.size, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Core
+    ctx.fillStyle = palette.star;
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = palette.glow;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 2.5 * s.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Constellation pattern preview
+    if (s.pattern) {
+      ctx.strokeStyle = palette.const + '55';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let j = 0; j < s.pattern.length; j++) {
+        const px = s.x + s.pattern[j][0] * s.size;
+        const py = s.y + s.pattern[j][1] * s.size;
+        if (j === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+      // Pattern stars
+      for (const p of s.pattern) {
+        ctx.fillStyle = palette.const + '88';
+        ctx.beginPath();
+        ctx.arc(s.x + p[0] * s.size, s.y + p[1] * s.size, 1.2 * s.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Particles
+  for (const p of particles) {
+    const alpha = p.life / p.maxLife;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * alpha, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+
+  // Ship
+  drawShip(ship.x, ship.y);
+
+  // Floating texts
+  for (const f of floats) {
+    const alpha = Math.min(1, f.life / 30);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = f.color;
+    ctx.font = '14px Georgia';
+    ctx.textAlign = 'center';
+    ctx.fillText(f.text, f.x, f.y);
+  }
+  ctx.globalAlpha = 1;
+
+  // Time slow indicator
+  if (timeSlow < 1) {
+    ctx.strokeStyle = '#88bbff44';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(ship.x, ship.y, 30 + Math.sin(frame * 0.1) * 3, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Slow energy bar (bottom)
+  const barW = 120, barH = 3;
+  const barX = W/2 - barW/2, barY = H - 20;
+  ctx.fillStyle = '#ffffff11';
+  ctx.fillRect(barX, barY, barW, barH);
+  const energyColor = slowEnergy > 30 ? '#88bbff' : '#ff6644';
+  ctx.fillStyle = energyColor + '88';
+  ctx.fillRect(barX, barY, barW * (slowEnergy / 100), barH);
+
+  ctx.restore();
+}
+
+function drawShip(x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+
+  // Engine glow
+  const engineGrad = ctx.createRadialGradient(0, 8, 0, 0, 8, 20);
+  engineGrad.addColorStop(0, palette.ship + '88');
+  engineGrad.addColorStop(1, 'transparent');
+  ctx.fillStyle = engineGrad;
+  ctx.beginPath();
+  ctx.arc(0, 8, 20, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Ship body
+  ctx.fillStyle = palette.ship;
+  ctx.shadowBlur = 15;
+  ctx.shadowColor = palette.ship;
+  ctx.beginPath();
+  ctx.moveTo(0, -12);
+  ctx.lineTo(-7, 8);
+  ctx.lineTo(0, 5);
+  ctx.lineTo(7, 8);
+  ctx.closePath();
+  ctx.fill();
+
+  // Cockpit
+  ctx.fillStyle = palette.const;
+  ctx.shadowBlur = 6;
+  ctx.shadowColor = palette.const;
+  ctx.beginPath();
+  ctx.arc(0, -1, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+const keys = {};
+document.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space') e.preventDefault();
+});
+document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+// Initial draw
+ctx.fillStyle = palette.bg;
+ctx.fillRect(0, 0, W, H);
+for (const s of bgStars) {
+  ctx.globalAlpha = 0.3 + Math.sin(s.twinkle) * 0.3;
+  ctx.fillStyle = '#8899cc';
+  ctx.beginPath();
+  ctx.arc(s.x % W, s.y % H, s.r, 0, Math.PI * 2);
+  ctx.fill();
+}
+ctx.globalAlpha = 1;
+
+loop();
+</script>
+</body>
+</html>
