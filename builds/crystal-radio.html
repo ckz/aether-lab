@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crystal Radio — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #07060f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #aaa;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #title {
+    font-size: .65rem;
+    letter-spacing: .4em;
+    text-transform: uppercase;
+    color: rgba(160,140,255,.6);
+    margin-bottom: 4px;
+  }
+  #sub {
+    font-size: .55rem;
+    letter-spacing: .2em;
+    color: rgba(160,140,255,.3);
+    margin-bottom: 14px;
+  }
+  #controls {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .btn {
+    background: rgba(20,15,40,.7);
+    border: 1px solid rgba(140,120,255,.25);
+    color: rgba(180,160,255,.8);
+    padding: 5px 12px;
+    font-size: .6rem;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    transition: all .2s;
+    pointer-events: all;
+  }
+  .btn:hover {
+    background: rgba(40,30,80,.8);
+    border-color: rgba(160,140,255,.6);
+    color: #fff;
+  }
+  .btn.active {
+    background: rgba(80,60,200,.3);
+    border-color: rgba(180,150,255,.7);
+    color: #fff;
+  }
+  #stats {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    font-size: .55rem;
+    letter-spacing: .1em;
+    color: rgba(160,140,255,.35);
+    text-align: right;
+    z-index: 10;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="ui">
+  <div id="title">Crystal Radio</div>
+  <div id="sub">click to broadcast · hold to resonate</div>
+</div>
+<div id="stats"></div>
+<div id="controls">
+  <button class="btn active" data-palette="0">Obsidian</button>
+  <button class="btn" data-palette="1">Aurora</button>
+  <button class="btn" data-palette="2">Ember</button>
+  <button class="btn" data-palette="3">Frost</button>
+  <button class="btn" data-palette="4">Nebula</button>
+  <button class="btn" data-palette="5">Toxic</button>
+  <button class="btn" id="clearBtn">Clear</button>
+</div>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const PALETTES = [
+  { name: 'Obsidian', colors: ['#7b6fff','#a78bfa','#6366f1','#818cf8','#4f46e5'], glow: '#7c3aed', bg: [7,6,15] },
+  { name: 'Aurora',    colors: ['#00ffc8','#00e5a0','#64ffda','#1de9b6','#00bfa5'], glow: '#00e676', bg: [5,12,10] },
+  { name: 'Ember',     colors: ['#ff6b35','#ff8a50','#ff5722','#ff7043','#f4511e'], glow: '#ff3d00', bg: [15,8,5] },
+  { name: 'Frost',     colors: ['#80deea','#4dd0e1','#00bcd4','#26c6da','#00acc1'], glow: '#00e5ff', bg: [5,10,14] },
+  { name: 'Nebula',    colors: ['#ff6ec7','#c471f5','#b388ff','#ea80fc','#ce93d8'], glow: '#e040fb', bg: [12,6,14] },
+  { name: 'Toxic',     colors: ['#39ff14','#00ff87','#32ff7e','#00e676','#69f0ae'], glow: '#76ff03', bg: [4,10,5] }
+];
+
+let palette = 0;
+let mouse = { x: W/2, y: H/2, down: false };
+let crystals = [];
+let ripples = [];
+let particles = [];
+let nodes = [];
+let frame = 0;
+let autoTimer = 0;
+
+// Crystal class - a growing crystalline cluster
+class Crystal {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.age = 0;
+    this.maxAge = 600 + Math.random() * 400;
+    this.branches = [];
+    this.color = PALETTES[palette].colors[Math.floor(Math.random() * PALETTES[palette].colors.length)];
+    this.glowColor = PALETTES[palette].glow;
+    this.maxBranches = 4 + Math.floor(Math.random() * 5);
+    this.branchAngle = Math.random() * Math.PI * 2;
+    this.growSpeed = 0.4 + Math.random() * 0.8;
+    this.depth = 0;
+    this.dead = false;
+    this.opacity = 0;
+    
+    // Initial branches
+    for (let i = 0; i < 3; i++) {
+      this.branches.push(this.createBranch(x, y, this.branchAngle + (i - 1) * 0.5, 0, 8 + Math.random() * 12));
+    }
+  }
+
+  createBranch(x, y, angle, depth, length) {
+    return {
+      x, y, angle, depth, length, grown: 0,
+      children: [], spawned: false, width: Math.max(1, 3 - depth * 0.4),
+      color: this.color
+    };
+  }
+
+  update() {
+    this.age++;
+    this.opacity = Math.min(1, this.age / 30);
+    
+    if (this.age > this.maxAge) {
+      this.opacity = Math.max(0, this.opacity - 0.003);
+      if (this.opacity <= 0) this.dead = true;
+    }
+
+    // Grow branches
+    for (let b of this.branches) {
+      if (b.grown < b.length) {
+        b.grown += this.growSpeed;
+        const nx = b.x + Math.cos(b.angle) * this.growSpeed;
+        const ny = b.y + Math.sin(b.angle) * this.growSpeed;
+        
+        // Spawn particles along growth
+        if (Math.random() < 0.3) {
+          particles.push(new Particle(nx, ny, this.color, 0.5));
+        }
+        
+        // Spawn child branches
+        if (b.grown > b.length * 0.5 && !b.spawned && b.depth < 4 && this.branches.length < this.maxBranches * 3) {
+          b.spawned = true;
+          const numChildren = Math.random() < 0.4 ? 2 : 1;
+          for (let i = 0; i < numChildren; i++) {
+            const spread = 0.3 + Math.random() * 0.6;
+            const newAngle = b.angle + (i === 0 ? -spread : spread);
+            const newLen = b.length * (0.5 + Math.random() * 0.3);
+            const child = this.createBranch(nx, ny, newAngle, b.depth + 1, newLen);
+            b.children.push(child);
+            this.branches.push(child);
+          }
+        }
+      }
+    }
+
+    // Resonate when mouse is held near
+    if (mouse.down) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < 200 && Math.random() < 0.4) {
+        const angle = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.5;
+        const speed = 1 + Math.random() * 2;
+        particles.push(new Particle(this.x + (Math.random()-0.5)*20, this.y + (Math.random()-0.5)*20, this.glowColor, speed, angle));
+      }
+    }
+  }
+
+  draw(ctx) {
+    if (this.opacity <= 0) return;
+    
+    ctx.globalAlpha = this.opacity * 0.8;
+    ctx.strokeStyle = this.color;
+    ctx.shadowColor = this.glowColor;
+    ctx.shadowBlur = 4;
+    
+    const drawBranch = (b, parentEnd) => {
+      const endX = b.x + Math.cos(b.angle) * Math.min(b.grown, b.length);
+      const endY = b.y + Math.sin(b.angle) * Math.min(b.grown, b.length);
+      
+      ctx.lineWidth = b.width;
+      ctx.beginPath();
+      ctx.moveTo(parentEnd ? parentEnd.x : b.x, parentEnd ? parentEnd.y : b.y);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+      
+      // Node at tips
+      if (b.grown >= b.length && b.depth >= 2) {
+        ctx.fillStyle = this.glowColor;
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(endX, endY, 1.5 + Math.sin(frame * 0.05 + b.x) * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 4;
+        
+        // Track for connections
+        if (!b.connected) {
+          b.connected = true;
+          nodes.push({ x: endX, y: endY, color: this.glowColor, crystal: this, branch: b });
+        }
+      }
+      
+      for (let child of b.children) {
+        drawBranch(child, { x: endX, y: endY });
+      }
+    };
+    
+    for (let b of this.branches) {
+      if (b.depth === 0) drawBranch(b, null);
+    }
+    
+    // Core glow
+    ctx.globalAlpha = this.opacity * 0.5;
+    ctx.fillStyle = this.glowColor;
+    ctx.shadowBlur = 20;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 4 + Math.sin(frame * 0.03) * 2, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+  }
+}
+
+class Particle {
+  constructor(x, y, color, speed, angle) {
+    this.x = x;
+    this.y = y;
+    this.color = color;
+    this.speed = speed || (0.3 + Math.random() * 1.5);
+    this.angle = angle || Math.random() * Math.PI * 2;
+    this.life = 1;
+    this.decay = 0.005 + Math.random() * 0.02;
+    this.size = 0.5 + Math.random() * 1.5;
+  }
+  update() {
+    this.x += Math.cos(this.angle) * this.speed;
+    this.y += Math.sin(this.angle) * this.speed;
+    this.life -= this.decay;
+    this.angle += (Math.random() - 0.5) * 0.1;
+  }
+  draw(ctx) {
+    ctx.globalAlpha = this.life * 0.7;
+    ctx.fillStyle = this.color;
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+  }
+}
+
+class Ripple {
+  constructor(x, y, color) {
+    this.x = x;
+    this.y = y;
+    this.radius = 0;
+    this.maxRadius = 150 + Math.random() * 100;
+    this.speed = 1.5 + Math.random();
+    this.life = 1;
+    this.color = color || PALETTES[palette].glow;
+  }
+  update() {
+    this.radius += this.speed;
+    this.life = 1 - this.radius / this.maxRadius;
+  }
+  draw(ctx) {
+    ctx.globalAlpha = this.life * 0.4;
+    ctx.strokeStyle = this.color;
+    ctx.shadowColor = this.color;
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+  }
+}
+
+// Background ambient dust
+class Dust {
+  constructor() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.vx = (Math.random() - 0.5) * 0.2;
+    this.vy = (Math.random() - 0.5) * 0.2;
+    this.size = Math.random() * 0.8;
+    this.phase = Math.random() * Math.PI * 2;
+  }
+  update() {
+    this.x += this.vx + Math.sin(frame * 0.01 + this.phase) * 0.05;
+    this.y += this.vy + Math.cos(frame * 0.008 + this.phase) * 0.05;
+    if (this.x < 0) this.x = W;
+    if (this.x > W) this.x = 0;
+    if (this.y < 0) this.y = H;
+    if (this.y > H) this.y = 0;
+  }
+  draw(ctx) {
+    const pulse = 0.15 + Math.sin(frame * 0.02 + this.phase) * 0.1;
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = PALETTES[palette].colors[Math.floor(Math.random() * 3)];
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// Init dust
+let dust = [];
+
+// Init dust
+for (let i = 0; i < 80; i++) {
+  dust.push(new Dust());
+}
+
+function drawConnections() {
+  const maxDist = 120;
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const dx = nodes[i].x - nodes[j].x;
+      const dy = nodes[i].y - nodes[j].y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < maxDist) {
+        const alpha = (1 - dist / maxDist) * 0.25 * Math.min(nodes[i].crystal.opacity, nodes[j].crystal.opacity);
+        ctx.globalAlpha = alpha;
+        const grad = ctx.createLinearGradient(nodes[i].x, nodes[i].y, nodes[j].x, nodes[j].y);
+        grad.addColorStop(0, nodes[i].color);
+        grad.addColorStop(1, nodes[j].color);
+        ctx.strokeStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(nodes[i].x, nodes[i].y);
+        ctx.lineTo(nodes[j].x, nodes[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function animate() {
+  frame++;
+  const p = PALETTES[palette];
+  const bg = p.bg;
+  
+  // Trail fade
+  ctx.globalAlpha = 0.15;
+  ctx.fillStyle = `rgb(${bg[0]},${bg[1]},${bg[2]})`;
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 1;
+
+  // Auto-spawn occasionally
+  autoTimer++;
+  if (autoTimer > 180 + Math.random() * 200) {
+    autoTimer = 0;
+    const x = 100 + Math.random() * (W - 200);
+    const y = 100 + Math.random() * (H - 200);
+    crystals.push(new Crystal(x, y));
+    ripples.push(new Ripple(x, y, p.glow));
+  }
+
+  // Dust
+  for (let d of dust) {
+    d.update();
+    d.draw(ctx);
+  }
+
+  // Ripples
+  ripples = ripples.filter(r => r.life > 0);
+  for (let r of ripples) {
+    r.update();
+    r.draw(ctx);
+  }
+
+  // Crystals
+  crystals = crystals.filter(c => !c.dead);
+  // Prune old nodes
+  if (frame % 60 === 0) {
+    nodes = nodes.filter(n => !n.crystal.dead);
+  }
+  
+  for (let c of crystals) {
+    c.update();
+    c.draw(ctx);
+  }
+
+  // Connections between crystal tips
+  drawConnections();
+
+  // Particles
+  particles = particles.filter(p => p.life > 0);
+  for (let p of particles) {
+    p.update();
+    p.draw(ctx);
+  }
+
+  // Mouse glow
+  if (mouse.down) {
+    ctx.globalAlpha = 0.08 + Math.sin(frame * 0.1) * 0.03;
+    ctx.fillStyle = p.glow;
+    ctx.shadowColor = p.glow;
+    ctx.shadowBlur = 40;
+    ctx.beginPath();
+    ctx.arc(mouse.x, mouse.y, 30 + Math.sin(frame * 0.06) * 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+  }
+
+  // Stats
+  if (frame % 30 === 0) {
+    document.getElementById('stats').innerHTML = 
+      `crystals: ${crystals.length}<br>` +
+      `nodes: ${nodes.length}<br>` +
+      `particles: ${particles.length}<br>` +
+      `palette: ${p.name}`;
+  }
+
+  requestAnimationFrame(animate);
+}
+
+// Events
+canvas.addEventListener('mousedown', e => {
+  mouse.down = true;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  spawnCrystal(e.clientX, e.clientY);
+});
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  mouse.down = true;
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  spawnCrystal(t.clientX, t.clientY);
+}, { passive: false });
+canvas.addEventListener('touchend', () => mouse.down = false);
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+}, { passive: false });
+
+function spawnCrystal(x, y) {
+  const p = PALETTES[palette];
+  crystals.push(new Crystal(x, y));
+  ripples.push(new Ripple(x, y, p.glow));
+  
+  // Burst particles
+  for (let i = 0; i < 20; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 3;
+    particles.push(new Particle(x, y, p.glow, speed, angle));
+  }
+}
+
+// Buttons
+document.querySelectorAll('[data-palette]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-palette]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    palette = parseInt(btn.dataset.palette);
+  });
+});
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  crystals = [];
+  nodes = [];
+  particles = [];
+  ripples = [];
+  ctx.fillStyle = `rgb(${PALETTES[palette].bg[0]},${PALETTES[palette].bg[1]},${PALETTES[palette].bg[2]})`;
+  ctx.fillRect(0, 0, W, H);
+});
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.key === 'c' || e.key === 'C') {
+    crystals = []; nodes = []; particles = []; ripples = [];
+  }
+  const num = parseInt(e.key);
+  if (num >= 1 && num <= 6) {
+    palette = num - 1;
+    document.querySelectorAll('[data-palette]').forEach(b => b.classList.remove('active'));
+    document.querySelector(`[data-palette="${palette}"]`).classList.add('active');
+  }
+});
+
+// Start
+animate();
+</script>
+</body>
+</html>
