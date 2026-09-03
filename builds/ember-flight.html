@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ember Flight</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    font-family: 'Georgia', serif;
+    overflow: hidden;
+    cursor: none;
+  }
+  canvas {
+    display: block;
+    border-radius: 4px;
+    box-shadow: 0 0 60px rgba(255, 120, 30, 0.15);
+  }
+  #ui {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ff9944;
+    font-size: 14px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    opacity: 0.7;
+    pointer-events: none;
+    text-shadow: 0 0 10px rgba(255, 120, 30, 0.5);
+  }
+  #overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: rgba(5, 5, 10, 0.85);
+    z-index: 10;
+    transition: opacity 0.8s;
+  }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+  #overlay h1 {
+    color: #ff8844;
+    font-size: 48px;
+    font-weight: 300;
+    letter-spacing: 8px;
+    margin-bottom: 10px;
+    text-shadow: 0 0 30px rgba(255, 120, 30, 0.6);
+  }
+  #overlay .subtitle {
+    color: #886644;
+    font-size: 14px;
+    letter-spacing: 4px;
+    margin-bottom: 40px;
+  }
+  #overlay .prompt {
+    color: #aa8855;
+    font-size: 16px;
+    letter-spacing: 2px;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  #overlay .hint {
+    color: #665544;
+    font-size: 12px;
+    letter-spacing: 1px;
+    margin-top: 20px;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+  }
+  #score-display {
+    position: fixed;
+    top: 20px;
+    right: 30px;
+    color: #ffcc88;
+    font-size: 13px;
+    letter-spacing: 2px;
+    opacity: 0;
+    transition: opacity 0.5s;
+    pointer-events: none;
+    text-shadow: 0 0 8px rgba(255, 180, 80, 0.4);
+  }
+  #score-display.visible { opacity: 0.8; }
+</style>
+</head>
+<body>
+<div id="ui">EMBER FLIGHT</div>
+<div id="score-display"></div>
+<div id="overlay">
+  <h1>EMBER FLIGHT</h1>
+  <div class="subtitle">a meditative ascent</div>
+  <div class="prompt">click &amp; hold to rise</div>
+  <div class="hint">release to drift · collect fireflies · reach the canopy</div>
+</div>
+<canvas id="canvas"></canvas>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const scoreDisplay = document.getElementById('score-display');
+
+function resize() {
+  canvas.width = Math.min(window.innerWidth - 40, 600);
+  canvas.height = Math.min(window.innerHeight - 40, 800);
+}
+resize();
+window.addEventListener('resize', resize);
+
+const W = () => canvas.width;
+const H = () => canvas.height;
+
+// Game state
+let state = 'title'; // title, playing, won, dead
+let ember, camera, branches, fireflies, particles, bgStars, height;
+let score, bestHeight, fireflyCount, wingPhase;
+let mouseDown, mouseX, mouseY;
+let worldH;
+
+// Branch generation
+function generateBranches() {
+  const branches = [];
+  const count = 40 + Math.floor(Math.random() * 20);
+  for (let i = 0; i < count; i++) {
+    branches.push({
+      y: (i / count) * worldH + Math.random() * (worldH / count) * 0.8,
+      side: Math.random() < 0.5 ? -1 : 1,
+      x: 0.3 + Math.random() * 0.4,
+      length: 40 + Math.random() * 100,
+      angle: (Math.random() - 0.5) * 1.2,
+      thickness: 2 + Math.random() * 5,
+      leaves: Math.random() < 0.5,
+      swayOffset: Math.random() * Math.PI * 2,
+      swaySpeed: 0.3 + Math.random() * 0.5,
+      passed: false
+    });
+  }
+  return branches.sort((a, b) => a.y - b.y);
+}
+
+function generateFireflies() {
+  const flies = [];
+  const count = 15 + Math.floor(Math.random() * 10);
+  for (let i = 0; i < count; i++) {
+    flies.push({
+      x: Math.random() * W(),
+      y: Math.random() * worldH,
+      size: 2 + Math.random() * 3,
+      phase: Math.random() * Math.PI * 2,
+      speed: 0.3 + Math.random() * 0.7,
+      amplitude: 20 + Math.random() * 40,
+      collected: false,
+      collectAnim: 0
+    });
+  }
+  return flies;
+}
+
+function generateBgStars() {
+  const stars = [];
+  for (let i = 0; i < 80; i++) {
+    stars.push({
+      x: Math.random() * W(),
+      y: Math.random() * H() * 3,
+      size: 0.5 + Math.random() * 1.5,
+      twinkle: Math.random() * Math.PI * 2,
+      speed: 0.5 + Math.random() * 1.5
+    });
+  }
+  return stars;
+}
+
+function init() {
+  worldH = 12000;
+  ember = { x: W() / 2, y: H() * 0.75, vy: 0, size: 8 };
+  camera = { y: 0 };
+  branches = generateBranches();
+  fireflies = generateFireflies();
+  particles = [];
+  bgStars = generateBgStars();
+  height = 0;
+  bestHeight = 0;
+  fireflyCount = 0;
+  wingPhase = 0;
+  mouseDown = false;
+  mouseX = W() / 2;
+  mouseY = H() * 0.75;
+  score = 0;
+}
+
+// Particles
+function spawnParticle(x, y, color, vx, vy, life, size) {
+  particles.push({
+    x, y, vx: vx || (Math.random() - 0.5) * 1, vy: vy || (Math.random() - 0.5) * 1,
+    life, maxLife: life, color, size: size || 2 + Math.random() * 2
+  });
+}
+
+function spawnBurst(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 3;
+    spawnParticle(x, y, color, Math.cos(angle) * speed, Math.sin(angle) * speed, 30 + Math.random() * 20, 1 + Math.random() * 2);
+  }
+}
+
+// Drawing helpers
+function drawBranch(b, camY) {
+  const sway = Math.sin(time * b.swaySpeed + b.swayOffset) * 8;
+  const x1 = b.x * W() + b.side * (30 + b.length * 0.3) + sway;
+  const y1 = b.y - camY;
+  const x2 = b.x * W() + b.side * (30 + b.length) + sway * 1.5;
+  const y2 = b.y + b.length * 0.3 - camY;
+  const x3 = b.x * W() + b.side * 30 + sway * 0.5;
+  const y3 = b.y - b.length * 0.2 - camY;
+
+  if (y1 < -100 || y1 > H() + 100) return;
+
+  ctx.strokeStyle = '#1a1510';
+  ctx.lineWidth = b.thickness;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x3, y3);
+  ctx.quadraticCurveTo(x1, y1, x2, y2);
+  ctx.stroke();
+
+  // Leaves
+  if (b.leaves) {
+    const leafX = x2 + (Math.random() - 0.5) * 4;
+    const leafY = y2 + (Math.random() - 0.5) * 4;
+    const gradient = ctx.createRadialGradient(leafX, leafY, 0, leafX, leafY, 6);
+    gradient.addColorStop(0, 'rgba(40, 80, 40, 0.4)');
+    gradient.addColorStop(1, 'rgba(20, 50, 20, 0)');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(leafX, leafY, 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawEmber(e, camY) {
+  const x = e.x;
+  const y = e.y - camY;
+  const bob = Math.sin(time * 3) * 1.5;
+
+  // Outer glow
+  const outer = ctx.createRadialGradient(x, y + bob, 0, x, y + bob, 40);
+  outer.addColorStop(0, 'rgba(255, 150, 50, 0.15)');
+  outer.addColorStop(1, 'rgba(255, 80, 20, 0)');
+  ctx.fillStyle = outer;
+  ctx.beginPath();
+  ctx.arc(x, y + bob, 40, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Core glow
+  const core = ctx.createRadialGradient(x, y + bob, 0, x, y + bob, 12);
+  core.addColorStop(0, 'rgba(255, 240, 200, 0.9)');
+  core.addColorStop(0.3, 'rgba(255, 160, 50, 0.7)');
+  core.addColorStop(1, 'rgba(255, 80, 20, 0)');
+  ctx.fillStyle = core;
+  ctx.beginPath();
+  ctx.arc(x, y + bob, 12, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Inner bright
+  ctx.fillStyle = '#fff8e0';
+  ctx.beginPath();
+  ctx.arc(x, y + bob, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Wing flicker
+  wingPhase += 0.15;
+  const wingSpread = 4 + Math.sin(wingPhase) * 2;
+  ctx.strokeStyle = 'rgba(255, 180, 80, 0.3)';
+  ctx.lineWidth = 1;
+  for (let side = -1; side <= 1; side += 2) {
+    ctx.beginPath();
+    ctx.moveTo(x, y + bob);
+    ctx.quadraticCurveTo(x + side * wingSpread * 2, y + bob - 4, x + side * wingSpread * 3, y + bob - 1);
+    ctx.stroke();
+  }
+}
+
+function drawFirefly(f, camY) {
+  if (f.collected) return;
+  const x = f.x + Math.sin(time * f.speed + f.phase) * f.amplitude;
+  const y = f.y - camY + Math.cos(time * f.speed * 0.7 + f.phase) * f.amplitude * 0.5;
+  const glow = 0.4 + Math.sin(time * 2 + f.phase) * 0.4;
+
+  if (glow > 0.2) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, 15);
+    g.addColorStop(0, `rgba(180, 255, 100, ${glow * 0.4})`);
+    g.addColorStop(1, 'rgba(100, 200, 50, 0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, 15, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = `rgba(220, 255, 150, ${0.5 + glow * 0.5})`;
+  ctx.beginPath();
+  ctx.arc(x, y, f.size * 0.5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawBgStars(camY) {
+  bgStars.forEach(s => {
+    const y = ((s.y - camY * 0.3) % (H() * 3) + H() * 3) % (H() * 3);
+    const twinkle = 0.3 + Math.sin(time * s.speed + s.twinkle) * 0.3;
+    ctx.fillStyle = `rgba(200, 220, 255, ${twinkle})`;
+    ctx.beginPath();
+    ctx.arc(s.x, y, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+let time = 0;
+let lastTime = performance.now();
+
+function update(dt) {
+  time += dt;
+
+  if (state === 'playing') {
+    // Ember physics
+    if (mouseDown) {
+      ember.vy -= 0.25;
+      // Trail particles
+      if (Math.random() < 0.4) {
+        spawnParticle(ember.x + (Math.random() - 0.5) * 4, ember.y, '#ff6633', 0, 0.5 + Math.random(), 15, 1 + Math.random());
+      }
+    } else {
+      ember.vy += 0.08; // gravity
+    }
+    ember.vy *= 0.98; // drag
+    ember.vy = Math.max(-3, Math.min(4, ember.vy));
+    ember.y += ember.vy;
+
+    // Gentle horizontal drift toward mouse
+    const dx = mouseX - ember.x;
+    ember.x += dx * 0.02;
+
+    // Bounds
+    if (ember.x < 20) ember.x = 20;
+    if (ember.x > W() - 20) ember.x = W() - 20;
+
+    // Camera follow
+    const targetCam = ember.y - H() * 0.4;
+    camera.y += (targetCam - camera.y) * 0.05;
+
+    // Height
+    height = Math.max(height, Math.floor(ember.y / 10));
+
+    // Branch collisions
+    branches.forEach(b => {
+      if (b.passed) return;
+      const relY = ember.y - b.y;
+      if (relY > -10 && relY < b.length * 0.3) {
+        const bx = b.x * W() + b.side * (30 + b.length * 0.3);
+        const dist = Math.abs(ember.x - bx);
+        if (dist < b.thickness + ember.size) {
+          spawnBurst(ember.x, ember.y, '#ff4422', 15);
+          state = 'dead';
+        }
+      }
+      if (relY > b.length * 0.3) b.passed = true;
+    });
+
+    // Firefly collection
+    fireflies.forEach(f => {
+      if (f.collected) return;
+      const fx = f.x + Math.sin(time * f.speed + f.phase) * f.amplitude;
+      const fy = f.y + Math.cos(time * f.speed * 0.7 + f.phase) * f.amplitude * 0.5;
+      const dist = Math.hypot(ember.x - fx, ember.y - fy);
+      if (dist < 25) {
+        f.collected = true;
+        f.collectAnim = 1;
+        fireflyCount++;
+        spawnBurst(fx, fy, '#aaff44', 10);
+        score += 100;
+      }
+    });
+
+    // Update particles
+    particles = particles.filter(p => {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vx *= 0.96;
+      p.vy *= 0.96;
+      p.life--;
+      return p.life > 0;
+    });
+
+    // Win condition
+    if (ember.y > worldH - 200) {
+      state = 'won';
+      score += height * 10;
+      for (let i = 0; i < 50; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 2 + Math.random() * 4;
+        spawnParticle(ember.x, ember.y, ['#ffcc44', '#ff8844', '#ff6622', '#ffdd88'][Math.floor(Math.random() * 4)],
+          Math.cos(angle) * speed, Math.sin(angle) * speed, 40 + Math.random() * 30, 2 + Math.random() * 3);
+      }
+    }
+
+    // Fell too far
+    if (ember.y < camera.y - 200) {
+      state = 'dead';
+    }
+
+    // Update score display
+    if (height > bestHeight) {
+      bestHeight = height;
+      scoreDisplay.textContent = `⬆ ${height}m · ✦ ${fireflyCount}`;
+      scoreDisplay.classList.add('visible');
+    }
+  }
+
+  // Update collect animations
+  fireflies.forEach(f => {
+    if (f.collectAnim > 0) f.collectAnim -= 0.02;
+  });
+}
+
+function drawSky() {
+  const grad = ctx.createLinearGradient(0, 0, 0, H());
+  grad.addColorStop(0, '#050510');
+  grad.addColorStop(0.5, '#0a0a1a');
+  grad.addColorStop(1, '#15102a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W(), H());
+}
+
+function drawDistantTrees(camY) {
+  // Multiple layers of silhouette trees
+  const layers = [
+    { color: '#0d0d18', speed: 0.1, yBase: 0.4, scale: 0.4 },
+    { color: '#111120', speed: 0.2, yBase: 0.5, scale: 0.6 },
+    { color: '#151528', speed: 0.3, yBase: 0.6, scale: 0.8 },
+  ];
+
+  layers.forEach(layer => {
+    const offset = (time * layer.speed * 20) % W();
+    ctx.fillStyle = layer.color;
+    for (let x = -60 + offset; x < W() + 60; x += 80) {
+      const baseY = H() * layer.yBase + Math.sin(x * 0.01 + time * 0.1) * 30;
+      ctx.beginPath();
+      ctx.moveTo(x - 35, H());
+      ctx.lineTo(x, baseY - 80 * layer.scale);
+      ctx.lineTo(x + 35, H());
+      ctx.fill();
+    }
+  });
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W(), H());
+
+  drawSky();
+  drawBgStars(camera.y);
+  drawDistantTrees(camera.y);
+
+  // Vignette
+  const vig = ctx.createRadialGradient(W()/2, H()/2, H()*0.3, W()/2, H()/2, H()*0.7);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, 'rgba(0,0,0,0.4)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W(), H());
+
+  // Branches
+  branches.forEach(b => drawBranch(b, camera.y));
+
+  // Fireflies
+  fireflies.forEach(f => drawFirefly(f, camera.y));
+
+  // Particles
+  particles.forEach(p => {
+    const alpha = p.life / p.maxLife;
+    ctx.fillStyle = p.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
+    // Handle hex colors
+    if (p.color.startsWith('#')) {
+      const r = parseInt(p.color.slice(1,3), 16);
+      const g = parseInt(p.color.slice(3,5), 16);
+      const b = parseInt(p.color.slice(5,7), 16);
+      ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+    }
+    ctx.beginPath();
+    ctx.arc(p.x, p.y - camera.y, p.size * alpha, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Ember
+  if (state === 'playing' || state === 'dead' || state === 'won') {
+    drawEmber(ember, camera.y);
+  }
+
+  // Height indicator (subtle left side)
+  if (state === 'playing') {
+    const progress = ember.y / worldH;
+    ctx.fillStyle = 'rgba(255, 150, 50, 0.1)';
+    ctx.fillRect(4, H() * (1 - progress), 3, H() * progress);
+    ctx.fillStyle = 'rgba(255, 150, 50, 0.3)';
+    ctx.fillRect(4, H() * (1 - progress), 3, 2);
+  }
+}
+
+function gameLoop() {
+  const now = performance.now();
+  const dt = Math.min((now - lastTime) / 16.67, 3); // cap at 3 frames
+  lastTime = now;
+
+  update(dt);
+  draw();
+
+  requestAnimationFrame(gameLoop);
+}
+
+// Input
+canvas.addEventListener('mousedown', e => {
+  const rect = canvas.getBoundingClientRect();
+  mouseX = e.clientX - rect.left;
+  mouseY = e.clientY - rect.top;
+  mouseDown = true;
+
+  if (state === 'title') {
+    state = 'playing';
+    overlay.classList.add('hidden');
+    scoreDisplay.classList.add('visible');
+    init();
+  } else if (state === 'dead' || state === 'won') {
+    state = 'playing';
+    init();
+  }
+});
+
+canvas.addEventListener('mouseup', () => { mouseDown = false; });
+canvas.addEventListener('mouseleave', () => { mouseDown = false; });
+
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  mouseX = e.clientX - rect.left;
+  mouseY = e.clientY - rect.top;
+});
+
+// Touch
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  mouseX = e.touches[0].clientX - rect.left;
+  mouseY = e.touches[0].clientY - rect.top;
+  mouseDown = true;
+
+  if (state === 'title') {
+    state = 'playing';
+    overlay.classList.add('hidden');
+    scoreDisplay.classList.add('visible');
+    init();
+  } else if (state === 'dead' || state === 'won') {
+    state = 'playing';
+    init();
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  mouseDown = false;
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  mouseX = e.touches[0].clientX - rect.left;
+  mouseY = e.touches[0].clientY - rect.top;
+}, { passive: false });
+
+// Start
+init();
+gameLoop();
+</script>
+</body>
+</html>
