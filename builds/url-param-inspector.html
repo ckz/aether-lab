@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>URL Param Inspector</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    background: #0a0e14;
+    color: #d4d4d4;
+    min-height: 100vh;
+    padding: 2rem;
+    line-height: 1.6;
+  }
+  h1 {
+    color: #00e5ff;
+    margin-bottom: 0.5rem;
+    font-size: 1.5rem;
+    letter-spacing: 2px;
+  }
+  .subtitle {
+    color: #5c6773;
+    font-size: 0.85rem;
+    margin-bottom: 2rem;
+  }
+  .input-section {
+    background: #131820;
+    border: 1px solid #1f2a37;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  label {
+    display: block;
+    color: #7fdbca;
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+    letter-spacing: 1px;
+  }
+  input[type="text"] {
+    width: 100%;
+    background: #0a0e14;
+    border: 1px solid #2a3a4e;
+    color: #e6e6e6;
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input[type="text"]:focus {
+    border-color: #00e5ff;
+  }
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .stat-card {
+    background: #131820;
+    border: 1px solid #1f2a37;
+    border-radius: 6px;
+    padding: 1rem;
+    text-align: center;
+  }
+  .stat-value {
+    font-size: 1.5rem;
+    color: #00e5ff;
+    font-weight: bold;
+  }
+  .stat-label {
+    font-size: 0.7rem;
+    color: #5c6773;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 0.25rem;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #131820;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #1f2a37;
+  }
+  thead {
+    background: #1a2332;
+  }
+  th {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    color: #7fdbca;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+    border-bottom: 1px solid #2a3a4e;
+  }
+  td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #1f2a37;
+    font-size: 0.85rem;
+  }
+  tr:last-child td {
+    border-bottom: none;
+  }
+  tr:hover td {
+    background: #1a2332;
+  }
+  .param-key {
+    color: #ffcb6b;
+    font-weight: bold;
+    word-break: break-all;
+  }
+  .param-value {
+    color: #e6e6e6;
+    word-break: break-all;
+  }
+  .badge {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge-string { background: #1e3a5f; color: #82aaff; }
+  .badge-number { background: #3a2e1e; color: #ffcb6b; }
+  .badge-boolean { background: #1e3a2e; color: #c3e88d; }
+  .badge-date { background: #3a1e2e; color: #f07178; }
+  .badge-uuid { background: #2e1e3a; color: #c792ea; }
+  .badge-email { background: #1e3a3a; color: #89ddff; }
+  .badge-unknown { background: #2a2a2a; color: #5c6773; }
+  .badge-empty { background: #3a1e1e; color: #f07178; }
+  .badge-duplicate { background: #3a3a1e; color: #ffcb6b; }
+  .warning {
+    color: #f07178;
+    font-size: 0.8rem;
+  }
+  .empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #5c6773;
+  }
+  .actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+  }
+  button {
+    background: #1a2332;
+    border: 1px solid #2a3a4e;
+    color: #7fdbca;
+    padding: 0.6rem 1.2rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+  }
+  button:hover {
+    background: #2a3a4e;
+    border-color: #00e5ff;
+    color: #00e5ff;
+  }
+  button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .copy-toast {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    background: #00e5ff;
+    color: #0a0e14;
+    padding: 0.75rem 1.25rem;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 0.85rem;
+    display: none;
+    z-index: 1000;
+  }
+  .copy-toast.show {
+    display: block;
+    animation: slideIn 0.3s ease-out;
+  }
+  @keyframes slideIn {
+    from { transform: translateX(100px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+  <h1>URL PARAM INSPECTOR</h1>
+  <p class="subtitle">Paste a URL. Deconstruct it. Know your data.</p>
+
+  <div class="input-section">
+    <label for="urlInput">TARGET URL</label>
+    <input type="text" id="urlInput" placeholder="https://api.example.com/search?q=test&limit=10&debug=true&..." autofocus>
+  </div>
+
+  <div id="stats" class="stats-bar" style="display:none;">
+    <div class="stat-card">
+      <div class="stat-value" id="statTotal">0</div>
+      <div class="stat-label">Total Params</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statUnique">0</div>
+      <div class="stat-label">Unique</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statDuplicates">0</div>
+      <div class="stat-label">Duplicates</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statEmpty">0</div>
+      <div class="stat-label">Empty</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statTypes">0</div>
+      <div class="stat-label">Type Mismatches</div>
+    </div>
+  </div>
+
+  <div id="results"></div>
+
+  <div class="actions" id="actions" style="display:none;">
+    <button id="copyClean">Copy Clean URL</button>
+    <button id="copyParams">Copy Params (JSON)</button>
+    <button id="clearBtn">Clear</button>
+  </div>
+
+  <div class="copy-toast" id="toast">Copied!</div>
+
+  <script>
+    const urlInput = document.getElementById('urlInput');
+    const results = document.getElementById('results');
+    const stats = document.getElementById('stats');
+    const actions = document.getElementById('actions');
+
+    function detectType(value) {
+      if (value === '' || value === null || value === undefined) return { type: 'empty', label: 'EMPTY' };
+      if (/^(true|false|1|0|yes|no|on|off)$/i.test(value)) return { type: 'boolean', label: 'BOOL' };
+      if (/^-?\d+$/.test(value)) return { type: 'number', label: 'INT' };
+      if (/^-?\d+\.\d+$/.test(value)) return { type: 'number', label: 'FLOAT' };
+      if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(value)) return { type: 'uuid', label: 'UUID' };
+      if (/^[\w.-]+@[\w.-]+\.\w+$/.test(value)) return { type: 'email', label: 'EMAIL' };
+      if (/^\d{4}-\d{2}-\d{2}/.test(value)) return { type: 'date', label: 'DATE' };
+      if (/^\d{13}$/.test(value)) return { type: 'timestamp', label: 'TS' };
+      if (/^https?:\/\//i.test(value)) return { type: 'url', label: 'URL' };
+      return { type: 'string', label: 'STR' };
+    }
+
+    function inspect(url) {
+      try {
+        const u = new URL(url);
+        const params = new Map();
+        const types = new Map();
+
+        u.searchParams.forEach((value, key) => {
+          if (!params.has(key)) params.set(key, []);
+          params.get(key).push(value);
+          const detected = detectType(value);
+          if (!types.has(key)) types.set(key, detected);
+        });
+
+        const allKeys = Array.from(params.keys());
+        const uniqueKeys = new Set(allKeys);
+        const duplicates = allKeys.length - uniqueKeys.size;
+        const emptyKeys = allKeys.filter(k => params.get(k).every(v => v === ''));
+
+        // Type consistency check: if same key has different types
+        let typeMismatches = 0;
+        params.forEach((values, key) => {
+          const uniqueTypes = new Set(values.map(v => detectType(v).type));
+          if (uniqueTypes.size > 1) typeMismatches++;
+        });
+
+        // Update stats
+        document.getElementById('statTotal').textContent = allKeys.length;
+        document.getElementById('statUnique').textContent = uniqueKeys.size;
+        document.getElementById('statDuplicates').textContent = duplicates;
+        document.getElementById('statEmpty').textContent = emptyKeys.length;
+        document.getElementById('statTypes').textContent = typeMismatches;
+        stats.style.display = 'grid';
+
+        // Build table
+        let html = '<table><thead><tr>';
+        html += '<th>#</th><th>Key</th><th>Value(s)</th><th>Type</th><th>Flags</th>';
+        html += '</tr></thead><tbody>';
+
+        let idx = 1;
+        params.forEach((values, key) => {
+          const isDup = allKeys.filter(k => k === key).length > 1;
+          const isEmpty = values.every(v => v === '');
+          const hasTypeMismatch = new Set(values.map(v => detectType(v).type)).size > 1;
+          const primaryType = detectType(values[0]);
+
+          html += '<tr>';
+          html += `<td style="color:#5c6773;">${idx++}</td>`;
+          html += `<td class="param-key">${escapeHtml(key)}${isDup ? ' <span class="badge badge-duplicate">DUP</span>' : ''}</td>`;
+          html += `<td class="param-value">${values.map(v => escapeHtml(v) || '<em style="color:#5c6773;">[empty]</em>').join('<br><span style="color:#2a3a4e;">└─</span> ')}</td>`;
+          html += `<td><span class="badge badge-${primaryType.type}">${primaryType.label}</span>${hasTypeMismatch ? ' <span style="color:#f07178;">⚠</span>' : ''}</td>`;
+          html += '<td>';
+          if (isEmpty) html += '<span class="badge badge-empty">EMPTY</span> ';
+          if (isDup) html += '<span class="badge badge-duplicate">DUP</span> ';
+          if (hasTypeMismatch) html += '<span class="badge badge-unknown">MISMATCH</span> ';
+          if (!isEmpty && !isDup && !hasTypeMismatch) html += '<span style="color:#5c6773;">—</span>';
+          html += '</td>';
+          html += '</tr>';
+        });
+
+        html += '</tbody></table>';
+        results.innerHTML = html;
+        actions.style.display = 'flex';
+
+        // Store for copy buttons
+        window._currentUrl = url;
+        window._currentParams = Object.fromEntries(
+          Array.from(params.entries()).map(([k, vs]) => [k, vs.length === 1 ? vs[0] : vs])
+        );
+
+      } catch (e) {
+        results.innerHTML = `<div class="empty-state"><p style="color:#f07178;">⚠ Invalid URL</p><p style="font-size:0.8rem;color:#5c6773;">${escapeHtml(e.message)}</p></div>`;
+        stats.style.display = 'none';
+        actions.style.display = 'none';
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    urlInput.addEventListener('input', () => {
+      const val = urlInput.value.trim();
+      if (val.length > 3) inspect(val);
+    });
+
+    document.getElementById('copyClean').addEventListener('click', () => {
+      if (!window._currentUrl) return;
+      try {
+        const u = new URL(window._currentUrl);
+        u.search = '';
+        navigator.clipboard.writeText(u.toString());
+        showToast('Clean URL copied!');
+      } catch (e) {}
+    });
+
+    document.getElementById('copyParams').addEventListener('click', () => {
+      if (!window._currentParams) return;
+      navigator.clipboard.writeText(JSON.stringify(window._currentParams, null, 2));
+      showToast('Params JSON copied!');
+    });
+
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      urlInput.value = '';
+      results.innerHTML = '';
+      stats.style.display = 'none';
+      actions.style.display = 'none';
+      urlInput.focus();
+    });
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2000);
+    }
+
+    // Demo on load with sample
+    setTimeout(() => {
+      urlInput.value = 'https://api.example.com/search?q=hello&limit=10&debug=true&token=abc-123-uuid-like&email=test@test.com&empty=&limit=20';
+      inspect(urlInput.value);
+    }, 500);
+  </script>
+</body>
+</html>
