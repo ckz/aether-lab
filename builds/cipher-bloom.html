@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cipher Bloom</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #05060a;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  .hint {
+    position: fixed;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(120, 200, 255, 0.35);
+    font-size: 11px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    pointer-events: none;
+    transition: opacity 3s;
+  }
+  .stats {
+    position: fixed;
+    top: 14px;
+    right: 18px;
+    color: rgba(120, 200, 255, 0.2);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-align: right;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hint" id="hint">move to pollinate · click to seed · hold to fertilize</div>
+<div class="stats" id="stats"></div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const hint = document.getElementById('hint');
+  const stats = document.getElementById('stats');
+
+  let W, H;
+  const resize = () => {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  };
+  resize();
+  window.addEventListener('resize', resize);
+
+  const mouse = { x: W / 2, y: H / 2, active: false, hold: false };
+  window.addEventListener('mousemove', e => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    mouse.active = true;
+  });
+  window.addEventListener('mousedown', () => { mouse.hold = true; seedBurst(mouse.x, mouse.y); });
+  window.addEventListener('mouseup', () => { mouse.hold = false; });
+  window.addEventListener('touchmove', e => {
+    mouse.x = e.touches[0].clientX;
+    mouse.y = e.touches[0].clientY;
+    mouse.active = true;
+  });
+  window.addEventListener('touchstart', e => {
+    mouse.x = e.touches[0].clientX;
+    mouse.y = e.touches[0].clientY;
+    mouse.hold = true;
+    seedBurst(mouse.x, mouse.y);
+  });
+  window.addEventListener('touchend', () => { mouse.hold = false; });
+
+  // Fade hint after 8 seconds
+  setTimeout(() => { hint.style.opacity = '0'; }, 8000);
+
+  // Characters
+  const glyphs = '01アイウエオカキクケコ█▓▒░◆◇○●□■△▽⊕⊗∞∮∝√Ωπ∑∏∂∇∈∉∋∌∧∨∩∪⊥∥∠∟∘∝ℵℶℷ';
+  const codeChars = '01{}[]<>/=;:&|!?+-*^~@#$%';
+
+  function rand(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
+
+  // Color palettes
+  const palettes = [
+    { name: 'cyan',   stream: [0, 180, 255],   bloom: [100, 255, 220],  accent: [180, 120, 255] },
+    { name: 'ember',  stream: [255, 100, 30],   bloom: [255, 200, 50],   accent: [255, 50, 80] },
+    { name: 'aurora', stream: [50, 255, 150],   bloom: [150, 255, 200],  accent: [100, 180, 255] },
+    { name: 'void',   stream: [160, 100, 255],  bloom: [220, 180, 255],  accent: [255, 100, 200] },
+    { name: 'frost',  stream: [150, 220, 255],  bloom: [220, 250, 255],  accent: [100, 255, 200] },
+  ];
+  let palette = palettes[0];
+  let paletteTimer = 0;
+  const PALETTE_INTERVAL = 1200; // frames (~20s)
+
+  // Stream columns (matrix rain)
+  const streams = [];
+  const STREAM_COUNT = 55;
+  const CHAR_HEIGHT = 16;
+
+  class Stream {
+    constructor() { this.reset(true); }
+    reset(init = false) {
+      this.x = Math.random() * W;
+      this.y = init ? Math.random() * H : -Math.random() * H * 0.5;
+      this.speed = 0.6 + Math.random() * 2.4;
+      this.length = 6 + Math.floor(Math.random() * 22);
+      this.chars = [];
+      for (let i = 0; i < this.length; i++) {
+        this.chars.push({
+          char: Math.random() < 0.7 ? rand(glyphs) : rand(codeChars),
+          opacity: 1 - i / this.length,
+          flicker: Math.random() * Math.PI * 2,
+        });
+      }
+      this.fontSize = 10 + Math.random() * 6;
+      this.bloomChance = 0.001 + Math.random() * 0.003;
+      this.blooming = false;
+      this.bloomProgress = 0;
+      this.bloomDuration = 120 + Math.random() * 200;
+      this.petalCount = 6 + Math.floor(Math.random() * 10);
+      this.bloomRadius = 30 + Math.random() * 60;
+      this.rotation = Math.random() * Math.PI * 2;
+      this.rotSpeed = (Math.random() - 0.5) * 0.01;
+      this.pulsePhase = Math.random() * Math.PI * 2;
+      this.pollinated = 0; // how much mouse attention it's gotten
+    }
+    update() {
+      this.y += this.speed;
+      this.flicker += 0.08;
+      this.rotation += this.rotSpeed;
+
+      // Cycle random chars
+      if (Math.random() < 0.06) {
+        const i = Math.floor(Math.random() * this.chars.length);
+        this.chars[i].char = Math.random() < 0.7 ? rand(glyphs) : rand(codeChars);
+      }
+
+      // Mouse pollination — closer streams get more energy
+      const d = dist(this.x, this.y, mouse.x, mouse.y);
+      if (d < 180) {
+        this.pollinated = Math.min(1, this.pollinated + 0.02);
+      } else {
+        this.pollinated = Math.max(0, this.pollinated - 0.005);
+      }
+
+      // Bloom chance increases with pollination
+      if (!this.blooming && Math.random() < this.bloomChance + this.pollinated * 0.04) {
+        this.blooming = true;
+        this.bloomProgress = 0;
+      }
+
+      if (this.blooming) {
+        this.bloomProgress++;
+        if (this.bloomProgress > this.bloomDuration) {
+          this.blooming = false;
+        }
+      }
+
+      // Hold fertilizes nearby streams
+      if (mouse.hold && d < 250) {
+        this.speed = lerp(this.speed, 3.5, 0.02);
+      } else {
+        this.speed = lerp(this.speed, 0.6 + Math.random() * 0.01, 0.01);
+      }
+
+      if (this.y > H + 200) this.reset();
+    }
+    draw(ctx) {
+      const base = palette.stream;
+      const poll = this.pollinated;
+
+      // Draw stream characters
+      for (let i = 0; i < this.chars.length; i++) {
+        const cy = this.y - i * CHAR_HEIGHT * (this.fontSize / 14);
+        if (cy < -20 || cy > H + 20) continue;
+        const c = this.chars[i];
+        const alpha = c.opacity * (0.3 + poll * 0.7) * (0.7 + 0.3 * Math.sin(c.flicker));
+        const bright = i === 0 ? 1 : c.opacity;
+        const r = Math.floor(lerp(base[0], 255, bright * poll));
+        const g = Math.floor(lerp(base[1], 255, bright * poll));
+        const b = Math.floor(lerp(base[2], 255, bright * poll));
+        ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+        ctx.font = `${this.fontSize}px 'Courier New', monospace`;
+        ctx.fillText(c.char, this.x, cy);
+      }
+
+      // Draw bloom if active
+      if (this.blooming) {
+        const t = this.bloomProgress / this.bloomDuration;
+        const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        const radius = this.bloomRadius * ease;
+        const alpha = t < 0.8 ? 0.7 : 0.7 * (1 - (t - 0.8) / 0.2);
+        const cx = this.x;
+        const cy = this.y - this.length * CHAR_HEIGHT * 0.5;
+        const bloom = palette.bloom;
+        const accent = palette.accent;
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(this.rotation + this.bloomProgress * 0.02);
+
+        // Petals
+        for (let p = 0; p < this.petalCount; p++) {
+          const angle = (p / this.petalCount) * Math.PI * 2;
+          const px = Math.cos(angle) * radius * 0.5;
+          const py = Math.sin(angle) * radius * 0.5;
+          const petalR = radius * (0.3 + 0.2 * Math.sin(this.bloomProgress * 0.05 + p));
+
+          const grad = ctx.createRadialGradient(px, py, 0, px, py, petalR);
+          grad.addColorStop(0, `rgba(${bloom[0]},${bloom[1]},${bloom[2]},${alpha})`);
+          grad.addColorStop(0.5, `rgba(${accent[0]},${accent[1]},${accent[2]},${alpha * 0.5})`);
+          grad.addColorStop(1, `rgba(${bloom[0]},${bloom[1]},${bloom[2]},0)`);
+
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.ellipse(px, py, petalR, petalR * 0.5, angle, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Center glow
+        const centerGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, radius * 0.4);
+        centerGrad.addColorStop(0, `rgba(255,255,255,${alpha * 0.9})`);
+        centerGrad.addColorStop(0.3, `rgba(${bloom[0]},${bloom[1]},${bloom[2]},${alpha * 0.6})`);
+        centerGrad.addColorStop(1, `rgba(${accent[0]},${accent[1]},${accent[2]},0)`);
+        ctx.fillStyle = centerGrad;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Sacred geometry ring
+        ctx.strokeStyle = `rgba(${bloom[0]},${bloom[1]},${bloom[2]},${alpha * 0.4})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 0; i <= 360; i += 6) {
+          const a = (i * Math.PI) / 180;
+          const r = radius * (0.55 + 0.05 * Math.sin(i * 0.1 + this.bloomProgress * 0.03));
+          const method = i === 0 ? 'moveTo' : 'lineTo';
+          ctx[method](Math.cos(a) * r, Math.sin(a) * r);
+        }
+        ctx.closePath();
+        ctx.stroke();
+
+        ctx.restore();
+      }
+    }
+  }
+
+  // Floating particles (ambient)
+  const particles = [];
+  const PARTICLE_COUNT = 60;
+
+  class Particle {
+    constructor() { this.reset(); }
+    reset() {
+      this.x = Math.random() * W;
+      this.y = Math.random() * H;
+      this.vx = (Math.random() - 0.5) * 0.3;
+      this.vy = (Math.random() - 0.5) * 0.3;
+      this.size = 1 + Math.random() * 2;
+      this.phase = Math.random() * Math.PI * 2;
+      this.life = 1;
+    }
+    update() {
+      // Gentle curl drift
+      const t = performance.now() * 0.0003;
+      const nx = Math.sin(this.y * 0.005 + t) * 0.15;
+      const ny = Math.cos(this.x * 0.005 + t) * 0.15;
+      this.vx += nx;
+      this.vy += ny;
+      this.vx *= 0.98;
+      this.vy *= 0.98;
+      this.x += this.vx;
+      this.y += this.vy;
+      this.phase += 0.03;
+
+      // Mouse attraction
+      const d = dist(this.x, this.y, mouse.x, mouse.y);
+      if (d < 150 && d > 1) {
+        const force = 0.3 / d;
+        this.vx += (mouse.x - this.x) * force;
+        this.vy += (mouse.y - this.y) * force;
+      }
+
+      if (this.x < -20) this.x = W + 20;
+      if (this.x > W + 20) this.x = -20;
+      if (this.y < -20) this.y = H + 20;
+      if (this.y > H + 20) this.y = -20;
+    }
+    draw(ctx) {
+      const alpha = 0.15 + 0.2 * Math.sin(this.phase);
+      const c = palette.bloom;
+      ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${alpha})`;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Seed bursts on click
+  const seeds = [];
+  class Seed {
+    constructor(x, y) {
+      this.x = x; this.y = y;
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 1 + Math.random() * 3;
+      this.vx = Math.cos(angle) * speed;
+      this.vy = Math.sin(angle) * speed;
+      this.life = 1;
+      this.decay = 0.005 + Math.random() * 0.01;
+      this.size = 1 + Math.random() * 3;
+      this.char = rand(glyphs);
+      this.charTimer = 0;
+    }
+    update() {
+      this.x += this.vx;
+      this.y += this.vy;
+      this.vx *= 0.98;
+      this.vy *= 0.98;
+      this.life -= this.decay;
+      this.charTimer++;
+      if (this.charTimer > 10) {
+        this.char = rand(glyphs);
+        this.charTimer = 0;
+      }
+    }
+    draw(ctx) {
+      if (this.life <= 0) return;
+      const c = palette.bloom;
+      ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${this.life * 0.8})`;
+      ctx.font = `${8 + this.size * 4}px 'Courier New', monospace`;
+      ctx.fillText(this.char, this.x, this.y);
+    }
+    get dead() { return this.life <= 0; }
+  }
+
+  function seedBurst(x, y) {
+    const count = 30 + Math.floor(Math.random() * 40);
+    for (let i = 0; i < count; i++) {
+      seeds.push(new Seed(x, y));
+    }
+    // Also pollinate nearby streams
+    for (const s of streams) {
+      if (dist(s.x, s.y, x, y) < 200) {
+        s.pollinated = Math.min(1, s.pollinated + 0.3);
+      }
+    }
+  }
+
+  // Connection lines between nearby streams (when both are pollinated)
+  function drawConnections(ctx) {
+    const maxDist = 120;
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < streams.length; i++) {
+      if (streams[i].pollinated < 0.4) continue;
+      for (let j = i + 1; j < streams.length; j++) {
+        if (streams[j].pollinated < 0.4) continue;
+        const d = dist(streams[i].x, streams[i].y, streams[j].x, streams[j].y);
+        if (d < maxDist) {
+          const alpha = (1 - d / maxDist) * Math.min(streams[i].pollinated, streams[j].pollinated) * 0.25;
+          const c = palette.accent;
+          ctx.strokeStyle = `rgba(${c[0]},${c[1]},${c[2]},${alpha})`;
+          ctx.beginPath();
+          ctx.moveTo(streams[i].x, streams[i].y);
+          ctx.lineTo(streams[j].x, streams[j].y);
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
+  // Init
+  for (let i = 0; i < STREAM_COUNT; i++) streams.push(new Stream());
+  for (let i = 0; i < PARTICLE_COUNT; i++) particles.push(new Particle());
+
+  // Cursor glow
+  function drawCursorGlow(ctx) {
+    if (!mouse.active) return;
+    const grad = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 120);
+    const c = palette.bloom;
+    const intensity = mouse.hold ? 0.15 : 0.06;
+    grad.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},${intensity})`);
+    grad.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(mouse.x, mouse.y, 120, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Stats
+  let bloomCount = 0;
+  let frameCount = 0;
+
+  // Main loop
+  function loop() {
+    requestAnimationFrame(loop);
+    frameCount++;
+
+    // Semi-transparent black for trails
+    ctx.fillStyle = 'rgba(5,6,10,0.18)';
+    ctx.fillRect(0, 0, W, H);
+
+    // Palette cycling
+    paletteTimer++;
+    if (paletteTimer > PALETTE_INTERVAL) {
+      paletteTimer = 0;
+      palette = rand(palettes);
+    }
+
+    // Update & draw streams
+    for (const s of streams) {
+      s.update();
+      s.draw(ctx);
+    }
+
+    // Draw connections between pollinated streams
+    drawConnections(ctx);
+
+    // Update & draw particles
+    for (const p of particles) {
+      p.update();
+      p.draw(ctx);
+    }
+
+    // Update & draw seeds
+    for (let i = seeds.length - 1; i >= 0; i--) {
+      seeds[i].update();
+      seeds[i].draw(ctx);
+      if (seeds[i].dead) seeds.splice(i, 1);
+    }
+
+    // Cursor glow
+    drawCursorGlow(ctx);
+
+    // Stats
+    if (frameCount % 30 === 0) {
+      const activeBlooms = streams.filter(s => s.blooming).length;
+      stats.textContent = `streams: ${streams.length} · blooms: ${activeBlooms} · seeds: ${seeds.length} · palette: ${palette.name}`;
+    }
+  }
+
+  // Initial full-black background
+  ctx.fillStyle = '#05060a';
+  ctx.fillRect(0, 0, W, H);
+
+  loop();
+})();
+</script>
+</body>
+</html>
