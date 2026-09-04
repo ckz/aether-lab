@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stellar Weave</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  .ui {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(180, 200, 255, 0.6);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    pointer-events: none;
+    text-align: center;
+    transition: opacity 3s;
+  }
+  .controls {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+  }
+  .palette-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.2);
+    cursor: pointer;
+    transition: all 0.3s;
+    background: transparent;
+  }
+  .palette-btn:hover, .palette-btn.active {
+    border-color: rgba(255,255,255,0.8);
+    transform: scale(1.15);
+  }
+  .title {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    color: rgba(180, 200, 255, 0.4);
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div class="title">Stellar Weave</div>
+<div class="controls" id="palettes"></div>
+<div class="ui" id="ui">move to attract · click to pulse · hold to draw · 1-4 palettes</div>
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H, DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+const PALETTES = {
+  cosmos: {
+    name: 'Cosmos',
+    bg: '#000008',
+    stars: ['#4488ff', '#88bbff', '#ffffff', '#ff8844', '#ff4466', '#44ffaa', '#aa88ff'],
+    threads: ['#2244aa', '#4466cc', '#6688ee', '#224488'],
+    glow: 'rgba(100, 140, 255, 0.03)'
+  },
+  nebula: {
+    name: 'Nebula',
+    bg: '#050008',
+    stars: ['#ff44aa', '#ff88cc', '#ffffff', '#ff66ff', '#8844ff', '#44aaff', '#ffaa44'],
+    threads: ['#aa2266', '#cc4488', '#ee66aa', '#8822aa'],
+    glow: 'rgba(255, 100, 180, 0.03)'
+  },
+  aurora: {
+    name: 'Aurora',
+    bg: '#000808',
+    stars: ['#00ff88', '#44ffaa', '#ffffff', '#00ffcc', '#88ff44', '#00aaff', '#aaffcc'],
+    threads: ['#008844', '#00aa66', '#00cc88', '#226666'],
+    glow: 'rgba(0, 255, 136, 0.03)'
+  },
+  ember: {
+    name: 'Ember',
+    bg: '#080400',
+    stars: ['#ff6600', '#ffaa00', '#ffffff', '#ff4400', '#ffdd44', '#ff8844', '#ffcc88'],
+    threads: ['#aa4400', '#cc6600', '#ee8800', '#884400'],
+    glow: 'rgba(255, 140, 0, 0.03)'
+  }
+};
+
+let palette = PALETTES.cosmos;
+
+const STAR_COUNT = 80;
+const MAX_DIST = 180;
+const MOUSE_RADIUS = 200;
+const MOUSE_FORCE = 0.015;
+
+class Star {
+  constructor() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.vx = (Math.random() - 0.5) * 0.3;
+    this.vy = (Math.random() - 0.5) * 0.3;
+    this.radius = Math.random() * 1.8 + 0.4;
+    this.color = palette.stars[Math.floor(Math.random() * palette.stars.length)];
+    this.pulse = Math.random() * Math.PI * 2;
+    this.pulseSpeed = Math.random() * 0.02 + 0.005;
+    this.drift = Math.random() * 0.0005 + 0.0002;
+  }
+
+  update(mx, my, mouseActive) {
+    this.pulse += this.pulseSpeed;
+
+    // Organic drift via curl-like noise
+    const angle = Math.sin(this.x * 0.003 + performance.now() * this.drift) *
+                  Math.cos(this.y * 0.003 + performance.now() * this.drift * 0.7) * Math.PI * 2;
+    this.vx += Math.cos(angle) * 0.008;
+    this.vy += Math.sin(angle) * 0.008;
+
+    if (mouseActive) {
+      const dx = mx - this.x;
+      const dy = my - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < MOUSE_RADIUS && dist > 0) {
+        const force = (1 - dist / MOUSE_RADIUS) * MOUSE_FORCE;
+        this.vx += (dx / dist) * force;
+        this.vy += (dy / dist) * force;
+      }
+    }
+
+    // Damping
+    this.vx *= 0.99;
+    this.vy *= 0.99;
+
+    // Speed limit
+    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    if (speed > 1.5) {
+      this.vx = (this.vx / speed) * 1.5;
+      this.vy = (this.vy / speed) * 1.5;
+    }
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Wrap edges
+    const margin = 20;
+    if (this.x < -margin) this.x = W + margin;
+    if (this.x > W + margin) this.x = -margin;
+    if (this.y < -margin) this.y = H + margin;
+    if (this.y > H + margin) this.y = -margin;
+  }
+}
+
+let stars = [];
+function initStars() {
+  stars = [];
+  for (let i = 0; i < STAR_COUNT; i++) {
+    stars.push(new Star());
+  }
+}
+initStars();
+
+let mouse = { x: W / 2, y: H / 2, active: false, pressing: false };
+
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mousedown', () => { mouse.pressing = true; });
+canvas.addEventListener('mouseup', () => { mouse.pressing = false; });
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  mouse.active = true;
+}, { passive: false });
+canvas.addEventListener('touchstart', e => {
+  mouse.pressing = true;
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('touchend', () => { mouse.pressing = false; });
+
+// Palette buttons
+const paletteKeys = Object.keys(PALETTES);
+const controlsEl = document.getElementById('palettes');
+paletteKeys.forEach((key, i) => {
+  const btn = document.createElement('button');
+  btn.className = 'palette-btn' + (i === 0 ? ' active' : '');
+  btn.style.background = PALETTES[key].stars[0];
+  btn.title = PALETTES[key].name;
+  btn.addEventListener('click', () => {
+    palette = PALETTES[key];
+    document.querySelectorAll('.palette-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    // Recolor stars
+    stars.forEach(s => {
+      s.color = palette.stars[Math.floor(Math.random() * palette.stars.length)];
+    });
+  });
+  controlsEl.appendChild(btn);
+});
+
+// Key palette switches
+window.addEventListener('keydown', e => {
+  if (e.key >= '1' && e.key <= '4') {
+    const idx = parseInt(e.key) - 1;
+    if (idx < paletteKeys.length) {
+      palette = PALETTES[paletteKeys[idx]];
+      document.querySelectorAll('.palette-btn').forEach((b, i) => {
+        b.classList.toggle('active', i === idx);
+      });
+      stars.forEach(s => {
+        s.color = palette.stars[Math.floor(Math.random() * palette.stars.length)];
+      });
+    }
+  }
+});
+
+let pulseWaves = [];
+canvas.addEventListener('click', e => {
+  pulseWaves.push({ x: e.clientX, y: e.clientY, radius: 0, maxRadius: 300, alpha: 1 });
+});
+
+function drawFrame() {
+  // Fade background
+  ctx.fillStyle = palette.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle ambient glow
+  const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * 0.6);
+  grad.addColorStop(0, palette.glow);
+  grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Update stars
+  stars.forEach(s => s.update(mouse.x, mouse.y, mouse.active));
+
+  // Pulse effect when pressing
+  if (mouse.pressing && mouse.active) {
+    pulseWaves.push({ x: mouse.x, y: mouse.y, radius: 0, maxRadius: 250, alpha: 0.6 });
+  }
+
+  // Draw connections
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < stars.length; i++) {
+    for (let j = i + 1; j < stars.length; j++) {
+      const dx = stars[i].x - stars[j].x;
+      const dy = stars[i].y - stars[j].y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < MAX_DIST) {
+        const alpha = (1 - dist / MAX_DIST) * 0.35;
+        const colorIdx = Math.floor((1 - dist / MAX_DIST) * (palette.threads.length - 1));
+        ctx.strokeStyle = palette.threads[Math.min(colorIdx, palette.threads.length - 1)];
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.moveTo(stars[i].x, stars[i].y);
+        ctx.lineTo(stars[j].x, stars[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // Mouse connections
+  if (mouse.active) {
+    ctx.lineWidth = 0.6;
+    for (let i = 0; i < stars.length; i++) {
+      const dx = mouse.x - stars[i].x;
+      const dy = mouse.y - stars[i].y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < MOUSE_RADIUS) {
+        const alpha = (1 - dist / MOUSE_RADIUS) * 0.5;
+        ctx.strokeStyle = '#ffffff';
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.moveTo(mouse.x, mouse.y);
+        ctx.lineTo(stars[i].x, stars[i].y);
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Draw stars
+  stars.forEach(s => {
+    const pulseFactor = 1 + Math.sin(s.pulse) * 0.3;
+    const r = s.radius * pulseFactor;
+
+    // Glow
+    const glow = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r * 4);
+    glow.addColorStop(0, s.color);
+    glow.addColorStop(0.3, s.color);
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, r * 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Core
+    ctx.fillStyle = s.color;
+    ctx.globalAlpha = 0.9;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  // Pulse waves
+  pulseWaves = pulseWaves.filter(w => w.alpha > 0.01);
+  pulseWaves.forEach(w => {
+    w.radius += 4;
+    w.alpha *= 0.96;
+    ctx.strokeStyle = '#ffffff';
+    ctx.globalAlpha = w.alpha * 0.4;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(w.x, w.y, w.radius, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+
+  requestAnimationFrame(drawFrame);
+}
+
+// Fade UI after 5s
+setTimeout(() => {
+  document.getElementById('ui').style.opacity = '0';
+}, 5000);
+
+drawFrame();
+</script>
+</body>
+</html>
