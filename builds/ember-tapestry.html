@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ember Tapestry</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    background: #06060f;
+    overflow: hidden;
+    height: 100%;
+    font-family: 'Courier New', monospace;
+    color: #8888aa;
+    user-select: none;
+  }
+  canvas { display: block; cursor: crosshair; }
+  .ui {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    z-index: 10;
+    background: rgba(8, 6, 20, 0.55);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(100, 80, 180, 0.18);
+    border-radius: 40px;
+    padding: 10px 22px;
+    pointer-events: all;
+  }
+  .palette-btn {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.25s;
+    position: relative;
+  }
+  .palette-btn:hover { transform: scale(1.25); }
+  .palette-btn.active {
+    border-color: #fff;
+    box-shadow: 0 0 14px currentColor;
+  }
+  .key-hint {
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    opacity: 0.55;
+    margin-top: 2px;
+    text-align: center;
+  }
+  .col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .sep {
+    width: 1px;
+    height: 28px;
+    background: rgba(120, 100, 180, 0.2);
+  }
+  .title {
+    font-size: 0.65rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: #8878cc;
+    margin-right: 4px;
+  }
+  .action-btn {
+    background: rgba(100, 80, 180, 0.15);
+    border: 1px solid rgba(120, 100, 200, 0.25);
+    color: #9988dd;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-family: inherit;
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  .action-btn:hover {
+    background: rgba(120, 100, 200, 0.3);
+    border-color: rgba(140, 120, 255, 0.5);
+    color: #fff;
+  }
+  .hint {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.6rem;
+    letter-spacing: 0.2em;
+    opacity: 0.35;
+    text-align: center;
+    pointer-events: none;
+    z-index: 5;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="ui">
+  <span class="title">Ember Tapestry</span>
+  <div class="sep"></div>
+  <div class="col">
+    <div class="palette-btn active" data-p="0" style="background:#ff6a3d;color:#ff6a3d;" title="Ember"></div>
+    <div class="key-hint">1</div>
+  </div>
+  <div class="col">
+    <div class="palette-btn" data-p="1" style="background:#3dd6ff;color:#3dd6ff;" title="Frost"></div>
+    <div class="key-hint">2</div>
+  </div>
+  <div class="col">
+    <div class="palette-btn" data-p="2" style="background:#a78bfa;color:#a78bfa;" title="Aurora"></div>
+    <div class="key-hint">3</div>
+  </div>
+  <div class="col">
+    <div class="palette-btn" data-p="3" style="background:#39ff14;color:#39ff14;" title="Neon"></div>
+    <div class="key-hint">4</div>
+  </div>
+  <div class="col">
+    <div class="palette-btn" data-p="4" style="background:#c8c8ff;color:#c8c8ff;" title="Void"></div>
+    <div class="key-hint">5</div>
+  </div>
+  <div class="sep"></div>
+  <button class="action-btn" id="clearBtn">Clear</button>
+  <button class="action-btn" id="saveBtn">Save</button>
+</div>
+<div class="hint">drag to weave · move to glow · 1-5 palette · space clear · s save</div>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W, H;
+  let palette = 0;
+  let drawing = false;
+  let lastX = 0, lastY = 0;
+  let mouseX = -9999, mouseY = -9999;
+  let threads = [];
+  let particles = [];
+  let time = 0;
+
+  const PALETTES = [
+    { name: 'Ember',  colors: ['#ff6a3d','#ff3d6a','#ffaa3d','#ff3dff','#ffe03d'] },
+    { name: 'Frost',  colors: ['#3dd6ff','#3dfff6','#6aafff','#3daaff','#c0f0ff'] },
+    { name: 'Aurora', colors: ['#a78bfa','#7c3aed','#c4b5fd','#818cf8','#e879f9'] },
+    { name: 'Neon',   colors: ['#39ff14','#00ffa3','#80ff00','#00ffc8','#d0ff00'] },
+    { name: 'Void',   colors: ['#c8c8ff','#8888cc','#f0f0ff','#7777bb','#ddddf0'] }
+  ];
+
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  function getColor() {
+    const p = PALETTES[palette].colors;
+    return p[Math.floor(Math.random() * p.length)];
+  }
+
+  class Thread {
+    constructor(x, y, color) {
+      this.points = [{x, y, t: 1}];
+      this.color = color || getColor();
+      this.life = 1;
+      this.decay = 0.0015 + Math.random() * 0.002;
+      this.width = 1 + Math.random() * 2;
+    }
+    push(x, y) {
+      const prev = this.points[this.points.length - 1];
+      const dx = x - prev.x, dy = y - prev.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 3) {
+        this.points.push({x, y, t: 1});
+      }
+      if (this.points.length > 180) {
+        this.points.shift();
+      }
+    }
+    update() {
+      this.life -= this.decay;
+      for (const p of this.points) p.t = Math.max(0, p.t - 0.003);
+      return this.life > 0;
+    }
+    draw(ctx) {
+      if (this.points.length < 2) return;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 1; i < this.points.length; i++) {
+        const a = this.points[i - 1], b = this.points[i];
+        const alpha = Math.min(a.t, b.t) * this.life * 0.7;
+        ctx.strokeStyle = this.color + Math.floor(alpha * 255).toString(16).padStart(2,'0');
+        ctx.lineWidth = this.width * this.life;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
+  class Particle {
+    constructor(x, y, color) {
+      this.x = x + (Math.random() - 0.5) * 20;
+      this.y = y + (Math.random() - 0.5) * 20;
+      this.vx = (Math.random() - 0.5) * 1.5;
+      this.vy = (Math.random() - 0.5) * 1.5;
+      this.life = 1;
+      this.decay = 0.008 + Math.random() * 0.015;
+      this.size = 1 + Math.random() * 2.5;
+      this.color = color || getColor();
+    }
+    update() {
+      this.x += this.vx;
+      this.y += this.vy;
+      this.vx *= 0.98;
+      this.vy *= 0.98;
+      this.life -= this.decay;
+      return this.life > 0;
+    }
+    draw(ctx) {
+      const alpha = this.life * 0.8;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = this.color + Math.floor(alpha * 255).toString(16).padStart(2,'0');
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = this.color;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  function spawnParticles(x, y, count, color) {
+    for (let i = 0; i < count; i++) {
+      particles.push(new Particle(x, y, color));
+    }
+  }
+
+  function connectNearby() {
+    // only check threads for connections
+    const maxDist = 60;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < threads.length; i++) {
+      const t = threads[i];
+      if (t.life < 0.4) continue;
+      for (let j = i + 1; j < threads.length; j++) {
+        const u = threads[j];
+        if (u.life < 0.4) continue;
+        const a = t.points[t.points.length - 1];
+        const b = u.points[u.points.length - 1];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (d < maxDist) {
+          const alpha = (1 - d / maxDist) * Math.min(t.life, u.life) * 0.25;
+          ctx.strokeStyle = t.color + Math.floor(alpha * 255).toString(16).padStart(2,'0');
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawMouseGlow() {
+    if (mouseX < -999) return;
+    const grad = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 120);
+    const c = PALETTES[palette].colors[0];
+    grad.addColorStop(0, c + '18');
+    grad.addColorStop(0.5, c + '08');
+    grad.addColorStop(1, c + '00');
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(mouseX, mouseY, 120, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  let activeThread = null;
+  let frameCount = 0;
+
+  function loop() {
+    time += 0.005;
+    frameCount++;
+
+    // Fade background
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(6, 6, 15, 0.12)';
+    ctx.fillRect(0, 0, W, H);
+
+    // Update and draw threads
+    threads = threads.filter(t => {
+      const alive = t.update();
+      if (alive) t.draw(ctx);
+      return alive;
+    });
+
+    // Draw connections
+    if (frameCount % 3 === 0) connectNearby();
+
+    // Update particles
+    particles = particles.filter(p => {
+      const alive = p.update();
+      if (alive) p.draw(ctx);
+      return alive;
+    });
+
+    // Mouse glow
+    drawMouseGlow();
+
+    // Auto-spawn ambient particles
+    if (Math.random() < 0.15 && threads.length > 0) {
+      const t = threads[Math.floor(Math.random() * threads.length)];
+      const last = t.points[t.points.length - 1];
+      if (last) spawnParticles(last.x, last.y, 1, t.color);
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  // Events
+  canvas.addEventListener('mousedown', e => {
+    drawing = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    activeThread = new Thread(lastX, lastY);
+    threads.push(activeThread);
+    spawnParticles(lastX, lastY, 8, activeThread.color);
+  });
+  canvas.addEventListener('mousemove', e => {
+    mouseX = e.clientX;
+    mouseY = e.clientY;
+    if (drawing) {
+      const x = e.clientX, y = e.clientY;
+      activeThread.push(x, y);
+      spawnParticles(x, y, 2, activeThread.color);
+      lastX = x;
+      lastY = y;
+    }
+  });
+  window.addEventListener('mouseup', () => {
+    drawing = false;
+    activeThread = null;
+  });
+  canvas.addEventListener('mouseleave', () => {
+    mouseX = -9999;
+    mouseY = -9999;
+    drawing = false;
+    activeThread = null;
+  });
+
+  // Touch support
+  canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    drawing = true;
+    lastX = t.clientX;
+    lastY = t.clientY;
+    activeThread = new Thread(lastX, lastY);
+    threads.push(activeThread);
+    spawnParticles(lastX, lastY, 8, activeThread.color);
+  }, { passive: false });
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    mouseX = t.clientX;
+    mouseY = t.clientY;
+    if (drawing) {
+      const x = t.clientX, y = t.clientY;
+      activeThread.push(x, y);
+      spawnParticles(x, y, 2, activeThread.color);
+      lastX = x;
+      lastY = y;
+    }
+  }, { passive: false });
+  canvas.addEventListener('touchend', () => {
+    drawing = false;
+    activeThread = null;
+    mouseX = -9999;
+    mouseY = -9999;
+  });
+
+  // Keyboard
+  window.addEventListener('keydown', e => {
+    const key = e.key.toLowerCase();
+    if (key >= '1' && key <= '5') {
+      palette = parseInt(key) - 1;
+      document.querySelectorAll('.palette-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', i === palette);
+      });
+    }
+    if (key === ' ' || key === 'spacebar') {
+      e.preventDefault();
+      threads = [];
+      particles = [];
+      ctx.fillStyle = '#06060f';
+      ctx.fillRect(0, 0, W, H);
+    }
+    if (key === 's') {
+      saveImage();
+    }
+  });
+
+  // Palette buttons
+  document.querySelectorAll('.palette-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      palette = parseInt(btn.dataset.p);
+      document.querySelectorAll('.palette-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    threads = [];
+    particles = [];
+    ctx.fillStyle = '#06060f';
+    ctx.fillRect(0, 0, W, H);
+  });
+
+  document.getElementById('saveBtn').addEventListener('click', saveImage);
+
+  function saveImage() {
+    const link = document.createElement('a');
+    link.download = 'ember-tapestry-' + Date.now() + '.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }
+
+  // Init
+  ctx.fillStyle = '#06060f';
+  ctx.fillRect(0, 0, W, H);
+
+  // Spawn a few starter threads for visual interest
+  for (let i = 0; i < 5; i++) {
+    const t = new Thread(
+      W * 0.2 + Math.random() * W * 0.6,
+      H * 0.2 + Math.random() * H * 0.6
+    );
+    t.decay = 0.0008;
+    t.life = 1;
+    for (let j = 0; j < 40; j++) {
+      t.push(
+        t.points[t.points.length-1].x + (Math.random()-0.5)*120,
+        t.points[t.points.length-1].y + (Math.random()-0.5)*120
+      );
+    }
+    threads.push(t);
+  }
+
+  loop();
+})();
+</script>
+</body>
+</html>
