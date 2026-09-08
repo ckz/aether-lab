@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Topographic Dream</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #070b14;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #8af;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed; top: 16px; left: 16px;
+    background: rgba(7,11,20,.85);
+    border: 1px solid rgba(100,180,255,.2);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 11px; letter-spacing: .08em;
+    backdrop-filter: blur(6px);
+    z-index: 10;
+  }
+  #ui h2 { font-weight: normal; color: #8cf; margin-bottom: 8px; font-size: 13px; letter-spacing: .2em; text-transform: uppercase; }
+  #ui .row { margin: 5px 0; opacity: .75; }
+  #ui .key { color: #fa8; }
+  #ui .val { color: #fff; }
+  #hint {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; letter-spacing: .15em; opacity: .4;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h2>Topographic Dream</h2>
+  <div class="row"><span class="key">Click + drag</span> <span class="val">Sculpt terrain</span></div>
+  <div class="row"><span class="key">Right-click</span> <span class="val">Lower land</span></div>
+  <div class="row"><span class="key">Scroll</span> <span class="val">Brush size</span></div>
+  <div class="row"><span class="key">1-4</span> <span class="val">Palette</span></div>
+  <div class="row"><span class="key">Space</span> <span class="val">Pause / play</span></div>
+  <div class="row"><span class="key">R</span> <span class="val">New seed</span></div>
+  <div class="row" id="stats"></div>
+</div>
+<div id="hint">A living terrain breathes beneath your feet</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+resize();
+window.addEventListener('resize', resize);
+
+// --- Simplex-like noise ---
+function makeNoise(seed) {
+  const perm = new Uint8Array(512);
+  const p = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) p[i] = i;
+  // Fisher-Yates with seed
+  let s = seed || 42;
+  for (let i = 255; i > 0; i--) {
+    s = (s * 16807 + 0) % 2147483647;
+    const j = s % (i + 1);
+    [p[i], p[j]] = [p[j], p[i]];
+  }
+  for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+
+  function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+  function lerp(a, b, t) { return a + t * (b - a); }
+  function grad(hash, x, y) {
+    const h = hash & 3;
+    const u = h < 2 ? x : y;
+    const v = h < 2 ? y : x;
+    return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
+  }
+
+  return function noise2D(x, y) {
+    const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+    const xf = x - Math.floor(x), yf = y - Math.floor(y);
+    const u = fade(xf), v = fade(yf);
+    const a = perm[X] + Y, b = perm[X + 1] + Y;
+    return lerp(
+      lerp(grad(perm[a], xf, yf), grad(perm[b], xf - 1, yf), u),
+      lerp(grad(perm[a + 1], xf, yf - 1), grad(perm[b + 1], xf - 1, yf - 1), u),
+      v
+    );
+  };
+}
+
+// --- Terrain ---
+const SCALE = 120; // pixels per world unit
+const WORLD_W = () => Math.ceil(W / SCALE) + 4;
+const WORLD_H = () => Math.ceil(H / SCALE) + 4;
+let terrain, worldW, worldH, noise;
+let seed = Math.floor(Math.random() * 100000);
+let waterLevel = 0.35;
+let paused = false;
+let paletteIdx = 0;
+let brushSize = 3;
+let time = 0;
+
+function initTerrain() {
+  noise = makeNoise(seed);
+  worldW = WORLD_W();
+  worldH = WORLD_H();
+  terrain = new Float32Array(worldW * worldH);
+  for (let y = 0; y < worldH; y++) {
+    for (let x = 0; x < worldW; x++) {
+      const nx = x / worldW * 4;
+      const ny = y / worldH * 4;
+      let h = noise(nx, ny) * 0.5 + noise(nx * 2.3, ny * 2.3) * 0.25 + noise(nx * 4.1, ny * 4.1) * 0.125;
+      h = (h + 1) / 2; // normalize to 0..1
+      terrain[y * worldW + x] = h;
+    }
+  }
+}
+initTerrain();
+
+function getH(x, y) {
+  if (x < 0 || y < 0 || x >= worldW || y >= worldH) return 0;
+  return terrain[y * worldW + x];
+}
+function setH(x, y, v) {
+  if (x < 0 || y < 0 || x >= worldW || y >= worldH) return;
+  terrain[y * worldW + x] = Math.max(0, Math.min(1, v));
+}
+
+function sculpt(wx, wy, radius, amount) {
+  const cx = Math.floor(wx), cy = Math.floor(wy);
+  const r = Math.ceil(radius);
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > radius) continue;
+      const falloff = 1 - dist / radius;
+      const x = cx + dx, y = cy + dy;
+      if (x < 0 || y < 0 || x >= worldW || y >= worldH) continue;
+      const idx = y * worldW + x;
+      terrain[idx] = Math.max(0, Math.min(1, terrain[idx] + amount * falloff * falloff));
+    }
+  }
+}
+
+// --- Color palettes ---
+const palettes = [
+  { name: 'Arctic',   land: [[0.15,0.35,0.5],[0.25,0.55,0.6],[0.55,0.75,0.65],[0.8,0.85,0.7],[0.95,0.95,0.92]], water: [0.1,0.25,0.45] },
+  { name: 'Desert',   land: [[0.55,0.4,0.25],[0.7,0.55,0.3],[0.8,0.7,0.45],[0.85,0.8,0.6],[0.95,0.92,0.8]],  water: [0.5,0.35,0.2] },
+  { name: 'Toxic',    land: [[0.05,0.15,0.1],[0.1,0.35,0.15],[0.2,0.55,0.2],[0.5,0.75,0.3],[0.8,0.9,0.4]],   water: [0.0,0.2,0.15] },
+  { name: 'Nebula',   land: [[0.1,0.05,0.2],[0.25,0.1,0.4],[0.5,0.2,0.5],[0.7,0.3,0.5],[0.95,0.6,0.7]],   water: [0.05,0.0,0.15] },
+];
+
+function getLandColor(h, palette) {
+  const p = palettes[palette].land;
+  if (h < waterLevel + 0.02) return p[0];
+  const t = (h - waterLevel - 0.02) / (1 - waterLevel - 0.02);
+  const ti = Math.min(4, Math.floor(t * 5));
+  const tf = (t * 5) - ti;
+  const a = p[Math.min(4, ti)];
+  const b = p[Math.min(4, ti + 1)];
+  return [a[0] + (b[0]-a[0])*tf, a[1] + (b[1]-a[1])*tf, a[2] + (b[2]-a[2])*tf];
+}
+
+// --- Rivers ---
+function computeFlow() {
+  // Simple downhill flow: each cell points to steepest descent neighbor
+  const flow = new Float32Array(worldW * worldH * 2);
+  for (let y = 0; y < worldH; y++) {
+    for (let x = 0; x < worldW; x++) {
+      const h = getH(x, y);
+      let bestDx = 0, bestDy = 0, bestDrop = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nh = getH(x+dx, y+dy);
+          const drop = h - nh;
+          if (drop > bestDrop) { bestDrop = drop; bestDx = dx; bestDy = dy; }
+        }
+      }
+      const idx = (y * worldW + x) * 2;
+      flow[idx] = bestDx;
+      flow[idx+1] = bestDy;
+    }
+  }
+  return flow;
+}
+
+// --- Drawing ---
+function drawTerrain() {
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+  const flow = computeFlow();
+
+  for (let py = 0; py < H; py++) {
+    for (let px = 0; px < W; px++) {
+      // Sample terrain at sub-pixel positions for anti-aliasing
+      const wx = px / SCALE, wy = py / SCALE;
+      const x0 = Math.floor(wx), y0 = Math.floor(wy);
+      const xf = wx - x0, yf = wy - y0;
+
+      const h00 = getH(x0, y0), h10 = getH(x0+1, y0), h01 = getH(x0, y0+1), h11 = getH(x0+1, y0+1);
+      const h = h00*(1-xf)*(1-yf) + h10*xf*(1-yf) + h01*(1-xf)*yf + h11*xf*yf;
+
+      // Lighting from flow
+      const fIdx = (y0 * worldW + x0) * 2;
+      const fdx = flow[fIdx] || 0, fdy = flow[fIdx+1] || 0;
+      const light = 1 - Math.abs(fdx) * 0.3 - Math.abs(fdy) * 0.3;
+
+      const [r, g, b] = getLandColor(h, paletteIdx);
+      const lr = Math.min(1, r * light), lg = Math.min(1, g * light), lb = Math.min(1, b * light);
+
+      // Water
+      let fr = lr, fg = lg, fb = lb;
+      if (h < waterLevel) {
+        const depth = (waterLevel - h) / waterLevel;
+        const wp = palettes[palette].water;
+        const wave = Math.sin(wx * 0.8 + time * 0.02) * Math.cos(wy * 0.6 + time * 0.015) * 0.08;
+        const shimmer = Math.sin(wx * 3 + time * 0.05) * Math.sin(wy * 3 + time * 0.04) * 0.05;
+        fr = lr * 0.3 + wp[0] * 0.7 + wave + shimmer;
+        fg = lg * 0.3 + wp[1] * 0.7 + wave;
+        fb = lb * 0.3 + wp[2] * 0.7 + wave + shimmer;
+      }
+
+      // Contour lines
+      const contourInterval = 0.04;
+      const contourPhase = (h - waterLevel) % contourInterval;
+      const lineWidth = 0.008;
+      if (h > waterLevel && contourPhase < lineWidth) {
+        const intensity = 1 - contourPhase / lineWidth;
+        fr = fr * (1 - intensity * 0.6);
+        fg = fg * (1 - intensity * 0.6);
+        fb = fb * (1 - intensity * 0.4);
+      }
+
+      // Water edge highlight
+      if (h >= waterLevel - 0.005 && h <= waterLevel + 0.01) {
+        fr += 0.15; fg += 0.2; fb += 0.25;
+      }
+
+      const idx = (py * W + px) * 4;
+      data[idx]   = Math.max(0, Math.min(255, fr * 255));
+      data[idx+1] = Math.max(0, Math.min(255, fg * 255));
+      data[idx+2] = Math.max(0, Math.min(255, fb * 255));
+      data[idx+3] = 255;
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  // Rivers
+  ctx.strokeStyle = `rgba(150,210,255,${0.3 + Math.sin(time*0.03)*0.1})`;
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  for (let y = 1; y < worldH - 1; y++) {
+    for (let x = 1; x < worldW - 1; x++) {
+      const h = getH(x, y);
+      if (h >= waterLevel || h < waterLevel - 0.1) continue;
+      const fi = (y * worldW + x) * 2;
+      const dx = flow[fi], dy = flow[fi+1];
+      const nh = getH(x+dx, y+dy);
+      if (nh < h && nh < waterLevel) {
+        ctx.moveTo(x * SCALE, y * SCALE);
+        ctx.lineTo((x+dx) * SCALE, (y+dy) * SCALE);
+      }
+    }
+  }
+  ctx.stroke();
+}
+
+// --- Interaction ---
+let mouse = { x: -100, y: -100, down: false, right: false };
+canvas.addEventListener('mousedown', e => { mouse.down = true; mouse.right = e.button === 2; });
+canvas.addEventListener('mouseup', e => { mouse.down = false; mouse.right = false; });
+canvas.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('wheel', e => { brushSize = Math.max(1, Math.min(12, brushSize - Math.sign(e.deltaY))); });
+
+window.addEventListener('keydown', e => {
+  if (e.key >= '1' && e.key <= '4') paletteIdx = parseInt(e.key) - 1;
+  if (e.key === ' ') { paused = !paused; e.preventDefault(); }
+  if (e.key === 'r' || e.key === 'R') { seed = Math.floor(Math.random() * 100000); initTerrain(); }
+});
+
+// --- Ambient animation ---
+function animate() {
+  requestAnimationFrame(animate);
+  if (!paused) time++;
+  drawTerrain();
+
+  // Sculpt while dragging
+  if (mouse.down) {
+    const wx = mouse.x / SCALE, wy = mouse.y / SCALE;
+    const amt = mouse.right ? -0.02 : 0.025;
+    sculpt(wx, wy, brushSize, amt);
+  }
+
+  // Slow ambient wave
+  if (!paused && time % 120 === 0) {
+    waterLevel = 0.32 + Math.sin(time * 0.003) * 0.06;
+  }
+}
+animate();
+
+document.getElementById('stats').innerHTML = `<span class="key">Palette:</span> <span class="val">${palettes[paletteIdx].name}</span>`;
+</script>
+</body>
+</html>
