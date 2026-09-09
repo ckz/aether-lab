@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stellar Cartographer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #00000a;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #7799cc;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #title {
+    font-size: .65rem;
+    letter-spacing: .4em;
+    text-transform: uppercase;
+    color: #4466aa;
+    margin-bottom: 4px;
+  }
+  #subtitle {
+    font-size: .55rem;
+    letter-spacing: .2em;
+    color: #334477;
+    margin-bottom: 18px;
+  }
+  #info {
+    font-size: .58rem;
+    letter-spacing: .12em;
+    color: #334466;
+    line-height: 1.8;
+  }
+  #tooltip {
+    position: fixed;
+    background: rgba(5, 5, 20, .92);
+    border: 1px solid rgba(80, 120, 200, .35);
+    border-radius: 3px;
+    padding: 8px 14px;
+    font-size: .62rem;
+    letter-spacing: .1em;
+    color: #7799cc;
+    pointer-events: none;
+    display: none;
+    z-index: 20;
+    white-space: nowrap;
+    box-shadow: 0 0 20px rgba(40, 80, 160, .2);
+  }
+  #tooltip .name { color: #aaccff; font-size: .68rem; }
+  #tooltip .meta { color: #556688; margin-top: 3px; }
+  #controls {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    z-index: 10;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    pointer-events: all;
+  }
+  .btn {
+    background: rgba(10, 15, 40, .7);
+    border: 1px solid rgba(60, 100, 180, .3);
+    color: #5577aa;
+    padding: 6px 14px;
+    font-family: 'Courier New', monospace;
+    font-size: .6rem;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all .25s;
+  }
+  .btn:hover { border-color: rgba(100, 160, 255, .6); color: #88aadd; }
+  .btn.active { border-color: rgba(100, 160, 255, .7); color: #aaccff; background: rgba(20, 40, 80, .5); }
+  #help {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 10;
+    font-size: .52rem;
+    letter-spacing: .12em;
+    color: #223344;
+    text-align: right;
+    line-height: 1.9;
+    pointer-events: none;
+  }
+  #seed-display {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10;
+    font-size: .55rem;
+    letter-spacing: .15em;
+    color: #223355;
+    pointer-events: none;
+  }
+  #loading {
+    position: fixed;
+    inset: 0;
+    background: #00000a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    transition: opacity 1.5s;
+  }
+  #loading.hidden { opacity: 0; pointer-events: none; }
+  #loading-text {
+    font-size: .7rem;
+    letter-spacing: .5em;
+    color: #335588;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<div id="loading"><div id="loading-text">charting the void…</div></div>
+<div id="ui">
+  <div id="title">Stellar Cartographer</div>
+  <div id="subtitle">procedural galaxy explorer</div>
+  <div id="info">
+    stars: <span id="star-count">—</span><br>
+    systems: <span id="system-count">—</span><br>
+    zoom: <span id="zoom-level">1.0</span>x
+  </div>
+</div>
+<div id="seed-display">seed: <span id="seed-val">—</span></div>
+<div id="tooltip"></div>
+<div id="controls">
+  <button class="btn active" data-type="spiral">Spiral</button>
+  <button class="btn" data-type="elliptical">Elliptical</button>
+  <button class="btn" data-type="irregular">Irregular</button>
+  <button class="btn" data-type="ring">Ring</button>
+  <button class="btn" id="regen">New Seed</button>
+</div>
+<div id="help">
+  drag to pan · scroll to zoom<br>
+  hover systems for details<br>
+  click to scan system
+</div>
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+
+let W, H, cx, cy;
+function resize() {
+  W = canvas.width = innerWidth;
+  H = canvas.height = innerHeight;
+  cx = W / 2; cy = H / 2;
+}
+resize();
+addEventListener('resize', resize);
+
+// ---- Seeded RNG ----
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// ---- State ----
+let seed = Date.now() & 0xFFFF;
+let rng = mulberry32(seed);
+let galaxyType = 'spiral';
+let camX = 0, camY = 0, zoom = 1;
+let targetZoom = 1;
+let isDragging = false, dragStartX, dragStartY, camStartX, camStartY;
+let mouseX = 0, mouseY = 0;
+let stars = [];
+let systems = [];
+let nebulae = [];
+let dustClouds = [];
+let hoveredSystem = null;
+let frame = 0;
+
+document.getElementById('seed-val').textContent = seed;
+
+// ---- Star spectral classes ----
+const SPECTRAL = [
+  { cls: 'O', color: '#9bb0ff', temp: '30,000K', mass: '16+ M☉', size: 1.6 },
+  { cls: 'B', color: '#aabfff', temp: '20,000K', mass: '2.1-16 M☉', size: 1.4 },
+  { cls: 'A', color: '#cad7ff', temp: '10,000K', mass: '1.4-2.1 M☉', size: 1.2 },
+  { cls: 'F', color: '#f8f7ff', temp: '7,500K', mass: '1.04-1.4 M☉', size: 1.0 },
+  { cls: 'G', color: '#fff4ea', temp: '6,000K', mass: '0.8-1.04 M☉', size: 0.95 },
+  { cls: 'K', color: '#ffd2a1', temp: '4,500K', mass: '0.45-0.8 M☉', size: 0.8 },
+  { cls: 'M', color: '#ffcc6f', temp: '3,000K', mass: '0.08-0.45 M☉', size: 0.7 },
+];
+const PREFIXES = ['Alpha','Beta','Gamma','Delta','Epsilon','Zeta','Eta','Theta','Iota','Kappa',
+  'Lambda','Mu','Nu','Xi','Omicron','Pi','Rho','Sigma','Tau','Upsilon','Phi','Chi','Psi','Omega'];
+const CONSTELLATIONS = ['Andromeda','Cassiopeia','Orion','Lyra','Cygnus','Draco','Aquila','Pegasus',
+  'Centaurus','Carina','Puppis','Vela','Crux','Tucana','Indus','Pavo','Grus','Phoenix','Eridanus',
+  'Cetus','Perseus','Auriga','Gemini','Canis','Lepus','Monoceros','Canis','Ursa','Bootes','Corona'];
+
+function randomSpectral() {
+  // Weight toward M, K, G — red dwarfs are most common
+  let r = rng();
+  if (r < 0.35) return SPECTRAL[6]; // M
+  if (r < 0.55) return SPECTRAL[5]; // K
+  if (r < 0.72) return SPECTRAL[4]; // G
+  if (r < 0.83) return SPECTRAL[3]; // F
+  if (r < 0.91) return SPECTRAL[2]; // A
+  if (r < 0.96) return SPECTRAL[1]; // B
+  return SPECTRAL[0]; // O
+}
+
+function makeStarName(sysIdx, starIdx) {
+  const pre = PREFIXES[starIdx % PREFIXES.length];
+  const con = CONSTELLATIONS[sysIdx % CONSTELLATIONS.length];
+  return `${pre} ${con} ${String.fromCharCode(8370 + sysIdx)}`;
+}
+
+// ---- Galaxy Generation ----
+function generateGalaxy() {
+  rng = mulberry32(seed);
+  stars = [];
+  systems = [];
+  nebulae = [];
+  dustClouds = [];
+
+  const galaxyRadius = 350 + rng() * 250;
+  const numStars = 4000 + Math.floor(rng() * 3000);
+  const arms = galaxyType === 'spiral' ? 2 + Math.floor(rng() * 3) : 0;
+  const armSpread = 0.3 + rng() * 0.5;
+  const twist = 0.4 + rng() * 0.8;
+
+  // Generate star positions
+  for (let i = 0; i < numStars; i++) {
+    let x, y, z;
+    if (galaxyType === 'spiral') {
+      const arm = Math.floor(rng() * arms);
+      const armAngle = (arm / arms) * Math.PI * 2;
+      const t = Math.pow(rng(), 0.6); // bias toward center
+      const radius = t * galaxyRadius;
+      const spiralAngle = armAngle + t * twist * Math.PI * 2;
+      const scatter = (rng() - 0.5) * armSpread * radius * 0.5;
+      const scatterY = (rng() - 0.5) * 60 * (1 - t * 0.5);
+      x = Math.cos(spiralAngle) * radius + scatter;
+      y = scatterY;
+      z = Math.sin(spiralAngle) * radius + scatter;
+    } else if (galaxyType === 'elliptical') {
+      const theta = rng() * Math.PI * 2;
+      const phi = (rng() - 0.5) * Math.PI;
+      const r = Math.pow(rng(), 0.4) * galaxyRadius * 0.8;
+      x = r * Math.cos(phi) * Math.cos(theta);
+      y = r * Math.sin(phi) * 0.5;
+      z = r * Math.cos(phi) * Math.sin(theta);
+    } else if (galaxyType === 'irregular') {
+      const clusters = 3 + Math.floor(rng() * 5);
+      const cluster = Math.floor(rng() * clusters);
+      const cx = Math.cos(cluster / clusters * Math.PI * 2) * galaxyRadius * 0.4;
+      const cy = Math.sin(cluster / clusters * Math.PI * 2) * galaxyRadius * 0.3;
+      x = cx + (rng() - 0.5) * galaxyRadius * 0.5;
+      y = cy + (rng() - 0.5) * galaxyRadius * 0.25;
+      z = cx + (rng() - 0.5) * galaxyRadius * 0.5;
+    } else { // ring
+      const angle = rng() * Math.PI * 2;
+      const ringR = galaxyRadius * (0.6 + rng() * 0.35);
+      const scatter = (rng() - 0.5) * 40;
+      x = Math.cos(angle) * ringR + scatter;
+      y = (rng() - 0.5) * 30;
+      z = Math.sin(angle) * ringR + scatter;
+    }
+
+    const spec = randomSpectral();
+    const brightness = 0.3 + rng() * 0.7;
+    stars.push({ x, y, z, spec, brightness, twinklePhase: rng() * Math.PI * 2 });
+  }
+
+  // Generate systems (brighter stars become named systems)
+  const brightStars = stars
+    .map((s, i) => ({ i, b: s.brightness * (s.spec.size || 1) }))
+    .sort((a, b) => b.b - a.b)
+    .slice(0, 40 + Math.floor(rng() * 30));
+
+  brightStars.forEach((bs, idx) => {
+    const s = stars[bs.i];
+    systems.push({
+      x: s.x, y: s.y, z: s.z,
+      name: makeStarName(idx, Math.floor(rng() * PREFIXES.length)),
+      spec: s.spec,
+      brightness: bs.b,
+      planets: Math.floor(rng() * 9) + 1,
+      temp: Math.floor(rng() * 700 + 200),
+      discovered: rng() < 0.3,
+      age: (rng() * 12 + 0.5).toFixed(1),
+    });
+  });
+
+  // Generate nebulae
+  const numNebulae = 3 + Math.floor(rng() * 5);
+  for (let i = 0; i < numNebulae; i++) {
+    const angle = rng() * Math.PI * 2;
+    const dist = rng() * galaxyRadius * 0.7;
+    const palette = [
+      ['#ff3366', '#ff6633', '#ff9933'],
+      ['#3366ff', '#6633ff', '#9933ff'],
+      ['#33ff99', '#33ccff', '#3399ff'],
+      ['#ff33aa', '#ff3366', '#ff9933'],
+      ['#33ffcc', '#3399ff', '#6633ff'],
+      ['#ff6633', '#ffcc33', '#ff3366'],
+    ][Math.floor(rng() * 6)];
+    nebulae.push({
+      x: Math.cos(angle) * dist,
+      y: (rng() - 0.5) * 80,
+      z: Math.sin(angle) * dist,
+      radius: 30 + rng() * 80,
+      colors: palette,
+      alpha: 0.03 + rng() * 0.05,
+      drift: (rng() - 0.5) * 0.01,
+    });
+  }
+
+  // Background dust clouds
+  for (let i = 0; i < 15; i++) {
+    dustClouds.push({
+      x: (rng() - 0.5) * galaxyRadius * 2.5,
+      y: (rng() - 0.5) * galaxyRadius * 1.5,
+      z: (rng() - 0.5) * galaxyRadius * 2.5,
+      radius: 40 + rng() * 120,
+      alpha: 0.01 + rng() * 0.02,
+    });
+  }
+
+  document.getElementById('star-count').textContent = numStars.toLocaleString();
+  document.getElementById('system-count').textContent = systems.length;
+}
+
+// ---- Render helpers ----
+function worldToScreen(wx, wy, wz) {
+  const x = (wx - camX) * zoom + cx;
+  const y = (wy - camY) * zoom + cy;
+  // Simple perspective
+  const fov = 600;
+  const scale = fov / (fov + wz * 0.5);
+  return { x: cx + (x - cx) * scale, y: cy + (y - cy) * scale, scale };
+}
+
+function drawStar(s) {
+  const { x, y, scale } = worldToScreen(s.x, s.y, s.z);
+  if (x < -10 || x > W + 10 || y < -10 || y > H + 10) return;
+
+  const twinkle = 0.7 + 0.3 * Math.sin(frame * 0.02 + s.twinklePhase);
+  const alpha = s.brightness * twinkle * scale;
+  const size = (s.spec.size || 1) * scale * 1.5;
+
+  // Glow
+  const grd = ctx.createRadialGradient(x, y, 0, x, y, size * 4);
+  grd.addColorStop(0, s.spec.color + Math.floor(alpha * 180).toString(16).padStart(2, '0'));
+  grd.addColorStop(1, s.spec.color + '00');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(x, y, size * 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Core
+  ctx.fillStyle = s.spec.color;
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.arc(x, y, size * 0.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+function drawNebula(n) {
+  const { x, y, scale } = worldToScreen(n.x, n.y, n.z);
+  const size = n.radius * zoom * scale;
+  if (x + size < 0 || x - size > W || y + size < 0 || y - size > H) return;
+
+  const grd = ctx.createRadialGradient(x, y, 0, x, y, size);
+  n.colors.forEach((c, i) => {
+    grd.addColorStop(i / (n.colors.length - 1), c + Math.floor(n.alpha * 255).toString(16).padStart(2, '0'));
+  });
+  grd.addColorStop(1, '#00000000');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(x, y, size, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Drift
+  n.x += Math.sin(frame * n.drift) * 0.02;
+}
+
+function drawDust(d) {
+  const { x, y, scale } = worldToScreen(d.x, d.y, d.z);
+  const size = d.radius * zoom * scale;
+  if (x + size < 0 || x - size > W || y + size < 0 || y - size > H) return;
+
+  const grd = ctx.createRadialGradient(x, y, 0, x, y, size);
+  grd.addColorStop(0, `rgba(20, 30, 60, ${d.alpha})`);
+  grd.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(x, y, size, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawSystem(sys) {
+  const { x, y, scale } = worldToScreen(sys.x, sys.y, sys.z);
+  if (x < -50 || x > W + 50 || y < -50 || y > H + 50) return;
+
+  const isHovered = hoveredSystem === sys;
+  const size = (3 + sys.brightness * 3) * scale;
+
+  // System glow
+  const grd = ctx.createRadialGradient(x, y, 0, x, y, size * (isHovered ? 8 : 5));
+  const col = sys.spec.color;
+  grd.addColorStop(0, col + '88');
+  grd.addColorStop(0.4, col + '33');
+  grd.addColorStop(1, col + '00');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(x, y, size * (isHovered ? 8 : 5), 0, Math.PI * 2);
+  ctx.fill();
+
+  // Core dot
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.arc(x, y, isHovered ? size * 1.5 : size, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Scan ring when hovered
+  if (isHovered) {
+    const ringR = size * 3 + Math.sin(frame * 0.05) * size;
+    ctx.strokeStyle = col + '44';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(x, y, ringR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Planet orbits
+    for (let p = 0; p < Math.min(sys.planets, 5); p++) {
+      const orbitR = size * 2.5 + p * size * 1.2;
+      const planetAngle = frame * 0.01 * (1 + p * 0.3) + p * 1.3;
+      const px = x + Math.cos(planetAngle) * orbitR;
+      const py = y + Math.sin(planetAngle) * orbitR * 0.4;
+      ctx.fillStyle = '#778899';
+      ctx.beginPath();
+      ctx.arc(px, py, size * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// ---- Background stars (static distant) ----
+const bgStars = [];
+for (let i = 0; i < 300; i++) {
+  bgStars.push({
+    x: rng() * 1, y: rng() * 1,
+    size: 0.3 + rng() * 1.2,
+    brightness: 0.2 + rng() * 0.6,
+    twinkle: rng() * Math.PI * 2,
+  });
+}
+
+function drawBackground() {
+  // Deep space gradient
+  const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.7);
+  grd.addColorStop(0, '#06060f');
+  grd.addColorStop(0.5, '#030308');
+  grd.addColorStop(1, '#000005');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, W, H);
+
+  // Background stars
+  bgStars.forEach(s => {
+    const twinkle = 0.6 + 0.4 * Math.sin(frame * 0.015 + s.twinkle);
+    ctx.globalAlpha = s.brightness * twinkle * 0.5;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(s.x * W, s.y * H, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+
+// ---- Grid (subtle) ----
+function drawGrid() {
+  const gridSize = 200 * zoom;
+  if (gridSize < 20) return;
+  const offX = ((-camX * zoom + cx) % gridSize + gridSize) % gridSize;
+  const offY = ((-camY * zoom + cy) % gridSize + gridSize) % gridSize;
+  ctx.strokeStyle = 'rgba(30, 50, 90, 0.15)';
+  ctx.lineWidth = 0.5;
+  for (let x = offX; x < W; x += gridSize) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = offY; y < H; y += gridSize) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+}
+
+// ---- Main render ----
+function render() {
+  frame++;
+
+  // Smooth zoom
+  zoom += (targetZoom - zoom) * 0.08;
+
+  drawBackground();
+  drawGrid();
+
+  // Sort stars by z for depth
+  const sortedStars = [...stars].sort((a, b) => a.z - b.z);
+
+  // Draw dust clouds
+  dustClouds.forEach(drawDust);
+
+  // Draw nebulae
+  nebulae.forEach(drawNebula);
+
+  // Draw stars
+  sortedStars.forEach(drawStar);
+
+  // Draw systems (on top)
+  systems.forEach(drawSystem);
+
+  // Center crosshair
+  const crossAlpha = 0.08 + Math.sin(frame * 0.02) * 0.03;
+  ctx.strokeStyle = `rgba(60, 120, 200, ${crossAlpha})`;
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - 15, cy); ctx.lineTo(cx + 15, cy);
+  ctx.moveTo(cx, cy - 15); ctx.lineTo(cx, cy + 15);
+  ctx.stroke();
+
+  // Update info
+  document.getElementById('zoom-level').textContent = zoom.toFixed(2);
+
+  requestAnimationFrame(render);
+}
+
+// ---- Hit testing ----
+function findHoveredSystem() {
+  const screenMouse = { x: mouseX, y: mouseY };
+  let best = null, bestDist = 20;
+
+  for (const sys of systems) {
+    const { x, y } = worldToScreen(sys.x, sys.y, sys.z);
+    const dx = screenMouse.x - x, dy = screenMouse.y - y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const hitR = (3 + sys.brightness * 3) * zoom + 8;
+    if (dist < hitR && dist < bestDist) {
+      bestDist = dist;
+      best = sys;
+    }
+  }
+  return best;
+}
+
+// ---- Events ----
+canvas.addEventListener('mousedown', e => {
+  isDragging = true;
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  camStartX = camX; camStartY = camY;
+});
+
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX; mouseY = e.clientY;
+
+  if (isDragging) {
+    camX = camStartX - (e.clientX - dragStartX) / zoom;
+    camY = camStartY - (e.clientY - dragStartY) / zoom;
+  }
+
+  // Tooltip
+  const sys = findHoveredSystem();
+  hoveredSystem = sys;
+  if (sys) {
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.clientX + 18) + 'px';
+    tooltip.style.top = (e.clientY - 10) + 'px';
+    tooltip.innerHTML = `
+      <div class="name">${sys.name}</div>
+      <div class="meta">${sys.spec.cls}-class · ${sys.spec.temp} · ${sys.spec.mass}</div>
+      <div class="meta">${sys.planets} planets · age ${sys.age} Gyr</div>
+      ${sys.discovered ? '<div class="meta" style="color:#5599aa">◆ catalogued</div>' : '<div class="meta" style="color:#556677">○ uncharted</div>'}
+    `;
+  } else {
+    tooltip.style.display = 'none';
+  }
+});
+
+canvas.addEventListener('mouseup', () => isDragging = false);
+canvas.addEventListener('mouseleave', () => {
+  isDragging = false;
+  tooltip.style.display = 'none';
+  hoveredSystem = null;
+});
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.12 : 0.89;
+  targetZoom = Math.max(0.15, Math.min(8, targetZoom * factor));
+}, { passive: false });
+
+// Buttons
+document.querySelectorAll('.btn[data-type]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.btn[data-type]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    galaxyType = btn.dataset.type;
+    seed = Math.floor(Math.random() * 99999);
+    document.getElementById('seed-val').textContent = seed;
+    generateGalaxy();
+  });
+});
+
+document.getElementById('regen').addEventListener('click', () => {
+  seed = Math.floor(Math.random() * 99999);
+  document.getElementById('seed-val').textContent = seed;
+  generateGalaxy();
+});
+
+// ---- Init ----
+generateGalaxy();
+setTimeout(() => document.getElementById('loading').classList.add('hidden'), 800);
+render();
+</script>
+</body>
+</html>
