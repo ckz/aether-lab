@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recursive Bloom Mandala</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #07060d;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #ccc;
+  }
+  canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    cursor: crosshair;
+  }
+  .overlay {
+    position: fixed;
+    top: 18px;
+    left: 22px;
+    z-index: 10;
+    pointer-events: none;
+    opacity: 0.7;
+    transition: opacity 0.4s;
+  }
+  .overlay:hover { opacity: 1; pointer-events: auto; }
+  .overlay h1 {
+    font-size: 0.9rem;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: #c8b8ff;
+    margin-bottom: 4px;
+  }
+  .overlay p {
+    font-size: 0.65rem;
+    opacity: 0.55;
+    letter-spacing: 0.15em;
+  }
+  .controls {
+    position: fixed;
+    bottom: 18px;
+    right: 22px;
+    z-index: 10;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 520px;
+  }
+  .controls button {
+    background: rgba(20,16,40,0.6);
+    border: 1px solid rgba(140,110,255,0.3);
+    color: #bbaaee;
+    padding: 7px 14px;
+    font-family: inherit;
+    font-size: 0.62rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.3s;
+  }
+  .controls button:hover {
+    border-color: rgba(180,150,255,0.7);
+    background: rgba(40,30,80,0.7);
+    box-shadow: 0 0 18px rgba(100,70,220,0.18);
+  }
+  .controls button.active {
+    border-color: rgba(200,170,255,0.9);
+    color: #fff;
+    background: rgba(60,40,120,0.5);
+  }
+  .hint {
+    position: fixed;
+    bottom: 18px;
+    left: 22px;
+    z-index: 10;
+    font-size: 0.58rem;
+    opacity: 0.4;
+    letter-spacing: 0.15em;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="overlay">
+  <h1>Recursive Bloom Mandala</h1>
+  <p>Generative sacred geometry · click to plant · hold to grow · space to breathe</p>
+</div>
+<div class="controls">
+  <button id="btnMode">Mode: Grow</button>
+  <button id="btnPalette">Palette</button>
+  <button id="btnClear">Clear</button>
+  <button id="btnSave">Save PNG</button>
+</div>
+<div class="hint">click = seed · hold = grow · space = pulse · 1-4 = palettes · C = clear</div>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W, H, cx, cy;
+
+  const resize = () => {
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    W = canvas.width = window.innerWidth * dpr;
+    H = canvas.height = window.innerHeight * dpr;
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cx = window.innerWidth / 2;
+    cy = window.innerHeight / 2;
+  };
+  window.addEventListener('resize', resize);
+  resize();
+
+  // State
+  const state = {
+    mode: 'grow', // grow | ripple | weave
+    paletteIdx: 0,
+    time: 0,
+    mouse: { x: cx, y: cy, down: false, active: false },
+    blooms: [],
+    threads: [],
+    pulses: [],
+  };
+
+  const palettes = [
+    { name: 'Aurora', colors: ['#7df9ff', '#c084fc', '#f472b6', '#a78bfa', '#34d399', '#fbbf24'] },
+    { name: 'Ember',  colors: ['#ff6b35', '#f7931e', '#ffcc02', '#ff3d00', '#ffab40', '#ffe082'] },
+    { name: 'Frost',  colors: ['#e0f7fa', '#b2ebf2', '#80deea', '#4dd0e1', '#00bcd4', '#ffffff'] },
+    { name: 'Void',   colors: ['#a855f7', '#6366f1', '#3b82f6', '#8b5cf6', '#c084fc', '#1e1b4b'] },
+  ];
+
+  const pickColor = (alpha = 1) => {
+    const p = palettes[state.paletteIdx].colors;
+    const c = p[Math.floor(Math.random() * p.length)];
+    const m = c.match(/^#([0-9a-f]{6})$/i);
+    if (!m) return `rgba(180,140,255,${alpha})`;
+    const r = parseInt(m[1].slice(0,2),16);
+    const g = parseInt(m[1].slice(2,4),16);
+    const b = parseInt(m[1].slice(4,6),16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  };
+
+  // Bloom entity — grows outward from a seed point with recursive petal geometry
+  class Bloom {
+    constructor(x, y) {
+      this.x = x; this.y = y;
+      this.radius = 0;
+      this.maxRadius = 40 + Math.random() * 120;
+      this.petals = 6 + Math.floor(Math.random() * 7); // 6-12
+      this.layers = 2 + Math.floor(Math.random() * 3); // 2-4
+      this.speed = 0.35 + Math.random() * 0.6;
+      this.life = 1;
+      this.decay = 0.0008 + Math.random() * 0.002;
+      this.rotation = Math.random() * Math.PI * 2;
+      this.rotSpeed = (Math.random() - 0.5) * 0.004;
+      this.color = pickColor(1);
+      this.seed = Math.random() * 1000;
+      this.petalCurve = 0.3 + Math.random() * 0.5;
+    }
+    update() {
+      this.radius += this.speed * (1 + Math.sin(state.time * 0.02 + this.seed) * 0.3);
+      this.rotation += this.rotSpeed;
+      if (this.radius > this.maxRadius) this.life -= this.decay;
+      return this.life > 0;
+    }
+    draw(ctx) {
+      const a = Math.max(0, this.life);
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(this.rotation);
+      ctx.globalCompositeOperation = 'lighter';
+      for (let layer = 0; layer < this.layers; layer++) {
+        const lr = this.radius * (1 - layer * 0.28);
+        const lp = this.petals + layer * 2;
+        const la = a * (1 - layer / (this.layers + 1)) * 0.7;
+        ctx.strokeStyle = this.color.replace(/[\d.]+\)$/, `${la})`);
+        ctx.lineWidth = Math.max(0.4, 1.6 - layer * 0.4);
+        ctx.beginPath();
+        for (let i = 0; i <= lp; i++) {
+          const t = (i / lp) * Math.PI * 2;
+          const r = lr * (0.55 + 0.45 * Math.sin(t * this.petals + state.time * 0.015 + layer));
+          const px = Math.cos(t) * r;
+          const py = Math.sin(t) * r;
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.stroke();
+        // inner sacred geometry ring
+        if (layer === 0 && lr > 10) {
+          ctx.beginPath();
+          const innerR = lr * 0.45;
+          for (let i = 0; i <= 36; i++) {
+            const t = (i / 36) * Math.PI * 2;
+            const r = innerR * (0.7 + 0.3 * Math.sin(t * 6 + state.time * 0.02));
+            const px = Math.cos(t) * r;
+            const py = Math.sin(t) * r;
+            if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+          }
+          ctx.closePath();
+          ctx.strokeStyle = this.color.replace(/[\d.]+\)$/, `${la * 0.5})`);
+          ctx.lineWidth = 0.6;
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+  }
+
+  // Thread: luminous wandering line connecting nearby blooms
+  class Thread {
+    constructor(a, b) {
+      this.a = a; this.b = b;
+      this.life = 1;
+      this.seed = Math.random() * 1000;
+    }
+    update() {
+      const dx = this.a.x - this.b.x;
+      const dy = this.a.y - this.b.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 220) this.life -= 0.008;
+      return this.life > 0;
+    }
+    draw(ctx) {
+      const a = Math.max(0, this.life);
+      const mx = (this.a.x + this.b.x) / 2 + Math.sin(state.time * 0.01 + this.seed) * 30;
+      const my = (this.a.y + this.b.y) / 2 + Math.cos(state.time * 0.013 + this.seed) * 30;
+      ctx.beginPath();
+      ctx.moveTo(this.a.x, this.a.y);
+      ctx.quadraticCurveTo(mx, my, this.b.x, this.b.y);
+      ctx.strokeStyle = this.a.color.replace(/[\d.]+\)$/, `${a * 0.35})`);
+      ctx.lineWidth = 0.6;
+      ctx.stroke();
+    }
+  }
+
+  // Pulse: expanding ring from a click
+  class Pulse {
+    constructor(x, y) {
+      this.x = x; this.y = y;
+      this.radius = 0;
+      this.life = 1;
+    }
+    update() {
+      this.radius += 2.5;
+      this.life -= 0.018;
+      return this.life > 0;
+    }
+    draw(ctx) {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+      ctx.strokeStyle = pickColor(this.life * 0.5);
+      ctx.lineWidth = 1.2 * this.life;
+      ctx.stroke();
+    }
+  }
+
+  // Input
+  const spawnBloom = (x, y) => {
+    state.blooms.push(new Bloom(x, y));
+    state.pulses.push(new Pulse(x, y));
+    if (state.blooms.length > 55) state.blooms.shift();
+  };
+
+  const distance = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
+
+  const spawnAtMouse = () => {
+    if (!state.mouse.down || !state.mouse.active) return;
+    const jitter = () => (Math.random() - 0.5) * 20;
+    if (Math.random() < 0.25) {
+      spawnBloom(state.mouse.x + jitter(), state.mouse.y + jitter());
+    }
+  };
+
+  canvas.addEventListener('mousedown', (e) => {
+    state.mouse.down = true;
+    state.mouse.active = true;
+    spawnBloom(e.clientX, e.clientY);
+  });
+  canvas.addEventListener('mouseup', () => { state.mouse.down = false; });
+  canvas.addEventListener('mouseleave', () => { state.mouse.active = false; state.mouse.down = false; });
+  canvas.addEventListener('mousemove', (e) => {
+    state.mouse.x = e.clientX; state.mouse.y = e.clientY;
+    state.mouse.active = true;
+  });
+  canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const t = e.touches[0];
+    state.mouse.x = t.clientX; state.mouse.y = t.clientY;
+    state.mouse.down = true; state.mouse.active = true;
+    spawnBloom(t.clientX, t.clientY);
+  }, { passive: false });
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    const t = e.touches[0];
+    state.mouse.x = t.clientX; state.mouse.y = t.clientY;
+  }, { passive: false });
+  canvas.addEventListener('touchend', () => { state.mouse.down = false; });
+
+  // Keyboard
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      // central pulse burst from all existing blooms
+      state.blooms.forEach(b => {
+        for (let i = 0; i < 3; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const r = b.radius * (0.5 + Math.random() * 0.5);
+          state.pulses.push(new Pulse(b.x + Math.cos(ang) * r, b.y + Math.sin(ang) * r));
+        }
+      });
+    }
+    if (e.key === 'c' || e.key === 'C') {
+      state.blooms = []; state.threads = []; state.pulses = [];
+    }
+    if (e.key >= '1' && e.key <= '4') {
+      state.paletteIdx = parseInt(e.key) - 1;
+    }
+  });
+
+  // Controls
+  const btnMode = document.getElementById('btnMode');
+  const modes = ['grow', 'ripple', 'weave'];
+  btnMode.addEventListener('click', () => {
+    const i = (modes.indexOf(state.mode) + 1) % modes.length;
+    state.mode = modes[i];
+    btnMode.textContent = 'Mode: ' + state.mode[0].toUpperCase() + state.mode.slice(1);
+  });
+
+  const btnPalette = document.getElementById('btnPalette');
+  btnPalette.addEventListener('click', () => {
+    state.paletteIdx = (state.paletteIdx + 1) % palettes.length;
+    btnPalette.textContent = 'Palette: ' + palettes[state.paletteIdx].name;
+  });
+
+  document.getElementById('btnClear').addEventListener('click', () => {
+    state.blooms = []; state.threads = []; state.pulses = [];
+  });
+
+  document.getElementById('btnSave').addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = 'recursive-bloom-mandala.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
+
+  // Seed initial mandala at center
+  const seedMandala = () => {
+    const count = 6;
+    for (let i = 0; i < count; i++) {
+      const ang = (i / count) * Math.PI * 2;
+      const r = 70 + Math.random() * 50;
+      spawnBloom(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r);
+    }
+  };
+  setTimeout(seedMandala, 300);
+
+  // Render loop
+  const render = () => {
+    state.time++;
+    const p = palettes[state.paletteIdx].colors;
+
+    // Breathing background
+    const bgAlpha = 0.06 + 0.025 * Math.sin(state.time * 0.008);
+    ctx.fillStyle = `rgba(7,6,13,${bgAlpha})`;
+    ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+
+    // Mouse halo
+    if (state.mouse.active) {
+      ctx.beginPath();
+      ctx.arc(state.mouse.x, state.mouse.y, 80 + Math.sin(state.time * 0.04) * 20, 0, Math.PI * 2);
+      ctx.fillStyle = pickColor(0.04);
+      ctx.fill();
+    }
+
+    spawnAtMouse();
+
+    // Update
+    state.blooms = state.blooms.filter(b => b.update());
+    state.pulses = state.pulses.filter(p => p.update());
+
+    // Threads: connect nearby blooms
+    state.threads = [];
+    for (let i = 0; i < state.blooms.length; i++) {
+      for (let j = i + 1; j < state.blooms.length; j++) {
+        const a = state.blooms[i], b = state.blooms[j];
+        const d = distance(a.x, a.y, b.x, b.y);
+        if (d < 200) {
+          state.threads.push(new Thread(a, b));
+        }
+      }
+    }
+    state.threads = state.threads.filter(t => t.update());
+
+    // Draw
+    ctx.globalCompositeOperation = 'lighter';
+    state.threads.forEach(t => t.draw(ctx));
+    state.blooms.forEach(b => b.draw(ctx));
+    state.pulses.forEach(p => p.draw(ctx));
+
+    // Center breathing dot
+    const dotR = 3 + Math.sin(state.time * 0.025) * 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
+    ctx.fillStyle = pickColor(0.6);
+    ctx.fill();
+
+    ctx.globalCompositeOperation = 'source-over';
+    requestAnimationFrame(render);
+  };
+  render();
+})();
+</script>
+</body>
+</html>
