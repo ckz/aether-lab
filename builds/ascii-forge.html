@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASCII Forge — Text to ASCII Art Generator</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel2: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --accent2: #7c3aed;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    min-height: 100vh;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  header {
+    background: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .logo {
+    font-size: 28px;
+    filter: drop-shadow(0 0 8px var(--accent));
+  }
+  h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.5px; }
+  .subtitle { color: var(--muted); font-size: 11px; margin-top: 2px; letter-spacing: 0.5px; }
+  main {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 0;
+    height: calc(100vh - 73px);
+  }
+  .sidebar {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .panel-section {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+  }
+  .panel-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    margin-bottom: 10px;
+    font-weight: 600;
+  }
+  label {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 4px;
+    margin-top: 10px;
+  }
+  label:first-of-type { margin-top: 0; }
+  input[type="text"], textarea, select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 7px 10px;
+    font-family: inherit;
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input[type="text"]:focus, textarea:focus, select:focus {
+    border-color: var(--accent);
+  }
+  textarea { resize: vertical; min-height: 60px; }
+  select { cursor: pointer; }
+  input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+    margin-top: 4px;
+  }
+  .range-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .style-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .style-btn {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 7px 8px;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+  }
+  .style-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .style-btn.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .color-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  .color-swatch {
+    width: 22px;
+    height: 22px;
+    border-radius: 3px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .color-swatch:hover { transform: scale(1.15); }
+  .color-swatch.active { border-color: #fff; box-shadow: 0 0 8px rgba(255,255,255,0.3); }
+  .preset-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+  }
+  .preset-btn {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-family: inherit;
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: left;
+  }
+  .preset-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+  .preview-mini {
+    font-size: 8px;
+    line-height: 1.1;
+    margin-top: 4px;
+    color: var(--muted);
+    word-break: break-all;
+  }
+  .action-row {
+    display: flex;
+    gap: 6px;
+  }
+  .btn {
+    flex: 1;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn:hover { filter: brightness(1.15); }
+  .btn.secondary { background: var(--panel2); border: 1px solid var(--border); color: var(--text); }
+  .btn.secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .output-area {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #080c12;
+  }
+  .output-toolbar {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .output-toolbar .left { display: flex; align-items: center; gap: 10px; }
+  .output-toolbar .right { display: flex; align-items: center; gap: 8px; }
+  .badge {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 2px 8px;
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .output-content {
+    flex: 1;
+    overflow: auto;
+    padding: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  pre#output {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.25;
+    letter-spacing: 0;
+    white-space: pre;
+    color: var(--text);
+    text-align: center;
+    transition: color 0.3s;
+    min-width: 0;
+  }
+  .char-count { font-size: 10px; color: var(--muted); }
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: var(--green);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+    z-index: 100;
+  }
+  .toast.show { opacity: 1; }
+  @media (max-width: 800px) {
+    main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    .sidebar { max-height: 50vh; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">⚒️</div>
+  <div>
+    <h1>ASCII Forge</h1>
+    <div class="subtitle">TEXT → ASCII ART GENERATOR</div>
+  </div>
+</header>
+<main>
+  <div class="sidebar">
+    <!-- Input -->
+    <div class="panel-section">
+      <div class="panel-label">📝 Input Text</div>
+      <label>Your text (A–Z, 0–9, spaces)</label>
+      <input type="text" id="inputText" value="HELLO" maxlength="12" placeholder="Type something…">
+      <div class="range-row"><span>max 12 chars</span><span id="charLen">5</span></div>
+    </div>
+
+    <!-- Style -->
+    <div class="panel-section">
+      <div class="panel-label">🎨 Style</div>
+      <div class="style-grid" id="styleGrid">
+        <button class="style-btn active" data-style="block">Block</button>
+        <button class="style-btn" data-style="slant">Slant</button>
+        <button class="style-btn" data-style="banner">Banner</button>
+        <button class="style-btn" data-style="small">Small</button>
+        <button class="style-btn" data-style="mini">Mini</button>
+        <button class="style-btn" data-style="sms">SMS</button>
+      </div>
+    </div>
+
+    <!-- Color -->
+    <div class="panel-section">
+      <div class="panel-label">🌈 Color</div>
+      <div class="color-row" id="colorRow"></div>
+      <label style="margin-top:12px">Custom color</label>
+      <input type="text" id="customColor" value="#58a6ff" maxlength="7" placeholder="#58a6ff">
+    </div>
+
+    <!-- Effects -->
+    <div class="panel-section">
+      <div class="panel-label">✨ Effects</div>
+      <label>Shadow / Glow <input type="range" id="glowSlider" min="0" max="30" value="0"></label>
+      <div class="range-row"><span>none</span><span id="glowVal">0</span><span>heavy</span></div>
+      <label>Width stretch <input type="range" id="widthSlider" min="50" max="200" value="100"></label>
+      <div class="range-row"><span>condensed</span><span id="widthVal">100%</span><span>wide</span></div>
+    </div>
+
+    <!-- Presets -->
+    <div class="panel-section">
+      <div class="panel-label">⚡ Presets</div>
+      <div class="preset-grid" id="presetGrid"></div>
+    </div>
+
+    <!-- Actions -->
+    <div class="action-row">
+      <button class="btn" id="generateBtn">⚒️ Forge</button>
+      <button class="btn secondary" id="copyBtn">📋 Copy</button>
+    </div>
+    <div class="action-row">
+      <button class="btn secondary" id="downloadBtn">💾 Save .txt</button>
+      <button class="btn secondary" id="shareBtn">🔗 Share</button>
+    </div>
+  </div>
+
+  <div class="output-area">
+    <div class="output-toolbar">
+      <div class="left">
+        <span style="font-weight:600;font-size:12px;">Output</span>
+        <span class="badge" id="styleBadge">block</span>
+        <span class="badge" id="linesBadge">0 lines</span>
+      </div>
+      <div class="right">
+        <span class="char-count" id="charCount">0 chars</span>
+      </div>
+    </div>
+    <div class="output-content">
+      <pre id="output"></pre>
+    </div>
+  </div>
+</main>
+<div class="toast" id="toast">Copied!</div>
+
+<script>
+// ─── FIGLET FONTS (built-in mini database) ─────────────────────────
+// Each font: name, height, chars[A-Z0-9 ] each as array of strings
+const FONTS = {};
+
+function def(name, height, chars) {
+  FONTS[name] = { name, height, chars };
+}
+
+// ── BLOCK (height 8) ──
+def('block', 8, {
+  'A': [' █████ ','██   ██','██   ██','███████','██   ██','██   ██','██   ██','       '],
+  'B': ['██████ ','██   ██','██   ██','██████ ','██   ██','██   ██','██████ ','       '],
+  'C': [' ██████','██     ','██     ','██     ','██     ','██     ',' ██████','       '],
+  'D': ['██████ ','██   ██','██   ██','██   ██','██   ██','██   ██','██████ ','       '],
+  'E': ['███████','██     ','██     ','█████  ','██     ','██     ','███████','       '],
+  'F': ['███████','██     ','██     ','█████  ','██     ','██     ','██     ','       '],
+  'G': [' ██████','██     ','██     ','██  ███','██   ██','██   ██',' █████ ','       '],
+  'H': ['██   ██','██   ██','██   ██','███████','██   ██','██   ██','██   ██','       '],
+  'I': ['███████','  ██   ','  ██   ','  ██   ','  ██   ','  ██   ','███████','       '],
+  'J': ['     ██','     ██','     ██','     ██','██   ██','██   ██',' █████ ','       '],
+  'K': ['██   ██','██  ██ ','██ ██  ','████   ','██ ██  ','██  ██ ','██   ██','       '],
+  'L': ['██     ','██     ','██     ','██     ','██     ','██     ','███████','       '],
+  'M': ['██   ██','████ ██','██ ████','██   ██','██   ██','██   ██','██   ██','       '],
+  'N': ['██   ██','████  ██','██ ██ ██','██  ████','██   ██','██   ██','██   ██','       '],
+  'O': [' █████ ','██   ██','██   ██','██   ██','██   ██','██   ██',' █████ ','       '],
+  'P': ['██████ ','██   ██','██   ██','██████ ','██     ','██     ','██     ','       '],
+  'Q': [' █████ ','██   ██','██   ██','██   ██','██ █ ██','██  ██ ',' █████ ','       '],
+  'R': ['██████ ','██   ██','██   ██','██████ ','██  ██ ','██   ██','██   ██','       '],
+  'S': [' ██████','██     ',' █████ ','     ██','     ██','     ██','██████ ','       '],
+  'T': ['███████','  ██   ','  ██   ','  ██   ','  ██   ','  ██   ','  ██   ','       '],
+  'U': ['██   ██','██   ██','██   ██','██   ██','██   ██','██   ██',' █████ ','       '],
+  'V': ['██   ██','██   ██','██   ██',' ██ ██ ',' ██ ██ ','  ███  ','  ██   ','       '],
+  'W': ['██   ██','██   ██','██   ██','██ ████','████ ██','██ ████','██   ██','       '],
+  'X': ['██   ██',' ██ ██ ','  ███  ','  ███  ',' ██ ██ ','██   ██','██   ██','       '],
+  'Y': ['██   ██',' ██ ██ ','  ███  ','  ██   ','  ██   ','  ██   ','  ██   ','       '],
+  'Z': ['███████','     ██','    ██ ','  ██   ',' ██    ','██     ','███████','       '],
+  '0': [' █████ ','██   ██','██  ███','██ █ ██','███  ██','██   ██',' █████ ','       '],
+  '1': ['  ██   ',' ███   ','  ██   ','  ██   ','  ██   ','  ██   ','███████','       '],
+  '2': [' █████ ','██   ██','    ██ ','  ██   ',' ██    ','██     ','███████','       '],
+  '3': [' █████ ','██   ██','     ██','  ████ ','     ██','██   ██',' █████ ','       '],
+  '4': ['██   ██','██   ██','██   ██','███████','     ██','     ██','     ██','       '],
+  '5': ['███████','██     ','██████ ','     ██','     ██','██   ██',' █████ ','       '],
+  '6': [' █████ ','██     ','██     ','██████ ','██   ██','██   ██',' █████ ','       '],
+  '7': ['███████','     ██','    ██ ','   ██  ','  ██   ','  ██   ','  ██   ','       '],
+  '8': [' █████ ','██   ██','██   ██',' █████ ','██   ██','██   ██',' █████ ','       '],
+  '9': [' █████ ','██   ██','██   ██',' ██████','     ██','     ██',' █████ ','       '],
+  ' ': ['       ','       ','       ','       ','       ','       ','       ','       '],
+  '!': ['  ██   ','  ██   ','  ██   ','  ██   ','  ██   ','       ','  ██   ','       '],
+  '?': [' █████ ','██   ██','    ██ ','   ██  ','  ██   ','       ','  ██   ','       '],
+  '.': ['   ','   ','   ','   ','   ','   ',' ██','   '],
+  ',': ['   ','   ','   ','   ','   ','  ██',' ██ ','██  '],
+  '-': ['       ','       ','       ','███████','       ','       ','       ','       '],
+  '+': ['       ','  ██   ','  ██   ','███████','  ██   ','  ██   ','       ','       '],
+  '=': ['       ','       ','███████','       ','███████','       ','       ','       '],
+  ':': ['   ',' ██','   ','   ','   ','   ',' ██','   '],
+  "'": [' ██',' ██','   ','   ','   ','   ','   ','   '],
+  '"': [' ██ ██',' ██ ██','   ','   ','   ','   ','   ','   '],
+  '@': [' █████ ','██   ██','██ ███ ','██  ███','██ ██  ','██     ',' █████ ','       '],
+  '#': [' ██ ██ ','███████',' ██ ██ ','███████',' ██ ██ ',' ██ ██ ','       ','       '],
+  '*': ['       ',' ██ ██ ','  ███  ','███████','  ███  ',' ██ ██ ','       ','       '],
+  '/': ['     ██','    ██ ','   ██  ','  ██   ',' ██    ','██     ','       ','       '],
+  '(': ['  ███ ',' ██   ','██    ','██    ','██    ',' ██   ','  ███ ','     '],
+  ')': ['███   ','   ██ ','    ██','    ██','    ██','   ██ ','███   ','     '],
+  '[': [' ████','██   ','██   ','██   ','██   ','██   ',' ████','    '],
+  ']': ['████ ','   ██','   ██','   ██','   ██','   ██','████ ','    '],
+});
+
+// ── SLANT (height 8) ──
+def('slant', 8, {
+  'A': ['   ▄▄▄▄▄  ','  █▀▀▀▀▀█ ','  █     █ ','▄▄█▄▄▄▄▄▄▄█','█▀▀▀▀▀▀▀▀▀█','█         █','▀         ▀','           '],
+  'B': [' █▀▀▀▀▀▀▀▄',' █        █',' █  ▄▄▄▄  █',' █ █   ▀▄ █',' █  ▄▄▄▄  █',' █  ▄   █ █',' █  ▀▀▀▀  █',' ▀         ▀'],
+  'C': ['   ▄▄▄▄▄▄▄','  █       ',' █        ','█         ','█         ',' █        ','  █       ','   ▀▀▀▀▀▀▀ '],
+  'D': [' █▀▀▀▀▀▀▄',' █      █',' █      █',' █      █',' █      █',' █      █',' █  ▄▄▄▄ ','  ▀      ▀'],
+  'E': [' █▀▀▀▀▀▀▀▀',' █        ',' █        ',' █▀▀▀▀▀▄▄ ',' █        ',' █        ',' █▀▀▀▀▀▀▀▀','           '],
+  'F': [' █▀▀▀▀▀▀▀▀',' █        ',' █        ',' █▀▀▀▀▄▄ ',' █        ',' █        ',' █        ','           '],
+  'G': ['  ▄▄▄▄▄▄▄',' █       ','█        ','█   ▄▄▄▀ ','█  █  ▄▄ ',' █   ▄▄ █','  █    ▀ █','   ▀▀▀▀▀▀ '],
+  'H': ['█        █','█        █','█        █','█▀▀▀▀▀▀▀▀█','█        █','█        █','█        █','          █'],
+  'I': [' ▀▀▀▀▀▀▀▀','    ██   ','    ██   ','    ██   ','    ██   ','    ██   ',' ▀▀▀▀▀▀▀▀','          '],
+  'J': ['       ▄▄','       █ ','       █ ','       █ ',' █     █ ',' █     █ ',' ▀▄   ▄▀ ','   ▀▀▀▀   '],
+  'K': ['█      ▄▀','█    ▄▀  ','█  ▄▀    ','█▄▀      ','█  ▀▄    ','█    ▀▄  ','█      ▀▄','         ▀'],
+  'L': ['█        ','█        ','█        ','█        ','█        ','█        ','█▀▀▀▀▀▀▀▀','         '],
+  'M': ['█▀    ▀▄','██    ▄█','██    ██','██ ▄▄ ██','██ █▀ ██','███  ███','██    ██','█      █'],
+  'N': ['█▀     ▄','██    ▄█','██    ██','██   ███','██  █ ██','██ █  ██','██ █  ██','█  █▄ █ '],
+  'O': ['  ▄▄▄▄▄  ',' █     █ ','█       █','█       █','█       █',' █     █ ','  ▀▀▀▀▀▀▀','         '],
+  'P': [' █▀▀▀▀▀▀▄',' █      █',' █      █',' █▀▀▀▀▀▄ ',' █      █',' █      █',' █      █',' ▀      ▀'],
+  'Q': ['  ▄▄▄▄▄  ',' █     █ ','█       █','█       █','█   ▄  █ ',' █  █ ▀  ','  ▀▀ ▀▀▀▀','      ▀  '],
+  'R': [' █▀▀▀▀▀▀▄',' █      █',' █      █',' █▀▀▀▀▀▄ ',' █  ▄▀   ',' █   ▀▄  ',' █     ▀▄','         '],
+  'S': ['  ▄▄▄▄▄▄▄',' █      ',' █▀▀▀▀▀▄','     ▄▀ ','   ▄▀   ','  ▄▀   █',' ▀▀▀▀▀▀▀ ','         '],
+  'T': ['▀▀▀▀▀▀▀▀▀▀','    ██   ','    ██   ','    ██   ','    ██   ','    ██   ','    ██   ','         '],
+  'U': ['█       █','█       █','█       █','█       █','█       █',' █     █ ','  ▀▀▀▀▀▀ ','         '],
+  'V': ['█       █',' █     █ ','  █   █  ','  █   █  ','   █ █   ','   █ █   ','    ▀    ','         '],
+  'W': ['█        █','█   ▄   █','█   █   █','█   █   █',' █  █▄ █ ',' █  ▀ █▀ ','  █    ▀ ','  ▀      '],
+  'X': ['█      ▄▀',' █    ▄█ ','  █  ▄█  ','   █▀    ','  █  ▀█  ',' █    ▀█ ','█      ▀▄','         '],
+  'Y': ['█        █',' █      █','  █    █ ','   █  █  ','    ██   ','    ██   ','    ██   ','         '],
+  'Z': ['▀▀▀▀▀▀▀▀▀▀','      ▄▀','     ▄▀ ','    ▄▀  ','   ▄▀   ','  ▄▀    ',' ▄▀     ','▀▀▀▀▀▀▀▀▀▀'],
+  '0': ['  ▄▄▄▄▄  ',' █     █ ','█   ▄  █ ','█  █▀ █ ','█   ▀  █ ',' █     █ ','  ▀▀▀▀▀▀▀','         '],
+  '1': ['   ▄█    ','  ▀██    ','   ██    ','   ██    ','   ██    ','   ██    ',' ▄▄▀▀▀▄▄ ','         '],
+  '2': ['  ▄▄▄▄▄  ',' █     ▀▄','        █','   ▄▄▄▀ ','  █     ',' █      ','█▀▀▀▀▀▀▀▀','         '],
+  '3': [' ▄▄▄▄▄▄▄','       █','       █','  ▄▄▄▄▄▀','       █','       █',' ▀▀▀▀▀▀▀ ','         '],
+  '4': ['█       █','█       █','█       █','█▀▀▀▀▀▀▀█','        █','        █','        █','        █'],
+  '5': ['█▀▀▀▀▀▀▀▀','█       ','█▀▀▀▀▀▀▄','       █','       █',' █     █ ','  ▀▀▀▀▀▀ ','         '],
+  '6': ['  ▄▄▄▄▄▄',' █      ','█       ','█▀▀▀▀▀▄▄','█     █ ',' █    █ ','  ▀▀▀▀▀ ','         '],
+  '7': ['▀▀▀▀▀▀▀▀▀▀','      ▄▀','     ▄▀ ','    ▄▀  ','   ▄▀   ','  ▄▀    ',' ▄▀     ','        '],
+  '8': ['  ▄▄▄▄  ',' █   █  ',' █   █  ','  ▄▄▄▄  ',' █   █  ',' █   █  ','  ▀▀▀▀  ','        '],
+  '9': ['  ▄▄▄▄▄ ',' █   █  ',' █   █  ','  ▀▀▀▀█ ','       █','      █ ',' ▄▄▄▀   ','        '],
+  ' ': ['         ','         ','         ','         ','         ','         ','         ','         '],
+  '!': ['   ██   ','   ██   ','   ██   ','   ██   ','   ██   ','   ▀▀   ','   ██   ','         '],
+  '?': ['  ▄▄▄▄  ',' █    ▀▄','     ▄▀ ','   ▄▀   ','  ▄▀    ','  ▀▀    ','  █     ','  ▀     '],
+  '.': ['    ',' ██ ',' ██ ','    ','    ','    ',' ██ ','    '],
+  '@': ['  ▄▄▄▄▄▄ ',' █      █','█  ▄▄▄▀ █','█ █  ▄▄ █','█ █▄▀ █ █',' █  ▄▄▀ █','  █      █','   ▀▀▀▀▀▀ '],
+  '#': [' █   █ ','████████',' █   █ ','████████',' █   █ ',' █   █ ','       ','       '],
+  '*': ['        ','  █ █   ','   █    ','▄▄▀▀▄▄▄ ','   █    ','  █ █   ','        ','        '],
+  '-': ['         ','         ','         ','▄▄▄▄▄▄▄▄▄','         ','         ','         ','         '],
+  '+': ['         ','   ██    ','   ██    ','▄▄▄▀▀▀▄▄▄','   ██    ','   ██    ','         ','         '],
+  '=': ['         ','         ','▄▄▄▄▄▄▄▄▄','         ','▄▄▄▄▄▄▄▄▄','         ','         ','         '],
+  ':': ['   ',' ██','   ','   ','   ','   ',' ██','   '],
+});
+
+// ── BANNER (height 8) ──
+function bannerChar(ch) {
+  const map = {
+    'A':[' ▄▄▄▄▄▄▄▄▄▄▄▄▄ ','  ▀▀▀█   █▀▀▀ ','      █   █    ','  ▄▄▄█▄▄▄█▄▄▄  ','  ▀▀▀  ▀  ▀▀▀ ','      █   █    ','      █   █    ','      ▀   ▀    '],
+    'B':[' ▄▄▄▄▄▄▄▄▄ ','  ▀▀▀█  ▀▀ ','  ▄▄▄█▄▄▄▄▄ ','  ▀▀▀█   █  ','  ▄▄▄█   █  ','  ▀▀▀█   █  ','  ▄▄▄█▄▄▄▀  ','  ▀▀▀▀▀▀▀   '],
+    'C':['  ▄▄▄▄▄▄▄▄▄▄',' █       ',' █       ',' █       ',' █       ',' █       ','  ▀▀▀▀▀▀▀ ','          '],
+    'D':[' ▄▄▄▄▄▄▄  ',' █     █  ',' █     █  ',' █     █  ',' █     █  ',' █     █  ',' ▀▄▄▄▄▄▀  ','          '],
+    'E':[' ▄▄▄▄▄▄▄▄▄▄',' █        ',' █▄▄▄▄▄▄▄▄▄',' █        ',' █        ',' █        ',' ▀▀▀▀▀▀▀▀▀','          '],
+    'F':[' ▄▄▄▄▄▄▄▄▄▄',' █        ',' █▄▄▄▄▄▄▄▄▄',' █        ',' █        ',' █        ',' █        ','          '],
+    'G':['  ▄▄▄▄▄▄▄▄▄',' █        ',' █   ▄▄▄▄ ',' █       █',' █     ▄▀ ','  █    █  ','   ▀▀▀▀▀   ','           '],
+    'H':['█       █','█       █','█▄▄▄▄▄▄▄▄█','█       █','█       █','█       █','█       █','         █'],
+    'I':['▄▄▄▄▄▄','  ██   ','  ██   ','  ██   ','  ██   ','  ██   ','  ██   ','▀▀▀▀▀▀ '],
+    'J':['      ██','      ██','      ██','      ██',' █    ██',' █    ██','  ▀▄▄▄▀ ','        '],
+    'K':['█     ▄▀','█   ▄▀  ','█ ▄▀    ','██▀     ','█ ▀▄    ','█   ▀▄  ','█     ▀▄','        '],
+    'L':['█       ','█       ','█       ','█       ','█       ','█       ','█▀▀▀▀▀▀▀','        '],
+    'M':['█▀   ▀▄ █','██   █  █','█ █ █ █ █','█  █ █  █','█       █','█       █','█       █','         '],
+    'N':['█▀     █','██    ██','█ █   ██','█  █  ██','█   █ ██','█    ███','█     █ ','        '],
+    'O':['  ▄▄▄▄▄  ',' █     █ ','█       █','█       █','█       █',' █     █ ','  ▀▀▀▀▀▀▀','         '],
+    'P':[' ▄▄▄▄▄▄▄▄',' █     █ ',' █▄▄▄▄▄▄▄▄',' █     █ ',' █     █ ',' █     █ ',' █     █ ',' ▀      ▀'],
+    'Q':['  ▄▄▄▄▄  ',' █     █ ','█       █','█   ▄   █',' █  █▄ █ ','  █  ▀ █ ','   ▀▀▀▀  ','     ▀   '],
+    'R':[' ▄▄▄▄▄▄▄▄',' █     █ ',' █▄▄▄▄▄▄▄▄',' █   ▄▀ ',' █ ▄▀   ',' █   ▀▄ ',' █     ▀▄','        '],
+    'S':['  ▄▄▄▄▄▄▄▄',' █       ',' █▄▄▄▄▄▄▀','     ▄▀ ','   ▄▀   ','  ▄▀   █',' ▀▀▀▀▀▀▀ ','         '],
+    'T':['▄▄▄▄▄▄▄▄▄','   ▀▀▀█ ','   ▀▀▀█ ','   ▀▀▀█ ','   ▀▀▀█ ','   ▀▀▀█ ','   ▀▀▀█ ','         '],
+    'U':['█       █','█       █','█       █','█       █','█       █',' █     █ ','  ▀▀▀▀▀▀▀','         '],
+    'V':['█       █',' █     █ ','  █   █  ','  █   █  ','  █ █ █  ','  █   █  ','   █ █   ','   ▀ ▀   '],
+    'W':['█        █','█   ▄   █','█   █   █',' █  █▄ █ ',' █  ▀ █▀ ','  █    ▀ ','  ▀      ','          '],
+    'X':['█      ▄▀',' █    ▄█ ','  █  ▄█  ','   █▀    ','  █  ▀█  ',' █    ▀█ ','█      ▀▄','         '],
+    'Y':['█        █',' █      █','  █    █ ','  █▄  ▄█ ','   ▀▀▀▀  ','   ▀▀▀   ','   ▀▀    ','   ▀▀    '],
+    'Z':['▄▄▄▄▄▄▄▄▄','      ▄▀','     ▄▀ ','    ▄▀  ','   ▄▀   ','  ▄▀    ',' ▄▀     ','▀▀▀▀▀▀▀▀▀'],
+    '0':['  ▄▄▄▄▄  ',' █     █ ','█  ▄▄  █ ','█ █  █ █ ','█  ▀▀  █ ',' █     █ ','  ▀▀▀▀▀▀▀','         '],
+    '1':['   ▄█    ','  ▀██    ','   ██    ','   ██    ','   ██    ','   ██    ',' ▄▄▀▀▀▄▄','         '],
+    '2':['  ▄▄▄▄▄  ',' █     ▀▄','       █ ','   ▄▄▄▀ ','  █      ',' █       ','█▀▀▀▀▀▀▀▀','         '],
+    '3':[' ▄▄▄▄▄▄▄ ','        █','        █','  ▄▄▄▄▄▀ ','        █','        █',' ▀▀▀▀▀▀▀ ','         '],
+    '4':['█       █','█       █','█▄▄▄▄▄▄▄█','        █','        █','        █','        █','        █'],
+    '5':['█▀▀▀▀▀▀▀▀','█       ','█▀▀▀▀▀▀▄','      ▄▀','      █ ','  █   █ ','  ▀▀▀▀▀  ','        '],
+    '6':['  ▄▄▄▄▄▄▄',' █       ','█        ','█▀▀▀▀▀▀▄','█      █',' █     █ ','  ▀▀▀▀▀▀ ','         '],
+    '7':['▀▀▀▀▀▀▀▀▀▀','      ▄▀','     ▄▀ ','    ▄▀  ','   ▄▀   ','  ▄▀    ',' ▄▀     ','        '],
+    '8':['  ▄▄▄▄  ',' █   █  ',' █   █  ','  ▀▀▀▀  ',' █   █  ',' █   █  ','  ▀▀▀▀  ','        '],
+    '9':['  ▄▄▄▄▄▄',' █    █ ',' █    █ ','  ▀▀▀▀█ ','       █','      █ ',' ▄▄▄▀   ','        '],
+    ' ':['         ','         ','         ','         ','         ','         ','         ','         '],
+    '!':['   ██   ','   ██   ','   ██   ','   ██   ','   ▀▀   ','   ██   ','   ██   ','         '],
+    '?':['  ▄▄▄▄  ',' █    ▀▄','      ▄▀','    ▄▀  ','   ▄▀   ','   ▀▀   ','   █    ','   ▀    '],
+    '.':['    ',' ██ ',' ██ ','    ','    ','    ',' ██ ','    '],
+    '-':['         ','         ','         ','▄▄▄▄▄▄▄▄▄','         ','         ','         ','         '],
+  };
+  return map[ch] || ['         ','         ','         ','   ██    ','         ','         ','         ','         '];
+}
+
+// ── SMALL (height 5) ──
+function smallChar(ch) {
+  const map = {
+    'A':['  ▄█▄  ',' █  █ ',' █■■█ ',' █  █ ',' █  █ '],
+    'B':[' █▄▄▄ ',' █  █ ',' █▄▄▄ ',' █  █ ',' █▄▄▄ '],
+    'C':[' ▄▄▄▄▄',' █    ',' █    ',' █    ',' ▀▀▀▀▀'],
+    'D':[' █▄▄▄ ',' █  █ ',' █  █ ',' █  █ ',' █▄▄▀ '],
+    'E':[' █▄▄▄▄',' █    ',' █▄▄▄ ',' █    ',' █▄▄▄▄'],
+    'F':[' █▄▄▄▄',' █    ',' █▄▄▄ ',' █    ',' █    '],
+    'G':[' ▄▄▄▄▄',' █    ',' █ ▄▄▄',' █   █',' ▀▄▄▀ '],
+    'H':[' █  █ ',' █  █ ',' █▄▄█ ',' █  █ ',' █  █ '],
+    'I':['▄▄▄▄▄','  █  ','  █  ','  █  ','▀▀▀▀▀'],
+    'J':['    ▄▄','    █ ','    █ ',' █  █ ',' ▀▄▄▀ '],
+    'K':[' █  ▄▀',' █ ▄▀ ',' █▄▀  ',' █ ▀▄ ',' █  ▀▄'],
+    'L':[' █    ',' █    ',' █    ',' █    ',' ▀▀▀▀▀'],
+    'M':[' █   █ ',' █■ █■ ',' █ █ █ ',' █   █ ',' █   █ '],
+    'N':[' █   █ ',' █■  █ ',' █ █ █ ',' █  ▀█ ',' █   █ '],
+    'O':['  ▄█▄  ',' █   █ ',' █   █ ',' █   █ ',' ▀▄▄▀ '],
+    'P':[' █▄▄▄ ',' █   █',' █▄▄▄ ',' █    ',' █    '],
+    'Q':['  ▄█▄  ',' █   █ ',' █ █ █ ',' █  ▄▀ ','  ▀ ▀▀▀'],
+    'R':[' █▄▄▄ ',' █   █',' █▄▄▄ ',' █ ▀▄ ',' █  ▀▄'],
+    'S':[' ▄▄▄▄▄',' █    ',' ▀▀▀▄ ','    █ ',' ▄▄▄▀ '],
+    'T':['▀▀▀▀▀▀','   █  ','   █  ','   █  ','   █  '],
+    'U':[' █   █ ',' █   █ ',' █   █ ',' █   █ ',' ▀▄▄▀ '],
+    'V':[' █   █ ',' █   █ ','  █ █  ','  █ █  ','   ▀   '],
+    'W':[' █   █ ',' █   █ ',' █ █ █ ',' █■ █■ ','  █ █  '],
+    'X':[' █   █ ','  █ █  ','   █   ','  █ █  ',' █   █ '],
+    'Y':[' █   █ ','  █ █  ','   █   ','   █   ','   █   '],
+    'Z':['▄▄▄▄▄','   ▄▀','  ▄▀ ',' ▄▀  ','▀▀▀▀▀'],
+    '0':['  ▄█▄  ',' █   █ ',' █ ▄▄ █',' █ █▀ █',' ▀▄▄▄▀ '],
+    '1':['  ▄█ ','  ▀█ ','  ▄█ ','  ▄█ ',' ▀▀▀▀'],
+    '2':['  ▄█▄ ',' █   ▀','   ▄▀ ','  ▄▀  ',' ▀▀▀▀▀'],
+    '3':[' ▄▄▄▄▄','     █','  ▄▄█ ','     █',' ▄▄▄▀ '],
+    '4':['█    █','█    █','█▄▄▄▄█','     █','     █'],
+    '5':['█▀▀▀▀▀','█▄▄▄▄ ','    ▄▀','    █ ',' ▄▄▀  '],
+    '6':['  ▄▄▄▄ ',' █     ',' █▄▄▄▄ ',' █   █ ',' ▀▄▄▀ '],
+    '7':['▀▀▀▀▀▀','    ▄▀','   ▄▀ ','  ▄▀  ','  ▄▀  '],
+    '8':['  ▄█▄  ',' █   █ ','  ▀▀▀  ',' █   █ ','  ▀▄▀  '],
+    '9':['  ▄▄█  ',' █   █ ','  ▀▄▄▀ ','     █ ',' ▄▄▀   '],
+    ' ':['   ','   ','   ','   ','   '],
+    '!':[' ██ ',' ██ ',' ██ ',' ▀▀ ',' ██ '],
+    '?':['  █▄ ',' █  ▀','   ▄▀','  ▄▀ ','  █  '],
+    '.':['   ','   ','   ','   ',' █ '],
+    '-':['      ','      ',' ▄▄▄▄▄','      ','      '],
+    '+':['      ','  █▄  ',' █▀▀█ ',' ▀▀▀▀▀','      '],
+    '=':['      ','▄▄▄▄▄','      ','▄▄▄▄▄','      '],
+    ':':[' █ ','   ','   ','   ',' █ '],
+  };
+  return map[ch] || ['   ',' ██ ',' ██ ',' ██ ','   '];
+}
+
+// ── MINI (height 4) ──
+function miniChar(ch) {
+  const map = {
+    'A':[' ▄▀ ','█  █','█  █','▀  ▀'],
+    'B':['█▄▄▄','█   ','█▄▄ ','█  ▀'],
+    'C':[' ▄▄█','█   ','█   ',' ▀▀▀'],
+    'D':['█▄▄ ','█  █','█  █','█▄▀ '],
+    'E':['█▄▄▄','█▄▄ ','█   ','█▄▄▄'],
+    'F':['█▄▄▄','█▄▄ ','█   ','█   '],
+    'G':[' ▄▄█','█   ','█ ▄▄',' ▀▀█'],
+    'H':['█  █','█▄▄█','█  █','█  █'],
+    'I':['▄█▄',' █ ',' █ ',' ▀▀'],
+    'J':['   ▄','   █','█  █',' ▀▄▀'],
+    'K':['█  ▀▄','█ ▄▀','█▀  ','█  ▀▄'],
+    'L':['█   ','█   ','█   ','█▄▄▄'],
+    'M':['█   █','██ ██','█ █ █','█   █'],
+    'N':['█   █','██  █','█ █ █','█  ▀█'],
+    'O':[' ▄▀ ','█  █','█  █',' ▀▄▀'],
+    'P':['█▄▄▄','█  █','█▄▄ ','█   '],
+    'Q':[' ▄▀ ','█  █','█ ▄▀',' ▀ ▀▀'],
+    'R':['█▄▄ ','█  █','█▄▄▄','█  ▀▄'],
+    'S':[' ▄▄▄','█   ',' ▀▀▄','   █'],
+    'T':['▀▀▀▀','  █ ','  █ ','  █ '],
+    'U':['█  █','█  █','█  █',' ▀▀▀'],
+    'V':['█   █',' █ █ ','  █  ','  █  '],
+    'W':['█   █','█ ▄ █',' █▀ █','  █ █ '],
+    'X':['█   █',' █▄█ ','  █  ',' █ █ ','█   █'],
+    'Y':['█   █',' █▄█ ','  █  ','  █  ','  █  '],
+    'Z':['▄▄▄▄','  ▄▀',' ▄▀ ','▄▀  ','▀▀▀▀'],
+    '0':[' ▄▀ ','█  █','█  █',' ▀▄▀'],
+    '1':[' ▄█ ','  █ ','  █ ','  █ ',' ▀▀ '],
+    '2':[' ▄▀▄','   █',' ▄▀ ','█   ','▀▀▀▀'],
+    '3':['▄▄▄▄','  ▄▀',' ▀▄ ','   █','▀▀▀ '],
+    '4':['█  █','█  █','█▄▄█','   █','   █'],
+    '5':['█▀▀▀','█▄▄ ','   █','   █','▀▀▀ '],
+    '6':[' ▄▄▄','█   ','█▄▄ ','█  █',' ▀▀▀'],
+    '7':['▀▀▀▀','  ▄▀','  █ ','  █ ','  █ '],
+    '8':[' ▄▄▄','█  █',' ▀▀▀','█  █',' ▀▀▀'],
+    '9':[' ▄▄▄','█  █',' ▀▄▄','   █',' ▀▀ '],
+    ' ':['   ','   ','   ','   '],
+    '!':[' █ ',' █ ',' █ ',' ▀ ',' █ '],
+    '?':[' ▄▄ ','█  ▀',' ▄▀ ','  █ ','  █ '],
+    '.':['   ','   ','   ',' █ '],
+    '-':['    ','    ',' ▄▄▄','    ','    '],
+    '+':['    ',' ▄█ ','▀▀▀▀',' ▄█ ','    '],
+    '=':['    ','▄▄▄','    ','▄▄▄','    '],
+    ':':[' █ ','   ','   ','   ',' █ '],
+  };
+  return map[ch] || ['   ',' ██ ',' ██ ',' ██ '];
+}
+
+// ── SMS (height 5, single-width block) ──
+function smsChar(ch) {
+  const map = {
+    'A':[' ▄▀ ','█  █','████','█  █','█  █'],
+    'B':['██▄ ','█  █','██▄ ','█  █','██▀ '],
+    'C':[' ▄██','█   ','█   ','█   ',' ▀██'],
+    'D':['██▄ ','█  █','█  █','█  █','██▀ '],
+    'E':['████','█   ','██▄ ','█   ','████'],
+    'F':['████','█   ','██▄ ','█   ','█   '],
+    'G':[' ▄██','█   ','█ ▄▀','█  █',' ▀▀█'],
+    'H':['█  █','█  █','████','█  █','█  █'],
+    'I':['██',' █ ',' █ ',' █ ','██ '],
+    'J':['   █','   █','   █','█  █',' ▀▀ '],
+    'K':['█  ▀','█ ▄ ','██  ','█ ▀ ','█  ▀'],
+    'L':['█   ','█   ','█   ','█   ','███ '],
+    'M':['█   █','██ ██','█ █ █','█   █','█   █'],
+    'N':['█   █','██  █','█ █ █','█  ▀█','█   █'],
+    'O':[' ▄▀ ','█  █','█  █','█  █',' ▀▄▀'],
+    'P':['██▄ ','█  █','██▄ ','█   ','█   '],
+    'Q':[' ▄▀ ','█  █','█ █▀','█ ▀ ',' ▀ ▀█'],
+    'R':['██▄ ','█  █','██▄ ','█ ▀ ','█  ▀'],
+    'S':[' ▄██','█   ',' ▀▀▄','   █','██▀ '],
+    'T':['████',' ██ ',' ██ ',' ██ ',' ██ '],
+    'U':['█  █','█  █','█  █','█  █',' ▀▀▀'],
+    'V':['█   █',' █ █ ','  █  ','  █  ','  █  '],
+    'W':['█   █','█ ▄ █',' █▀ █',' █ █ ',' █ █ '],
+    'X':['█   █',' █▄█ ','  █  ',' █ █ ','█   █'],
+    'Y':['█   █',' █▄█ ','  █  ','  █  ','  █  '],
+    'Z':['████','  ▄▀',' ▄▀ ','▄▀  ','████'],
+    '0':[' ▄▀ ','█  █','█ █ █','█  █',' ▀▄▀'],
+    '1':[' █ ','██ ',' █ ',' █ ',' ▀▀▀'],
+    '2':[' ▄▀▄','   █',' ▄▀ ','█   ','████'],
+    '3':['▄▄▄▄','  ▄▀',' ▀▄ ','   █','▀▀▀ '],
+    '4':['█  █','█  █','████','   █','   █'],
+    '5':['████','█   ','██▄ ','   █','██▀ '],
+    '6':[' ▄▄▄','█   ','██▄ ','█  █',' ▀▀▀'],
+    '7':['████','   █','  █ ',' █  ',' █  '],
+    '8':[' ▄▄▄','█  █',' ▀▀▀','█  █',' ▀▀▀'],
+    '9':[' ▄▄▄','█  █',' ▀▄▄','   █',' ▀▀ '],
+    ' ':['   ','   ','   ','   ','   '],
+    '!':[' █ ',' █ ',' █ ','   ',' █ '],
+    '?':[' ▄▄ ','█  ▀','  ▄▀','  █ ','  █ '],
+    '.':['   ','   ','   ','   ',' █ '],
+    '-':['    ','    ',' ▄▄▄','    ','    '],
+    '+':['    ',' █▄ ','▀▀▀▀',' █▄ ','    '],
+    '=':['    ','▄▄▄','    ','▄▄▄','    '],
+    ':':[' █ ','   ','   ','   ',' █ '],
+  };
+  return map[ch] || ['   ',' ██ ',' ██ ',' ██ '];
+}
+
+// ─── RENDER ENGINE ────────────────────────────────────────────────
+function renderASCII(text, style) {
+  const chars = text.toUpperCase().split('');
+  const getGlyph = style === 'block' ? ch => FONTS.block.chars[ch] || FONTS.block.chars[' ']
+    : style === 'slant' ? ch => FONTS.slant.chars[ch] || FONTS.slant.chars[' ']
+    : style === 'banner' ? ch => bannerChar(ch)
+    : style === 'small' ? ch => smallChar(ch)
+    : style === 'mini' ? ch => miniChar(ch)
+    : style === 'sms' ? ch => smsChar(ch)
+    : ch => FONTS.block.chars[ch] || FONTS.block.chars[' '];
+
+  const h = style === 'banner' ? 8 : style === 'block' || style === 'slant' ? 8 : style === 'small' || style === 'sms' ? 5 : 4;
+  const lines = Array.from({length: h}, () => []);
+  for (const ch of chars) {
+    const glyph = getGlyph(ch);
+    for (let row = 0; row < h; row++) {
+      lines[row].push(glyph[row] || ' '.repeat(glyph[0]?.length || 6));
+    }
+  }
+  return lines.map(l => l.join('')).join('\n');
+}
+
+// ─── PRESETS ──────────────────────────────────────────────────────
+const PRESETS = [
+  { name: 'Neon City', color: '#00ffcc', glow: 12, style: 'block', text: 'NEON' },
+  { name: 'Sunset', color: '#ff6b35', glow: 8, style: 'banner', text: 'HELLO' },
+  { name: 'Deep Space', color: '#7b2fff', glow: 15, style: 'slant', text: 'COSMOS' },
+  { name: 'Matrix', color: '#00ff41', glow: 10, style: 'block', text: 'HACK' },
+  { name: 'Fire', color: '#ff3366', glow: 18, style: 'block', text: 'HOT' },
+  { name: 'Ocean', color: '#00aaff', glow: 6, style: 'slant', text: 'DEEP' },
+  { name: 'Retro', color: '#ffb000', glow: 0, style: 'sms', text: 'RAD' },
+  { name: 'Ghost', color: '#ffffff', glow: 20, style: 'mini', text: 'BOO' },
+];
+
+const COLORS = ['#58a6ff','#7c3aed','#ec4899','#f85149','#f0883e','#3fb950','#00ffcc','#ff6b9d','#ffd700','#ffffff'];
+
+// ─── DOM ──────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+let currentStyle = 'block';
+let currentColor = '#58a6ff';
+let currentGlow = 0;
+
+function buildColorRow() {
+  const row = $('colorRow');
+  COLORS.forEach(c => {
+    const s = document.createElement('div');
+    s.className = 'color-swatch' + (c === currentColor ? ' active' : '');
+    s.style.background = c;
+    s.dataset.color = c;
+    s.onclick = () => {
+      document.querySelectorAll('.color-swatch').forEach(x => x.classList.remove('active'));
+      s.classList.add('active');
+      currentColor = c;
+      $('customColor').value = c;
+      render();
+    };
+    row.appendChild(s);
+  });
+}
+
+function buildPresets() {
+  const grid = $('presetGrid');
+  PRESETS.forEach(p => {
+    const b = document.createElement('button');
+    b.className = 'preset-btn';
+    b.innerHTML = `<strong>${p.name}</strong><div class="preview-mini">${p.color}</div>`;
+    b.onclick = () => {
+      currentColor = p.color;
+      currentGlow = p.glow;
+      currentStyle = p.style;
+      $('inputText').value = p.text;
+      $('glowSlider').value = p.glow;
+      $('widthSlider').value = 100;
+      $('customColor').value = p.color;
+      $('glowVal').textContent = p.glow;
+      $('widthVal').textContent = '100%';
+      document.querySelectorAll('.style-btn').forEach(b => b.classList.toggle('active', b.dataset.style === p.style));
+      document.querySelectorAll('.color-swatch').forEach(s => s.classList.toggle('active', s.dataset.color === p.color));
+      render();
+    };
+    grid.appendChild(b);
+  });
+}
+
+function render() {
+  const text = $('inputText').value || 'HELLO';
+  const widthStretch = parseInt($('widthSlider').value) / 100;
+  const art = renderASCII(text, currentStyle);
+  const stretched = art.split('\n').map(line => {
+    return line.split('').map(c => c.repeat(Math.max(1, Math.round(widthStretch)))).join('');
+  }).join('\n');
+
+  const output = $('output');
+  output.textContent = stretched;
+  output.style.color = currentColor;
+  output.style.textShadow = currentGlow > 0
+    ? `0 0 ${currentGlow}px ${currentColor}, 0 0 ${currentGlow * 2}px ${currentColor}44`
+    : 'none';
+  output.style.fontSize = (12 / Math.max(0.5, widthStretch * 0.8)) + 'px';
+
+  const lines = stretched.split('\n').length;
+  const chars = stretched.replace(/\n/g,'').length;
+  $('charCount').textContent = chars + ' chars';
+  $('linesBadge').textContent = lines + ' lines';
+  $('styleBadge').textContent = currentStyle;
+  $('charLen').textContent = text.length;
+}
+
+// ─── EVENTS ───────────────────────────────────────────────────────
+$('inputText').addEventListener('input', render);
+$('widthSlider').addEventListener('input', () => {
+  $('widthVal').textContent = $('widthSlider').value + '%';
+  render();
+});
+$('glowSlider').addEventListener('input', () => {
+  currentGlow = parseInt($('glowSlider').value);
+  $('glowVal').textContent = currentGlow;
+  render();
+});
+$('customColor').addEventListener('input', () => {
+  currentColor = $('customColor').value;
+  document.querySelectorAll('.color-swatch').forEach(s => s.classList.toggle('active', s.dataset.color === currentColor));
+  render();
+});
+document.querySelectorAll('.style-btn').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.style-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentStyle = btn.dataset.style;
+    render();
+  };
+});
+
+$('generateBtn').onclick = render;
+$('copyBtn').onclick = () => {
+  navigator.clipboard.writeText($('output').textContent).then(() => showToast('Copied to clipboard! ✓'));
+};
+$('downloadBtn').onclick = () => {
+  const blob = new Blob([$('output').textContent], {type:'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `ascii-forge-${Date.now()}.txt`;
+  a.click();
+  showToast('Saved! 💾');
+};
+$('shareBtn').onclick = () => {
+  const encoded = btoa(unescape(encodeURIComponent($('output').textContent)));
+  const url = `${location.origin}${location.pathname}?t=${encoded}`;
+  navigator.clipboard.writeText(url).then(() => showToast('Share URL copied! 🔗'));
+};
+function showToast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────
+buildColorRow();
+buildPresets();
+
+// Check for shared URL
+const params = new URLSearchParams(location.search);
+if (params.has('t')) {
+  try {
+    const decoded = decodeURIComponent(escape(atob(params.get('t'))));
+    $('inputText').value = decoded.replace(/[^A-Za-z0-9!?.\-:@#*+/= ]/g,'').trim().slice(0,12) || 'SHARED';
+  } catch(e) {}
+}
+
+render();
+</script>
+</body>
+</html>
