@@ -3,278 +3,259 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stellar Drift — Generative Particle Cosmos</title>
+<title>Stellar Drift — Generative Flow Field</title>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body {
-  background: #050510;
-  overflow: hidden;
-  font-family: 'Courier New', monospace;
-  cursor: none;
-}
-canvas { display: block; }
-#ui {
-  position: fixed;
-  top: 20px;
-  left: 20px;
-  color: rgba(255,255,255,0.5);
-  font-size: 12px;
-  pointer-events: none;
-  z-index: 10;
-}
-#title {
-  position: fixed;
-  bottom: 30px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: rgba(255,255,255,0.08);
-  font-size: 48px;
-  font-weight: bold;
-  letter-spacing: 0.3em;
-  pointer-events: none;
-  z-index: 10;
-  text-transform: uppercase;
-}
-#hint {
-  position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: rgba(255,255,255,0.3);
-  font-size: 11px;
-  pointer-events: none;
-  z-index: 10;
-  letter-spacing: 0.1em;
-}
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Courier New', monospace;
+    color: #aaa;
+    overflow: hidden;
+  }
+  canvas {
+    border-radius: 8px;
+    box-shadow: 0 0 60px rgba(100, 140, 255, 0.15);
+    cursor: crosshair;
+  }
+  .controls {
+    margin-top: 20px;
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    font-size: 13px;
+    z-index: 10;
+  }
+  .controls label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .controls input[type="range"] {
+    width: 100px;
+    accent-color: #7b9fff;
+  }
+  .controls button {
+    background: rgba(100, 140, 255, 0.15);
+    border: 1px solid rgba(100, 140, 255, 0.3);
+    color: #aaccff;
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    transition: all 0.2s;
+  }
+  .controls button:hover {
+    background: rgba(100, 140, 255, 0.3);
+    color: #fff;
+  }
+  .title {
+    margin-bottom: 16px;
+    font-size: 14px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: rgba(140, 170, 255, 0.7);
+  }
+  .stats {
+    margin-top: 8px;
+    font-size: 11px;
+    color: rgba(140, 170, 255, 0.4);
+  }
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
-<div id="ui">
-  <div>PARTICLES: <span id="pcount">0</span></div>
-  <div>CONNECTIONS: <span id="ccount">0</span></div>
-  <div>FPS: <span id="fps">0</span></div>
-</div>
-<div id="title">Stellar Drift</div>
-<div id="hint">Move mouse to attract · Click to burst · Scroll to warp</div>
+  <div class="title">✦ Stellar Drift ✦</div>
+  <canvas id="canvas"></canvas>
+  <div class="controls">
+    <label>Speed <input type="range" id="speed" min="1" max="10" value="3"></label>
+    <label>Trails <input type="range" id="trails" min="1" max="30" value="10"></label>
+    <label>Density <input type="range" id="density" min="500" max="8000" value="2500" step="500"></label>
+    <label>Chaos <input type="range" id="chaos" min="1" max="100" value="40"></label>
+    <button id="reset">↻ Reset</button>
+    <button id="colorShift">◈ Shift Hue</button>
+  </div>
+  <div class="stats" id="stats">particles: 2500 | FPS: --</div>
 
 <script>
-const canvas = document.getElementById('c');
+const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-const pcountEl = document.getElementById('pcount');
-const ccountEl = document.getElementById('ccount');
-const fpsEl = document.getElementById('fps');
-
-let W, H, particles = [], mouse = { x: -9999, y: -9999, active: false }, warp = 1, connections = 0;
-let lastTime = performance.now(), frameCount = 0, fps = 0;
 
 function resize() {
-  W = canvas.width = window.innerWidth;
-  H = canvas.height = window.innerHeight;
+  const s = Math.min(window.innerWidth - 40, window.innerHeight - 140, 900);
+  canvas.width = s;
+  canvas.height = s * 0.75;
 }
-window.addEventListener('resize', resize);
 resize();
+window.addEventListener('resize', () => { resize(); init(); });
 
-// Color palettes for different "constellations"
-const palettes = [
-  ['#FF6B9D', '#FFA07A', '#FFD93D', '#FF8C94'],  // Sunset
-  ['#667EEA', '#764BA2', '#F093FB', '#F5576C'],  // Nebula
-  ['#00D9FF', '#00F5D4', '#00BBF9', '#9B5DE5'],  // Aurora
-  ['#F72585', '#B5179E', '#7209B7', '#560BAD'],  // Deep Space
-  ['#FFD700', '#FFA500', '#FF6347', '#FF4500'],  // Solar
-];
+// Simplex-like noise using sin-based pseudo-random field
+function noise(x, y, t) {
+  return (
+    Math.sin(x * 0.02 + t * 0.3) * Math.cos(y * 0.02 - t * 0.2) +
+    Math.sin((x + y) * 0.015 + t * 0.15) * 0.7 +
+    Math.sin(x * 0.005 - t * 0.1) * Math.cos(y * 0.005 + t * 0.08) * 1.5
+  );
+}
 
-let currentPalette = palettes[0];
-let paletteBlend = 0;
+let particles = [];
+let W, H;
+let hueBase = 210; // blue base
+let hueRange = 60;
+let t = 0;
+let mouse = { x: -1000, y: -1000, active: false };
+
+function getParticleColor(life, maxLife) {
+  const ratio = life / maxLife;
+  const h = (hueBase + (1 - ratio) * hueRange) % 360;
+  const s = 70 + ratio * 30;
+  const l = 30 + ratio * 50;
+  const a = 0.1 + ratio * 0.6;
+  return `hsla(${h}, ${s}%, ${l}%, ${a})`;
+}
 
 class Particle {
-  constructor(x, y, burst = false) {
-    this.x = x || Math.random() * W;
-    this.y = y || Math.random() * H;
-    this.vx = (Math.random() - 0.5) * (burst ? 8 : 0.5);
-    this.vy = (Math.random() - 0.5) * (burst ? 8 : 0.5);
-    this.size = Math.random() * 2 + 0.5;
-    this.life = 1;
-    this.decay = burst ? 0.015 : 0;
-    this.color = currentPalette[Math.floor(Math.random() * currentPalette.length)];
-    this.phase = Math.random() * Math.PI * 2;
-    this.pulseSpeed = 0.02 + Math.random() * 0.03;
-    this.orbitRadius = Math.random() * 50 + 20;
-    this.orbitSpeed = (Math.random() - 0.5) * 0.02;
-    this.orbitAngle = Math.random() * Math.PI * 2;
-    this.trail = [];
-    this.trailLength = Math.floor(Math.random() * 15) + 5;
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.life = 0;
+    this.maxLife = 150 + Math.random() * 350;
+    this.speed = 0.5 + Math.random() * 1.5;
   }
-
-  update() {
-    // Gentle ambient motion
-    this.phase += this.pulseSpeed;
-    const ambientX = Math.cos(this.phase) * 0.3;
-    const ambientY = Math.sin(this.phase * 0.7) * 0.3;
+  update(speedMult, chaosMult) {
+    const angle = noise(this.x, this.y, t) * Math.PI * 2 * (chaosMult / 50);
+    let vx = Math.cos(angle) * this.speed * speedMult;
+    let vy = Math.sin(angle) * this.speed * speedMult;
 
     // Mouse attraction
     if (mouse.active) {
       const dx = mouse.x - this.x;
       const dy = mouse.y - this.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 250) {
-        const force = (250 - dist) / 250 * 0.08 * warp;
-        this.vx += (dx / dist) * force;
-        this.vy += (dy / dist) * force;
+      if (dist < 200 && dist > 1) {
+        const force = (200 - dist) / 200 * 0.8;
+        vx += (dx / dist) * force;
+        vy += (dy / dist) * force;
       }
     }
 
-    // Apply velocity with damping
-    this.vx = (this.vx + ambientX) * 0.99;
-    this.vy = (this.vy + ambientY) * 0.99;
-    this.x += this.vx * warp;
-    this.y += this.vy * warp;
+    this.x += vx;
+    this.y += vy;
+    this.life++;
 
-    // Store trail
-    this.trail.push({ x: this.x, y: this.y });
-    if (this.trail.length > this.trailLength) this.trail.shift();
-
-    // Wrap around edges
-    if (this.x < 0) this.x = W;
-    if (this.x > W) this.x = 0;
-    if (this.y < 0) this.y = H;
-    if (this.y > H) this.y = 0;
-
-    // Decay for burst particles
-    if (this.decay > 0) {
-      this.life -= this.decay;
+    if (this.x < -20 || this.x > W + 20 || this.y < -20 || this.y > H + 20 || this.life > this.maxLife) {
+      this.reset();
     }
-
-    return this.life > 0;
   }
-
-  draw() {
-    // Draw trail
-    if (this.trail.length > 1) {
-      ctx.beginPath();
-      ctx.moveTo(this.trail[0].x, this.trail[0].y);
-      for (let i = 1; i < this.trail.length; i++) {
-        ctx.lineTo(this.trail[i].x, this.trail[i].y);
-      }
-      ctx.strokeStyle = this.color + Math.floor(this.life * 40).toString(16).padStart(2, '0');
-      ctx.lineWidth = this.size * 0.5;
-      ctx.stroke();
-    }
-
-    // Draw particle
+  draw(ctx) {
     ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size * (0.8 + Math.sin(this.phase * 2) * 0.2), 0, Math.PI * 2);
-    ctx.fillStyle = this.color + Math.floor(this.life * 60).toString(16).padStart(2, '0');
-    ctx.fill();
-
-    // Glow
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size * 3, 0, Math.PI * 2);
-    const glow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size * 3);
-    glow.addColorStop(0, this.color + '40');
-    glow.addColorStop(1, this.color + '00');
-    ctx.fillStyle = glow;
+    ctx.arc(this.x, this.y, 1.2, 0, Math.PI * 2);
+    ctx.fillStyle = getParticleColor(this.life, this.maxLife);
     ctx.fill();
   }
 }
 
-// Initialize particles
-for (let i = 0; i < 200; i++) {
-  particles.push(new Particle());
+function init() {
+  W = canvas.width;
+  H = canvas.height;
+  const count = parseInt(document.getElementById('density').value);
+  particles = [];
+  for (let i = 0; i < count; i++) particles.push(new Particle());
+  // Fade to black on init
+  ctx.fillStyle = 'rgba(10, 10, 15, 1)';
+  ctx.fillRect(0, 0, W, H);
 }
 
-// Event listeners
-canvas.addEventListener('mousemove', e => {
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = e.clientX - rect.left;
+  mouse.y = e.clientY - rect.top;
   mouse.active = true;
 });
-
-canvas.addEventListener('mouseleave', () => {
-  mouse.active = false;
-});
-
-canvas.addEventListener('click', e => {
-  const burstCount = 30;
-  for (let i = 0; i < burstCount; i++) {
-    particles.push(new Particle(e.clientX, e.clientY, true));
-  }
-  // Cycle palette on click
-  currentPalette = palettes[Math.floor(Math.random() * palettes.length)];
-});
-
-canvas.addEventListener('wheel', e => {
-  warp = Math.max(0.1, Math.min(3, warp + (e.deltaY > 0 ? 0.1 : -0.1)));
-});
-
-// Touch support
-canvas.addEventListener('touchmove', e => {
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('touchmove', (e) => {
   e.preventDefault();
-  mouse.x = e.touches[0].clientX;
-  mouse.y = e.touches[0].clientY;
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = e.touches[0].clientX - rect.left;
+  mouse.y = e.touches[0].clientY - rect.top;
   mouse.active = true;
 }, { passive: false });
+canvas.addEventListener('touchend', () => { mouse.active = false; });
 
-canvas.addEventListener('touchend', () => {
-  mouse.active = false;
+document.getElementById('reset').addEventListener('click', () => {
+  t = 0;
+  hueBase = Math.random() * 360;
+  init();
+});
+document.getElementById('colorShift').addEventListener('click', () => {
+  hueBase = (hueBase + 60 + Math.random() * 60) % 360;
 });
 
-// Draw connections
-function drawConnections() {
-  connections = 0;
-  const maxDist = 120;
-  for (let i = 0; i < particles.length; i++) {
-    for (let j = i + 1; j < particles.length; j++) {
-      const dx = particles[i].x - particles[j].x;
-      const dy = particles[i].y - particles[j].y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < maxDist) {
-        const alpha = (1 - dist / maxDist) * 0.3 * particles[i].life * particles[j].life;
-        ctx.beginPath();
-        ctx.moveTo(particles[i].x, particles[i].y);
-        ctx.lineTo(particles[j].x, particles[j].y);
-        ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
-        ctx.lineWidth = 0.5;
-        ctx.stroke();
-        connections++;
+let lastFrame = performance.now();
+let fps = 0;
+let frameCount = 0;
+let fpsTime = 0;
+
+function animate() {
+  const now = performance.now();
+  const dt = (now - lastFrame) / 1000;
+  lastFrame = now;
+  t += dt;
+
+  const speedMult = parseFloat(document.getElementById('speed').value) * 0.5;
+  const trailAlpha = parseFloat(document.getElementById('trails').value) / 255;
+  const chaosMult = parseFloat(document.getElementById('chaos').value);
+
+  // Trail fade
+  ctx.fillStyle = `rgba(10, 10, 15, ${trailAlpha})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // Draw connections between nearby particles (sparse, for performance)
+  ctx.lineWidth = 0.3;
+  for (let i = 0; i < particles.length; i += 3) {
+    const p = particles[i];
+    p.update(speedMult, chaosMult);
+    p.draw(ctx);
+
+    // Only check connections for a subset
+    if (i % 6 === 0) {
+      for (let j = i + 1; j < Math.min(i + 30, particles.length); j += 3) {
+        const q = particles[j];
+        const dx = p.x - q.x;
+        const dy = p.y - q.y;
+        const d = dx * dx + dy * dy;
+        if (d < 1800) {
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(q.x, q.y);
+          const alpha = (1 - d / 1800) * 0.15;
+          ctx.strokeStyle = `hsla(${hueBase}, 60%, 50%, ${alpha})`;
+          ctx.stroke();
+        }
       }
     }
   }
-}
 
-// Animation loop
-function animate() {
   // FPS counter
   frameCount++;
-  const now = performance.now();
-  if (now - lastTime >= 1000) {
-    fps = frameCount;
+  fpsTime += dt;
+  if (fpsTime >= 1) {
+    fps = Math.round(frameCount / fpsTime);
     frameCount = 0;
-    lastTime = now;
-    fpsEl.textContent = fps;
+    fpsTime = 0;
   }
-
-  // Semi-transparent clear for motion blur effect
-  ctx.fillStyle = 'rgba(5, 5, 16, 0.15)';
-  ctx.fillRect(0, 0, W, H);
-
-  // Update and draw particles
-  particles = particles.filter(p => p.update());
-  drawConnections();
-  particles.forEach(p => p.draw());
-
-  // Maintain particle count
-  while (particles.length < 200) {
-    particles.push(new Particle());
-  }
-
-  // Update UI
-  pcountEl.textContent = particles.length;
-  ccountEl.textContent = connections;
+  document.getElementById('stats').textContent =
+    `particles: ${particles.length} | FPS: ${fps} | hue: ${Math.round(hueBase)}°`;
 
   requestAnimationFrame(animate);
 }
 
+init();
 animate();
 </script>
 </body>
