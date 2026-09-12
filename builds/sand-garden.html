@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sand Garden — Aether Lab</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1a1815;overflow:hidden;font-family:Georgia,serif;cursor:crosshair}
+canvas{display:block;position:fixed;top:0;left:0}
+#ui{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:12px;z-index:10;background:rgba(20,18,15,0.85);padding:12px 20px;border-radius:40px;backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.06)}
+#ui button{background:rgba(255,255,255,0.06);color:#d4c8b8;border:1px solid rgba(255,255,255,0.08);padding:8px 18px;border-radius:20px;cursor:pointer;font-size:13px;font-family:Georgia,serif;transition:all .3s;letter-spacing:0.5px}
+#ui button:hover{background:rgba(255,255,255,0.12);color:#fff}
+#ui button.active{background:rgba(210,180,140,0.2);color:#e8d5b8;border-color:rgba(210,180,140,0.3)}
+#title{position:fixed;top:24px;left:50%;transform:translateX(-50%);color:rgba(200,180,150,0.25);font-size:14px;letter-spacing:8px;text-transform:uppercase;z-index:10;pointer-events:none;font-family:Georgia,serif}
+#hint{position:fixed;top:50px;left:50%;transform:translateX(-50%);color:rgba(200,180,150,0.15);font-size:11px;letter-spacing:2px;z-index:10;pointer-events:none;font-family:Georgia,serif}
+</style>
+</head>
+<body>
+<div id="title">砂 庭 — Sand Garden</div>
+<div id="hint">draw with your cursor · patterns slowly fade · space to breathe</div>
+<div id="ui">
+  <button id="btnRake" class="active" onclick="setTool('rake')">Rake</button>
+  <button id="btnCircle" onclick="setTool('circle')">Circle</button>
+  <button id="btnWave" onclick="setTool('wave')">Wave</button>
+  <button onclick="clearGarden()">Clear</button>
+  <button onclick="toggleWind()">Wind</button>
+</div>
+<canvas id="c"></canvas>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H,dpr=Math.min(window.devicePixelRatio||1,2);
+let tool='rake',wind=false,time=0;
+let strokes=[];
+
+function resize(){W=canvas.width=innerWidth*dpr;H=canvas.height=innerHeight*dpr;canvas.style.width=innerWidth+'px';canvas.style.height=innerHeight+'px'}
+resize();addEventListener('resize',resize);
+
+// Sand base
+function drawSand(){const grd=ctx.createRadialGradient(W/2,H/2,H*0.1,W/2,H/2,H*0.8);grd.addColorStop(0,'#3a3528');grd.addColorStop(0.5,'#2d2920');grd.addColorStop(1,'#1f1c15');ctx.fillStyle=grd;ctx.fillRect(0,0,W,H);
+// subtle noise
+for(let i=0;i<3000;i++){const x=Math.random()*W,y=Math.random()*H,bright=18+Math.random()*12;ctx.fillStyle=`rgba(${bright+10},${bright+5},${bright-2},0.3)`;ctx.fillRect(x,y,1.2*dpr,1.2*dpr)}}
+
+// Rake strokes
+let currentStroke=null;
+addEventListener('mousedown',e=>{if(e.target.tagName==='BUTTON')return;currentStroke={x:e.clientX*dpr,y:e.clientY*dpr,points:[],life:1,tool}});
+addEventListener('mousemove',e=>{if(!currentStroke)return;const p={x:e.clientX*dpr,y:e.clientY*dpr,life:1};currentStroke.points.push(p);currentStroke.x=p.x;currentStroke.y=p.y});
+addEventListener('mouseup',()=>{if(currentStroke){strokes.push(currentStroke);currentStroke=null}});
+addEventListener('mouseleave',()=>{if(currentStroke){strokes.push(currentStroke);currentStroke=null}});
+
+// Touch
+addEventListener('touchstart',e=>{e.preventDefault();const t=e.touches[0];currentStroke={x:t.clientX*dpr,y:t.clientY*dpr,points:[],life:1,tool}});
+addEventListener('touchmove',e=>{e.preventDefault();if(!currentStroke)return;const t=e.touches[0];currentStroke.points.push({x:t.clientX*dpr,y:t.clientY*dpr,life:1})});
+addEventListener('touchend',()=>{if(currentStroke){strokes.push(currentStroke);currentStroke=null}});
+
+addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();for(let s of strokes)s.life=0;strokes=[]}});
+
+function setTool(t){tool=t;document.querySelectorAll('#ui button').forEach(b=>b.classList.remove('active'));document.getElementById('btn'+t.charAt(0).toUpperCase()+t.slice(1))?.classList.add('active')}
+function clearGarden(){strokes=[]}
+function toggleWind(){wind=!wind;document.querySelectorAll('#ui button')[3].classList.toggle('active',wind)}
+
+// Decorative stones
+const stones=[];
+for(let i=0;i<5;i++)stones.push({x:0.15+Math.random()*0.7,y:0.2+Math.random()*0.6,r:8+Math.random()*15*dpr});
+
+function drawStones(){for(const s of stones){const r=s.r;const grd=ctx.createRadialGradient(s.x*W-r/3,s.y*H-r/3,0,s.x*W,s.y*H,r);grd.addColorStop(0,'#6a6258');grd.addColorStop(0.7,'#4a453c');grd.addColorStop(1,'#2d2a24');ctx.fillStyle=grd;ctx.beginPath();ctx.ellipse(s.x*W,s.y*H,r,r*0.65,Math.random()*0.3,0,Math.PI*2);ctx.fill();
+// shadow
+ctx.fillStyle='rgba(0,0,0,0.3)';ctx.beginPath();ctx.ellipse(s.x*W+3*dpr,s.y*H+3*dpr,r*1.05,r*0.6,0,0,Math.PI*2);ctx.fill()}}
+
+// Draw stroke patterns
+function drawStrokes(){
+for(let s of strokes){
+if(s.life<=0)continue;
+ctx.save();
+ctx.globalAlpha=Math.min(s.life,0.7);
+ctx.strokeStyle=wind?'#4a4538':'#3d3729';
+ctx.lineWidth=2.5*dpr;
+ctx.lineCap='round';ctx.lineJoin='round';
+if(s.tool==='rake'){ctx.setLineDash([3*dpr,6*dpr]);ctx.lineDashOffset=wind?-time*20:time*10;
+for(let i=0;i<s.points.length-1;i++){const p=s.points[i];const w=(0.6+0.4*Math.sin(i*0.3))*3*dpr;ctx.lineWidth=w;ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(s.points[i+1].x,s.points[i+1].y);ctx.stroke()}}
+else if(s.tool==='circle'){for(let i=0;i<s.points.length;i++){const p=s.points[i];const r=5*dpr+i*0.5;ctx.lineWidth=1.5*dpr;ctx.beginPath();ctx.arc(p.x,p.y,Math.min(r,40*dpr),0,Math.PI*2);ctx.stroke()}}
+else if(s.tool==='wave'){ctx.lineWidth=1.8*dpr;ctx.beginPath();
+for(let i=0;i<s.points.length;i++){const p=s.points[i];const offset=Math.sin(i*0.4+time*2)*8*dpr;if(i===0)ctx.moveTo(p.x,p.y+offset);else ctx.lineTo(p.x,p.y+offset)}ctx.stroke()}
+ctx.restore();
+s.life-=0.0003}}
+// Clean up dead
+if(strokes.length>200)strokes=strokes.filter(s=>s.life>0)}
+
+// Ambient particles (falling sand motes)
+let particles=[];
+for(let i=0;i<60;i++)particles.push({x:Math.random()*W,y:Math.random()*H,vx:0,vy:0.2+Math.random()*0.3,size:0.5+Math.random()*1.5,alpha:0.1+Math.random()*0.2});
+
+function drawParticles(){for(const p of particles){p.x+=p.vx+(wind?Math.sin(time+p.y*0.01)*0.3:0);p.y+=p.vy;if(p.y>H){p.y=0;p.x=Math.random()*W}if(p.x<0)p.x=W;if(p.x>W)p.x=0;ctx.fillStyle=`rgba(200,180,150,${p.alpha})`;ctx.beginPath();ctx.arc(p.x,p.y,p.size*dpr,0,Math.PI*2);ctx.fill()}}
+
+// Main loop
+function frame(){time+=0.016;drawSand();drawStrokes();drawStones();drawParticles();requestAnimationFrame(frame)}
+frame();
+</script>
+</body>
+</html>
