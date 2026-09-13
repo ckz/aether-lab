@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Magnetic Filaments</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a0f;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+  color: #88ffaa;
+}
+canvas { display: block; }
+#ui {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 10;
+  font-size: 13px;
+  line-height: 1.6;
+  background: rgba(10, 10, 15, 0.85);
+  padding: 16px 20px;
+  border-radius: 12px;
+  border: 1px solid rgba(136, 255, 170, 0.15);
+  backdrop-filter: blur(8px);
+  max-width: 280px;
+}
+#ui h1 {
+  font-size: 16px;
+  margin-bottom: 8px;
+  color: #88ffaa;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+#ui .controls { margin-top: 8px; }
+#ui label {
+  display: block;
+  margin: 6px 0 2px;
+  color: #88ccaa;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+#ui input[type=range] {
+  width: 100%;
+  accent-color: #88ffaa;
+  background: rgba(136, 255, 170, 0.1);
+  height: 4px;
+  border-radius: 2px;
+  outline: none;
+}
+#ui .btn-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+#ui button {
+  background: rgba(136, 255, 170, 0.08);
+  border: 1px solid rgba(136, 255, 170, 0.25);
+  color: #88ffaa;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  transition: all 0.2s;
+}
+#ui button:hover { background: rgba(136, 255, 170, 0.2); border-color: #88ffaa; }
+#ui button.active { background: rgba(136, 255, 170, 0.2); border-color: #88ffaa; }
+#stats {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  font-size: 11px;
+  color: rgba(136, 255, 170, 0.4);
+  z-index: 10;
+  letter-spacing: 1px;
+}
+#hint {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  font-size: 11px;
+  color: rgba(136, 255, 170, 0.3);
+  z-index: 10;
+  text-align: right;
+  letter-spacing: 1px;
+}
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="ui">
+  <h1>⬡ Magnetic Filaments</h1>
+  <div class="controls">
+    <label>Filament Count: <span id="countVal">150</span></label>
+    <input type="range" id="count" min="50" max="400" value="150">
+    <label>Connection Dist: <span id="distVal">120</span></label>
+    <input type="range" id="dist" min="40" max="250" value="120">
+    <label>Mouse Force: <span id="forceVal">80</span></label>
+    <input type="range" id="force" min="0" max="200" value="80">
+    <label>Chaos: <span id="chaosVal">30</span></label>
+    <input type="range" id="chaos" min="0" max="100" value="30">
+    <label>Palette</label>
+    <div class="btn-row" id="paletteRow"></div>
+    <label>Mode</label>
+    <div class="btn-row" id="modeRow"></div>
+  </div>
+</div>
+<div id="stats"></div>
+<div id="hint">click: attract · hold: repel · scroll: adjust force</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Palettes
+const palettes = {
+  biolum:   { name: 'Biolum',   colors: ['#88ffaa','#44ddaa','#22ccbb','#66ffeebb','#aaffdd'], bg: '#050a08' },
+  neon:     { name: 'Neon',     colors: ['#ff00ff','#00ffff','#ff44aa','#44aaff','#ffaa00'], bg: '#0a0510' },
+  aurora:   { name: 'Aurora',   colors: ['#88ffcc','#ff88dd','#88aaff','#ddff88','#ffcc88'], bg: '#050a0f' },
+  ember:    { name: 'Ember',    colors: ['#ff6622','#ffaa22','#ff4422','#ffdd66','#ff8844'], bg: '#0f0805' },
+  frost:    { name: 'Frost',    colors: ['#aaddff','#88ccff','#ffffff','#88eeff','#bbddff'], bg: '#050a10' },
+  void:     { name: 'Void',     colors: ['#aa88ff','#8844ff','#6644cc','#cc88ff','#8866ff'], bg: '#08050f' }
+};
+
+const modes = [
+  { id: 'orbit', name: 'Orbit' },
+  { id: 'drift', name: 'Drift' },
+  { id: 'pulse', name: 'Pulse' }
+];
+
+let state = {
+  count: 150,
+  maxDist: 120,
+  mouseForce: 80,
+  chaos: 30,
+  palette: 'biolum',
+  mode: 'orbit',
+  mouseX: -1000,
+  mouseY: -1000,
+  mouseDown: false,
+  time: 0
+};
+
+// Build UI
+const palRow = document.getElementById('paletteRow');
+Object.entries(palettes).forEach(([key, p]) => {
+  const btn = document.createElement('button');
+  btn.textContent = p.name;
+  btn.dataset.key = key;
+  if (key === state.palette) btn.classList.add('active');
+  btn.onclick = () => {
+    palRow.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.palette = key;
+  };
+  palRow.appendChild(btn);
+});
+
+const modeRow = document.getElementById('modeRow');
+modes.forEach(m => {
+  const btn = document.createElement('button');
+  btn.textContent = m.name;
+  btn.dataset.mode = m.id;
+  if (m.id === state.mode) btn.classList.add('active');
+  btn.onclick = () => {
+    modeRow.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.mode = m.id;
+  };
+  modeRow.appendChild(btn);
+});
+
+// Sliders
+['count','dist','force','chaos'].forEach(id => {
+  const slider = document.getElementById(id);
+  const valSpan = document.getElementById(id + 'Val');
+  slider.addEventListener('input', () => {
+    const v = +slider.value;
+    valSpan.textContent = v;
+    if (id === 'count') state.count = v;
+    else if (id === 'dist') state.maxDist = v;
+    else if (id === 'force') state.mouseForce = v;
+    else if (id === 'chaos') state.chaos = v;
+    if (id === 'count') initParticles();
+  });
+});
+
+canvas.addEventListener('mousemove', e => { state.mouseX = e.clientX; state.mouseY = e.clientY; });
+canvas.addEventListener('mousedown', () => state.mouseDown = true);
+canvas.addEventListener('mouseup', () => state.mouseDown = false);
+canvas.addEventListener('mouseleave', () => { state.mouseX = -1000; state.mouseY = -1000; state.mouseDown = false; });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  state.mouseX = e.touches[0].clientX;
+  state.mouseY = e.touches[0].clientY;
+  state.mouseDown = true;
+}, { passive: false });
+canvas.addEventListener('touchend', () => { state.mouseDown = false; state.mouseX = -1000; });
+canvas.addEventListener('wheel', e => {
+  state.mouseForce = Math.max(0, Math.min(200, state.mouseForce - Math.sign(e.deltaY) * 10));
+  document.getElementById('force').value = state.mouseForce;
+  document.getElementById('forceVal').textContent = state.mouseForce;
+});
+
+// Particles
+let particles = [];
+function initParticles() {
+  particles = [];
+  const pal = palettes[state.palette].colors;
+  for (let i = 0; i < state.count; i++) {
+    particles.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      vx: 0, vy: 0,
+      baseVx: 0, baseVy: 0,
+      radius: 1.5 + Math.random() * 2.5,
+      color: pal[Math.floor(Math.random() * pal.length)],
+      phase: Math.random() * Math.PI * 2,
+      speed: 0.3 + Math.random() * 0.7,
+      orbitRadius: 30 + Math.random() * 120,
+      orbitSpeed: (Math.random() - 0.5) * 0.01,
+      life: 1
+    });
+  }
+}
+initParticles();
+
+// Spatial hash for neighbor queries
+class SpatialHash {
+  constructor(cellSize) {
+    this.cellSize = cellSize;
+    this.grid = new Map();
+  }
+  clear() { this.grid.clear(); }
+  key(x, y) { return ((x / this.cellSize) | 0) + ',' + ((y / this.cellSize) | 0); }
+  insert(p) {
+    const k = this.key(p.x, p.y);
+    if (!this.grid.has(k)) this.grid.set(k, []);
+    this.grid.get(k).push(p);
+  }
+  query(p, radius) {
+    const results = [];
+    const cs = this.cellSize;
+    const cx0 = ((p.x - radius) / cs) | 0;
+    const cx1 = ((p.x + radius) / cs) | 0;
+    const cy0 = ((p.y - radius) / cs) | 0;
+    const cy1 = ((p.y + radius) / cs) | 0;
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const cell = this.grid.get(cx + ',' + cy);
+        if (cell) {
+          for (let i = 0; i < cell.length; i++) results.push(cell[i]);
+        }
+      }
+    }
+    return results;
+  }
+}
+const hash = new SpatialHash(60);
+
+function update(dt) {
+  const t = state.time;
+  const pal = palettes[state.palette];
+  const chaos = state.chaos / 100;
+  
+  // Set base velocities from mode
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    if (state.mode === 'orbit') {
+      p.baseVx = Math.cos(t * p.orbitSpeed + p.phase) * p.speed * 0.5;
+      p.vy = Math.sin(t * p.orbitSpeed + p.phase) * p.speed * 0.5;
+      p.baseVy = p.vy;
+    } else if (state.mode === 'drift') {
+      const angle = Math.sin(p.x * 0.003 + t * 0.2) * Math.cos(p.y * 0.003 + t * 0.15) * Math.PI * 2;
+      p.baseVx = Math.cos(angle) * p.speed * 0.6;
+      p.baseVy = Math.sin(angle) * p.speed * 0.6;
+    } else if (state.mode === 'pulse') {
+      const cx = W / 2, cy = H / 2;
+      const dx = p.x - cx, dy = p.y - cy;
+      const d = Math.sqrt(dx * dx + dy * dy) + 1;
+      const wave = Math.sin(d * 0.02 - t * 2) * 0.8;
+      p.baseVx = (dx / d) * wave * p.speed;
+      p.baseVy = (dy / d) * wave * p.speed;
+    }
+  }
+
+  // Spatial hash rebuild
+  hash.clear();
+  for (let i = 0; i < particles.length; i++) hash.insert(particles[i]);
+
+  // Update particles
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    
+    // Blend base motion with noise
+    const nx = Math.sin(p.x * 0.005 + t * 0.3) * Math.cos(p.y * 0.004 + t * 0.2) * chaos * 2;
+    const ny = Math.cos(p.x * 0.004 + t * 0.25) * Math.sin(p.y * 0.005 + t * 0.35) * chaos * 2;
+    
+    p.vx += (p.baseVx + nx - p.vx) * 0.05;
+    p.vy += (p.baseVy + ny - p.vy) * 0.05;
+
+    // Mouse interaction
+    const mdx = p.x - state.mouseX;
+    const mdy = p.y - state.mouseY;
+    const mDist = Math.sqrt(mdx * mdx + mdy * mdy) + 1;
+    if (mDist < 200 && state.mouseForce > 0) {
+      const force = state.mouseForce / (mDist * mDist) * 50;
+      const dir = state.mouseDown ? -1 : 1;
+      p.vx += (mdx / mDist) * force * dir;
+      p.vy += (mdy / mDist) * force * dir;
+    }
+
+    // Repulsion from nearby particles (subtle)
+    const neighbors = hash.query(p, 25);
+    for (let j = 0; j < neighbors.length; j++) {
+      const n = neighbors[j];
+      if (n === p) continue;
+      const dx = p.x - n.x, dy = p.y - n.y;
+      const d = Math.sqrt(dx * dx + dy * dy) + 0.01;
+      if (d < 22) {
+        const repulse = (22 - d) * 0.02;
+        p.vx += (dx / d) * repulse;
+        p.vy += (dy / d) * repulse;
+      }
+    }
+
+    p.x += p.vx;
+    p.y += p.vy;
+
+    // Wrap edges
+    if (p.x < -20) p.x = W + 20;
+    if (p.x > W + 20) p.x = -20;
+    if (p.y < -20) p.y = H + 20;
+    if (p.y > H + 20) p.y = -20;
+  }
+}
+
+function draw() {
+  const pal = palettes[state.palette];
+  // Fade trail
+  ctx.fillStyle = pal.bg + 'cc';
+  ctx.fillRect(0, 0, W, H);
+
+  // Rebuild spatial hash for connections
+  hash.clear();
+  for (let i = 0; i < particles.length; i++) hash.insert(particles[i]);
+
+  const maxDist = state.maxDist;
+  const maxDistSq = maxDist * maxDist;
+
+  // Draw connections
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    const neighbors = hash.query(p, maxDist);
+    for (let j = 0; j < neighbors.length; j++) {
+      const n = neighbors[j];
+      if (n === p || n.index <= i) continue;
+      const dx = p.x - n.x, dy = p.y - n.y;
+      const dSq = dx * dx + dy * dy;
+      if (dSq < maxDistSq) {
+        const d = Math.sqrt(dSq);
+        const alpha = 1 - d / maxDist;
+        ctx.strokeStyle = p.color + Math.floor(alpha * 80).toString(16).padStart(2, '0');
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(n.x, n.y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Draw particles with glow
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    // Glow
+    const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius * 4);
+    grad.addColorStop(0, p.color + '88');
+    grad.addColorStop(1, p.color + '00');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.radius * 4, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Core
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Mouse glow
+  if (state.mouseX > 0 && state.mouseY > 0 && state.mouseForce > 0) {
+    const mGrad = ctx.createRadialGradient(state.mouseX, state.mouseY, 0, state.mouseX, state.mouseY, 60);
+    const mColor = pal.colors[0];
+    if (state.mouseDown) {
+      mGrad.addColorStop(0, mColor + '44');
+      mGrad.addColorStop(1, mColor + '00');
+    } else {
+      mGrad.addColorStop(0, mColor + '22');
+      mGrad.addColorStop(1, mColor + '00');
+    }
+    ctx.fillStyle = mGrad;
+    ctx.beginPath();
+    ctx.arc(state.mouseX, state.mouseY, 60, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function loop() {
+  state.time += 0.016;
+  update(0.016);
+  draw();
+  
+  // Stats
+  const pal = palettes[state.palette];
+  document.getElementById('stats').textContent = 
+    `${particles.length} particles · ${pal.name} · ${state.mode} · FPS: --`;
+  
+  requestAnimationFrame(loop);
+}
+loop();
+
+// FPS counter
+let frames = 0, lastFpsTime = performance.now();
+function countFps() {
+  frames++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) {
+    document.getElementById('stats').textContent = 
+      `${particles.length} particles · ${palettes[state.palette].name} · ${state.mode} · FPS: ${frames}`;
+    frames = 0;
+    lastFpsTime = now;
+  }
+  requestAnimationFrame(countFps);
+}
+countFps();
+</script>
+</body>
+</html>
