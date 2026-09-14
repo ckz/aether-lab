@@ -3,225 +3,277 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cosmic Flow Field</title>
+<title>Cosmic Flow Field — Generative Art</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #0a0a12;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 100vh;
+    background: #0a0a0f;
+    overflow: hidden;
     font-family: 'Courier New', monospace;
     color: #aaa;
-    overflow: hidden;
   }
-  canvas {
-    border-radius: 8px;
-    box-shadow: 0 0 60px rgba(100, 60, 255, 0.3);
-    max-width: 95vw;
-    max-height: 85vh;
-  }
-  .controls {
-    margin-top: 16px;
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    justify-content: center;
+  canvas { display: block; }
+  #info {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    font-size: 12px;
+    opacity: 0.5;
+    pointer-events: none;
     z-index: 10;
   }
-  button {
-    background: rgba(255,255,255,0.06);
+  #controls {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 12px;
+    z-index: 10;
+    background: rgba(10, 10, 15, 0.7);
+    padding: 8px 16px;
+    border-radius: 24px;
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  #controls button {
+    background: rgba(255,255,255,0.08);
     border: 1px solid rgba(255,255,255,0.15);
     color: #ccc;
-    padding: 8px 18px;
-    border-radius: 20px;
+    padding: 6px 14px;
+    border-radius: 14px;
     cursor: pointer;
-    font-family: inherit;
-    font-size: 13px;
+    font-size: 12px;
+    font-family: 'Courier New', monospace;
     transition: all 0.2s;
-    letter-spacing: 0.5px;
   }
-  button:hover {
-    background: rgba(255,255,255,0.12);
-    border-color: rgba(255,255,255,0.3);
+  #controls button:hover {
+    background: rgba(255,255,255,0.15);
     color: #fff;
   }
-  .info {
-    margin-top: 10px;
-    font-size: 11px;
-    opacity: 0.5;
-    letter-spacing: 1px;
+  #controls button.active {
+    background: rgba(100, 140, 255, 0.25);
+    border-color: rgba(100, 140, 255, 0.5);
+    color: #aac4ff;
   }
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
-<div class="controls">
-  <button onclick="resetField()">↻ Reset</button>
-  <button onclick="togglePause()">⏯ Pause</button>
-  <button onclick="changePalette()">🎨 Palette</button>
-  <button onclick="toggleTrails()">~ Trails</button>
+<div id="info">
+  <div>Cosmic Flow Field</div>
+  <div id="stats"></div>
 </div>
-<div class="info" id="info">COSMIC FLOW FIELD — particles: <span id="count">0</span></div>
+<div id="controls">
+  <button id="btnReset" class="active">Reset</button>
+  <button id="btnPalette">Palette</button>
+  <button id="btnMode">Mode</button>
+  <button id="btnPause">Pause</button>
+  <button id="btnSave">Save PNG</button>
+</div>
+<canvas id="canvas"></canvas>
 
 <script>
-const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
-const DPR = Math.min(window.devicePixelRatio || 1, 2);
-
-let W, H;
-function resize() {
-  const rect = { w: Math.min(window.innerWidth * 0.92, 1000), h: Math.min(window.innerHeight * 0.78, 700) };
-  canvas.width = rect.w * DPR;
-  canvas.height = rect.h * DPR;
-  canvas.style.width = rect.w + 'px';
-  canvas.style.height = rect.h + 'px';
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  W = rect.w; H = rect.h;
-}
-resize();
-window.addEventListener('resize', () => { resize(); initParticles(); });
-
 // --- Simplex-like noise (hash-based) ---
-function hash(x, y) {
-  let h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
-  return h - Math.floor(h);
+function hash(x, y, seed) {
+  let h = seed + x * 374761393 + y * 668265263;
+  h = (h ^ (h >> 13)) * 1274126177;
+  h = h ^ (h >> 16);
+  return (h & 0x7fffffff) / 0x7fffffff;
 }
-function smoothNoise(x, y) {
+
+function smoothNoise(x, y, seed) {
   const ix = Math.floor(x), iy = Math.floor(y);
   const fx = x - ix, fy = y - iy;
-  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
-  const a = hash(ix, iy), b = hash(ix+1, iy);
-  const c = hash(ix, iy+1), d = hash(ix+1, iy+1);
-  return a + (b-a)*sx + (c-a)*sy + (a-b-c+d)*sx*sy;
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  const n00 = hash(ix, iy, seed);
+  const n10 = hash(ix+1, iy, seed);
+  const n01 = hash(ix, iy+1, seed);
+  const n11 = hash(ix+1, iy+1, seed);
+  return n00*(1-sx)*(1-sy) + n10*sx*(1-sy) + n01*(1-sx)*sy + n11*sx*sy;
 }
-function fbm(x, y, octaves=4) {
-  let v=0, amp=0.5, freq=1;
-  for(let i=0;i<octaves;i++) {
-    v += amp * smoothNoise(x*freq, y*freq);
-    amp *= 0.5; freq *= 2.07;
+
+function fbm(x, y, seed, octaves=4) {
+  let val = 0, amp = 0.5, freq = 1;
+  for (let i = 0; i < octaves; i++) {
+    val += amp * smoothNoise(x * freq, y * freq, seed + i * 100);
+    amp *= 0.5;
+    freq *= 2;
   }
-  return v;
+  return val;
 }
 
-// --- Palettes ---
-const palettes = [
-  { name: 'Nebula',  colors: ['#6c5ce7','#a29bfe','#fd79a8','#e17055','#fdcb6e','#00cec9','#0984e3'], bg: '#0a0a18' },
-  { name: 'Aurora',  colors: ['#00b894','#00cec9','#0984e3','#6c5ce7','#fd79a8','#55efc4','#74b9ff'], bg: '#050f0f' },
-  { name: 'Ember',   colors: ['#e17055','#fdcb6e','#d63031','#e84393','#fd79a8','#ff7675','#fab1a0'], bg: '#120a08' },
-  { name: 'Frost',   colors: ['#dfe6e9','#b2bec3','#74b9ff','#0984e3','#a29bfe','#81ecec','#00cec9'], bg: '#080c14' },
-  { name: 'Biolum',  colors: ['#00ff87','#60efff','#0061ff','#a29bfe','#fd79a8','#55efc4','#ffeaa7'], bg: '#020a0a' },
-];
-let paletteIdx = 0;
-
-// --- Particles ---
-const NUM = 1800;
-let particles = [];
+// --- Setup ---
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+let seed = Math.floor(Math.random() * 100000);
 let paused = false;
-let showTrails = true;
-let time = 0;
-let flowOffset = 0;
+let modeIndex = 0;
+let paletteIndex = 0;
+let particles = [];
+let mouse = { x: -9999, y: -9999, active: false };
+const PARTICLE_COUNT = 3000;
+
+const palettes = [
+  { name: 'Cosmic', colors: ['#4a90d9', '#7b68ee', '#c06c84', '#f67280', '#c06c84', '#7b68ee'] },
+  { name: 'Aurora', colors: ['#00ff87', '#60efff', '#0061ff', '#a855f7', '#60efff', '#00ff87'] },
+  { name: 'Ember', colors: ['#ff4500', '#ff6347', '#ff8c00', '#ffd700', '#ff8c00', '#ff6347'] },
+  { name: 'Ocean', colors: ['#0077b6', '#00b4d8', '#90e0ef', '#caf0f8', '#48cae4', '#023e8a'] },
+  { name: 'Neon', colors: ['#ff006e', '#8338ec', '#3a86ff', '#ff006e', '#3a86ff', '#8338ec'] },
+];
+
+const modes = ['Flow', 'Orbit', 'Spiral', 'Wave'];
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
 
 class Particle {
   constructor() { this.reset(true); }
   reset(initial=false) {
-    this.x = Math.random() * W;
-    this.y = Math.random() * H;
-    this.prevX = this.x;
-    this.prevY = this.y;
-    this.life = initial ? Math.random() * 300 : 250 + Math.random() * 200;
-    this.maxLife = this.life;
-    const pal = palettes[paletteIdx].colors;
+    this.x = initial ? Math.random() * W : Math.random() * W;
+    this.y = initial ? Math.random() * H : Math.random() * H;
+    this.vx = 0;
+    this.vy = 0;
+    this.life = initial ? Math.random() * 300 : 300;
+    this.maxLife = 300;
+    this.speed = 0.5 + Math.random() * 1.5;
+    const pal = palettes[paletteIndex].colors;
     this.color = pal[Math.floor(Math.random() * pal.length)];
-    this.speed = 0.4 + Math.random() * 1.2;
-    this.size = 0.4 + Math.random() * 1.2;
   }
   update() {
-    this.prevX = this.x;
-    this.prevY = this.y;
-    const scale = 0.0028;
-    const n = fbm(this.x * scale + flowOffset, this.y * scale + time * 0.15, 4);
-    const angle = n * Math.PI * 4;
-    this.x += Math.cos(angle) * this.speed;
-    this.y += Math.sin(angle) * this.speed;
+    const scale = 0.003;
+    const t = performance.now() * 0.0001;
+    let angle;
+
+    const mode = modes[modeIndex];
+    if (mode === 'Flow') {
+      angle = fbm(this.x * scale, this.y * scale + t, seed) * Math.PI * 4;
+    } else if (mode === 'Orbit') {
+      const cx = W / 2, cy = H / 2;
+      const dx = this.x - cx, dy = this.y - cy;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      angle = Math.atan2(dy, dx) + Math.PI * 0.5 + Math.sin(dist * 0.01 - t * 5) * 1.5;
+    } else if (mode === 'Spiral') {
+      const cx = W / 2, cy = H / 2;
+      const dx = this.x - cx, dy = this.y - cy;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      angle = Math.atan2(dy, dx) + dist * 0.005 + t * 3;
+    } else if (mode === 'Wave') {
+      angle = Math.sin(this.x * 0.01 + t * 3) * Math.PI + Math.cos(this.y * 0.01 + t * 2) * Math.PI;
+    }
+
+    // Mouse influence
+    if (mouse.active) {
+      const dx = this.x - mouse.x, dy = this.y - mouse.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < 150) {
+        const force = (150 - dist) / 150;
+        angle += Math.atan2(dy, dx) * force * 0.5;
+      }
+    }
+
+    this.vx += Math.cos(angle) * 0.3;
+    this.vy += Math.sin(angle) * 0.3;
+    this.vx *= 0.95;
+    this.vy *= 0.95;
+    this.x += this.vx * this.speed;
+    this.y += this.vy * this.speed;
     this.life--;
+
     if (this.life <= 0 || this.x < -10 || this.x > W+10 || this.y < -10 || this.y > H+10) {
       this.reset();
-      this.prevX = this.x;
-      this.prevY = this.y;
     }
   }
-  draw() {
-    const alpha = Math.min(1, this.life / 40) * Math.min(1, (this.maxLife - this.life) / 20) * 0.7;
-    ctx.strokeStyle = this.color + Math.floor(alpha * 200).toString(16).padStart(2,'0');
-    ctx.lineWidth = this.size;
+  draw(ctx) {
+    const alpha = (this.life / this.maxLife) * 0.6;
+    ctx.fillStyle = this.color;
+    ctx.globalAlpha = alpha;
     ctx.beginPath();
-    ctx.moveTo(this.prevX, this.prevY);
-    ctx.lineTo(this.x, this.y);
-    ctx.stroke();
+    ctx.arc(this.x, this.y, 1.2, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 
-function initParticles() {
+function init() {
   particles = [];
-  for (let i = 0; i < NUM; i++) particles.push(new Particle());
-}
-
-function resetField() {
-  time = Math.random() * 100;
-  flowOffset = Math.random() * 100;
-  ctx.fillStyle = palettes[paletteIdx].bg;
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    particles.push(new Particle());
+  }
+  // Fade-in background
+  ctx.fillStyle = '#0a0a0f';
   ctx.fillRect(0, 0, W, H);
-  initParticles();
 }
 
-function togglePause() {
-  paused = !paused;
-}
-
-function changePalette() {
-  paletteIdx = (paletteIdx + 1) % palettes.length;
-  document.body.style.background = palettes[paletteIdx].bg;
-  // Recolor existing particles gradually
-  const pal = palettes[paletteIdx].colors;
-  particles.forEach(p => {
-    if (Math.random() < 0.3) p.color = pal[Math.floor(Math.random() * pal.length)];
-  });
-}
-
-function toggleTrails() {
-  showTrails = !showTrails;
-}
-
-// --- Main loop ---
-function loop() {
-  requestAnimationFrame(loop);
-  if (paused) return;
-
-  if (showTrails) {
-    ctx.fillStyle = palettes[paletteIdx].bg + '18';
+function animate() {
+  if (!paused) {
+    // Subtle trail
+    ctx.globalAlpha = 0.03;
+    ctx.fillStyle = '#0a0a0f';
     ctx.fillRect(0, 0, W, H);
-  } else {
-    ctx.fillStyle = palettes[paletteIdx].bg;
-    ctx.fillRect(0, 0, W, H);
+
+    for (const p of particles) {
+      p.update();
+      p.draw(ctx);
+    }
+    ctx.globalAlpha = 1;
   }
+  requestAnimationFrame(animate);
+}
 
+// --- Controls ---
+document.getElementById('btnReset').addEventListener('click', () => {
+  seed = Math.floor(Math.random() * 100000);
+  init();
+});
+document.getElementById('btnPalette').addEventListener('click', () => {
+  paletteIndex = (paletteIndex + 1) % palettes.length;
+  // Recolor particles
+  const pal = palettes[paletteIndex].colors;
   for (const p of particles) {
-    p.update();
-    p.draw();
+    p.color = pal[Math.floor(Math.random() * pal.length)];
   }
+});
+document.getElementById('btnMode').addEventListener('click', () => {
+  modeIndex = (modeIndex + 1) % modes.length;
+});
+document.getElementById('btnPause').addEventListener('click', (e) => {
+  paused = !paused;
+  e.target.textContent = paused ? 'Play' : 'Pause';
+});
+document.getElementById('btnSave').addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = 'cosmic-flow-field.png';
+  link.href = canvas.toDataURL();
+  link.click();
+});
 
-  document.getElementById('count').textContent = particles.length;
-}
+// Mouse
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('touchmove', (e) => {
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('touchend', () => { mouse.active = false; });
 
-// --- Init ---
-document.body.style.background = palettes[0].bg;
-ctx.fillStyle = palettes[0].bg;
-ctx.fillRect(0, 0, W, H);
-initParticles();
-loop();
+window.addEventListener('resize', () => {
+  resize();
+  init();
+});
+
+resize();
+init();
+animate();
+
+document.getElementById('stats').textContent = `${PARTICLE_COUNT} particles · seed ${seed}`;
 </script>
 </body>
 </html>
