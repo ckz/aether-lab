@@ -6,239 +6,332 @@
 <title>Living Constellation</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #0a0a1a;
-    overflow: hidden;
-    font-family: 'Georgia', serif;
-    cursor: crosshair;
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+  canvas { display: block; cursor: crosshair; }
+
+  #ui {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; z-index: 10; flex-wrap: wrap; justify-content: center;
+    font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
   }
-  canvas { display: block; }
-  .info {
-    position: fixed;
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 13px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    pointer-events: none;
-    text-shadow: 0 0 10px rgba(100, 180, 255, 0.5);
+  .btn {
+    background: rgba(10, 10, 30, 0.7); border: 1px solid rgba(120, 140, 255, 0.3);
+    color: #a0b4ff; padding: 6px 14px; border-radius: 20px; cursor: pointer;
+    font-size: 12px; letter-spacing: 0.5px; transition: all 0.25s;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   }
-  .title {
-    position: fixed;
-    top: 30px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 18px;
-    letter-spacing: 6px;
-    text-transform: uppercase;
+  .btn:hover { background: rgba(40, 50, 100, 0.8); border-color: rgba(160, 180, 255, 0.6); color: #fff; }
+  .btn.active { background: rgba(80, 100, 200, 0.6); border-color: #8090ff; color: #fff; box-shadow: 0 0 12px rgba(120,140,255,0.4); }
+
+  #info {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: rgba(160,180,255,0.5); font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+    font-size: 11px; letter-spacing: 0.5px; z-index: 10; text-align: center;
     pointer-events: none;
-    text-shadow: 0 0 20px rgba(100, 180, 255, 0.8);
-    font-weight: 300;
+  }
+
+  #palette-name {
+    position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+    color: rgba(160,180,255,0.4); font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+    font-size: 11px; letter-spacing: 2px; text-transform: uppercase; z-index: 10;
+    pointer-events: none; transition: opacity 0.8s;
   }
 </style>
 </head>
 <body>
-<canvas id="canvas"></canvas>
-<div class="title">Living Constellation</div>
-<div class="info">Move your mouse to influence the stars</div>
+<canvas id="c"></canvas>
+
+<div id="ui">
+  <button class="btn active" data-mode="gravity">Attract</button>
+  <button class="btn" data-mode="repel">Repel</button>
+  <button class="btn" data-mode="orbit">Orbit</button>
+  <button class="btn" data-mode="pulse">Pulse</button>
+  <button class="btn" data-mode="swarm">Swarm</button>
+  <button class="btn" id="palBtn">Palette</button>
+  <button class="btn" id="resetBtn">Reset</button>
+  <button class="btn" id="burstBtn">Burst</button>
+</div>
+
+<div id="palette-name">Aurora</div>
+<div id="info">click & drag to interact · scroll to adjust force · space to burst</div>
 
 <script>
-const canvas = document.getElementById('canvas');
+const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
+let W, H, DPR = Math.min(window.devicePixelRatio || 1, 2);
 
-let width, height;
-let particles = [];
-let mouse = { x: null, y: null, radius: 150 };
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── Palette System ──────────────────────────────────────────
+const palettes = [
+  { name: 'Aurora',  bg: [2, 4, 14],     colors: ['#00ffc8','#00a8ff','#7b2fff','#ff2d95','#00ffc8'] },
+  { name: 'Ember',   bg: [14, 4, 2],     colors: ['#ff6a00','#ff2d00','#ffcc00','#ff4488','#ff8800'] },
+  { name: 'Frost',   bg: [4, 8, 20],     colors: ['#88ccff','#ffffff','#44aaff','#aaddff','#66bbff'] },
+  { name: 'Void',    bg: [0, 0, 0],      colors: ['#aa00ff','#ff00aa','#5500ff','#ff00ff','#8800cc'] },
+  { name: 'Ocean',   bg: [2, 10, 24],    colors: ['#00ccff','#0066ff','#00ffcc','#44aaff','#00ddff'] },
+  { name: 'Toxic',   bg: [4, 16, 4],     colors: ['#88ff00','#00ff66','#ccff00','#44ff88','#aaff22'] },
+];
+let palIdx = 0;
+
+function pal() { return palettes[palIdx]; }
+
+// ── Particle System ─────────────────────────────────────────
+const N = 220;
+const CONNECTION_DIST = 100;
+const particles = [];
+
+function createParticle(x, y, vx, vy) {
+  const p = pal();
+  return {
+    x: x ?? Math.random() * W,
+    y: y ?? Math.random() * H,
+    vx: vx ?? (Math.random() - 0.5) * 0.6,
+    vy: vy ?? (Math.random() - 0.5) * 0.6,
+    r: Math.random() * 1.8 + 0.8,
+    color: p.colors[Math.floor(Math.random() * p.colors.length)],
+    life: 1,
+    pulsePhase: Math.random() * Math.PI * 2,
+    pulseSpeed: Math.random() * 0.02 + 0.008,
+  };
+}
+
+function initParticles() {
+  particles.length = 0;
+  for (let i = 0; i < N; i++) particles.push(createParticle());
+}
+initParticles();
+
+// ── State ───────────────────────────────────────────────────
+let mode = 'gravity';
+let mouse = { x: W/2, y: H/2, down: false, active: false };
+let forceRadius = 140;
+let forceStrength = 0.35;
 let time = 0;
 
-const config = {
-  particleCount: 180,
-  connectionDistance: 120,
-  mouseInfluence: 200,
-  baseSpeed: 0.3,
-  colors: [
-    { r: 100, g: 180, b: 255 },  // soft blue
-    { r: 180, g: 130, b: 255 },  // lavender
-    { r: 130, g: 220, b: 255 },  // cyan
-    { r: 255, g: 180, b: 220 },  // rose
-    { r: 220, g: 255, b: 200 },  // mint
-  ]
-};
+// ── Controls ────────────────────────────────────────────────
+document.querySelectorAll('.btn[data-mode]').forEach(b => {
+  b.addEventListener('click', () => {
+    mode = b.dataset.mode;
+    document.querySelectorAll('.btn[data-mode]').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+  });
+});
 
-class Particle {
-  constructor() {
-    this.x = Math.random() * width;
-    this.y = Math.random() * height;
-    this.vx = (Math.random() - 0.5) * config.baseSpeed;
-    this.vy = (Math.random() - 0.5) * config.baseSpeed;
-    this.radius = Math.random() * 2 + 1;
-    this.color = config.colors[Math.floor(Math.random() * config.colors.length)];
-    this.pulseOffset = Math.random() * Math.PI * 2;
-    this.pulseSpeed = 0.02 + Math.random() * 0.02;
+document.getElementById('palBtn').addEventListener('click', () => {
+  palIdx = (palIdx + 1) % palettes.length;
+  const p = pal();
+  document.getElementById('palette-name').textContent = p.name;
+  particles.forEach(pt => {
+    pt.color = p.colors[Math.floor(Math.random() * p.colors.length)];
+  });
+  // fade label
+  const el = document.getElementById('palette-name');
+  el.style.opacity = '1';
+  setTimeout(() => el.style.opacity = '0.4', 1200);
+});
+
+document.getElementById('resetBtn').addEventListener('click', initParticles);
+
+document.getElementById('burstBtn').addEventListener('click', () => {
+  const cx = W/2 + (Math.random()-0.5) * W * 0.4;
+  const cy = H/2 + (Math.random()-0.5) * H * 0.4;
+  for (let i = 0; i < 60; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const spd = Math.random() * 3 + 1;
+    particles.push(createParticle(cx, cy, Math.cos(ang)*spd, Math.sin(ang)*spd));
   }
+  // trim if over limit
+  while (particles.length > N * 1.6) particles.shift();
+});
 
-  update() {
-    // Organic movement using sine waves
-    this.vx += Math.sin(time * 0.001 + this.pulseOffset) * 0.01;
-    this.vy += Math.cos(time * 0.001 + this.pulseOffset) * 0.01;
+canvas.addEventListener('mousedown', e => { mouse.down = true; mouse.active = true; mouse.x = e.clientX; mouse.y = e.clientY; });
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+canvas.addEventListener('mouseleave', () => { mouse.down = false; mouse.active = false; });
 
-    // Mouse influence
-    if (mouse.x !== null && mouse.y !== null) {
-      const dx = mouse.x - this.x;
-      const dy = mouse.y - this.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      
-      if (dist < config.mouseInfluence) {
-        const force = (config.mouseInfluence - dist) / config.mouseInfluence;
-        const angle = Math.atan2(dy, dx);
-        this.vx -= Math.cos(angle) * force * 0.05;
-        this.vy -= Math.sin(angle) * force * 0.05;
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault(); mouse.down = true; mouse.active = true;
+  mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY;
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault(); mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY;
+}, { passive: false });
+canvas.addEventListener('touchend', () => mouse.down = false);
+
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); document.getElementById('burstBtn').click(); }
+});
+
+canvas.addEventListener('wheel', e => {
+  forceRadius = Math.max(40, Math.min(400, forceRadius - e.deltaY * 0.3));
+}, { passive: true });
+
+// ── Update ──────────────────────────────────────────────────
+function update() {
+  time += 0.016;
+  const mx = mouse.x, my = mouse.y;
+  const active = mouse.active;
+  const strength = mouse.down ? forceStrength * 1.8 : forceStrength * 0.6;
+  const rad = forceRadius;
+
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    p.pulsePhase += p.pulseSpeed;
+
+    // Mouse force
+    if (active) {
+      const dx = mx - p.x, dy = my - p.y;
+      const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+      if (dist < rad) {
+        const f = (1 - dist/rad) * strength;
+        const nx = dx/dist, ny = dy/dist;
+        switch (mode) {
+          case 'gravity': p.vx += nx * f; p.vy += ny * f; break;
+          case 'repel':   p.vx -= nx * f * 1.4; p.vy -= ny * f * 1.4; break;
+          case 'orbit':
+            p.vx += (-ny * f * 1.2 + nx * f * 0.15);
+            p.vy += ( nx * f * 1.2 + ny * f * 0.15);
+            break;
+          case 'pulse':
+            const pulse = Math.sin(time * 4 + p.pulsePhase) * f;
+            p.vx += nx * pulse; p.vy += ny * pulse;
+            break;
+          case 'swarm':
+            p.vx += (Math.sin(time*2 + i)*f*0.8);
+            p.vy += (Math.cos(time*2 + i*1.3)*f*0.8);
+            break;
+        }
       }
     }
 
-    // Speed limits
-    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-    if (speed > config.baseSpeed * 2) {
-      this.vx = (this.vx / speed) * config.baseSpeed * 2;
-      this.vy = (this.vy / speed) * config.baseSpeed * 2;
+    // Soft damping
+    p.vx *= 0.992; p.vy *= 0.992;
+
+    // Speed cap
+    const speed = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
+    if (speed > 4) { p.vx = (p.vx/speed)*4; p.vy = (p.vy/speed)*4; }
+
+    p.x += p.vx; p.y += p.vy;
+
+    // Wrap edges with margin
+    const m = 20;
+    if (p.x < -m) p.x = W + m;
+    if (p.x > W + m) p.x = -m;
+    if (p.y < -m) p.y = H + m;
+    if (p.y > H + m) p.y = -m;
+  }
+}
+
+// ── Render ──────────────────────────────────────────────────
+function hexToRgb(hex) {
+  const v = parseInt(hex.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+
+function draw() {
+  const bg = pal().bg;
+  // Trail fade
+  ctx.fillStyle = `rgba(${bg[0]},${bg[1]},${bg[2]},0.18)`;
+  ctx.fillRect(0, 0, W, H);
+
+  // Connections
+  ctx.lineWidth = 0.4;
+  const maxConn = 90; // limit per frame for perf
+  let connCount = 0;
+  for (let i = 0; i < particles.length && connCount < maxConn; i++) {
+    for (let j = i+1; j < particles.length && connCount < maxConn; j++) {
+      const a = particles[i], b = particles[j];
+      const dx = a.x - b.x, dy = a.y - b.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < CONNECTION_DIST) {
+        const alpha = (1 - dist/CONNECTION_DIST) * 0.25;
+        const [r,g,bl] = hexToRgb(a.color);
+        ctx.strokeStyle = `rgba(${r},${g},${bl},${alpha})`;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        connCount++;
+      }
     }
-
-    this.x += this.vx;
-    this.y += this.vy;
-
-    // Wrap around edges with padding
-    const pad = 50;
-    if (this.x < -pad) this.x = width + pad;
-    if (this.x > width + pad) this.x = -pad;
-    if (this.y < -pad) this.y = height + pad;
-    if (this.y > height + pad) this.y = -pad;
   }
 
-  draw() {
-    const pulse = Math.sin(time * this.pulseSpeed + this.pulseOffset) * 0.5 + 0.5;
-    const alpha = 0.4 + pulse * 0.6;
-    const r = this.radius * (0.8 + pulse * 0.4);
+  // Particles
+  for (const p of particles) {
+    const pulse = 0.7 + Math.sin(p.pulsePhase) * 0.3;
+    const [r,g,b] = hexToRgb(p.color);
+    const sz = p.r * pulse;
 
-    // Glow
-    const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r * 4);
-    gradient.addColorStop(0, `rgba(${this.color.r}, ${this.color.g}, ${this.color.b}, ${alpha})`);
-    gradient.addColorStop(0.5, `rgba(${this.color.r}, ${this.color.g}, ${this.color.b}, ${alpha * 0.3})`);
-    gradient.addColorStop(1, `rgba(${this.color.r}, ${this.color.g}, ${this.color.b}, 0)`);
-
-    ctx.fillStyle = gradient;
+    // Outer glow
+    const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, sz * 4);
+    grad.addColorStop(0, `rgba(${r},${g},${b},0.6)`);
+    grad.addColorStop(0.4, `rgba(${r},${g},${b},0.15)`);
+    grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.arc(this.x, this.y, r * 4, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, sz * 4, 0, Math.PI * 2);
     ctx.fill();
 
     // Core
-    ctx.fillStyle = `rgba(${this.color.r}, ${this.color.g}, ${this.color.b}, ${alpha})`;
+    ctx.fillStyle = `rgba(${Math.min(255,r+60)},${Math.min(255,g+60)},${Math.min(255,b+60)},${0.9 * pulse})`;
     ctx.beginPath();
-    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, sz, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Mouse cursor glow
+  if (mouse.active) {
+    const mg = ctx.createRadialGradient(mx, my, 0, mx, my, rad * 0.5);
+    const [mr,mg2,mb] = hexToRgb(pal().colors[0]);
+    mg.addColorStop(0, `rgba(${mr},${mg2},${mb},0.06)`);
+    mg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = mg;
+    ctx.beginPath();
+    ctx.arc(mx, my, rad * 0.5, 0, Math.PI * 2);
     ctx.fill();
   }
 }
 
-function init() {
-  width = canvas.width = window.innerWidth;
-  height = canvas.height = window.innerHeight;
-  particles = [];
-  
-  for (let i = 0; i < config.particleCount; i++) {
-    particles.push(new Particle());
+// ── Background stars ────────────────────────────────────────
+const stars = Array.from({length: 120}, () => ({
+  x: Math.random(), y: Math.random(),
+  r: Math.random() * 1.2 + 0.2,
+  a: Math.random() * 0.5 + 0.1,
+  speed: Math.random() * 0.005 + 0.002,
+  phase: Math.random() * Math.PI * 2,
+}));
+
+function drawStars() {
+  const bg = pal().bg;
+  for (const s of stars) {
+    s.phase += s.speed;
+    const alpha = s.a * (0.5 + Math.sin(s.phase) * 0.5);
+    ctx.fillStyle = `rgba(200,220,255,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(s.x * W, s.y * H, s.r, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 
-function drawConnections() {
-  for (let i = 0; i < particles.length; i++) {
-    for (let j = i + 1; j < particles.length; j++) {
-      const dx = particles[i].x - particles[j].x;
-      const dy = particles[i].y - particles[j].y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (dist < config.connectionDistance) {
-        const alpha = (1 - dist / config.connectionDistance) * 0.3;
-        
-        // Blend colors
-        const r = Math.floor((particles[i].color.r + particles[j].color.r) / 2);
-        const g = Math.floor((particles[i].color.g + particles[j].color.g) / 2);
-        const b = Math.floor((particles[i].color.b + particles[j].color.b) / 2);
-
-        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
-        ctx.lineWidth = 0.5;
-        ctx.beginPath();
-        ctx.moveTo(particles[i].x, particles[i].y);
-        ctx.lineTo(particles[j].x, particles[j].y);
-        ctx.stroke();
-      }
-    }
-  }
+// ── Main Loop ───────────────────────────────────────────────
+function loop() {
+  update();
+  drawStars();
+  draw();
+  requestAnimationFrame(loop);
 }
 
-function drawMouseGlow() {
-  if (mouse.x === null || mouse.y === null) return;
-
-  const gradient = ctx.createRadialGradient(
-    mouse.x, mouse.y, 0,
-    mouse.x, mouse.y, config.mouseInfluence
-  );
-  gradient.addColorStop(0, 'rgba(150, 200, 255, 0.1)');
-  gradient.addColorStop(0.5, 'rgba(150, 200, 255, 0.05)');
-  gradient.addColorStop(1, 'rgba(150, 200, 255, 0)');
-
-  ctx.fillStyle = gradient;
-  ctx.beginPath();
-  ctx.arc(mouse.x, mouse.y, config.mouseInfluence, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-function animate() {
-  time++;
-  
-  // Fade effect for trails
-  ctx.fillStyle = 'rgba(10, 10, 26, 0.15)';
-  ctx.fillRect(0, 0, width, height);
-
-  drawMouseGlow();
-  drawConnections();
-
-  particles.forEach(p => {
-    p.update();
-    p.draw();
-  });
-
-  requestAnimationFrame(animate);
-}
-
-// Event listeners
-canvas.addEventListener('mousemove', (e) => {
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
-});
-
-canvas.addEventListener('mouseleave', () => {
-  mouse.x = null;
-  mouse.y = null;
-});
-
-canvas.addEventListener('touchmove', (e) => {
-  e.preventDefault();
-  mouse.x = e.touches[0].clientX;
-  mouse.y = e.touches[0].clientY;
-}, { passive: false });
-
-canvas.addEventListener('touchend', () => {
-  mouse.x = null;
-  mouse.y = null;
-});
-
-window.addEventListener('resize', init);
-
-// Start
-init();
-animate();
+// Initial clear
+ctx.fillStyle = '#000';
+ctx.fillRect(0, 0, W, H);
+loop();
 </script>
 </body>
 </html>
