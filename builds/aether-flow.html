@@ -3,66 +3,93 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Aether Flow — Generative Art</title>
+<title>Aether Flow — Generative Particle Art</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #0a0a0f;
-    overflow: hidden;
-    font-family: 'Courier New', monospace;
-    cursor: crosshair;
-  }
-  canvas { display: block; }
-  #info {
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: rgba(255,255,255,0.4);
-    font-size: 12px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    pointer-events: none;
-    z-index: 10;
-  }
-  #title {
-    position: fixed;
-    top: 30px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: rgba(255,255,255,0.15);
-    font-size: 14px;
-    letter-spacing: 6px;
-    text-transform: uppercase;
-    pointer-events: none;
-    z-index: 10;
-  }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a0f;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+  cursor: crosshair;
+}
+canvas { display: block; }
+#ui {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  color: rgba(255,255,255,0.6);
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 10;
+  line-height: 1.8;
+}
+#ui h1 {
+  font-size: 16px;
+  color: rgba(255,255,255,0.9);
+  margin-bottom: 6px;
+  letter-spacing: 2px;
+}
+#controls {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  z-index: 10;
+}
+#controls button {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.7);
+  padding: 8px 16px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.3s;
+  letter-spacing: 1px;
+  border-radius: 4px;
+}
+#controls button:hover {
+  background: rgba(255,255,255,0.15);
+  border-color: rgba(255,255,255,0.4);
+  color: white;
+}
+#info {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  color: rgba(255,255,255,0.4);
+  font-size: 11px;
+  text-align: right;
+  z-index: 10;
+  pointer-events: none;
+}
 </style>
 </head>
 <body>
-<div id="title">Aether Flow</div>
-<div id="info">move mouse to disturb the field</div>
 <canvas id="canvas"></canvas>
+<div id="ui">
+  <h1>◆ AETHER FLOW ◆</h1>
+  <div>Move mouse to attract</div>
+  <div>Click to burst</div>
+  <div>Space to toggle mode</div>
+</div>
+<div id="controls">
+  <button onclick="setMode('flow')">FLOW</button>
+  <button onclick="setMode('orbit')">ORBIT</button>
+  <button onclick="setMode('chaos')">CHAOS</button>
+  <button onclick="setMode('galaxy')">GALAXY</button>
+  <button onclick="reset()">RESET</button>
+</div>
+<div id="info"></div>
 
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
+const info = document.getElementById('info');
 
 let W, H;
-let particles = [];
-let mouse = { x: -9999, y: -9999, active: false };
-const PARTICLE_COUNT = 1200;
-const CONNECTION_DIST = 80;
-
-// Color palettes - cosmic aurora themes
-const palettes = [
-  ['#00ffc8', '#00a8ff', '#7b2fff', '#ff2d95'],
-  ['#ff6b35', '#f7c548', '#ff2d95', '#7b2fff'],
-  ['#00ffc8', '#48ff9c', '#00a8ff', '#0066ff'],
-  ['#ff2d95', '#ff6b9d', '#c44dff', '#6b5bff']
-];
-let currentPalette = palettes[0];
-
 function resize() {
   W = canvas.width = window.innerWidth;
   H = canvas.height = window.innerHeight;
@@ -70,33 +97,20 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-canvas.addEventListener('mousemove', (e) => {
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
-  mouse.active = true;
-});
-canvas.addEventListener('mouseleave', () => {
-  mouse.active = false;
-});
-canvas.addEventListener('click', (e) => {
-  // Burst on click
-  for (let i = 0; i < 50; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const speed = Math.random() * 3 + 1;
-    particles.push({
-      x: e.clientX,
-      y: e.clientY,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      life: 1,
-      decay: Math.random() * 0.01 + 0.005,
-      size: Math.random() * 3 + 1,
-      color: currentPalette[Math.floor(Math.random() * currentPalette.length)]
-    });
-  }
-  // Cycle palette
-  currentPalette = palettes[Math.floor(Math.random() * palettes.length)];
-});
+// Particle system
+const PARTICLE_COUNT = 2000;
+const particles = [];
+let mode = 'flow';
+let mouse = { x: W/2, y: H/2, active: false };
+let time = 0;
+
+// Color palettes per mode
+const palettes = {
+  flow:   ['#00d4ff', '#7b2ff7', '#ff2d95', '#00ff88', '#ffdd00'],
+  orbit:  ['#ff6b6b', '#ffa500', '#ffdd00', '#ff6b9d', '#c44569'],
+  chaos:  ['#00ff88', '#00d4ff', '#7b2ff7', '#ff2d95', '#ffffff'],
+  galaxy: ['#a855f7', '#3b82f6', '#ec4899', '#6366f1', '#06b6d4']
+};
 
 class Particle {
   constructor() {
@@ -106,52 +120,115 @@ class Particle {
   reset() {
     this.x = Math.random() * W;
     this.y = Math.random() * H;
-    this.baseX = this.x;
-    this.baseY = this.y;
-    this.vx = (Math.random() - 0.5) * 0.5;
-    this.vy = (Math.random() - 0.5) * 0.5;
+    this.vx = (Math.random() - 0.5) * 2;
+    this.vy = (Math.random() - 0.5) * 2;
+    this.life = Math.random() * 200 + 100;
+    this.maxLife = this.life;
     this.size = Math.random() * 2 + 0.5;
-    this.color = currentPalette[Math.floor(Math.random() * currentPalette.length)];
-    this.alpha = Math.random() * 0.5 + 0.3;
-    this.phase = Math.random() * Math.PI * 2;
-    this.speed = Math.random() * 0.02 + 0.01;
+    this.colorIndex = Math.floor(Math.random() * 5);
+    this.trail = [];
+    this.maxTrail = Math.floor(Math.random() * 10) + 5;
   }
   
-  update(time) {
-    // Organic drift
-    this.x += this.vx + Math.sin(time * this.speed + this.phase) * 0.3;
-    this.y += this.vy + Math.cos(time * this.speed + this.phase) * 0.3;
+  update() {
+    const palette = palettes[mode];
+    const color = palette[this.colorIndex % palette.length];
     
-    // Mouse repulsion
+    // Mouse attraction
     if (mouse.active) {
-      const dx = this.x - mouse.x;
-      const dy = this.y - mouse.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 150) {
-        const force = (150 - dist) / 150;
-        this.x += (dx / dist) * force * 3;
-        this.y += (dy / dist) * force * 3;
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < 300) {
+        const force = (300 - dist) / 300;
+        this.vx += (dx / dist) * force * 0.3;
+        this.vy += (dy / dist) * force * 0.3;
       }
     }
     
-    // Wrap around
-    if (this.x < 0) this.x = W;
-    if (this.x > W) this.x = 0;
-    if (this.y < 0) this.y = H;
-    if (this.y > H) this.y = 0;
+    // Mode-specific behavior
+    switch(mode) {
+      case 'flow':
+        const angle = Math.sin(this.x * 0.003 + time * 0.5) * Math.cos(this.y * 0.003 + time * 0.3) * Math.PI * 2;
+        this.vx += Math.cos(angle) * 0.1;
+        this.vy += Math.sin(angle) * 0.1;
+        break;
+        
+      case 'orbit':
+        const cx = W/2, cy = H/2;
+        const odx = this.x - cx, ody = this.y - cy;
+        const odist = Math.sqrt(odx*odx + ody*ody) + 0.1;
+        const tangentX = -ody / odist;
+        const tangentY = odx / odist;
+        this.vx += tangentX * 0.2 + (cx - this.x) * 0.0001;
+        this.vy += tangentY * 0.2 + (cy - this.y) * 0.0001;
+        break;
+        
+      case 'chaos':
+        this.vx += (Math.random() - 0.5) * 0.5;
+        this.vy += (Math.random() - 0.5) * 0.5;
+        break;
+        
+      case 'galaxy':
+        const gcx = W/2, gcy = H/2;
+        const gdx = this.x - gcx, gdy = this.y - gcy;
+        const gdist = Math.sqrt(gdx*gdx + gdy*gdy) + 0.1;
+        const gtangentX = -gdy / gdist;
+        const gtangentY = gdx / gdist;
+        this.vx += gtangentX * 0.15 + (gcx - this.x) * 0.00005;
+        this.vy += gtangentY * 0.15 + (gcy - this.y) * 0.00005;
+        this.vx += (Math.random() - 0.5) * 0.1;
+        this.vy += (Math.random() - 0.5) * 0.1;
+        break;
+    }
     
-    // Gentle return to base
-    this.x += (this.baseX - this.x) * 0.001;
-    this.y += (this.baseY - this.y) * 0.001;
+    // Damping
+    this.vx *= 0.95;
+    this.vy *= 0.95;
+    
+    // Speed limit
+    const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
+    if (speed > 5) {
+      this.vx = (this.vx / speed) * 5;
+      this.vy = (this.vy / speed) * 5;
+    }
+    
+    this.x += this.vx;
+    this.y += this.vy;
+    
+    // Trail
+    this.trail.push({ x: this.x, y: this.y });
+    if (this.trail.length > this.maxTrail) this.trail.shift();
+    
+    // Life
+    this.life--;
+    if (this.life <= 0 || this.x < -50 || this.x > W+50 || this.y < -50 || this.y > H+50) {
+      this.reset();
+    }
   }
   
   draw() {
+    const palette = palettes[mode];
+    const color = palette[this.colorIndex % palette.length];
+    const alpha = (this.life / this.maxLife) * 0.8;
+    
+    // Draw trail
+    if (this.trail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(this.trail[0].x, this.trail[0].y);
+      for (let i = 1; i < this.trail.length; i++) {
+        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+      }
+      ctx.strokeStyle = color + Math.floor(alpha * 80).toString(16).padStart(2, '0');
+      ctx.lineWidth = this.size * 0.5;
+      ctx.stroke();
+    }
+    
+    // Draw particle
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-    ctx.fillStyle = this.color;
-    ctx.globalAlpha = this.alpha;
+    ctx.fillStyle = color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
     ctx.fill();
-    ctx.globalAlpha = 1;
   }
 }
 
@@ -160,77 +237,82 @@ for (let i = 0; i < PARTICLE_COUNT; i++) {
   particles.push(new Particle());
 }
 
-let time = 0;
-let lastPaletteChange = 0;
+// Burst effect
+function burst(x, y) {
+  for (let i = 0; i < 100; i++) {
+    const p = new Particle();
+    p.x = x;
+    p.y = y;
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 8 + 2;
+    p.vx = Math.cos(angle) * speed;
+    p.vy = Math.sin(angle) * speed;
+    p.life = Math.random() * 60 + 30;
+    p.maxLife = p.life;
+    particles.push(p);
+  }
+  // Remove excess particles gradually
+  while (particles.length > PARTICLE_COUNT + 300) {
+    particles.shift();
+  }
+}
 
+// Mouse events
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+
+canvas.addEventListener('mouseleave', () => {
+  mouse.active = false;
+});
+
+canvas.addEventListener('click', (e) => {
+  burst(e.clientX, e.clientY);
+});
+
+// Keyboard
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    const modes = ['flow', 'orbit', 'chaos', 'galaxy'];
+    const idx = modes.indexOf(mode);
+    mode = modes[(idx + 1) % modes.length];
+  }
+});
+
+function setMode(m) {
+  mode = m;
+}
+
+function reset() {
+  particles.length = 0;
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    particles.push(new Particle());
+  }
+}
+
+// Animation
 function animate() {
-  // Fade trail
-  ctx.fillStyle = 'rgba(10, 10, 15, 0.08)';
+  // Fade effect
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.15)';
   ctx.fillRect(0, 0, W, H);
   
-  time++;
+  time += 0.01;
   
-  // Update and draw particles
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-    
-    if (p.life !== undefined) {
-      // Burst particle
-      p.x += p.vx;
-      p.y += p.vy;
-      p.vx *= 0.98;
-      p.vy *= 0.98;
-      p.life -= p.decay;
-      
-      if (p.life <= 0) {
-        particles.splice(i, 1);
-        continue;
-      }
-      
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
-      ctx.fillStyle = p.color;
-      ctx.globalAlpha = p.life * 0.8;
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    } else {
-      p.update(time);
-      p.draw();
-    }
-  }
+  particles.forEach(p => {
+    p.update();
+    p.draw();
+  });
   
-  // Draw connections (only for main particles)
-  ctx.strokeStyle = currentPalette[0];
-  ctx.lineWidth = 0.3;
-  
-  for (let i = 0; i < Math.min(particles.length, 300); i++) {
-    const p1 = particles[i];
-    if (p1.life !== undefined) continue;
-    
-    for (let j = i + 1; j < Math.min(particles.length, 300); j++) {
-      const p2 = particles[j];
-      if (p2.life !== undefined) continue;
-      
-      const dx = p1.x - p2.x;
-      const dy = p1.y - p2.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      
-      if (dist < CONNECTION_DIST) {
-        ctx.globalAlpha = (1 - dist / CONNECTION_DIST) * 0.15;
-        ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
-        ctx.stroke();
-      }
-    }
-  }
-  ctx.globalAlpha = 1;
-  
-  // Slow palette rotation
-  if (time - lastPaletteChange > 600) {
-    currentPalette = palettes[Math.floor(Math.random() * palettes.length)];
-    lastPaletteChange = time;
-  }
+  // Stats
+  const fps = Math.round(1000 / 16.67);
+  info.innerHTML = `
+    Particles: ${particles.length}<br>
+    Mode: ${mode.toUpperCase()}<br>
+    FPS: ${fps}
+  `;
   
   requestAnimationFrame(animate);
 }
