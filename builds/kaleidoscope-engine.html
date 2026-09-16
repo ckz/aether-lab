@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kaleidoscope Engine</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a14;
+    font-family: 'Courier New', monospace;
+    color: #ccc;
+    overflow: hidden;
+    height: 100vh;
+  }
+  canvas {
+    display: block;
+    cursor: crosshair;
+  }
+  .panel {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    background: rgba(10,10,20,.88);
+    border: 1px solid rgba(100,90,180,.22);
+    border-radius: 6px;
+    padding: 16px 18px;
+    font-size: .68rem;
+    letter-spacing: .08em;
+    z-index: 10;
+    backdrop-filter: blur(8px);
+    min-width: 190px;
+    user-select: none;
+  }
+  .panel h2 {
+    font-size: .78rem;
+    color: #c8c8ff;
+    margin-bottom: 14px;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    font-weight: normal;
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    gap: 8px;
+  }
+  .row label {
+    opacity: .7;
+    font-size: .62rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    white-space: nowrap;
+    min-width: 50px;
+  }
+  .row input[type="range"] {
+    flex: 1;
+    accent-color: #8866ff;
+    height: 4px;
+  }
+  .row select {
+    background: rgba(30,25,60,.8);
+    border: 1px solid rgba(100,90,180,.3);
+    color: #ccc;
+    padding: 4px 6px;
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: .62rem;
+    flex: 1;
+  }
+  .palette-row {
+    display: flex;
+    gap: 5px;
+    margin-top: 10px;
+    margin-bottom: 4px;
+  }
+  .swatch {
+    width: 22px;
+    height: 22px;
+    border-radius: 3px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: all .2s;
+    flex-shrink: 0;
+  }
+  .swatch.active {
+    border-color: #fff;
+    box-shadow: 0 0 10px rgba(255,255,255,.4);
+  }
+  .swatch:hover {
+    transform: scale(1.15);
+  }
+  .keys {
+    margin-top: 14px;
+    font-size: .58rem;
+    opacity: .4;
+    line-height: 1.7;
+    border-top: 1px solid rgba(100,90,180,.12);
+    padding-top: 10px;
+  }
+  .fps {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    font-size: .62rem;
+    opacity: .3;
+    z-index: 10;
+  }
+  .hint {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: .65rem;
+    opacity: 0;
+    color: #c8c8ff;
+    letter-spacing: .15em;
+    pointer-events: none;
+    transition: opacity 1.5s;
+    z-index: 10;
+  }
+  .hint.show {
+    opacity: .5;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="panel" id="panel">
+  <h2>◇ Kaleidoscope</h2>
+  <div class="row">
+    <label>Sym</label>
+    <input type="range" id="sym" min="2" max="24" value="8">
+    <span id="symVal" style="font-size:.62rem;width:22px;text-align:right;flex:none;">8</span>
+  </div>
+  <div class="row">
+    <label>Brush</label>
+    <select id="brush">
+      <option value="line">Line</option>
+      <option value="ribbon">Ribbon</option>
+      <option value="particle">Particle</option>
+      <option value="sparkle">Sparkle</option>
+    </select>
+  </div>
+  <div class="row">
+    <label>Size</label>
+    <input type="range" id="size" min="1" max="50" value="10">
+  </div>
+  <div class="row">
+    <label>Fade</label>
+    <input type="range" id="fade" min="0" max="100" value="12">
+  </div>
+  <div class="palette-row" id="palettes"></div>
+  <div class="keys">
+    [M] Mirror lines &nbsp; [Space] Clear<br>
+    [S] Save PNG &nbsp; [C] Cycle palette<br>
+    [1-6] Pick palette &nbsp; [Z] Undo<br>
+    [H] Hide panel
+  </div>
+</div>
+<div class="fps" id="fps"></div>
+<div class="hint" id="hint">click & drag to draw</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+  // Re-fill background after resize
+  ctx.fillStyle = '#0a0a14';
+  ctx.fillRect(0, 0, W, H);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ---- State ----
+let symmetry = 8;
+let brushType = 'line';
+let brushSize = 10;
+let fadeAmount = 0.012;
+let currentPalette = 0;
+let showMirrors = true;
+let drawing = false;
+let lastX = null, lastY = null;
+let hueShift = 0;
+let history = [];
+const MAX_HISTORY = 20;
+let panelHidden = false;
+
+// ---- Palettes ----
+const palettes = [
+  { name: 'Aurora',  colors: ['#00ffcc', '#ff00cc', '#6600ff', '#00ccff', '#ff6600'] },
+  { name: 'Ember',   colors: ['#ff4400', '#ff8800', '#ffcc00', '#ff2200', '#ffaa44'] },
+  { name: 'Frost',   colors: ['#aaddff', '#66aaff', '#ffffff', '#88ccff', '#ccf0ff'] },
+  { name: 'Neon',    colors: ['#ff00ff', '#00ffff', '#ffff00', '#ff0088', '#00ff88'] },
+  { name: 'Void',    colors: ['#8844ff', '#ff44aa', '#44aaff', '#ffaa00', '#aa44ff'] },
+  { name: 'Mono',    colors: ['#ffffff', '#aaaaaa', '#888888', '#cccccc', '#666666'] },
+];
+
+function getColor(t) {
+  const p = palettes[currentPalette];
+  const idx = Math.floor(((t % 1) + 1) % 1 * p.colors.length) % p.colors.length;
+  return p.colors[idx];
+}
+
+function initPalettes() {
+  const row = document.getElementById('palettes');
+  palettes.forEach((p, i) => {
+    const sw = document.createElement('div');
+    sw.className = 'swatch' + (i === 0 ? ' active' : '');
+    sw.style.background = `linear-gradient(135deg, ${p.colors[0]}, ${p.colors[2] || p.colors[1]})`;
+    sw.title = p.name;
+    sw.onclick = () => {
+      currentPalette = i;
+      document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+      sw.classList.add('active');
+    };
+    row.appendChild(sw);
+  });
+}
+initPalettes();
+
+// ---- Controls ----
+document.getElementById('sym').oninput = (e) => {
+  symmetry = parseInt(e.target.value);
+  document.getElementById('symVal').textContent = symmetry;
+};
+document.getElementById('brush').onchange = (e) => brushType = e.target.value;
+document.getElementById('size').oninput = (e) => brushSize = parseInt(e.target.value));
+document.getElementById('fade').oninput = (e) => fadeAmount = e.target.value / 1000;
+
+// ---- History ----
+function saveHistory() {
+  history.push(canvas.toDataURL());
+  if (history.length > MAX_HISTORY) history.shift();
+}
+
+// ---- Coordinate helpers ----
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const src = e.touches ? e.touches[0] : e;
+  return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+}
+
+function polar(x, y) {
+  return { r: Math.hypot(x, y), a: Math.atan2(y, x) };
+}
+
+// ---- Drawing ----
+function drawStroke(x, y, px, py) {
+  const p1 = polar(x - cx, y - cy);
+  const p2 = (px !== null && py !== null) ? polar(px - cx, py - cy) : null;
+  const angleStep = (Math.PI * 2) / symmetry;
+  
+  const dist = p2 ? Math.hypot(x - px, y - py) : 0;
+  const steps = p2 ? Math.max(1, Math.floor(dist / 3)) : 1;
+  
+  for (let step = 0; step <= steps; step++) {
+    const frac = steps > 0 ? step / steps : 0;
+    const mx = p2 ? px + (x - px) * frac : x;
+    const my = p2 ? py + (y - py) * frac : y;
+    const mp = polar(mx - cx, my - cy);
+    const t = (frac + hueShift) % 1;
+    const color = getColor(t);
+    
+    for (let s = 0; s < symmetry; s++) {
+      const rot = angleStep * s;
+      
+      // Normal reflection
+      const ax = cx + mp.r * Math.cos(mp.a + rot);
+      const ay = cy + mp.r * Math.sin(mp.a + rot);
+      // Mirror reflection
+      const bx = cx + mp.r * Math.cos(-mp.a + rot);
+      const by = cy + mp.r * Math.sin(-mp.a + rot);
+      
+      ctx.globalAlpha = 1;
+      
+      if (brushType === 'line') {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = brushSize * 0.3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        
+        if (p2) {
+          const p2m = p2.r * Math.cos(p2.a + rot);
+          const p2n = p2.r * Math.sin(p2.a + rot);
+          const p2bm = p2.r * Math.cos(-p2.a + rot);
+          const p2bn = p2.r * Math.sin(-p2.a + rot);
+          
+          ctx.beginPath();
+          ctx.moveTo(cx + p2m, cy + p2n);
+          ctx.lineTo(ax, ay);
+          ctx.stroke();
+          
+          ctx.beginPath();
+          ctx.moveTo(cx + p2bm, cy + p2bn);
+          ctx.lineTo(bx, by);
+          ctx.stroke();
+        } else {
+          ctx.beginPath();
+          ctx.arc(ax, ay, brushSize * 0.3, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(bx, by, brushSize * 0.3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        
+      } else if (brushType === 'ribbon') {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = brushSize * 0.5;
+        ctx.lineCap = 'round';
+        ctx.globalAlpha = 0.65;
+        
+        if (p2) {
+          const p2m = p2.r * Math.cos(p2.a + rot);
+          const p2n = p2.r * Math.sin(p2.a + rot);
+          const p2bm = p2.r * Math.cos(-p2.a + rot);
+          const p2bn = p2.r * Math.sin(-p2.a + rot);
+          
+          ctx.beginPath();
+          ctx.moveTo(cx + p2m, cy + p2n);
+          ctx.lineTo(ax, ay);
+          ctx.stroke();
+          
+          ctx.beginPath();
+          ctx.moveTo(cx + p2bm, cy + p2bn);
+          ctx.lineTo(bx, by);
+          ctx.stroke();
+        } else {
+          ctx.beginPath();
+          ctx.arc(ax, ay, brushSize * 0.35, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(bx, by, brushSize * 0.35, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        
+      } else if (brushType === 'particle') {
+        for (let j = 0; j < 4; j++) {
+          const spread = brushSize * 1.5;
+          const ox = (Math.random() - 0.5) * spread;
+          const oy = (Math.random() - 0.5) * spread;
+          const size = Math.random() * 2.5 + 0.8;
+          
+          ctx.beginPath();
+          ctx.arc(ax + ox, ay + oy, size, 0, Math.PI * 2);
+          ctx.fillStyle = color;
+          ctx.globalAlpha = Math.random() * 0.5 + 0.2;
+          ctx.fill();
+          
+          ctx.beginPath();
+          ctx.arc(bx + ox, by + oy, size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        
+      } else if (brushType === 'sparkle') {
+        for (let j = 0; j < 4; j++) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist2 = Math.random() * brushSize * 1.2;
+          const sx = ax + Math.cos(angle) * dist2;
+          const sy = ay + Math.sin(angle) * dist2;
+          const len = Math.random() * 5 + 2;
+          
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1;
+          ctx.globalAlpha = Math.random() * 0.7 + 0.2;
+          ctx.beginPath();
+          ctx.moveTo(sx - Math.cos(angle) * len, sy - Math.sin(angle) * len);
+          ctx.lineTo(sx + Math.cos(angle) * len, sy + Math.sin(angle) * len);
+          ctx.stroke();
+          
+          const msx = bx + Math.cos(angle) * dist2;
+          const msy = by + Math.sin(angle) * dist2;
+          ctx.beginPath();
+          ctx.moveTo(msx - Math.cos(angle) * len, msy - Math.sin(angle) * len);
+          ctx.lineTo(msx + Math.cos(angle) * len, msy + Math.sin(angle) * len);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+  
+  hueShift = (hueShift + 0.0002) % 1;
+}
+
+// ---- Events ----
+function startDraw(e) {
+  if (e.button === 2) return;
+  drawing = true;
+  saveHistory();
+  const pos = getPos(e);
+  lastX = pos.x; lastY = pos.y;
+  drawStroke(pos.x, pos.y, null, null);
+  hideHint();
+}
+
+function moveDraw(e) {
+  if (!drawing) return;
+  const pos = getPos(e);
+  drawStroke(pos.x, pos.y, lastX, lastY);
+  lastX = pos.x; lastY = pos.y;
+}
+
+function endDraw() {
+  drawing = false;
+  lastX = null; lastY = null;
+}
+
+canvas.addEventListener('mousedown', startDraw);
+canvas.addEventListener('mousemove', moveDraw);
+canvas.addEventListener('mouseup', endDraw);
+canvas.addEventListener('mouseleave', endDraw);
+canvas.addEventListener('touchstart', (e) => { e.preventDefault(); startDraw(e); }, { passive: false });
+canvas.addEventListener('touchmove', (e) => { e.preventDefault(); moveDraw(e); }, { passive: false });
+canvas.addEventListener('touchend', endDraw);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// ---- Keyboard ----
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  
+  switch (e.code) {
+    case 'Space':
+      e.preventDefault();
+      saveHistory();
+      ctx.fillStyle = '#0a0a14';
+      ctx.fillRect(0, 0, W, H);
+      break;
+    case 'KeyS':
+      savePNG();
+      break;
+    case 'KeyM':
+      showMirrors = !showMirrors;
+      break;
+    case 'KeyC':
+      currentPalette = (currentPalette + 1) % palettes.length;
+      document.querySelectorAll('.swatch').forEach((sw, i) => sw.classList.toggle('active', i === currentPalette));
+      break;
+    case 'KeyH':
+      panelHidden = !panelHidden;
+      document.getElementById('panel').style.display = panelHidden ? 'none' : 'block';
+      break;
+    case 'KeyZ':
+      if (history.length > 0) {
+        const img = new Image();
+        img.onload = () => { ctx.clearRect(0, 0, W, H); ctx.drawImage(img, 0, 0); };
+        img.src = history.pop();
+      }
+      break;
+  }
+  
+  // Number keys 1-6 for palettes
+  if (e.key >= '1' && e.key <= '6') {
+    const idx = parseInt(e.key) - 1;
+    currentPalette = idx;
+    document.querySelectorAll('.swatch').forEach((sw, i) => sw.classList.toggle('active', i === currentPalette));
+  }
+});
+
+// ---- Mirror lines ----
+function drawMirrors() {
+  if (!showMirrors) return;
+  const angleStep = (Math.PI * 2) / symmetry;
+  const maxR = Math.hypot(W, H);
+  ctx.strokeStyle = 'rgba(255,255,255,0.035)';
+  ctx.lineWidth = 1;
+  for (let s = 0; s < symmetry; s++) {
+    const a = angleStep * s;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(a) * maxR, cy + Math.sin(a) * maxR);
+    ctx.stroke();
+  }
+  // Center dot
+  ctx.beginPath();
+  ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.fill();
+}
+
+// ---- Save PNG ----
+function savePNG() {
+  const link = document.createElement('a');
+  link.download = 'kaleidoscope-' + Date.now() + '.png';
+  link.href = canvas.toDataURL();
+  link.click();
+}
+
+// ---- Hint ----
+function showHint() {
+  const hint = document.getElementById('hint');
+  hint.classList.add('show');
+  setTimeout(() => hint.classList.remove('show'), 4000);
+}
+function hideHint() {
+  document.getElementById('hint').classList.remove('show');
+}
+setTimeout(showHint, 800);
+
+// ---- FPS ----
+let fpsFrames = 0, fpsTime = performance.now();
+
+// ---- Animation loop ----
+function animate() {
+  // Soft fade for trails
+  ctx.fillStyle = `rgba(10, 10, 20, ${fadeAmount})`;
+  ctx.fillRect(0, 0, W, H);
+  
+  drawMirrors();
+  
+  fpsFrames++;
+  const now = performance.now();
+  if (now - fpsTime >= 1000) {
+    document.getElementById('fps').textContent = fpsFrames + ' FPS';
+    fpsFrames = 0;
+    fpsTime = now;
+  }
+  
+  requestAnimationFrame(animate);
+}
+
+// ---- Init ----
+ctx.fillStyle = '#0a0a14';
+ctx.fillRect(0, 0, W, H);
+
+animate();
+</script>
+</body>
+</html>
