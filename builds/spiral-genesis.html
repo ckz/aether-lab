@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spiral Genesis — Cyclic Cellular Automaton</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050510;
+    font-family: 'Courier New', monospace;
+    color: #ccc;
+    overflow: hidden;
+    height: 100vh;
+  }
+  canvas {
+    display: block;
+    cursor: crosshair;
+  }
+  #controls {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    background: rgba(8, 6, 20, 0.85);
+    border: 1px solid rgba(120, 100, 220, 0.2);
+    border-radius: 8px;
+    padding: 16px 18px;
+    z-index: 10;
+    min-width: 240px;
+    backdrop-filter: blur(8px);
+    transition: opacity 0.3s;
+  }
+  #controls.hidden { opacity: 0.05; }
+  #controls:hover { opacity: 1; }
+  h2 {
+    font-size: 0.85rem;
+    font-weight: normal;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #9988dd;
+    margin-bottom: 14px;
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    color: #889;
+  }
+  .row label { color: #aab; }
+  .row .val { color: #c8c8ff; min-width: 32px; text-align: right; }
+  input[type="range"] {
+    width: 100%;
+    margin: 4px 0 12px;
+    accent-color: #8878dd;
+    height: 4px;
+  }
+  select, button {
+    background: rgba(30, 25, 60, 0.8);
+    border: 1px solid rgba(100, 85, 200, 0.3);
+    color: #c8c8ff;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    margin: 3px 3px 8px 0;
+    transition: all 0.2s;
+  }
+  button:hover { background: rgba(50, 40, 100, 0.8); border-color: rgba(140, 120, 255, 0.5); }
+  .hint {
+    font-size: 0.6rem;
+    color: #667;
+    margin-top: 10px;
+    letter-spacing: 0.06em;
+    line-height: 1.6;
+  }
+  #fps {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    font-size: 0.65rem;
+    color: rgba(160, 150, 220, 0.5);
+    letter-spacing: 0.1em;
+    z-index: 10;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="controls">
+  <h2>Spiral Genesis</h2>
+
+  <div class="row"><label>States</label><span class="val" id="statesVal">6</span></div>
+  <input type="range" id="states" min="3" max="16" value="6" step="1">
+
+  <div class="row"><label>Neighborhood</label><span class="val" id="rangeVal">1</span></div>
+  <input type="range" id="range" min="1" max="3" value="1" step="1">
+
+  <div class="row"><label>Speed</label><span class="val" id="speedVal">8</span></div>
+  <input type="range" id="speed" min="1" max="30" value="8" step="1">
+
+  <div class="row"><label>Threshold</label><span class="val" id="threshVal">1</span></div>
+  <input type="range" id="thresh" min="1" max="5" value="1" step="1">
+
+  <div style="margin-top:6px;">
+    <select id="palette">
+      <option value="aurora">Aurora</option>
+      <option value="ember">Ember</option>
+      <option value="ocean">Ocean</option>
+      <option value="neon">Neon</option>
+      <option value="void">Void</option>
+      <option value="prism">Prism</option>
+      <option value="toxic">Toxic</option>
+      <option value="mono">Mono</option>
+    </select>
+  </div>
+
+  <div>
+    <button id="seedBtn">Seed</button>
+    <button id="clearBtn">Clear</button>
+    <button id="pauseBtn">Pause</button>
+    <button id="saveBtn">Save PNG</button>
+  </div>
+
+  <div class="hint">
+    Click to plant chaos.<br>
+    H over UI to show controls.<br>
+    Space = pause · S = save · C = clear
+  </div>
+</div>
+
+<div id="fps"></div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H, grid, cellSize = 4;
+let states = 6, neighborhood = 1, speed = 8, threshold = 1;
+let paused = false, frameCount = 0;
+let currentPalette = 'aurora';
+
+const PALETTES = {
+  aurora: [[10, 5, 30], [20, 80, 120], [40, 180, 160], [80, 255, 200], [160, 220, 255], [255, 180, 220]],
+  ember:   [[20, 5, 5], [80, 20, 5], [160, 50, 10], [220, 100, 20], [255, 180, 60], [255, 240, 180]],
+  ocean:   [[5, 10, 30], [10, 40, 80], [20, 80, 140], [40, 140, 180], [80, 200, 220], [180, 240, 255]],
+  neon:    [[10, 0, 20], [40, 0, 80], [120, 0, 200], [200, 40, 255], [0, 255, 200], [255, 255, 0]],
+  void:    [[5, 5, 10], [15, 15, 30], [30, 30, 60], [60, 50, 100], [120, 80, 160], [220, 180, 255]],
+  prism:   [[20, 0, 0], [20, 40, 0], [0, 40, 20], [0, 20, 40], [40, 0, 20], [40, 40, 40]],
+  toxic:   [[5, 15, 5], [10, 50, 10], [20, 120, 20], [60, 200, 40], [180, 255, 80], [255, 255, 200]],
+  mono:    [[5, 5, 5], [25, 25, 25], [55, 55, 55], [100, 100, 100], [170, 170, 170], [240, 240, 240]]
+};
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  initGrid();
+}
+
+function initGrid() {
+  const cols = Math.ceil(W / cellSize);
+  const rows = Math.ceil(H / cellSize);
+  grid = new Uint8Array(cols * rows);
+}
+
+function getCols() { return Math.ceil(W / cellSize); }
+function getRows() { return Math.ceil(H / cellSize); }
+
+function seed(amt = 0.03) {
+  const cols = getCols(), rows = getRows();
+  for (let i = 0; i < grid.length; i++) {
+    if (Math.random() < amt) grid[i] = Math.floor(Math.random() * states);
+  }
+}
+
+function seedCircle(cx, cy, r = 12) {
+  const cols = getCols(), rows = getRows();
+  const gx = Math.floor(cx / cellSize), gy = Math.floor(cy / cellSize);
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      if (dx * dx + dy * dy <= r * r) {
+        const x = gx + dx, y = gy + dy;
+        if (x >= 0 && x < cols && y >= 0 && y < rows) {
+          grid[y * cols + x] = Math.floor(Math.random() * states);
+        }
+      }
+    }
+  }
+}
+
+function step() {
+  const cols = getCols(), rows = getRows();
+  const next = new Uint8Array(grid.length);
+  const r = neighborhood;
+
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const idx = y * cols + x;
+      const current = grid[idx];
+      let sum = 0;
+
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nx = (x + dx + cols) % cols;
+          const ny = (y + dy + rows) % rows;
+          const target = grid[ny * cols + nx];
+          const diff = (target - current + states) % states;
+          if (diff <= threshold) sum++;
+        }
+      }
+
+      if (sum >= 1 && sum <= threshold * 3) {
+        next[idx] = (current + 1) % states;
+      } else {
+        next[idx] = current;
+      }
+    }
+  }
+
+  grid = next;
+}
+
+function getColor(state) {
+  const pal = PALETTES[currentPalette];
+  const c = pal[state % pal.length];
+  return c;
+}
+
+function draw() {
+  const cols = getCols(), rows = getRows();
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const state = grid[y * cols + x];
+      const [r, g, b] = getColor(state);
+
+      for (let dy = 0; dy < cellSize && y * cellSize + dy < H; dy++) {
+        for (let dx = 0; dx < cellSize && x * cellSize + dx < W; dx++) {
+          const px = x * cellSize + dx;
+          const py = y * cellSize + dy;
+          const pi = (py * W + px) * 4;
+          data[pi] = r;
+          data[pi + 1] = g;
+          data[pi + 2] = b;
+          data[pi + 3] = 255;
+        }
+      }
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+}
+
+let lastFpsTime = performance.now();
+let fpsCount = 0;
+
+function loop() {
+  requestAnimationFrame(loop);
+
+  if (!paused) {
+    for (let i = 0; i < speed; i++) step();
+    frameCount++;
+  }
+
+  draw();
+
+  fpsCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) {
+    document.getElementById('fps').textContent = fpsCount + ' fps';
+    fpsCount = 0;
+    lastFpsTime = now;
+  }
+}
+
+// Controls
+const statesSlider = document.getElementById('states');
+const rangeSlider = document.getElementById('range');
+const speedSlider = document.getElementById('speed');
+const threshSlider = document.getElementById('thresh');
+
+statesSlider.addEventListener('input', e => {
+  states = parseInt(e.target.value);
+  document.getElementById('statesVal').textContent = states;
+});
+rangeSlider.addEventListener('input', e => {
+  neighborhood = parseInt(e.target.value);
+  document.getElementById('rangeVal').textContent = neighborhood;
+});
+speedSlider.addEventListener('input', e => {
+  speed = parseInt(e.target.value);
+  document.getElementById('speedVal').textContent = speed;
+});
+threshSlider.addEventListener('input', e => {
+  threshold = parseInt(e.target.value);
+  document.getElementById('threshVal').textContent = threshold;
+});
+
+document.getElementById('palette').addEventListener('change', e => {
+  currentPalette = e.target.value;
+});
+
+document.getElementById('seedBtn').addEventListener('click', () => seed(0.04));
+document.getElementById('clearBtn').addEventListener('click', () => initGrid());
+document.getElementById('pauseBtn').addEventListener('click', () => {
+  paused = !paused;
+  document.getElementById('pauseBtn').textContent = paused ? 'Play' : 'Pause';
+});
+document.getElementById('saveBtn').addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = 'spiral-genesis.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+canvas.addEventListener('click', e => {
+  seedCircle(e.clientX, e.clientY, 15);
+});
+
+window.addEventListener('resize', resize);
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); document.getElementById('pauseBtn').click(); }
+  if (e.key === 's' || e.key === 'S') document.getElementById('saveBtn').click();
+  if (e.key === 'c' || e.key === 'C') { initGrid(); }
+});
+
+resize();
+seed(0.04);
+loop();
+</script>
+</body>
+</html>
