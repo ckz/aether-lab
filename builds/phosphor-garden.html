@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phosphor Garden</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #020208;
+    font-family: 'Courier New', monospace;
+    cursor: none;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0; left: 0;
+  }
+  #ui {
+    position: fixed;
+    top: 16px; left: 16px;
+    z-index: 10;
+    color: #4a6;
+    font-size: 11px;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    opacity: .6;
+    pointer-events: none;
+    text-shadow: 0 0 8px #4a6;
+  }
+  #ui .title {
+    font-size: 13px;
+    color: #7c9;
+    margin-bottom: 4px;
+    opacity: .9;
+  }
+  #palette-label {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    color: #4a6;
+    font-size: 10px;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    opacity: .5;
+    pointer-events: none;
+    text-shadow: 0 0 8px #4a6;
+    transition: opacity .8s;
+  }
+  #hint {
+    position: fixed;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    color: #4a6;
+    font-size: 10px;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    opacity: .4;
+    pointer-events: none;
+    text-shadow: 0 0 6px #4a6;
+    transition: opacity 2s;
+  }
+</style>
+</head>
+<body>
+<div id="ui">
+  <div class="title">◈ Phosphor Garden</div>
+  <div>CLICK to plant · DRAG to grow</div>
+  <div>SCROLL brush · SPACE pulse · 1-6 palette · C clear</div>
+</div>
+<div id="palette-label">phosphor_green</div>
+<div id="hint">click anywhere to begin</div>
+<canvas id="bg"></canvas>
+<canvas id="main"></canvas>
+
+<script>
+const bgCanvas = document.getElementById('bg');
+const mainCanvas = document.getElementById('main');
+const bgCtx = bgCanvas.getContext('2d');
+const ctx = mainCanvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  bgCanvas.width = mainCanvas.width = W;
+  bgCanvas.height = mainCanvas.height = H;
+  drawBackground();
+}
+window.addEventListener('resize', resize);
+
+// ─── Palettes ───
+const palettes = {
+  phosphor_green: { bg: '#020a04', primary: '#4f6', secondary: '#2a4', accent: '#8f9', dim: '#1a2', scanline: 'rgba(0,255,0,0.03)' },
+  amber_vintage: { bg: '#0a0802', primary: '#fa6', secondary: '#c84', accent: '#fc9', dim: '#642', scanline: 'rgba(255,170,0,0.03)' },
+  cyan_crt: { bg: '#02080a', primary: '#6ef', secondary: '#4ac', accent: '#9ff', dim: '#246', scanline: 'rgba(0,200,255,0.03)' },
+  violet_xray: { bg: '#06020a', primary: '#c8f', secondary: '#94c', accent: '#e8f', dim: '#528', scanline: 'rgba(180,0,255,0.03)' },
+  white_phosphor: { bg: '#080808', primary: '#eee', secondary: '#aaa', accent: '#fff', dim: '#555', scanline: 'rgba(255,255,255,0.02)' },
+  multi_phosphor: { bg: '#040208', primary: '#f8f', secondary: '#8f8', accent: '#88f', dim: '#646', scanline: 'rgba(255,255,255,0.02)' }
+};
+
+let currentPalette = 'phosphor_green';
+let palette = palettes[currentPalette];
+
+// ─── State ───
+const plants = [];
+const trails = [];
+const particles = [];
+const seeds = [];
+let brushSize = 60;
+let mouseX = W / 2, mouseY = H / 2;
+let mouseDown = false;
+let lastMouseX = mouseX, lastMouseY = mouseY;
+let time = 0;
+let scanlineOffset = 0;
+let bgDirty = true;
+let hintTimeout;
+
+// ─── Noise ───
+function noise(x, y, t) {
+  return (Math.sin(x * 0.01 + t) * Math.cos(y * 0.013 - t * 0.7) +
+          Math.sin((x + y) * 0.007 + t * 1.3) * 0.6 +
+          Math.cos(x * 0.023 - y * 0.019 + t * 0.5) * 0.4) / 2;
+}
+
+function rand(min, max) { return min + Math.random() * (max - min); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+// ─── Plant ───
+class Plant {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.branches = [];
+    this.age = 0;
+    this.maxAge = rand(300, 700);
+    this.hueShift = rand(-0.15, 0.15);
+    this.growthRate = rand(0.4, 1.0);
+    this.maxDepth = Math.floor(rand(5, 9));
+    this.generateBranch(x, y, rand(-Math.PI * 0.8, -Math.PI * 0.2), 0, rand(25, 55), this.maxDepth);
+    this.burstParticles(x, y, 12);
+  }
+
+  generateBranch(x, y, angle, depth, length, maxDepth) {
+    if (depth >= maxDepth || length < 4) return;
+    const segments = Math.floor(rand(4, 8));
+    const segLen = length / segments;
+    let cx = x, cy = y, ca = angle;
+    for (let i = 0; i < segments; i++) {
+      ca += rand(-0.4, 0.4) + noise(cx, cy, time * 0.3) * 0.3;
+      const nx = cx + Math.cos(ca) * segLen;
+      const ny = cy + Math.sin(ca) * segLen;
+      this.branches.push({
+        x1: cx, y1: cy, x2: nx, y2: ny,
+        depth, age: depth * 15 + i * 3,
+        length: length * (1 - depth / maxDepth) * 0.7,
+        sway: rand(0.5, 1.5)
+      });
+      cx = nx; cy = ny;
+      if (i === Math.floor(segments / 2) && depth < maxDepth - 1) {
+        this.generateBranch(cx, cy, ca + rand(0.3, 0.9), depth + 1, length * rand(0.55, 0.75), maxDepth);
+        this.generateBranch(cx, cy, ca - rand(0.3, 0.9), depth + 1, length * rand(0.55, 0.75), maxDepth);
+      }
+    }
+  }
+
+  burstParticles(x, y, count) {
+    for (let i = 0; i < count; i++) {
+      const a = rand(0, Math.PI * 2);
+      const s = rand(0.3, 1.8);
+      particles.push({
+        x, y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s,
+        life: 1,
+        decay: rand(0.003, 0.012),
+        size: rand(1, 2.5),
+        type: 'spark'
+      });
+    }
+  }
+
+  update() {
+    this.age += this.growthRate;
+    for (const b of this.branches) {
+      if (b.age < this.age) b.age += this.growthRate;
+    }
+  }
+
+  draw(ctx) {
+    for (const b of this.branches) {
+      if (b.age <= 0) continue;
+      const progress = Math.min(1, b.age / 20);
+      const alpha = progress * Math.min(1, b.age / 40) * 0.9;
+      const sway = Math.sin(time * 0.8 + b.x1 * 0.05) * b.sway * 0.3 * (b.depth / this.maxDepth);
+      const ex = b.x2 + sway * (b.depth + 1);
+      const ey = b.y2 + sway * 0.5 * (b.depth + 1);
+
+      ctx.strokeStyle = palette.primary;
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = Math.max(0.5, b.length * 0.18 * (1 - b.depth / this.maxDepth));
+      ctx.shadowColor = palette.primary;
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.moveTo(b.x1, b.y1);
+      ctx.lineTo(
+        lerp(b.x1, ex, progress),
+        lerp(b.y1, ey, progress)
+      );
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      if (progress > 0.8 && b.depth >= this.maxDepth - 1) {
+        ctx.globalAlpha = alpha * 0.8;
+        ctx.fillStyle = palette.accent;
+        ctx.shadowColor = palette.accent;
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(ex, ey, rand(1.5, 3), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+  }
+}
+
+// ─── Trail (mouse) ───
+class Trail {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.life = 1;
+    this.decay = rand(0.004, 0.015);
+    this.size = rand(0.5, 2);
+    this.vx = rand(-0.2, 0.2);
+    this.vy = rand(-0.2, 0.2);
+  }
+  update() {
+    this.life -= this.decay;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vx += rand(-0.02, 0.02);
+    this.vy += rand(-0.02, 0.02);
+  }
+  draw(ctx) {
+    if (this.life <= 0) return;
+    ctx.globalAlpha = this.life * 0.7;
+    ctx.fillStyle = palette.primary;
+    ctx.shadowColor = palette.primary;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+// ─── Particle (spores) ───
+class Particle {
+  constructor(x, y, type) {
+    this.x = x; this.y = y;
+    this.vx = rand(-0.3, 0.3);
+    this.vy = type === 'rise' ? rand(-0.6, -0.1) : rand(-0.3, 0.3);
+    this.life = 1;
+    this.decay = rand(0.002, 0.008);
+    this.size = rand(0.8, 2);
+    this.type = type || 'drift';
+  }
+  update() {
+    this.life -= this.decay;
+    this.x += this.vx + noise(this.x, this.y, time * 0.2) * 0.15;
+    this.y += this.vy;
+    this.vx += rand(-0.01, 0.01);
+    if (this.type === 'rise') this.vy -= 0.002;
+  }
+  draw(ctx) {
+    if (this.life <= 0) return;
+    ctx.globalAlpha = this.life * 0.5;
+    ctx.fillStyle = palette.secondary;
+    ctx.shadowColor = palette.secondary;
+    ctx.shadowBlur = 4;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+// ─── Background ───
+function drawBackground() {
+  bgCtx.fillStyle = palette.bg;
+  bgCtx.fillRect(0, 0, W, H);
+
+  // Subtle vignette
+  const grad = bgCtx.createRadialGradient(W / 2, H / 2, W * 0.3, W / 2, H / 2, W * 0.8);
+  grad.addColorStop(0, 'transparent');
+  grad.addColorStop(1, 'rgba(0,0,0,0.4)');
+  bgCtx.fillStyle = grad;
+  bgCtx.fillRect(0, 0, W, H);
+
+  // Scanlines
+  bgCtx.fillStyle = palette.scanline;
+  for (let y = 0; y < H; y += 3) {
+    bgCtx.fillRect(0, y, W, 1);
+  }
+
+  // Subtle grid
+  bgCtx.strokeStyle = palette.scanline;
+  bgCtx.lineWidth = 0.5;
+  const gridSize = 80;
+  for (let x = 0; x < W; x += gridSize) {
+    bgCtx.beginPath();
+    bgCtx.moveTo(x, 0);
+    bgCtx.lineTo(x, H);
+    bgCtx.stroke();
+  }
+  for (let y = 0; y < H; y += gridSize) {
+    bgCtx.beginPath();
+    bgCtx.moveTo(0, y);
+    bgCtx.lineTo(W, y);
+    bgCtx.stroke();
+  }
+  bgDirty = false;
+}
+
+// ─── Interaction ───
+function plantAt(x, y) {
+  const p = new Plant(x + rand(-20, 20), y + rand(-10, 10));
+  plants.push(p);
+  // Spawn drifting spores from new plant
+  for (let i = 0; i < 8; i++) {
+    particles.push(new Particle(x, y, 'rise'));
+  }
+  // Fade hint
+  document.getElementById('hint').style.opacity = '0';
+}
+
+mainCanvas.addEventListener('mousedown', e => {
+  if (e.button === 0) {
+    mouseDown = true;
+    plantAt(e.clientX, e.clientY);
+  }
+});
+
+mainCanvas.addEventListener('mouseup', () => mouseDown = false);
+mainCanvas.addEventListener('mouseleave', () => mouseDown = false);
+
+mainCanvas.addEventListener('mousemove', e => {
+  lastMouseX = mouseX; lastMouseY = mouseY;
+  mouseX = e.clientX; mouseY = e.clientY;
+  if (mouseDown) {
+    const dist = Math.hypot(mouseX - lastMouseX, mouseY - lastMouseY);
+    const count = Math.floor(dist / 3);
+    for (let i = 0; i < count; i++) {
+      const t = i / count;
+      trails.push(new Trail(
+        lerp(lastMouseX, mouseX, t) + rand(-brushSize / 2, brushSize / 2),
+        lerp(lastMouseY, mouseY, t) + rand(-brushSize / 2, brushSize / 2)
+      ));
+    }
+    if (Math.random() < 0.05) {
+      seeds.push({ x: mouseX + rand(-30, 30), y: mouseY + rand(-30, 30), life: 1 });
+    }
+  }
+});
+
+mainCanvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  brushSize = Math.max(10, Math.min(200, brushSize - e.deltaY * 0.2));
+});
+
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    // Pulse wave
+    for (let i = 0; i < 60; i++) {
+      const a = (i / 60) * Math.PI * 2;
+      const r = rand(5, 15);
+      trails.push(new Trail(W / 2 + Math.cos(a) * r, H / 2 + Math.sin(a) * r));
+    }
+    for (let i = 0; i < 20; i++) {
+      particles.push(new Particle(W / 2, H /2, 'rise'));
+    }
+  }
+  if (e.key >= '1' && e.key <= '6') {
+    const keys = Object.keys(palettes);
+    currentPalette = keys[parseInt(e.key) - 1];
+    palette = palettes[currentPalette];
+    document.getElementById('palette-label').textContent = currentPalette.replace(/_/g, ' ');
+    bgDirty = true;
+  }
+  if (e.key === 'c' || e.key === 'C') {
+    plants.length = 0;
+    trails.length = 0;
+    particles.length = 0;
+    seeds.length = 0;
+    bgDirty = true;
+  }
+});
+
+// Touch support
+mainCanvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouseDown = true;
+  mouseX = t.clientX; mouseY = t.clientY;
+  plantAt(mouseX, mouseY);
+}, { passive: false });
+
+mainCanvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  lastMouseX = mouseX; lastMouseY = mouseY;
+  mouseX = t.clientX; mouseY = t.clientY;
+  const dist = Math.hypot(mouseX - lastMouseX, mouseY - lastMouseY);
+  const count = Math.floor(dist / 3);
+  for (let i = 0; i < count; i++) {
+    const frac = i / count;
+    trails.push(new Trail(
+      lerp(lastMouseX, mouseX, frac) + rand(-brushSize / 2, brushSize / 2),
+      lerp(lastMouseY, mouseY, frac) + rand(-brushSize / 2, brushSize / 2)
+    ));
+  }
+}, { passive: false });
+
+mainCanvas.addEventListener('touchend', () => mouseDown = false);
+
+// ─── Main Loop ───
+function loop() {
+  time += 0.016;
+  scanlineOffset = (scanlineOffset + 0.3) % 3;
+
+  if (bgDirty) drawBackground();
+
+  // Semi-transparent overlay for phosphor decay
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 0.06;
+  ctx.fillStyle = palette.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Draw trails
+  for (let i = trails.length - 1; i >= 0; i--) {
+    trails[i].update();
+    trails[i].draw(ctx);
+    if (trails[i].life <= 0) trails.splice(i, 1);
+  }
+
+  // Draw plants
+  for (const plant of plants) {
+    plant.update();
+    plant.draw(ctx);
+  }
+
+  // Draw particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update();
+    particles[i].draw(ctx);
+    if (particles[i].life <= 0) particles.splice(i, 1);
+  }
+
+  // Ambient spores
+  if (Math.random() < 0.15 && plants.length > 0) {
+    const p = plants[Math.floor(Math.random() * plants.length)];
+    particles.push(new Particle(
+      p.x + rand(-40, 40),
+      p.y + rand(-40, 40),
+      'rise'
+    ));
+  }
+
+  // Seed glow
+  for (let i = seeds.length - 1; i >= 0; i--) {
+    const s = seeds[i];
+    s.life -= 0.01;
+    ctx.globalAlpha = s.life * 0.6;
+    ctx.fillStyle = palette.accent;
+    ctx.shadowColor = palette.accent;
+    ctx.shadowBlur = 20;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 3 + (1 - s.life) * 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    if (s.life <= 0) seeds.splice(i, 1);
+  }
+
+  // Cursor glow
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = palette.primary;
+  ctx.shadowColor = palette.primary;
+  ctx.shadowBlur = 15;
+  ctx.beginPath();
+  ctx.arc(mouseX, mouseY, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Moving scanline
+  ctx.globalAlpha = 0.04;
+  ctx.fillStyle = palette.scanline;
+  ctx.fillRect(0, scanlineOffset, W, 1);
+
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+
+  requestAnimationFrame(loop);
+}
+
+// ─── Init ───
+resize();
+drawBackground();
+
+// Seed an initial plant
+setTimeout(() => {
+  plantAt(W * 0.5 + rand(-100, 100), H * 0.6 + rand(-50, 50));
+}, 400);
+
+// Auto-plant occasionally
+setInterval(() => {
+  if (plants.length < 6 && Math.random() < 0.4) {
+    const edge = Math.random();
+    let x, y;
+    if (edge < 0.5) {
+      x = rand(0, W); y = rand(H * 0.3, H);
+    } else {
+      x = rand(W * 0.2, W * 0.8); y = rand(H * 0.5, H);
+    }
+    seeds.push({ x, y, life: 1 });
+    setTimeout(() => plantAt(x, y), 800 + rand(0, 1000));
+  }
+}, 4000);
+
+loop();
+</script>
+</body>
+</html>
