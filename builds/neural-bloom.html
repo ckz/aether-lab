@@ -2,294 +2,472 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Neural Bloom</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neural Bloom — Generative Art</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #05050f;
+    background: #0a0a0f;
     overflow: hidden;
     font-family: 'Courier New', monospace;
     color: #aaa;
+    height: 100vh;
+    width: 100vw;
   }
-  canvas {
-    display: block;
+  canvas { display: block; position: absolute; top: 0; left: 0; }
+  .controls {
     position: fixed;
-    top: 0; left: 0;
-  }
-  #ui {
-    position: fixed;
-    bottom: 24px;
+    bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
-    text-align: center;
+    display: flex;
+    gap: 12px;
     z-index: 10;
-    pointer-events: none;
+    background: rgba(10,10,15,0.7);
+    padding: 10px 20px;
+    border-radius: 30px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1);
   }
-  #ui .title {
-    font-size: 0.85rem;
-    letter-spacing: .35em;
-    color: #8899cc;
-    text-transform: uppercase;
-    margin-bottom: 6px;
+  .controls button {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #ccc;
+    padding: 8px 18px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    transition: all 0.3s;
+    letter-spacing: 0.5px;
   }
-  #ui .sub {
-    font-size: 0.65rem;
-    opacity: 0.4;
-    letter-spacing: .2em;
+  .controls button:hover {
+    background: rgba(255,255,255,0.15);
+    border-color: rgba(255,255,255,0.4);
+    color: #fff;
   }
-  #stats {
+  .controls button.active {
+    background: rgba(120, 180, 255, 0.2);
+    border-color: rgba(120, 180, 255, 0.6);
+    color: #a0d0ff;
+  }
+  .info {
     position: fixed;
-    top: 18px;
-    right: 22px;
-    font-size: 0.65rem;
-    opacity: 0.35;
-    letter-spacing: .15em;
+    top: 20px;
+    left: 20px;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    opacity: 0.4;
     z-index: 10;
-    text-align: right;
-    pointer-events: none;
+  }
+  .fps {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    font-size: 11px;
+    opacity: 0.4;
+    z-index: 10;
   }
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
-<div id="stats">
-  <div>NODES: <span id="nodeCount">0</span></div>
-  <div>CONNECTIONS: <span id="connCount">0</span></div>
+<div class="info">Neural Bloom — Click to pollinate</div>
+<div class="fps" id="fps"></div>
+<canvas id="canvas"></canvas>
+<div class="controls">
+  <button id="mode1" class="active">Bloom</button>
+  <button id="mode2">Flow</button>
+  <button id="mode3">Crystal</button>
+  <button id="reset">Reset</button>
 </div>
-<div id="ui">
-  <div class="title">Neural Bloom</div>
-  <div class="sub">click to plant · drag to attract · scroll to shift</div>
-</div>
+
 <script>
-const canvas = document.getElementById('c');
+const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-let W, H;
-const resize = () => {
-  W = canvas.width = innerWidth;
-  H = canvas.height = innerHeight;
-};
+let W, H, centerX, centerY;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  centerX = W / 2;
+  centerY = H / 2;
+}
 resize();
-addEventListener('resize', resize);
+window.addEventListener('resize', resize);
 
-const mouse = { x: W/2, y: H/2, down: false };
-addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
-addEventListener('mousedown', () => mouse.down = true);
-addEventListener('mouseup', () => mouse.down = false);
-addEventListener('touchmove', e => {
-  mouse.x = e.touches[0].clientX;
-  mouse.y = e.touches[0].clientY;
-}, {passive:true});
-addEventListener('touchstart', e => {
-  mouse.down = true;
-  mouse.x = e.touches[0].clientX;
-  mouse.y = e.touches[0].clientY;
-  spawnBloom(mouse.x, mouse.y);
-}, {passive:true});
-addEventListener('touchend', () => mouse.down = false);
+// State
+let mode = 0;
+let particles = [];
+let vines = [];
+let time = 0;
+let mouse = { x: centerX, y: centerY };
+let seedNodes = [];
 
-addEventListener('click', e => spawnBloom(e.clientX, e.clientY));
-addEventListener('wheel', e => {
-  paletteIndex = (paletteIndex + Math.sign(e.deltaY) + palettes.length) % palettes.length;
-});
-
+// Color palettes
 const palettes = [
-  { name: 'Aurora',  nodes: ['#00ffd0','#00b8ff','#a855f7','#ff00e5'], bg: '#05050f' },
-  { name: 'Ember',   nodes: ['#ff4500','#ff8c00','#ffd700','#ff006e'], bg: '#0f0505' },
-  { name: 'Frost',   nodes: ['#a0e9ff','#5bc0eb','#3a7bd5','#c5e1ff'], bg: '#05080f' },
-  { name: 'Nebula',  nodes: ['#ff006e','#8338ec','#3a86ff','#ffbe0b'], bg: '#0a0510' },
-  { name: 'Toxic',   nodes: ['#39ff14','#00ff87','#60ff00','#ccff00'], bg: '#030f05' },
-  { name: 'Ghost',   nodes: ['#e0e0ff','#b8b8ff','#8888cc','#ffffff'], bg: '#08080f' },
+  ['#ff6b9d', '#c084fc', '#60a5fa', '#f472b6', '#a78bfa', '#38bdf8'],
+  ['#10b981', '#06b6d4', '#3b82f6', '#14b8a6', '#22d3ee', '#6366f1'],
+  ['#f59e0b', '#ef4444', '#f97316', '#eab308', '#fb923c', '#fbbf24'],
+  ['#ec4899', '#f43f5e', '#d946ef', '#fb7185', '#e879f9', '#fda4af'],
 ];
-let paletteIndex = 0;
-function palette() { return palettes[paletteIndex]; }
 
-const nodes = [];
-const connections = [];
-const MAX_NODES = 200;
-const MAX_CONN = 400;
+function randomColor(palette) {
+  const p = palette || palettes[Math.floor(Math.random() * palettes.length)];
+  return p[Math.floor(Math.random() * p.length)];
+}
 
-class Node {
-  constructor(x, y, vx, vy, life) {
-    this.x = x; this.y = y;
-    this.vx = vx || (Math.random()-.5)*1.2;
-    this.vy = vy || (Math.random()-.5)*1.2;
-    this.radius = Math.random() * 3.5 + 1.2;
-    this.baseRadius = this.radius;
-    this.life = life || 1;
-    this.maxLife = this.life;
-    this.decay = Math.random() * 0.0018 + 0.0008;
-    this.pulsePhase = Math.random() * Math.PI * 2;
-    this.pulseSpeed = Math.random() * 0.03 + 0.01;
-    this.color = palette().nodes[Math.floor(Math.random() * palette().nodes.length)];
-    this.freq = Math.random() * 0.02 + 0.005;
-    this.amp = Math.random() * 0.6 + 0.2;
+// Seed nodes that grow from center
+class SeedNode {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.energy = 1;
+    this.maxEnergy = 0.4 + Math.random() * 0.6;
+    this.palette = palettes[Math.floor(Math.random() * palettes.length)];
+    this.branches = [];
+    this.age = 0;
+    this.hue = Math.random() * 360;
+    this.maxBranches = 3 + Math.floor(Math.random() * 8);
+    this.growDelay = 10 + Math.random() * 30;
+    this.dead = false;
   }
+
   update() {
-    this.pulsePhase += this.pulseSpeed;
-    this.life -= this.decay;
-    if (this.life <= 0) return false;
-
-    // Organic drift
-    this.vx += Math.sin(this.pulsePhase * 0.7) * this.amp * 0.04;
-    this.vy += Math.cos(this.pulsePhase * 0.5) * this.amp * 0.04;
-
-    // Mouse interaction
-    const dx = mouse.x - this.x;
-    const dy = mouse.y - this.y;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    if (dist < 220) {
-      const force = (220 - dist) / 220;
-      if (mouse.down) {
-        // Repel
-        this.vx -= (dx / dist) * force * 0.6;
-        this.vy -= (dy / dist) * force * 0.6;
-      } else {
-        // Attract gently
-        this.vx += (dx / dist) * force * 0.12;
-        this.vy += (dy / dist) * force * 0.12;
-      }
+    if (this.dead) return;
+    this.age++;
+    if (this.age > this.growDelay && this.branches.length < this.maxBranches && Math.random() < 0.03) {
+      this.branches.push(new Branch(this.x, this.y, this.hue, this.palette, this));
     }
-
-    // Damping
-    this.vx *= 0.985;
-    this.vy *= 0.985;
-
-    // Clamp
-    const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
-    const maxSpeed = 2.5;
-    if (speed > maxSpeed) {
-      this.vx = (this.vx/speed)*maxSpeed;
-      this.vy = (this.vy/speed)*maxSpeed;
-    }
-
-    this.x += this.vx;
-    this.y += this.vy;
-
-    // Wrap
-    if (this.x < -20) this.x = W+20;
-    if (this.x > W+20) this.x = -20;
-    if (this.y < -20) this.y = H+20;
-    if (this.y > H+20) this.y = -20;
-
-    this.radius = this.baseRadius * (0.8 + 0.4 * Math.sin(this.pulsePhase)) * (this.life / this.maxLife);
-    return true;
+    this.branches.forEach(b => b.update());
   }
+
   draw() {
-    const alpha = Math.min(1, this.life * 1.5) * (0.6 + 0.4 * Math.sin(this.pulsePhase));
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
-    ctx.fillStyle = this.color + hexAlpha(alpha);
-    ctx.fill();
-    // glow
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius * 2.5, 0, Math.PI*2);
-    ctx.fillStyle = this.color + hexAlpha(alpha * 0.15);
-    ctx.fill();
+    this.branches.forEach(b => b.draw());
   }
 }
 
-function hexAlpha(a) {
-  return Math.round(Math.max(0,Math.min(1,a))*255).toString(16).padStart(2,'0');
-}
-
-function spawnBloom(x, y) {
-  const count = 6 + Math.floor(Math.random() * 6);
-  for (let i = 0; i < count; i++) {
-    if (nodes.length >= MAX_NODES) nodes.shift();
-    const angle = Math.random() * Math.PI * 2;
-    const speed = Math.random() * 2.5 + 0.5;
-    nodes.push(new Node(
-      x + (Math.random()-.5)*30,
-      y + (Math.random()-.5)*30,
-      Math.cos(angle)*speed,
-      Math.sin(angle)*speed,
-      Math.random()*0.5 + 0.5
-    ));
+class Branch {
+  constructor(x, y, hue, palette, parent) {
+    this.points = [{x, y}];
+    this.angle = Math.random() * Math.PI * 2;
+    this.speed = 0.3 + Math.random() * 1.2;
+    this.life = 0;
+    this.maxLife = 80 + Math.random() * 200;
+    this.hue = hue + (Math.random() - 0.5) * 60;
+    this.palette = palette;
+    this.parent = parent;
+    this.width = 1 + Math.random() * 2;
+    this.wobble = (Math.random() - 0.5) * 0.08;
+    this.color = randomColor(palette);
+    this.leaves = [];
+    this.dead = false;
   }
-}
 
-function updateConnections() {
-  connections.length = 0;
-  const maxDist = 140;
-  for (let i = 0; i < nodes.length; i++) {
-    for (let j = i+1; j < nodes.length; j++) {
-      const dx = nodes[i].x - nodes[j].x;
-      const dy = nodes[i].y - nodes[j].y;
-      const dist = Math.sqrt(dx*dx+dy*dy);
-      if (dist < maxDist) {
-        connections.push({
-          a: nodes[i], b: nodes[j],
-          strength: 1 - dist/maxDist
-        });
-        if (connections.length >= MAX_CONN) return;
-      }
+  update() {
+    if (this.dead) return;
+    this.life++;
+    
+    if (this.life > this.maxLife * 0.7) {
+      this.speed *= 0.98;
+    }
+    
+    if (this.life > this.maxLife || this.speed < 0.05) {
+      this.dead = true;
+      return;
+    }
+
+    this.angle += this.wobble + Math.sin(this.life * 0.05) * 0.02;
+    const last = this.points[this.points.length - 1];
+    const nx = last.x + Math.cos(this.angle) * this.speed;
+    const ny = last.y + Math.sin(this.angle) * this.speed;
+
+    if (nx < 0 || nx > W || ny < 0 || ny > H) {
+      this.dead = true;
+      return;
+    }
+
+    this.points.push({x: nx, y: ny});
+
+    // Occasionally spawn leaf particle
+    if (Math.random() < 0.02 && particles.length < 800) {
+      particles.push(new Particle(nx, ny, this.color));
+    }
+
+    // Occasionally branch
+    if (this.life > 20 && this.life < this.maxLife * 0.6 && Math.random() < 0.008) {
+      this.parent.branches.push(new Branch(nx, ny, this.hue, this.palette, this.parent));
     }
   }
-}
 
-function drawConnections() {
-  for (const c of connections) {
-    const alpha = c.strength * 0.4 * Math.min(c.a.life, c.b.life);
-    const gradient = ctx.createLinearGradient(c.a.x, c.a.y, c.b.x, c.b.y);
-    gradient.addColorStop(0, c.a.color + hexAlpha(alpha));
-    gradient.addColorStop(1, c.b.color + hexAlpha(alpha));
+  draw() {
+    if (this.points.length < 2) return;
     ctx.beginPath();
-    ctx.moveTo(c.a.x, c.a.y);
-    ctx.lineTo(c.b.x, c.b.y);
-    ctx.strokeStyle = gradient;
-    ctx.lineWidth = c.strength * 1.2;
+    ctx.moveTo(this.points[0].x, this.points[0].y);
+    for (let i = 1; i < this.points.length; i++) {
+      ctx.lineTo(this.points[i].x, this.points[i].y);
+    }
+    const alpha = Math.min(1, this.life / 20) * Math.min(1, (this.maxLife - this.life) / 30);
+    ctx.strokeStyle = this.color + Math.floor(alpha * 200).toString(16).padStart(2, '0');
+    ctx.lineWidth = this.width * (1 - this.life / this.maxLife);
+    ctx.lineCap = 'round';
     ctx.stroke();
   }
 }
 
-// Initial ambient nodes
-for (let i = 0; i < 50; i++) {
-  nodes.push(new Node(
-    Math.random()*W, Math.random()*H,
-    (Math.random()-.5)*0.8,
-    (Math.random()-.5)*0.8,
-    Math.random()*0.4 + 0.6
-  ));
+class Particle {
+  constructor(x, y, color) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 0.5;
+    this.vy = -0.2 - Math.random() * 0.8;
+    this.life = 0;
+    this.maxLife = 40 + Math.random() * 80;
+    this.color = color;
+    this.size = 1 + Math.random() * 3;
+  }
+
+  update() {
+    this.life++;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += 0.005;
+    this.vx += (Math.random() - 0.5) * 0.05;
+  }
+
+  draw() {
+    const alpha = 1 - this.life / this.maxLife;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * alpha, 0, Math.PI * 2);
+    ctx.fillStyle = this.color + Math.floor(alpha * 180).toString(16).padStart(2, '0');
+    ctx.fill();
+  }
+
+  get dead() { return this.life > this.maxLife; }
 }
 
-let lastSpawn = 0;
-function animate(t) {
-  const p = palette();
-  document.body.style.background = p.bg;
+// Flow field particles
+class FlowParticle {
+  constructor() {
+    this.reset();
+  }
 
-  ctx.fillStyle = p.bg + '18';
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.vx = 0;
+    this.vy = 0;
+    this.life = 0;
+    this.maxLife = 100 + Math.random() * 200;
+    this.color = randomColor();
+    this.size = 0.5 + Math.random() * 1.5;
+    this.history = [];
+  }
+
+  update() {
+    this.life++;
+    if (this.life > this.maxLife) { this.reset(); return; }
+    
+    const scale = 0.003;
+    const angle = Math.sin(this.x * scale + time * 0.02) * Math.cos(this.y * scale + time * 0.015) * Math.PI * 2;
+    this.vx += Math.cos(angle) * 0.3;
+    this.vy += Math.sin(angle) * 0.3;
+    this.vx *= 0.95;
+    this.vy *= 0.95;
+
+    this.history.push({x: this.x, y: this.y});
+    if (this.history.length > 20) this.history.shift();
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    if (this.x < 0 || this.x > W || this.y < 0 || this.y > H) this.reset();
+  }
+
+  draw() {
+    if (this.history.length < 2) return;
+    ctx.beginPath();
+    ctx.moveTo(this.history[0].x, this.history[0].y);
+    for (let i = 1; i < this.history.length; i++) {
+      ctx.lineTo(this.history[i].x, this.history[i].y);
+    }
+    const alpha = (1 - this.life / this.maxLife) * 0.6;
+    ctx.strokeStyle = this.color + Math.floor(alpha * 150).toString(16).padStart(2, '0');
+    ctx.lineWidth = this.size;
+    ctx.stroke();
+  }
+}
+
+// Crystal mode
+let crystals = [];
+class Crystal {
+  constructor(x, y) {
+    this.x = x || Math.random() * W;
+    this.y = y || Math.random() * H;
+    this.size = 20 + Math.random() * 80;
+    this.angle = Math.random() * Math.PI * 2;
+    this.sides = 4 + Math.floor(Math.random() * 5);
+    this.rotationSpeed = (Math.random() - 0.5) * 0.005;
+    this.color = randomColor();
+    this.life = 0;
+    this.maxLife = 200 + Math.random() * 300;
+    this.growSpeed = 0.3 + Math.random() * 0.7;
+  }
+
+  update() {
+    this.life++;
+    this.angle += this.rotationSpeed;
+    if (this.life > this.maxLife * 0.7) {
+      this.size *= 0.995;
+    }
+  }
+
+  draw() {
+    const alpha = Math.min(1, this.life / 30) * Math.min(1, (this.maxLife - this.life) / 40);
+    const s = this.size * (0.3 + 0.7 * Math.min(1, this.life / 60));
+    
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+    ctx.beginPath();
+    for (let i = 0; i < this.sides; i++) {
+      const a = (i / this.sides) * Math.PI * 2;
+      const px = Math.cos(a) * s;
+      const py = Math.sin(a) * s;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = this.color + Math.floor(alpha * 200).toString(16).padStart(2, '0');
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = this.color + Math.floor(alpha * 30).toString(16).padStart(2, '0');
+    ctx.fill();
+    ctx.restore();
+  }
+
+  get dead() { return this.life > this.maxLife || this.size < 1; }
+}
+
+// Bloom mode: seed nodes
+function seedBloom(x, y) {
+  seedNodes.push(new SeedNode(x, y));
+}
+
+// Flow mode: flow particles
+let flowParticles = [];
+function initFlow() {
+  flowParticles = [];
+  for (let i = 0; i < 300; i++) {
+    flowParticles.push(new FlowParticle());
+  }
+}
+
+// Crystal mode
+function spawnCrystals(count) {
+  for (let i = 0; i < count; i++) {
+    crystals.push(new Crystal());
+  }
+}
+
+// Initial state
+seedBloom(centerX, centerY);
+
+// Mouse interaction
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+
+canvas.addEventListener('click', (e) => {
+  if (mode === 0) {
+    seedBloom(e.clientX, e.clientY);
+  } else if (mode === 1) {
+    for (let i = 0; i < 20; i++) {
+      flowParticles.push(new FlowParticle());
+    }
+  } else {
+    crystals.push(new Crystal(e.clientX, e.clientY));
+  }
+});
+
+// Mode switching
+document.getElementById('mode1').addEventListener('click', () => setMode(0));
+document.getElementById('mode2').addEventListener('click', () => setMode(1));
+document.getElementById('mode3').addEventListener('click', () => setMode(2));
+document.getElementById('reset').addEventListener('click', reset);
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
+  document.getElementById('mode' + (m + 1)).classList.add('active');
+  reset();
+}
+
+function reset() {
+  particles = [];
+  vines = [];
+  seedNodes = [];
+  crystals = [];
+  flowParticles = [];
+  time = 0;
+  
+  if (mode === 0) {
+    seedBloom(centerX, centerY);
+  } else if (mode === 1) {
+    initFlow();
+  } else {
+    spawnCrystals(5);
+  }
+}
+
+// FPS tracking
+let frameCount = 0;
+let lastFpsTime = performance.now();
+
+// Animation loop
+function animate() {
+  requestAnimationFrame(animate);
+  time++;
+
+  // Fade based on mode
+  if (mode === 0) {
+    ctx.fillStyle = 'rgba(10, 10, 15, 0.02)';
+  } else if (mode === 1) {
+    ctx.fillStyle = 'rgba(10, 10, 15, 0.05)';
+  } else {
+    ctx.fillStyle = 'rgba(10, 10, 15, 0.08)';
+  }
   ctx.fillRect(0, 0, W, H);
 
-  // Auto-spawn occasionally
-  if (t - lastSpawn > 3000 && nodes.length < MAX_NODES * 0.6) {
-    spawnBloom(Math.random()*W, Math.random()*H);
-    lastSpawn = t;
+  // Mode-specific updates
+  if (mode === 0) {
+    seedNodes.forEach(n => { n.update(); n.draw(); });
+  } else if (mode === 1) {
+    flowParticles.forEach(p => { p.update(); p.draw(); });
+    // Cap flow particles
+    if (flowParticles.length > 600) flowParticles = flowParticles.slice(-400);
+  } else {
+    if (Math.random() < 0.05) spawnCrystals(1);
+    crystals.forEach(c => { c.update(); c.draw(); });
+    crystals = crystals.filter(c => !c.dead);
   }
 
-  // Mouse down continuous spawn
-  if (mouse.down && t % 6 < 2) {
-    spawnBloom(mouse.x + (Math.random()-.5)*40, mouse.y + (Math.random()-.5)*40);
+  // Particles always
+  particles.forEach(p => { p.update(); p.draw(); });
+  particles = particles.filter(p => !p.dead);
+
+  // FPS
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime > 1000) {
+    document.getElementById('fps').textContent = frameCount + ' fps';
+    frameCount = 0;
+    lastFpsTime = now;
   }
-
-  // Update
-  for (let i = nodes.length-1; i >= 0; i--) {
-    if (!nodes[i].update()) nodes.splice(i, 1);
-  }
-
-  updateConnections();
-
-  // Draw connections first (behind)
-  drawConnections();
-
-  // Draw nodes
-  for (const n of nodes) n.draw();
-
-  document.getElementById('nodeCount').textContent = nodes.length;
-  document.getElementById('connCount').textContent = connections.length;
-
-  requestAnimationFrame(animate);
 }
-animate(0);
+
+animate();
 </script>
 </body>
 </html>
