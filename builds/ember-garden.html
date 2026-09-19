@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ember Garden</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #0a0610;
+    cursor: crosshair;
+    font-family: 'Courier New', monospace;
+  }
+  canvas {
+    display: block;
+    position: absolute;
+    top: 0; left: 0;
+  }
+  #ui {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 10px;
+    z-index: 10;
+    opacity: 0.4;
+    transition: opacity 0.3s;
+  }
+  #ui:hover { opacity: 1; }
+  .key {
+    padding: 6px 14px;
+    border: 1px solid rgba(255,140,50,0.3);
+    border-radius: 20px;
+    color: rgba(255,180,100,0.7);
+    font-size: 12px;
+    letter-spacing: 1px;
+    background: rgba(10,6,16,0.6);
+    backdrop-filter: blur(4px);
+  }
+  #title {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,160,60,0.15);
+    font-size: 11px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    z-index: 10;
+    pointer-events: none;
+    transition: opacity 2s;
+  }
+  #hint {
+    position: fixed;
+    top: 44px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,140,50,0.25);
+    font-size: 11px;
+    letter-spacing: 2px;
+    z-index: 10;
+    pointer-events: none;
+    transition: opacity 3s;
+  }
+</style>
+</head>
+<body>
+<canvas id="garden"></canvas>
+<div id="title">EMBER GARDEN</div>
+<div id="hint">click to plant · drag to grow · space for wind · c to clear</div>
+<div id="ui">
+  <span class="key">CLICK — plant</span>
+  <span class="key">DRAG — grow</span>
+  <span class="key">SPACE — wind</span>
+  <span class="key">C — clear</span>
+  <span class="key">1-4 — palette</span>
+</div>
+
+<script>
+const canvas = document.getElementById('garden');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Audio ───────────────────────────────────────────────────────
+let audioCtx;
+function initAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+function playTone(freq, vol = 0.02, type = 'sine') {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 1.5);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 1.5);
+}
+
+// ─── Palettes ────────────────────────────────────────────────────
+const PALETTES = [
+  { name: 'Ember',  colors: ['#ff6a00','#ff9500','#ffbf33','#ff4500','#cc3300','#ff8800','#ffcc00','#e85500'] },
+  { name: 'Aurora', colors: ['#00ffa3','#00c8ff','#a200ff','#ff00c8','#00ffcc','#7bff4f','#4fc3ff','#c24fff'] },
+  { name: 'Frost',  colors: ['#a8d8ea','#aa96da','#e8e8e8','#b8d4e3','#c9d6df','#f0e6ef','#d4e4f7','#e0e8f0'] },
+  { name: 'Void',   colors: ['#b14eff','#6e3aff','#d94fff','#8b5cf6','#a855f7','#7c3aed','#c084fc','#e879f9'] },
+];
+let paletteIdx = 0;
+function palette() { return PALETTES[paletteIdx].colors; }
+
+// ─── State ───────────────────────────────────────────────────────
+let embers = [];
+let trees = [];
+let sparks = [];
+let wind = 0;
+let windTarget = 0;
+let mouse = { x: 0, y: 0, down: false };
+let growing = false;
+let growTimer = 0;
+let time = 0;
+
+// ─── Tree class ──────────────────────────────────────────────────
+class Tree {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.branches = [];
+    this.maxDepth = 5 + Math.floor(Math.random() * 4);
+    this.growProgress = 0;
+    this.growSpeed = 0.008 + Math.random() * 0.006;
+    this.hue = Math.random() * 40 - 20;
+    this.color = palette()[Math.floor(Math.random() * palette().length)];
+    this.generate();
+  }
+  generate() {
+    this.branches = [];
+    this.subdivide(this.x, this.y, -Math.PI / 2 + (Math.random() - 0.5) * 0.6, H * 0.35 + Math.random() * H * 0.15, 18 + Math.random() * 12, 0);
+  }
+  subdivide(x, y, angle, length, thickness, depth) {
+    if (depth > this.maxDepth || length < 4) return;
+    const ex = x + Math.cos(angle) * length;
+    const ey = y + Math.sin(angle) * length;
+    const progress = depth / this.maxDepth;
+    const branch = { x1: x, y1: y, x2: ex, y2: ey, depth, thickness: Math.max(1, thickness * (1 - progress * 0.7)) };
+    this.branches.push(branch);
+    const sway = Math.sin(time * 0.001 + depth + this.x * 0.01) * 0.03;
+    const spread = 0.45 + Math.random() * 0.3;
+    this.subdivide(ex, ey, angle - spread + sway, length * (0.65 + Math.random() * 0.15), thickness * 0.7, depth + 1);
+    this.subdivide(ex, ey, angle + spread + sway, length * (0.65 + Math.random() * 0.15), thickness * 0.7, depth + 1);
+  }
+  update(dt) {
+    if (this.growProgress < 1) {
+      this.growProgress = Math.min(1, this.growProgress + this.growSpeed);
+    }
+  }
+  draw(ctx) {
+    const count = Math.floor(this.branches.length * easeOutCubic(this.growProgress));
+    for (let i = 0; i < count; i++) {
+      const b = this.branches[i];
+      const alpha = 0.15 + (1 - b.depth / this.maxDepth) * 0.5;
+      ctx.strokeStyle = this.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+      ctx.lineWidth = b.thickness;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(b.x1, b.y1);
+      ctx.lineTo(b.x2, b.y2);
+      ctx.stroke();
+    }
+  }
+  emitEmber() {
+    if (this.growProgress < 0.3 || embers.length > 800) return;
+    const tips = this.branches.filter((_, i) => i > this.branches.length * 0.6);
+    if (tips.length === 0) return;
+    const tip = tips[Math.floor(Math.random() * tips.length)];
+    embers.push(new Ember(tip.x2, tip.y2, this.color));
+  }
+}
+
+function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+// ─── Ember class ─────────────────────────────────────────────────
+class Ember {
+  constructor(x, y, color) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 0.8;
+    this.vy = -(Math.random() * 1.5 + 0.5);
+    this.life = 1;
+    this.decay = 0.003 + Math.random() * 0.006;
+    this.radius = 1 + Math.random() * 2.5;
+    this.color = color || palette()[Math.floor(Math.random() * palette().length)];
+    this.wobble = Math.random() * Math.PI * 2;
+    this.wobbleSpeed = 0.02 + Math.random() * 0.03;
+    this.glow = 6 + Math.random() * 12;
+    this.trail = [];
+  }
+  update(wind) {
+    this.trail.push({ x: this.x, y: this.y, life: this.life });
+    if (this.trail.length > 8) this.trail.shift();
+    this.wobble += this.wobbleSpeed;
+    this.vx += Math.sin(this.wobble) * 0.03 + wind * 0.02;
+    this.vy += (Math.random() - 0.4) * 0.02;
+    this.vy -= 0.003;
+    this.vx *= 0.995;
+    this.vy *= 0.995;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= this.decay;
+    return this.life > 0 && this.y > -50 && this.x > -50 && this.x < W + 50;
+  }
+  draw(ctx) {
+    // trail
+    for (let i = 0; i < this.trail.length; i++) {
+      const t = this.trail[i];
+      const a = (i / this.trail.length) * this.life * 0.3;
+      const r = this.radius * (i / this.trail.length) * 0.6;
+      ctx.fillStyle = this.color + Math.floor(a * 180).toString(16).padStart(2, '0');
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // glow
+    ctx.save();
+    ctx.shadowBlur = this.glow * this.life;
+    ctx.shadowColor = this.color;
+    ctx.fillStyle = this.color + Math.floor(this.life * 220).toString(16).padStart(2, '0');
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius * this.life, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    // bright core
+    ctx.fillStyle = `rgba(255,255,220,${this.life * 0.8})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius * this.life * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// ─── Spark class ─────────────────────────────────────────────────
+class Spark {
+  constructor(x, y, color) {
+    this.x = x; this.y = y;
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 4;
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed;
+    this.life = 1;
+    this.decay = 0.02 + Math.random() * 0.04;
+    this.color = color || palette()[Math.floor(Math.random() * palette().length)];
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += 0.04;
+    this.vx *= 0.97;
+    this.life -= this.decay;
+    return this.life > 0;
+  }
+  draw(ctx) {
+    ctx.strokeStyle = this.color + Math.floor(this.life * 200).toString(16).padStart(2, '0');
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y);
+    ctx.lineTo(this.x - this.vx * 3, this.y - this.vy * 3);
+    ctx.stroke();
+  }
+}
+
+// ─── Background Stars ────────────────────────────────────────────
+const stars = [];
+for (let i = 0; i < 200; i++) {
+  stars.push({
+    x: Math.random(), y: Math.random(),
+    r: Math.random() * 1.2,
+    phase: Math.random() * Math.PI * 2,
+    speed: 0.005 + Math.random() * 0.015
+  });
+}
+
+// ─── Input ───────────────────────────────────────────────────────
+canvas.addEventListener('mousedown', (e) => {
+  initAudio();
+  mouse.down = true;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  growing = true;
+  growTimer = 0;
+  plantTree(e.clientX, e.clientY);
+  const freq = 200 + Math.random() * 400;
+  playTone(freq, 0.04, 'sine');
+});
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+canvas.addEventListener('mouseup', () => { mouse.down = false; growing = false; });
+canvas.addEventListener('mouseleave', () => { mouse.down = false; growing = false; });
+
+// Touch support
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  initAudio();
+  const t = e.touches[0];
+  mouse.down = true;
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  growing = true;
+  plantTree(t.clientX, t.clientY);
+  playTone(200 + Math.random() * 400, 0.04, 'sine');
+});
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+});
+canvas.addEventListener('touchend', () => { mouse.down = false; growing = false; });
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); windTarget = windTarget === 0 ? (Math.random() - 0.5) * 1.5 : 0; }
+  if (e.key === 'c' || e.key === 'C') { trees = []; embers = []; sparks = []; }
+  if (e.key >= '1' && e.key <= '4') { paletteIdx = parseInt(e.key) - 1; }
+});
+
+function plantTree(x, y) {
+  const tree = new Tree(x, y);
+  trees.push(tree);
+  // burst sparks
+  for (let i = 0; i < 15; i++) {
+    sparks.push(new Spark(x, y, tree.color));
+  }
+  // musical tone
+  const freqs = [261.6, 293.7, 329.6, 349.2, 392.0, 440.0, 493.9, 523.3];
+  const base = freqs[Math.floor(Math.random() * freqs.length)];
+  playTone(base, 0.05, 'triangle');
+  setTimeout(() => playTone(base * 1.5, 0.02, 'sine'), 150);
+  setTimeout(() => playTone(base * 2, 0.015, 'sine'), 300);
+}
+
+// ─── Main Loop ───────────────────────────────────────────────────
+let lastTime = 0;
+let emberSpawnAcc = 0;
+let autoSeedTimer = 0;
+
+function loop(timestamp) {
+  const dt = Math.min(32, timestamp - lastTime);
+  lastTime = timestamp;
+  time = timestamp;
+
+  // Wind lerp
+  wind += (windTarget - wind) * 0.01;
+
+  // Fade background
+  ctx.fillStyle = 'rgba(10, 6, 16, 0.18)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  for (const s of stars) {
+    const twinkle = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(time * s.speed + s.phase));
+    ctx.fillStyle = `rgba(200,200,240,${twinkle * 0.4})`;
+    ctx.beginPath();
+    ctx.arc(s.x * W, s.y * H, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Grow trees on drag
+  if (mouse.down && growing) {
+    growTimer += dt;
+    if (growTimer > 300) {
+      growTimer = 0;
+      plantTree(mouse.x + (Math.random() - 0.5) * 40, mouse.y + (Math.random() - 0.5) * 40);
+    }
+  }
+
+  // Auto-seed embers from trees
+  emberSpawnAcc += dt;
+  if (emberSpawnAcc > 60) {
+    emberSpawnAcc = 0;
+    for (const tree of trees) tree.emitEmber();
+  }
+
+  // Occasional spontaneous spark bursts
+  autoSeedTimer += dt;
+  if (autoSeedTimer > 4000 + Math.random() * 6000) {
+    autoSeedTimer = 0;
+    const sx = Math.random() * W;
+    const sy = H * 0.3 + Math.random() * H * 0.4;
+    for (let i = 0; i < 20; i++) {
+      embers.push(new Ember(sx, sy));
+    }
+  }
+
+  // Update & draw trees
+  for (const tree of trees) {
+    tree.update(dt);
+    tree.draw(ctx);
+  }
+
+  // Update & draw embers
+  embers = embers.filter(e => {
+    const alive = e.update(wind);
+    if (alive) e.draw(ctx);
+    return alive;
+  });
+
+  // Update & draw sparks
+  sparks = sparks.filter(s => {
+    const alive = s.update();
+    if (alive) s.draw(ctx);
+    return alive;
+  });
+
+  // Mouse glow
+  if (mouse.x && mouse.y) {
+    const grd = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 80);
+    grd.addColorStop(0, 'rgba(255,140,40,0.06)');
+    grd.addColorStop(1, 'rgba(255,140,40,0)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(mouse.x - 80, mouse.y - 80, 160, 160);
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// Fade hints after 8 seconds
+setTimeout(() => {
+  document.getElementById('hint').style.opacity = '0';
+}, 8000);
+setTimeout(() => {
+  document.getElementById('title').style.opacity = '0';
+}, 15000);
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
