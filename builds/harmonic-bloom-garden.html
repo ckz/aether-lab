@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Harmonic Bloom Garden</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0; left: 0;
+  }
+  #ui {
+    position: fixed;
+    top: 20px; left: 20px;
+    color: #fff;
+    font-size: 12px;
+    z-index: 10;
+    text-shadow: 0 0 10px rgba(255,255,255,0.5);
+    background: rgba(0,0,0,0.5);
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  #ui h1 {
+    font-size: 16px;
+    margin-bottom: 8px;
+    background: linear-gradient(45deg, #ff6b9d, #c44569, #ff6b9d);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  #ui p { margin: 3px 0; opacity: 0.7; }
+  #controls {
+    position: fixed;
+    bottom: 20px; left: 20px;
+    color: #fff;
+    font-size: 11px;
+    z-index: 10;
+    background: rgba(0,0,0,0.5);
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+    display: flex;
+    gap: 12px;
+  }
+  #controls button {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    transition: all 0.3s;
+  }
+  #controls button:hover {
+    background: rgba(255,255,255,0.2);
+    border-color: rgba(255,255,255,0.4);
+  }
+  #stats {
+    position: fixed;
+    top: 20px; right: 20px;
+    color: #fff;
+    font-size: 11px;
+    z-index: 10;
+    background: rgba(0,0,0,0.5);
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+    opacity: 0.6;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="ui">
+  <h1>🌸 Harmonic Bloom Garden</h1>
+  <p>Click to plant seeds of light</p>
+  <p>Move mouse to influence growth</p>
+</div>
+
+<div id="controls">
+  <button onclick="clearGarden()">Clear</button>
+  <button onclick="togglePause()">Pause</button>
+  <button onclick="randomBloom()">Random Bloom</button>
+</div>
+
+<div id="stats">
+  <div id="bloomCount">Blooms: 0</div>
+  <div id="fps">FPS: 60</div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+let blooms = [];
+let mouseX = W / 2;
+let mouseY = H / 2;
+let time = 0;
+let paused = false;
+let frameCount = 0;
+let lastFpsTime = Date.now();
+
+class Bloom {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.petals = Math.floor(Math.random() * 8) + 5;
+    this.maxRadius = Math.random() * 80 + 40;
+    this.radius = 0;
+    this.growSpeed = Math.random() * 0.5 + 0.3;
+    this.phase = Math.random() * Math.PI * 2;
+    this.frequency = Math.random() * 2 + 1;
+    this.amplitude = Math.random() * 20 + 10;
+    this.hue = Math.random() * 360;
+    this.life = 1;
+    this.decay = Math.random() * 0.0005 + 0.0002;
+    this.rotationSpeed = (Math.random() - 0.5) * 0.02;
+    this.rotation = 0;
+    this.opacity = 0;
+    this.born = time;
+    this.seed = Math.random() * 1000;
+    this.waveOffset = Math.random() * Math.PI * 2;
+  }
+
+  update(mx, my) {
+    this.rotation += this.rotationSpeed;
+    
+    // Grow phase
+    if (this.radius < this.maxRadius) {
+      this.radius += this.growSpeed;
+      this.opacity = Math.min(1, this.opacity + 0.02);
+    }
+    
+    // Mouse influence
+    const dx = mx - this.x;
+    const dy = my - this.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 200) {
+      const influence = (200 - dist) / 200;
+      this.phase += influence * 0.05;
+      this.hue += influence * 2;
+    }
+    
+    // Fade
+    if (this.radius >= this.maxRadius) {
+      this.life -= this.decay;
+      this.opacity = Math.max(0, this.life);
+    }
+    
+    return this.life > 0;
+  }
+
+  draw(ctx, t) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation);
+    ctx.globalAlpha = this.opacity * 0.8;
+    
+    // Draw harmonic petals
+    for (let i = 0; i < this.petals; i++) {
+      const angle = (i / this.petals) * Math.PI * 2;
+      const harmonic = Math.sin(t * this.frequency + this.seed) * this.amplitude;
+      
+      ctx.save();
+      ctx.rotate(angle);
+      
+      // Petal gradient
+      const gradient = ctx.createLinearGradient(0, 0, this.maxRadius, 0);
+      const hue1 = (this.hue + t * 10) % 360;
+      const hue2 = (hue1 + 30) % 360;
+      gradient.addColorStop(0, `hsla(${hue1}, 70%, 60%, 0.8)`);
+      gradient.addColorStop(1, `hsla(${hue2}, 80%, 50%, 0)`);
+      
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      
+      // Organic petal shape using bezier curves
+      const r = this.radius + harmonic * 0.3;
+      ctx.moveTo(0, 0);
+      ctx.bezierCurveTo(
+        r * 0.3, -r * 0.2,
+        r * 0.7, -r * 0.1,
+        r, 0
+      );
+      ctx.bezierCurveTo(
+        r * 0.7, r * 0.1,
+        r * 0.3, r * 0.2,
+        0, 0
+      );
+      
+      ctx.fill();
+      
+      // Petal outline glow
+      ctx.strokeStyle = `hsla(${hue1}, 90%, 70%, ${this.opacity * 0.3})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      
+      ctx.restore();
+    }
+    
+    // Center glow
+    const centerGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, this.maxRadius * 0.3);
+    const centerHue = (this.hue + 180) % 360;
+    centerGrad.addColorStop(0, `hsla(${centerHue}, 100%, 80%, ${this.opacity})`);
+    centerGrad.addColorStop(1, `hsla(${centerHue}, 100%, 50%, 0)`);
+    
+    ctx.fillStyle = centerGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, this.maxRadius * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.restore();
+  }
+}
+
+class Particle {
+  constructor(x, y, hue) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 2;
+    this.vy = (Math.random() - 0.5) * 2;
+    this.life = 1;
+    this.decay = Math.random() * 0.02 + 0.01;
+    this.size = Math.random() * 3 + 1;
+    this.hue = hue;
+  }
+
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= this.decay;
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+    return this.life > 0;
+  }
+
+  draw(ctx) {
+    ctx.globalAlpha = this.life * 0.6;
+    ctx.fillStyle = `hsl(${this.hue}, 80%, 60%)`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+let particles = [];
+
+function spawnParticles(x, y, hue, count = 20) {
+  for (let i = 0; i < count; i++) {
+    particles.push(new Particle(x, y, hue));
+  }
+}
+
+canvas.addEventListener('click', (e) => {
+  const bloom = new Bloom(e.clientX, e.clientY);
+  blooms.push(bloom);
+  spawnParticles(e.clientX, e.clientY, bloom.hue, 30);
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  
+  // Trail particles
+  if (Math.random() > 0.7) {
+    const hue = (time * 50) % 360;
+    particles.push(new Particle(e.clientX, e.clientY, hue));
+  }
+});
+
+function clearGarden() {
+  blooms = [];
+  particles = [];
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.95)';
+  ctx.fillRect(0, 0, W, H);
+}
+
+function togglePause() {
+  paused = !paused;
+}
+
+function randomBloom() {
+  const x = Math.random() * W;
+  const y = Math.random() * H;
+  const bloom = new Bloom(x, y);
+  blooms.push(bloom);
+  spawnParticles(x, y, bloom.hue, 40);
+}
+
+function drawBackground() {
+  // Subtle fade for trails
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.05)';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.02)';
+  ctx.lineWidth = 1;
+  const gridSize = 50;
+  for (let x = 0; x < W; x += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+  for (let y = 0; y < H; y += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+}
+
+function animate() {
+  if (!paused) {
+    time += 0.016;
+    
+    drawBackground();
+    
+    // Update and draw blooms
+    blooms = blooms.filter(bloom => {
+      const alive = bloom.update(mouseX, mouseY);
+      if (alive) bloom.draw(ctx, time);
+      return alive;
+    });
+    
+    // Update and draw particles
+    particles = particles.filter(particle => {
+      const alive = particle.update();
+      if (alive) particle.draw(ctx);
+      return alive;
+    });
+    
+    // Limit particles
+    if (particles.length > 500) {
+      particles = particles.slice(-500);
+    }
+    
+    // Update stats
+    frameCount++;
+    const now = Date.now();
+    if (now - lastFpsTime > 1000) {
+      document.getElementById('fps').textContent = `FPS: ${frameCount}`;
+      frameCount = 0;
+      lastFpsTime = now;
+    }
+    document.getElementById('bloomCount').textContent = `Blooms: ${blooms.length}`;
+  }
+  
+  requestAnimationFrame(animate);
+}
+
+// Initial bloom
+setTimeout(() => {
+  const x = W / 2;
+  const y = H / 2;
+  const bloom = new Bloom(x, y);
+  bloom.maxRadius = 150;
+  bloom.petals = 12;
+  blooms.push(bloom);
+  spawnParticles(x, y, bloom.hue, 50);
+}, 500);
+
+animate();
+</script>
+</body>
+</html>
