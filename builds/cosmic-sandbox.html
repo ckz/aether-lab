@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosmic Sandbox — Aether's Mini Universe</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #fff;
+    user-select: none;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 10;
+    background: rgba(0,0,0,0.7);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-size: 13px;
+    line-height: 1.8;
+    backdrop-filter: blur(6px);
+    max-width: 280px;
+  }
+  #ui h2 {
+    font-size: 15px;
+    margin-bottom: 6px;
+    background: linear-gradient(90deg, #ff6b9d, #c084fc, #60a5fa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  #ui .row { display: flex; justify-content: space-between; gap: 12px; }
+  #ui .label { color: #888; }
+  #ui .val { color: #e0e0e0; font-weight: bold; }
+  #ui .divider {
+    border-top: 1px solid rgba(255,255,255,0.1);
+    margin: 6px 0;
+  }
+  #ui kbd {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 11px;
+    color: #ccc;
+  }
+  #ui .tip {
+    font-size: 11px;
+    color: #666;
+    margin-top: 4px;
+  }
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.8);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 6px;
+    padding: 8px 20px;
+    font-size: 13px;
+    color: #aaa;
+    z-index: 10;
+    transition: opacity 0.4s;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="ui">
+  <h2>✦ Cosmic Sandbox</h2>
+  <div class="row"><span class="label">Bodies:</span><span class="val" id="count">0</span></div>
+  <div class="row"><span class="label">FPS:</span><span class="val" id="fps">60</span></div>
+  <div class="divider"></div>
+  <div><kbd>Click</kbd> Spawn body</div>
+  <div><kbd>Shift+Click</kbd> Spawn star (heavy)</div>
+  <div><kbd>Space</kbd> Pause / Play</div>
+  <div><kbd>C</kbd> Clear all</div>
+  <div><kbd>R</kbd> Random galaxy</div>
+  <div><kbd>G</kbd> Toggle gravity trails</div>
+  <div class="tip">Click & drag for velocity</div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// -- State --
+let bodies = [];
+let paused = false;
+let showTrails = true;
+let mouse = { x: 0, y: 0, down: false, startX: 0, startY: 0 };
+let frameCount = 0;
+let lastFpsTime = performance.now();
+let currentFps = 60;
+
+const COLORS = {
+  star:    ['#ff6b9d','#f59e0b','#fbbf24','#fb923c','#f97316'],
+  planet:  ['#60a5fa','#34d399','#a78bfa','#f472b6','#38bdf8','#4ade80','#c084fc','#fb7185'],
+  dwarf:   ['#94a3b8','#64748b','#a1a1aa','#78716c'],
+  nebula:  ['#e879f9','#818cf8','#6366f1','#a855f7','#7c3aed']
+};
+
+function rand(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+class Body {
+  constructor(x, y, vx, vy, mass, color, type) {
+    this.x = x; this.y = y;
+    this.vx = vx; this.vy = vy;
+    this.mass = mass;
+    this.radius = Math.max(2, Math.cbrt(mass) * 1.2);
+    this.color = color;
+    this.type = type; // 'star', 'planet', 'dwarf', 'nebula'
+    this.trail = [];
+    this.maxTrail = type === 'star' ? 60 : type === 'nebula' ? 40 : 20;
+    this.age = 0;
+    this.pulse = Math.random() * Math.PI * 2;
+    this.glowSize = this.radius * (type === 'star' ? 6 : type === 'nebula' ? 8 : 3);
+  }
+  update(dt) {
+    if (!paused) {
+      // gravity
+      for (let other of bodies) {
+        if (other === this) continue;
+        let dx = other.x - this.x;
+        let dy = other.y - this.y;
+        let distSq = dx * dx + dy * dy;
+        let minDist = (this.radius + other.radius) * 0.8;
+        if (distSq < minDist * minDist) distSq = minDist * minDist;
+        let dist = Math.sqrt(distSq);
+        let force = (G * other.mass) / distSq;
+        this.vx += (dx / dist) * force * dt;
+        this.vy += (dy / dist) * force * dt;
+      }
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      this.trail.push({ x: this.x, y: this.y });
+      if (this.trail.length > this.maxTrail) this.trail.shift();
+    }
+    this.age++;
+    this.pulse += 0.05;
+  }
+  draw() {
+    // trail
+    if (showTrails && this.trail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(this.trail[0].x, this.trail[0].y);
+      for (let i = 1; i < this.trail.length; i++) {
+        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+      }
+      ctx.strokeStyle = this.color + '30';
+      ctx.lineWidth = this.radius * 0.5;
+      ctx.stroke();
+    }
+
+    // glow
+    const glow = this.glowSize * (1 + 0.15 * Math.sin(this.pulse));
+    const grad = ctx.createRadialGradient(this.x, this.y, this.radius * 0.5, this.x, this.y, glow);
+    grad.addColorStop(0, this.color + 'cc');
+    grad.addColorStop(0.4, this.color + '44');
+    grad.addColorStop(1, this.color + '00');
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, glow, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // body
+    const bodyGrad = ctx.createRadialGradient(this.x - this.radius * 0.3, this.y - this.radius * 0.3, 0, this.x, this.y, this.radius);
+    bodyGrad.addColorStop(0, '#fff');
+    bodyGrad.addColorStop(0.3, this.color);
+    bodyGrad.addColorStop(1, this.color + '44');
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fillStyle = bodyGrad;
+    ctx.fill();
+  }
+}
+
+const G = 0.8;
+
+function spawnBody(x, y, vx, vy, mass, color, type) {
+  if (bodies.length >= 300) {
+    bodies.shift(); // remove oldest
+  }
+  bodies.push(new Body(x, y, vx, vy, mass, color, type));
+}
+
+function spawnStar(x, y) {
+  let mass = 200 + Math.random() * 400;
+  let color = rand(COLORS.star);
+  spawnBody(x, y, (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3, mass, color, 'star');
+}
+
+function spawnPlanet(x, y, vx, vy) {
+  let mass = 3 + Math.random() * 25;
+  let color = rand(COLORS.planet);
+  spawnBody(x, y, vx, vy, mass, color, 'planet');
+}
+
+function spawnDwarf(x, y) {
+  let mass = 0.5 + Math.random() * 2;
+  let color = rand(COLORS.dwarf);
+  spawnBody(x, y, (Math.random() - 0.5) * 1, (Math.random() - 0.5) * 1, mass, color, 'dwarf');
+}
+
+function spawnNebula(x, y) {
+  let mass = 50 + Math.random() * 150;
+  let color = rand(COLORS.nebula);
+  spawnBody(x, y, (Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2, mass, color, 'nebula');
+}
+
+// -- Input --
+canvas.addEventListener('mousedown', e => {
+  mouse.down = true;
+  mouse.startX = e.clientX;
+  mouse.startY = e.clientY;
+});
+
+canvas.addEventListener('mouseup', e => {
+  if (mouse.down) {
+    let dx = e.clientX - mouse.startX;
+    let dy = e.clientY - mouse.startY;
+    let vx = dx * 0.02;
+    let vy = dy * 0.02;
+    if (e.shiftKey) {
+      spawnStar(e.clientX, e.clientY);
+      toast('🌟 Star born!');
+    } else if (Math.random() < 0.12) {
+      spawnNebula(e.clientX, e.clientY);
+      toast('🌌 Nebula formed');
+    } else {
+      spawnPlanet(e.clientX, e.clientY, vx, vy);
+    }
+  }
+  mouse.down = false;
+});
+
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  // subtle dust particles on move
+  if (mouse.down && Math.random() < 0.3) {
+    spawnDwarf(e.clientX + (Math.random()-0.5)*20, e.clientY + (Math.random()-0.5)*20);
+  }
+});
+
+// touch support
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  let t = e.touches[0];
+  mouse.down = true;
+  mouse.startX = t.clientX; mouse.startY = t.clientY;
+  mouse.x = t.clientX; mouse.y = t.clientY;
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  let t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+});
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  let dx = mouse.x - mouse.startX;
+  let dy = mouse.y - mouse.startY;
+  spawnPlanet(mouse.x, mouse.y, dx * 0.02, dy * 0.02);
+  mouse.down = false;
+});
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); paused = !paused; toast(paused ? '⏸ Paused' : '▶ Playing'); }
+  if (e.code === 'KeyC') { bodies = []; toast('✨ Cleared'); }
+  if (e.code === 'KeyG') { showTrails = !showTrails; toast(showTrails ? '🛤 Trails on' : '🛤 Trails off'); }
+  if (e.code === 'KeyR') { randomGalaxy(); toast('🌀 Galaxy spawned'); }
+});
+
+function toast(msg) {
+  let el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.opacity = '1';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.style.opacity = '0', 1500);
+}
+
+// -- Galaxy Generator --
+function randomGalaxy() {
+  bodies = [];
+  let cx = W / 2, cy = H / 2;
+  let arms = 2 + Math.floor(Math.random() * 3);
+  let count = 80 + Math.floor(Math.random() * 100);
+
+  // central star
+  spawnStar(cx, cy);
+
+  for (let i = 0; i < count; i++) {
+    let arm = i % arms;
+    let armAngle = (arm / arms) * Math.PI * 2;
+    let dist = 40 + Math.random() * Math.min(W, H) * 0.35;
+    let spread = (Math.random() - 0.5) * 0.5 * (dist / 100);
+    let angle = armAngle + (dist / 150) + spread;
+    let x = cx + Math.cos(angle) * dist;
+    let y = cy + Math.sin(angle) * dist;
+    // orbital velocity (perpendicular to radius)
+    let speed = Math.sqrt(G * 300 / dist) * (0.7 + Math.random() * 0.6);
+    let vx = -Math.sin(angle) * speed;
+    let vy = Math.cos(angle) * speed;
+    let type = Math.random() < 0.08 ? 'nebula' : Math.random() < 0.15 ? 'dwarf' : 'planet';
+    let mass = type === 'nebula' ? 60 + Math.random() * 80 : type === 'dwarf' ? 0.5 + Math.random() * 2 : 3 + Math.random() * 15;
+    let color = type === 'dwarf' ? rand(COLORS.dwarf) : rand(type === 'nebula' ? COLORS.nebula : COLORS.planet);
+    spawnBody(x, y, vx, vy, mass, color, type);
+  }
+}
+
+// spawn initial mini galaxy
+setTimeout(randomGalaxy, 200);
+
+// -- Background Stars --
+let bgStars = [];
+for (let i = 0; i < 200; i++) {
+  bgStars.push({
+    x: Math.random() * 3000,
+    y: Math.random() * 2000,
+    r: Math.random() * 1.2,
+    a: Math.random() * 0.5 + 0.2,
+    twinkle: Math.random() * Math.PI * 2
+  });
+}
+
+function drawBg() {
+  for (let s of bgStars) {
+    s.twinkle += 0.01 + Math.random() * 0.01;
+    let alpha = s.a * (0.5 + 0.5 * Math.sin(s.twinkle));
+    ctx.beginPath();
+    ctx.arc(s.x % W, s.y % H, s.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.fill();
+  }
+}
+
+// -- Merge overlapping bodies --
+function mergeBodies() {
+  for (let i = bodies.length - 1; i >= 0; i--) {
+    for (let j = i - 1; j >= 0; j--) {
+      let a = bodies[i], b = bodies[j];
+      if (!a || !b) continue;
+      let dx = a.x - b.x, dy = a.y - b.y;
+      let dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < a.radius + b.radius) {
+        // merge b into a
+        let totalMass = a.mass + b.mass;
+        a.vx = (a.vx * a.mass + b.vx * b.mass) / totalMass;
+        a.vy = (a.vy * a.mass + b.vy * b.mass) / totalMass;
+        a.x = (a.x * a.mass + b.x * b.mass) / totalMass;
+        a.y = (a.y * a.mass + b.y * b.mass) / totalMass;
+        a.mass = totalMass;
+        a.radius = Math.max(2, Math.cbrt(totalMass) * 1.2);
+        bodies.splice(j, 1);
+        i--;
+      }
+    }
+  }
+}
+
+// -- Main Loop --
+let lastTime = performance.now();
+function loop(now) {
+  requestAnimationFrame(loop);
+  let dt = Math.min((now - lastTime) / 16.67, 3); // normalize to ~60fps
+  lastTime = now;
+
+  // FPS
+  frameCount++;
+  if (now - lastFpsTime > 500) {
+    currentFps = Math.round(frameCount / ((now - lastFpsTime) / 1000));
+    frameCount = 0;
+    lastFpsTime = now;
+    document.getElementById('fps').textContent = currentFps;
+  }
+
+  // bg
+  ctx.fillStyle = 'rgba(0,0,0,0.15)';
+  ctx.fillRect(0, 0, W, H);
+  drawBg();
+
+  // update & draw bodies
+  for (let b of bodies) b.update(dt);
+  mergeBodies();
+  for (let b of bodies) b.draw();
+
+  // drag line
+  if (mouse.down) {
+    ctx.beginPath();
+    ctx.moveTo(mouse.startX, mouse.startY);
+    ctx.lineTo(mouse.x, mouse.y);
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // preview dot
+    ctx.beginPath();
+    ctx.arc(mouse.startX, mouse.startY, 4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fill();
+  }
+
+  document.getElementById('count').textContent = bodies.length;
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
