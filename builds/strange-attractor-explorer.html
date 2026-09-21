@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Strange Attractor Explorer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #08080f;
+    font-family: 'Courier New', monospace;
+    color: #aab;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+  canvas {
+    display: block;
+    cursor: crosshair;
+  }
+  #controls {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    background: rgba(10,10,20,.85);
+    border: 1px solid rgba(100,90,180,.25);
+    border-radius: 8px;
+    padding: 16px 20px;
+    z-index: 10;
+    min-width: 220px;
+    backdrop-filter: blur(8px);
+  }
+  #controls h2 {
+    font-size: .7rem;
+    letter-spacing: .3em;
+    text-transform: uppercase;
+    color: #9988dd;
+    margin-bottom: 12px;
+  }
+  #controls label {
+    display: block;
+    font-size: .65rem;
+    letter-spacing: .12em;
+    color: #889;
+    margin-top: 10px;
+    text-transform: uppercase;
+  }
+  #controls select, #controls input[type=range] {
+    width: 100%;
+    margin-top: 4px;
+    background: rgba(20,18,40,.8);
+    color: #c8c8ff;
+    border: 1px solid rgba(100,90,180,.3);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-family: 'Courier New', monospace;
+    font-size: .72rem;
+  }
+  #controls input[type=range] {
+    padding: 0;
+    height: 6px;
+    accent-color: #8877dd;
+  }
+  #controls .btn-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  #controls button {
+    flex: 1;
+    background: rgba(40,30,80,.5);
+    color: #b8b0ff;
+    border: 1px solid rgba(140,120,255,.3);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-family: 'Courier New', monospace;
+    font-size: .65rem;
+    letter-spacing: .1em;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all .2s;
+  }
+  #controls button:hover {
+    background: rgba(60,45,120,.6);
+    border-color: rgba(160,140,255,.5);
+  }
+  #info {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    font-size: .6rem;
+    letter-spacing: .1em;
+    opacity: .35;
+    text-align: right;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="controls">
+  <h2>Strange Attractor Explorer</h2>
+  <label>Attractor</label>
+  <select id="attractor">
+    <option value="lorenz">Lorenz</option>
+    <option value="rossler">Rössler</option>
+    <option value="thomas">Thomas</option>
+    <option value="aizawa">Aizawa</option>
+    <option value="halvorsen">Halvorsen</option>
+    <option value="dadras">Dadras</option>
+    <option value="chen">Chen</option>
+    <option value="three-scroll">Three-Scroll</option>
+  </select>
+  <label>Palette</label>
+  <select id="palette">
+    <option value="cosmos">Cosmos</option>
+    <option value="ember">Ember</option>
+    <option value="aurora">Aurora</option>
+    <option value="nebula">Nebula</option>
+    <option value="void">Void</option>
+    <option value="neon">Neon</option>
+  </select>
+  <label>Speed <span id="speedVal">1.0</span>x</label>
+  <input type="range" id="speed" min="0.1" max="3" step="0.1" value="1">
+  <label>Trail <span id="trailVal">0.92</span></label>
+  <input type="range" id="trail" min="0.8" max="0.99" step="0.01" value="0.92">
+  <label>Scale <span id="scaleVal">12</span></label>
+  <input type="range" id="scale" min="4" max="30" step="1" value="12">
+  <label>Density <span id="densityVal">3</span></label>
+  <input type="range" id="density" min="1" max="8" step="1" value="3">
+  <div class="btn-row">
+    <button id="resetBtn">Reset</button>
+    <button id="saveBtn">Save</button>
+  </div>
+</div>
+<div id="info">
+  Strange Attractor Explorer<br>
+  Move mouse to rotate view · Click to pulse<br>
+  Space to pause · 1-6 palette · R reset
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const palettes = {
+  cosmos: [[20,10,50],[80,40,160],[200,100,255],[100,180,255],[40,200,220]],
+  ember:  [[10,5,5],[120,20,10],[220,80,20],[255,180,40],[40,10,10]],
+  aurora: [[5,20,30],[10,120,80],[40,220,140],[120,255,200],[10,60,80]],
+  nebula: [[20,5,30],[80,20,120],[180,60,200],[255,120,200],[40,10,60]],
+  void:   [[5,5,10],[30,30,50],[80,80,120],[140,140,180],[20,20,40]],
+  neon:   [[5,5,5],[0,255,180],[255,0,180],[180,255,0],[255,255,0]]
+};
+
+const attractors = {
+  lorenz: {
+    init: () => ({x:.1+Math.random()*.01,y:.1+Math.random()*.01,z:.1+Math.random()*.01}),
+    step: (p,dt) => {
+      const {x,y,z}=p, s=10, r=28, b=8/3;
+      p.x += s*(y-x)*dt;
+      p.y += (x*(r-z)-y)*dt;
+      p.z += (x*y-b*z)*dt;
+    },
+    bounds: {x:[-25,25],y:[-30,30],z:[5,55]},
+    dt: .005
+  },
+  rossler: {
+    init: () => ({x:1,y:.1,z:4+Math.random()*.2}),
+    step: (p,dt) => {
+      const {x,y,z}=p, a=.2, b=.2, c=5.7;
+      p.x += (-y-z)*dt*a;
+      p.y += (x+y*.5)*dt;
+      p.z += (.5+z*(x-5.7))*dt;
+    },
+    bounds: {x:[-12,12],y:[-12,12],z:[2,14]},
+    dt: .02
+  },
+  thomas: {
+    init: () => ({x:1,y:1,z:1}),
+    step: (p,dt) => {
+      const {x,y,z}=p, b=.208186;
+      p.x += (Math.sin(y)-b*x)*dt;
+      p.y += (Math.sin(z)-b*y)*dt;
+      p.z += (Math.sin(x)-b*z)*dt;
+    },
+    bounds: {x:[-6,6],y:[-6,6],z:[-6,6]},
+    dt: .05
+  },
+  aizawa: {
+    init: () => ({x:.1,y:.1,z:.1}),
+    step: (p,dt) => {
+      const {x,y,z}=p, a=.95,b=.7,c=.6,d=3.5,e=.25,f=.1;
+      p.x += ((z-b)*x-d*y)*dt;
+      p.y += (d*x+(z-b)*y)*dt;
+      p.z += (c+a*z-z*z*z/3-x*x-y*y)*dt;
+    },
+    bounds: {x:[-2,2],y:[-2,2],z:[-1,2]},
+    dt: .01
+  },
+  halvorsen: {
+    init: () => ({x:1,y:1,z:1}),
+    step: (p,dt) => {
+      const {x,y,z}=p, a=1.89;
+      p.x += (-a*x-4*y-4*z-y*y)*dt;
+      p.y += (-a*y-4*z-4*x-z*z)*dt;
+      p.z += (-a*z-4*x-4*y-x*x)*dt;
+    },
+    bounds: {x:[-10,10],y:[-10,10],z:[-10,10]},
+    dt: .005
+  },
+  dadras: {
+    init: () => ({x:1,y:1,z:1}),
+    step: (p,dt) => {
+      const {x,y,z}=p, a=3,b=2.7,c=1.7,d=2,e=9;
+      p.x += (y-a*x+b*y*z)*dt;
+      p.y += (c*y-x*z+z)*dt;
+      p.z += (d*x*y-e*z)*dt;
+    },
+    bounds: {x:[-3,3],y:[-3,3],z:[-2,4]},
+    dt: .005
+  },
+  chen: {
+    init: () => ({x:5,y:10,z:10}),
+    step: (p,dt) => {
+      const {x,y,z}=p, a=40,b=3,c=28;
+      p.x += (a*y-a*x)*dt;
+      p.y += ((c-a)*x-x*z+c*y)*dt;
+      p.z += (x*y-b*z)*dt;
+    },
+    bounds: {x:[-25,25],y:[-30,30],z:[5,45]},
+    dt: .004
+  },
+  'three-scroll': {
+    init: () => ({x:.1,y:.1,z:.1}),
+    step: (p,dt) => {
+      const {x,y,z}=p, a=.45,b=.3,c=.28,d=.3,e=2,f=2.2;
+      p.x += a*(y-x) + d*x*z*dt;
+      p.y += b*x - x*z + f*z*dt;
+      p.z += c*z + x*y - e*x*x*dt;
+    },
+    bounds: {x:[-4,4],y:[-4,4],z:[-3,3]},
+    dt: .01
+  }
+};
+
+let state = 'running';
+let currentAttractor = 'lorenz';
+let currentPalette = 'cosmos';
+let speed = 1;
+let trail = 0.92;
+let scale = 12;
+let density = 3;
+let rotX = .4, rotY = 0, targetRotX = .4, targetRotY = 0;
+let mouseInfluence = 0;
+let particles = [];
+let time = 0;
+let paused = false;
+
+function createParticle() {
+  const a = attractors[currentAttractor];
+  const p = a.init();
+  return { ...p, age: 0, hueOffset: Math.random() * 5 };
+}
+
+function reset() {
+  particles = [];
+  for (let i = 0; i < density * 800; i++) {
+    particles.push(createParticle());
+  }
+  ctx.fillStyle = '#08080f';
+  ctx.fillRect(0, 0, W, H);
+  time = 0;
+}
+
+function rotate(p) {
+  let x = p.x, y = p.y, z = p.z;
+  // Y rotation
+  let cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+  let x1 = x*cosY + z*sinY;
+  let z1 = -x*sinY + z*cosY;
+  // X rotation
+  let cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+  let y1 = y*cosX - z1*sinX;
+  let z2 = y*sinX + z1*cosX;
+  return {x:x1, y:y1, z:z2};
+}
+
+function project(p) {
+  const persp = 6 / (6 + p.z);
+  return {
+    x: W/2 + p.x * scale * persp,
+    y: H/2 + p.y * scale * persp,
+    s: persp
+  };
+}
+
+function getColor(p, proj, idx) {
+  const pal = palettes[currentPalette];
+  const t = (p.z - attractors[currentAttractor].bounds.z[0]) /
+    (attractors[currentAttractor].bounds.z[1] - attractors[currentAttractor].bounds.z[0]);
+  const ci = Math.floor(((t + p.hueOffset/10) % 1) * (pal.length-1));
+  const c = pal[Math.max(0, Math.min(pal.length-1, ci))];
+  const a = Math.max(0.15, Math.min(1, proj.s * 1.5));
+  return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+}
+
+function animate() {
+  if (!paused) {
+    // Fade trail
+    ctx.fillStyle = `rgba(8,8,15,${1-trail})`;
+    ctx.fillRect(0, 0, W, H);
+
+    const a = attractors[currentAttractor];
+    const dt = a.dt * speed;
+
+    for (let p of particles) {
+      a.step(p, dt);
+      p.age++;
+      if (p.age % 3 === 0 && mouseInfluence > 0) {
+        // tiny wobble from mouse
+      }
+
+      const rotated = rotate(p);
+      const proj = project(rotated);
+
+      if (proj.s > 0.05) {
+        ctx.fillStyle = getColor(p, proj, particles.indexOf(p));
+        const size = Math.max(0.5, proj.s * 2.5);
+        ctx.beginPath();
+        ctx.arc(proj.x, proj.y, size, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+    time++;
+  }
+  requestAnimationFrame(animate);
+}
+
+// Mouse interaction
+let mouseDown = false;
+canvas.addEventListener('mousemove', (e) => {
+  targetRotY = (e.clientX - W/2) * .003;
+  targetRotX = (e.clientY - H/2) * .003;
+  if (mouseDown) mouseInfluence = 1;
+});
+canvas.addEventListener('mousedown', () => mouseDown = true);
+canvas.addEventListener('mouseup', () => mouseDown = false);
+canvas.addEventListener('click', () => {
+  mouseInfluence = .5;
+  setTimeout(() => mouseInfluence = 0, 500);
+});
+
+// Smooth rotation
+setInterval(() => {
+  rotY += (targetRotY - rotY) * .05;
+  rotX += (targetRotX - rotX) * .05;
+}, 16);
+
+// Controls
+document.getElementById('attractor').addEventListener('change', (e) => {
+  currentAttractor = e.target.value;
+  reset();
+});
+document.getElementById('palette').addEventListener('change', (e) => {
+  currentPalette = e.target.value;
+});
+document.getElementById('speed').addEventListener('input', (e) => {
+  speed = parseFloat(e.target.value);
+  document.getElementById('speedVal').textContent = speed.toFixed(1);
+});
+document.getElementById('trail').addEventListener('input', (e) => {
+  trail = parseFloat(e.target.value);
+  document.getElementById('trailVal').textContent = trail.toFixed(2);
+});
+document.getElementById('scale').addEventListener('input', (e) => {
+  scale = parseInt(e.target.value);
+  document.getElementById('scaleVal').textContent = scale;
+});
+document.getElementById('density').addEventListener('input', (e) => {
+  density = parseInt(e.target.value);
+  document.getElementById('densityVal').textContent = density;
+  reset();
+});
+document.getElementById('resetBtn').addEventListener('click', reset);
+document.getElementById('saveBtn').addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = `strange-attractor-${currentAttractor}-${Date.now()}.png`;
+  link.href = canvas.toDataURL();
+  link.click();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === ' ') { e.preventDefault(); paused = !paused; }
+  if (e.key === 'r') reset();
+  if (e.key === '1') { currentPalette='cosmos'; }
+  if (e.key === '2') { currentPalette='ember'; }
+  if (e.key === '3') { currentPalette='aurora'; }
+  if (e.key === '4') { currentPalette='nebula'; }
+  if (e.key === '5') { currentPalette='void'; }
+  if (e.key === '6') { currentPalette='neon'; }
+});
+
+reset();
+animate();
+</script>
+</body>
+</html>
