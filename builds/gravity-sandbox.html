@@ -3,99 +3,140 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gravity Sandbox ✦ Aether Lab</title>
+<title>Aether's Gravity Sandbox</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
   background: #0a0a0f;
-  overflow: hidden;
+  color: #e0e0ff;
   font-family: 'Courier New', monospace;
-  cursor: crosshair;
+  overflow: hidden;
+  height: 100vh;
 }
-canvas { display: block; }
+#canvas {
+  display: block;
+  cursor: crosshair;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
 #ui {
-  position: fixed;
-  top: 20px;
-  left: 20px;
-  color: #aaa;
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  background: rgba(10, 10, 20, 0.85);
+  border: 1px solid rgba(100, 140, 255, 0.3);
+  border-radius: 8px;
+  padding: 14px 18px;
   font-size: 13px;
   z-index: 10;
-  pointer-events: none;
-  line-height: 1.7;
+  backdrop-filter: blur(8px);
+  max-width: 280px;
 }
 #ui h1 {
-  font-size: 18px;
-  color: #fff;
+  font-size: 16px;
+  color: #7ab4ff;
   margin-bottom: 8px;
-  letter-spacing: 2px;
-}
-#ui .key { color: #7eb8ff; }
-#ui .val { color: #fff; }
-#controls {
-  position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 12px;
-  z-index: 10;
-}
-#controls button {
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.15);
-  color: #ccc;
-  padding: 8px 18px;
-  border-radius: 20px;
-  cursor: pointer;
-  font-family: 'Courier New', monospace;
-  font-size: 12px;
   letter-spacing: 1px;
+}
+#ui .row {
+  margin: 5px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+#ui label { color: #aaa; font-size: 12px; }
+#ui input[type=range] { width: 120px; accent-color: #7ab4ff; }
+#ui button {
+  background: rgba(100, 140, 255, 0.2);
+  border: 1px solid rgba(100, 140, 255, 0.4);
+  color: #7ab4ff;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  margin: 2px;
   transition: all 0.2s;
-  pointer-events: all;
 }
-#controls button:hover {
-  background: rgba(255,255,255,0.14);
-  color: #fff;
-  border-color: rgba(255,255,255,0.4);
-}
-#controls button.active {
-  background: rgba(126,184,255,0.2);
-  border-color: #7eb8ff;
-  color: #7eb8ff;
+#ui button:hover { background: rgba(100, 140, 255, 0.4); }
+#ui button.active { background: rgba(100, 140, 255, 0.5); }
+#stats {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: rgba(10, 10, 20, 0.85);
+  border: 1px solid rgba(100, 140, 255, 0.3);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  z-index: 10;
+  color: #7ab4ff;
+  backdrop-filter: blur(8px);
 }
 #hint {
-  position: fixed;
-  bottom: 60px;
+  position: absolute;
+  bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
-  color: rgba(255,255,255,0.3);
+  color: rgba(160, 180, 220, 0.6);
   font-size: 12px;
   z-index: 10;
+  text-align: center;
   pointer-events: none;
-  white-space: nowrap;
+}
+.color-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
 }
 </style>
 </head>
 <body>
 <canvas id="canvas"></canvas>
+
 <div id="ui">
-  <h1>✦ GRAVITY SANDBOX ✦</h1>
-  <div><span class="key">particles:</span> <span class="val" id="count">0</span></div>
-  <div><span class="key">mode:</span> <span class="val" id="mode">attract</span></div>
-  <div><span class="key">click + drag</span> = spawn stream</div>
+  <h1>✦ Aether's Gravity Sandbox ✦</h1>
+  <div class="row">
+    <label>Gravity</label>
+    <input type="range" id="gravity" min="0" max="2" step="0.05" value="0.5">
+  </div>
+  <div class="row">
+    <label>Trail</label>
+    <input type="range" id="trail" min="0" max="0.3" step="0.01" value="0.08">
+  </div>
+  <div class="row">
+    <label>Bounce</label>
+    <input type="range" id="bounce" min="0.1" max="1.5" step="0.05" value="0.8">
+  </div>
+  <div class="row" style="margin-top:8px;">
+    <label>Mode:</label>
+  </div>
+  <div class="row">
+    <button id="modeAttract" class="active">Attract</button>
+    <button id="modeRepel">Repel</button>
+    <button id="modeVortex">Vortex</button>
+  </div>
+  <div class="row" style="margin-top:6px;">
+    <button id="clearAll">Clear All</button>
+    <button id="spawnBurst">Burst +50</button>
+  </div>
 </div>
-<div id="hint">click anywhere to begin</div>
-<div id="controls">
-  <button class="active" data-mode="attract">⊙ attract</button>
-  <button data-mode="repel">⊗ repel</button>
-  <button data-mode="vortex">⟳ vortex</button>
-  <button data-mode="paint">◈ paint</button>
-  <button id="clearBtn">✕ clear</button>
+
+<div id="stats">
+  Particles: <span id="particleCount">0</span><br>
+  FPS: <span id="fps">0</span>
 </div>
+
+<div id="hint">Click & drag to spawn • Right-click to attract • Hold Shift for vortex mode</div>
 
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
+
 let W, H;
 function resize() {
   W = canvas.width = window.innerWidth;
@@ -105,261 +146,216 @@ resize();
 window.addEventListener('resize', resize);
 
 const particles = [];
-const MAX = 2500;
-let mouse = { x: W/2, y: H/2, down: false };
-let mode = 'attract';
-let hue = 200;
-let frame = 0;
+const MAX_PARTICLES = 2000;
 
-// Color palettes
-const palettes = [
-  [200, 280],   // blue-purple
-  [320, 380],   // pink-magenta
-  [140, 200],   // teal-blue
-  [20, 60],     // warm gold
-  [0, 360],     // full rainbow
+// Hue palette cycles through beautiful colors
+const palette = [
+  { h: 210, s: 80, l: 65 }, // soft blue
+  { h: 260, s: 70, l: 60 }, // purple
+  { h: 180, s: 75, l: 55 }, // teal
+  { h: 320, s: 65, l: 65 }, // pink
+  { h: 40, s: 80, l: 60 },   // gold
+  { h: 150, s: 70, l: 55 },  // green
 ];
-let palette = palettes[0];
 
-class Particle {
-  constructor(x, y, vx, vy) {
-    this.x = x;
-    this.y = y;
-    this.vx = vx || (Math.random() - 0.5) * 2;
-    this.vy = vy || (Math.random() - 0.5) * 2;
-    this.life = 1;
-    this.decay = 0.0003 + Math.random() * 0.0008;
-    this.radius = 1 + Math.random() * 2.5;
-    this.hueOffset = (Math.random() - 0.5) * 30;
-    this.trail = [];
-    this.maxTrail = 6 + Math.floor(Math.random() * 8);
+function createParticle(x, y, vx = 0, vy = 0) {
+  if (particles.length >= MAX_PARTICLES) return;
+  const color = palette[Math.floor(Math.random() * palette.length)];
+  const hueShift = (Math.random() - 0.5) * 30;
+  particles.push({
+    x, y,
+    vx: vx + (Math.random() - 0.5) * 2,
+    vy: vy + (Math.random() - 0.5) * 2,
+    radius: Math.random() * 2.5 + 1.2,
+    life: 1,
+    decay: Math.random() * 0.0008 + 0.0002,
+    h: color.h + hueShift,
+    s: color.s,
+    l: color.l,
+  });
+}
+
+// Mouse state
+const mouse = { x: W/2, y: H/2, down: false, right: false, shift: false };
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 0) mouse.down = true;
+  if (e.button === 2) mouse.right = true;
+});
+canvas.addEventListener('mouseup', (e) => {
+  if (e.button === 0) mouse.down = false;
+  if (e.button === 2) mouse.right = false;
+});
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('keydown', (e) => { if (e.key === 'Shift') mouse.shift = true; });
+canvas.addEventListener('keyup', (e) => { if (e.key === 'Shift') mouse.shift = false; });
+
+// Touch support
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  mouse.down = true;
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+});
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+});
+canvas.addEventListener('touchend', () => { mouse.down = false; });
+
+// Controls
+const controls = {
+  gravity: document.getElementById('gravity'),
+  trail: document.getElementById('trail'),
+  bounce: document.getElementById('bounce'),
+};
+let mode = 'attract'; // attract | repel | vortex
+document.getElementById('modeAttract').onclick = () => setMode('attract');
+document.getElementById('modeRepel').onclick = () => setMode('repel');
+document.getElementById('modeVortex').onclick = () => setMode('vortex');
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('#ui button').forEach(b => b.classList.remove('active'));
+  document.getElementById('mode' + m.charAt(0).toUpperCase() + m.slice(1)).classList.add('active');
+}
+document.getElementById('clearAll').onclick = () => particles.length = 0;
+document.getElementById('spawnBurst').onclick = () => {
+  const cx = W/2 + (Math.random() - 0.5) * 300;
+  const cy = H/2 + (Math.random() - 0.5) * 300;
+  for (let i = 0; i < 50; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = Math.random() * 4 + 1;
+    createParticle(cx, cy, Math.cos(a) * s, Math.sin(a) * s);
   }
-  update() {
-    this.trail.push({ x: this.x, y: this.y });
-    if (this.trail.length > this.maxTrail) this.trail.shift();
+};
 
-    const dx = mouse.x - this.x;
-    const dy = mouse.y - this.y;
-    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    const force = mouse.down ? 800 : 120;
-    const strength = force / (dist * dist);
-    const angle = Math.atan2(dy, dx);
+// FPS
+let frameCount = 0, lastFpsUpdate = performance.now(), fps = 0;
 
-    switch(mode) {
-      case 'attract':
-        this.vx += Math.cos(angle) * strength * 0.8;
-        this.vy += Math.sin(angle) * strength * 0.8;
-        break;
-      case 'repel':
-        this.vx -= Math.cos(angle) * strength * 1.2;
-        this.vy -= Math.sin(angle) * strength * 1.2;
-        break;
-      case 'vortex':
-        const perpAngle = angle + Math.PI * 0.5;
-        const pull = mouse.down ? strength * 0.6 : strength * 0.15;
-        this.vx += Math.cos(perpAngle) * pull + Math.cos(angle) * pull * 0.2;
-        this.vy += Math.sin(perpAngle) * pull + Math.sin(angle) * pull * 0.2;
-        break;
-      case 'paint':
-        if (mouse.down) {
-          this.vx += Math.cos(angle) * strength * 0.3;
-          this.vy += Math.sin(angle) * strength * 0.3;
-        }
-        break;
-    }
-
-    // Gentle damping
-    this.vx *= 0.985;
-    this.vy *= 0.985;
-
-    // Speed cap
-    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-    if (speed > 8) {
-      this.vx = (this.vx / speed) * 8;
-      this.vy = (this.vy / speed) * 8;
-    }
-
-    this.x += this.vx;
-    this.y += this.vy;
-
-    // Subtle fade
-    this.life -= this.decay;
-
-    // Wrap edges
-    if (this.x < -20) this.x = W + 20;
-    if (this.x > W + 20) this.x = -20;
-    if (this.y < -20) this.y = H + 20;
-    if (this.y > H + 20) this.y = -20;
-
-    // Color shifts based on speed
-    this._hue = (palette[0] + this.hueOffset + speed * 12 + frame * 0.2) % 360;
+function animate(time) {
+  // FPS
+  frameCount++;
+  if (time - lastFpsUpdate >= 1000) {
+    fps = frameCount;
+    frameCount = 0;
+    lastFpsUpdate = time;
   }
-  draw() {
-    const alpha = this.life * 0.85;
-    if (alpha <= 0) return;
 
-    // Trail
-    if (this.trail.length > 1) {
-      ctx.beginPath();
-      ctx.moveTo(this.trail[0].x, this.trail[0].y);
-      for (let i = 1; i < this.trail.length; i++) {
-        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+  const gravity = parseFloat(controls.gravity.value);
+  const trail = parseFloat(controls.trail.value);
+  const bounce = parseFloat(controls.bounce.value);
+
+  // Trail effect
+  ctx.fillStyle = `rgba(10, 10, 18, ${trail})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // Spawn on drag
+  if (mouse.down && particles.length < MAX_PARTICLES) {
+    for (let i = 0; i < 3; i++) {
+      createParticle(mouse.x, mouse.y);
+    }
+  }
+
+  // Update & draw particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+
+    // Mouse interaction
+    if (mouse.down || mouse.right) {
+      const dx = mouse.x - p.x;
+      const dy = mouse.y - p.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 0.01;
+      const force = Math.min(800 / (dist * dist), 3);
+      const nx = dx / dist;
+      const ny = dy / dist;
+
+      let fx = 0, fy = 0;
+      if (mouse.shift || mode === 'vortex') {
+        // Perpendicular force (vortex)
+        fx = -ny * force * 1.5;
+        fy = nx * force * 1.5;
+        // Pull in slightly
+        fx += nx * force * 0.3;
+        fy += ny * force * 0.3;
+      } else if (mode === 'attract') {
+        fx = nx * force;
+        fy = ny * force;
+      } else if (mode === 'repel') {
+        fx = -nx * force * 1.3;
+        fy = -ny * force * 1.3;
       }
-      ctx.strokeStyle = `hsla(${this._hue}, 80%, 60%, ${alpha * 0.2})`;
-      ctx.lineWidth = this.radius * 0.5;
-      ctx.stroke();
+      p.vx += fx;
+      p.vy += fy;
     }
 
-    // Glow
-    const glow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius * 4);
-    glow.addColorStop(0, `hsla(${this._hue}, 90%, 65%, ${alpha * 0.5})`);
-    glow.addColorStop(1, `hsla(${this._hue}, 90%, 50%, 0)`);
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius * 4, 0, Math.PI * 2);
+    // Gravity
+    p.vy += gravity * 0.15;
+
+    // Damping
+    p.vx *= 0.998;
+    p.vy *= 0.998;
+
+    // Move
+    p.x += p.vx;
+    p.y += p.vy;
+
+    // Bounce off walls
+    if (p.x < p.radius) { p.x = p.radius; p.vx *= -bounce; }
+    if (p.x > W - p.radius) { p.x = W - p.radius; p.vx *= -bounce; }
+    if (p.y < p.radius) { p.y = p.radius; p.vy *= -bounce; }
+    if (p.y > H - p.radius) { p.y = H - p.radius; p.vy *= -bounce; }
+
+    // Life decay
+    p.life -= p.decay;
+
+    // Draw glow
+    const alpha = p.life * 0.9;
+    const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius * 6);
+    glow.addColorStop(0, `hsla(${p.h}, ${p.s}%, ${p.l}%, ${alpha})`);
+    glow.addColorStop(0.4, `hsla(${p.h}, ${p.s}%, ${p.l}%, ${alpha * 0.4})`);
+    glow.addColorStop(1, `hsla(${p.h}, ${p.s}%, ${p.l}%, 0)`);
     ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.radius * 6, 0, Math.PI * 2);
     ctx.fill();
 
     // Core
+    ctx.fillStyle = `hsla(${p.h}, ${p.s}%, ${Math.min(p.l + 20, 95)}%, ${alpha})`;
     ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-    ctx.fillStyle = `hsla(${this._hue}, 85%, 75%, ${alpha})`;
+    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
     ctx.fill();
-  }
-}
 
-function spawn(x, y, count, spread) {
-  for (let i = 0; i < count; i++) {
-    if (particles.length >= MAX) {
-      // Remove oldest
-      particles.shift();
-    }
-    const angle = Math.random() * Math.PI * 2;
-    const speed = Math.random() * spread;
-    particles.push(new Particle(
-      x + (Math.random() - 0.5) * 20,
-      y + (Math.random() - 0.5) * 20,
-      Math.cos(angle) * speed,
-      Math.sin(angle) * speed
-    ));
-  }
-}
-
-// Mouse events
-canvas.addEventListener('mousemove', e => {
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
-  if (mouse.down && mode === 'paint') {
-    spawn(e.clientX, e.clientY, 3, 3);
-  }
-});
-canvas.addEventListener('mousedown', e => {
-  mouse.down = true;
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
-  spawn(e.clientX, e.clientY, 30, 4);
-  document.getElementById('hint').style.opacity = '0';
-});
-canvas.addEventListener('mouseup', () => mouse.down = false);
-canvas.addEventListener('mouseleave', () => mouse.down = false);
-
-// Touch support
-canvas.addEventListener('touchstart', e => {
-  e.preventDefault();
-  mouse.down = true;
-  mouse.x = e.touches[0].clientX;
-  mouse.y = e.touches[0].clientY;
-  spawn(mouse.x, mouse.y, 30, 4);
-  document.getElementById('hint').style.opacity = '0';
-});
-canvas.addEventListener('touchmove', e => {
-  e.preventDefault();
-  mouse.x = e.touches[0].clientX;
-  mouse.y = e.touches[0].clientY;
-  if (mode === 'paint') spawn(mouse.x, mouse.y, 3, 3);
-});
-canvas.addEventListener('touchend', () => mouse.down = false);
-
-// Controls
-document.querySelectorAll('#controls button[data-mode]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('#controls button[data-mode]').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    mode = btn.dataset.mode;
-    document.getElementById('mode').textContent = mode;
-  });
-});
-
-document.getElementById('clearBtn').addEventListener('click', () => {
-  particles.length = 0;
-});
-
-// Cycle palette on space
-document.addEventListener('keydown', e => {
-  if (e.code === 'Space') {
-    e.preventDefault();
-    const idx = palettes.indexOf(palette);
-    palette = palettes[(idx + 1) % palettes.length];
-  }
-  if (e.code === 'KeyC') {
-    particles.length = 0;
-  }
-});
-
-// Ambient spawn
-function ambientSpawn() {
-  if (particles.length < 50 && frame % 30 === 0) {
-    const edge = Math.floor(Math.random() * 4);
-    let x, y;
-    switch(edge) {
-      case 0: x = Math.random() * W; y = -10; break;
-      case 1: x = W + 10; y = Math.random() * H; break;
-      case 2: x = Math.random() * W; y = H + 10; break;
-      case 3: x = -10; y = Math.random() * H; break;
-    }
-    spawn(x, y, 3, 2);
-  }
-}
-
-// Animation loop
-function animate() {
-  frame++;
-
-  // Fade effect instead of clear for trail
-  ctx.fillStyle = 'rgba(10, 10, 15, 0.12)';
-  ctx.fillRect(0, 0, W, H);
-
-  ambientSpawn();
-
-  // Continuous spawn while mouse down
-  if (mouse.down && mode !== 'paint') {
-    spawn(mouse.x, mouse.y, 2, 2);
-  }
-
-  // Update & draw
-  for (let i = particles.length - 1; i >= 0; i--) {
-    particles[i].update();
-    particles[i].draw();
-    if (particles[i].life <= 0) {
+    // Remove dead
+    if (p.life <= 0 || p.x < -50 || p.x > W + 50 || p.y < -50 || p.y > H + 50) {
       particles.splice(i, 1);
     }
   }
 
-  // Mouse cursor glow
-  if (!mouse.down) {
-    const cursorGlow = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 60);
-    cursorGlow.addColorStop(0, `hsla(${palette[0]}, 60%, 60%, 0.04)`);
-    cursorGlow.addColorStop(1, 'transparent');
-    ctx.beginPath();
-    ctx.arc(mouse.x, mouse.y, 60, 0, Math.PI * 2);
-    ctx.fillStyle = cursorGlow;
-    ctx.fill();
-  }
+  // Update UI
+  document.getElementById('particleCount').textContent = particles.length;
+  document.getElementById('fps').textContent = fps;
 
-  document.getElementById('count').textContent = particles.length;
   requestAnimationFrame(animate);
 }
 
-animate();
+// Initial burst
+setTimeout(() => {
+  for (let i = 0; i < 80; i++) {
+    const x = Math.random() * W;
+    const y = Math.random() * H * 0.6;
+    const a = Math.random() * Math.PI * 2;
+    const s = Math.random() * 3 + 0.5;
+    createParticle(x, y, Math.cos(a) * s, Math.sin(a) * s);
+  }
+}, 100);
+
+requestAnimationFrame(animate);
 </script>
 </body>
 </html>
