@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cron Whisperer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0b14;
+    color: #b8b8cc;
+    font-family: 'Courier New', monospace;
+    padding: 40px 24px;
+    min-height: 100vh;
+    background-image: 
+      radial-gradient(circle at 20% 30%, rgba(90, 60, 180, 0.06) 0%, transparent 50%),
+      radial-gradient(circle at 80% 70%, rgba(60, 120, 180, 0.05) 0%, transparent 50%);
+  }
+  .container { max-width: 820px; margin: 0 auto; }
+  h1 {
+    font-size: 1.6rem;
+    font-weight: normal;
+    letter-spacing: .3em;
+    color: #c8c8ff;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+  .sub {
+    font-size: .75rem;
+    opacity: .45;
+    letter-spacing: .2em;
+    margin-bottom: 36px;
+  }
+  .input-group {
+    background: rgba(20, 18, 40, 0.6);
+    border: 1px solid rgba(100, 90, 180, 0.2);
+    border-radius: 6px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  label {
+    display: block;
+    font-size: .7rem;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: #8878cc;
+    margin-bottom: 8px;
+  }
+  input[type="text"] {
+    width: 100%;
+    background: rgba(10, 10, 24, 0.8);
+    border: 1px solid rgba(100, 90, 180, 0.3);
+    border-radius: 4px;
+    color: #e8e8ff;
+    padding: 12px 14px;
+    font-family: 'Courier New', monospace;
+    font-size: .95rem;
+    letter-spacing: .08em;
+    outline: none;
+    transition: border-color .3s;
+  }
+  input[type="text"]:focus {
+    border-color: rgba(150, 130, 255, 0.6);
+  }
+  .presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .preset {
+    background: rgba(100, 80, 180, 0.12);
+    border: 1px solid rgba(100, 80, 180, 0.25);
+    color: #9988dd;
+    padding: 5px 12px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: .7rem;
+    letter-spacing: .08em;
+    font-family: 'Courier New', monospace;
+    transition: all .2s;
+  }
+  .preset:hover {
+    background: rgba(100, 80, 180, 0.25);
+    border-color: rgba(150, 130, 255, 0.5);
+    color: #c8c8ff;
+  }
+  .result {
+    background: rgba(20, 18, 40, 0.6);
+    border: 1px solid rgba(100, 90, 180, 0.2);
+    border-radius: 6px;
+    padding: 20px;
+    display: none;
+  }
+  .result.visible { display: block; }
+  .section-title {
+    font-size: .7rem;
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: #8878cc;
+    margin: 18px 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(100, 90, 180, 0.15);
+  }
+  .section-title:first-child { margin-top: 0; }
+  .explanation {
+    font-size: .95rem;
+    color: #d8d8f0;
+    line-height: 1.6;
+    letter-spacing: .03em;
+  }
+  .explanation .field {
+    color: #c8c8ff;
+    font-weight: bold;
+  }
+  .runs {
+    list-style: none;
+    font-size: .82rem;
+    letter-spacing: .05em;
+  }
+  .runs li {
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(100, 90, 180, 0.08);
+    color: #a8a8cc;
+    display: flex;
+    justify-content: space-between;
+  }
+  .runs li:last-child { border-bottom: none; }
+  .runs .run-num {
+    color: #8878cc;
+    font-size: .7rem;
+    min-width: 30px;
+  }
+  .copy-btn {
+    background: rgba(100, 80, 180, 0.15);
+    border: 1px solid rgba(100, 80, 180, 0.3);
+    color: #9988dd;
+    padding: 6px 14px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: .7rem;
+    letter-spacing: .1em;
+    font-family: 'Courier New', monospace;
+    margin-top: 10px;
+    transition: all .2s;
+  }
+  .copy-btn:hover {
+    background: rgba(100, 80, 180, 0.3);
+    border-color: rgba(150, 130, 255, 0.5);
+  }
+  .error {
+    color: #ff8888;
+    font-size: .85rem;
+    margin-top: 10px;
+    display: none;
+  }
+  .error.visible { display: block; }
+  .hint {
+    font-size: .7rem;
+    opacity: .35;
+    letter-spacing: .1em;
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Cron Whisperer</h1>
+  <p class="sub">translate cron expressions into plain english</p>
+
+  <div class="input-group">
+    <label for="cronInput">Cron Expression</label>
+    <input type="text" id="cronInput" placeholder="*/5 * * * *" value="*/5 * * * *" autocomplete="off" spellcheck="false">
+    <div class="error" id="error"></div>
+    <div class="hint">5 fields: minute hour day month weekday</div>
+    <div class="presets">
+      <span class="preset" data-cron="* * * * *">every minute</span>
+      <span class="preset" data-cron="*/5 * * * *">every 5 min</span>
+      <span class="preset" data-cron="*/15 * * * *">every 15 min</span>
+      <span class="preset" data-cron="*/30 * * * *">every 30 min</span>
+      <span class="preset" data-cron="0 * * * *">every hour</span>
+      <span class="preset" data-cron="0 */6 * * *">every 6 hours</span>
+      <span class="preset" data-cron="0 9 * * *">daily 9am</span>
+      <span class="preset" data-cron="0 9 * * 1-5">weekdays 9am</span>
+      <span class="preset" data-cron="0 0 * * 0">weekly sunday midnight</span>
+      <span class="preset" data-cron="0 0 1 * *">monthly 1st</span>
+      <span class="preset" data-cron="0 0 1 1 *">yearly jan 1</span>
+      <span class="preset" data-cron="0 */4 * * *">every 4 hours</span>
+    </div>
+  </div>
+
+  <div class="result" id="result">
+    <div class="section-title">Translation</div>
+    <div class="explanation" id="explanation"></div>
+
+    <div class="section-title">Next 8 Runs</div>
+    <ul class="runs" id="runs"></ul>
+
+    <button class="copy-btn" id="copyBtn">Copy Description</button>
+  </div>
+</div>
+
+<script>
+const FIELD_NAMES = ['minute', 'hour', 'day of month', 'month', 'day of week'];
+const MONTH_NAMES = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+function parseField(field, min, max, names) {
+  const values = new Set();
+  const parts = field.split(',');
+  
+  for (const part of parts) {
+    let match;
+    if ((match = part.match(/^(\d+)-(\d+)(?:\/(\d+))?$/)) || (match = part.match(/^\*(?:\/(\d+))?$/))) {
+      let start, end, step;
+      if (match[1] !== undefined && match[2] !== undefined) {
+        start = parseInt(match[1]);
+        end = parseInt(match[2]);
+      } else {
+        start = min;
+        end = max;
+      }
+      step = match[match.length - 1] ? parseInt(match[match.length - 1]) : 1;
+      for (let v = start; v <= end; v += step) {
+        if (v >= min && v <= max) values.add(v);
+      }
+    } else if (part === '*') {
+      for (let v = min; v <= max; v++) values.add(v);
+    } else if (/^\d+$/.test(part)) {
+      const v = parseInt(part);
+      if (v >= min && v <= max) values.add(v);
+    }
+  }
+  return [...values].sort((a, b) => a - b);
+}
+
+function parseCron(expr) {
+  const fields = expr.trim().split(/\s+/);
+  if (fields.length !== 5) throw new Error('Need exactly 5 fields (minute hour day month weekday)');
+  
+  return {
+    minutes: parseField(fields[0], 0, 59),
+    hours: parseField(fields[1], 0, 23),
+    days: parseField(fields[2], 1, 31),
+    months: parseField(fields[3], 1, 12),
+    weekdays: parseField(fields[4], 0, 6)
+  };
+}
+
+function explain(cron) {
+  const parts = [];
+  
+  // Minutes
+  const mins = cron.minutes;
+  const hrs = cron.hours;
+  const days = cron.days;
+  const months = cron.months;
+  const wdays = cron.weekdays;
+
+  const allMins = mins.length === 60;
+  const allHrs = hrs.length === 24;
+  const allDays = days.length === 31;
+  const allMonths = months.length === 12;
+  const allWeekdays = wdays.length === 7;
+
+  // Time description
+  if (allMins && allHrs) {
+    parts.push('every minute');
+  } else if (mins.length === 1 && allHrs) {
+    parts.push(`every hour at minute ${mins[0]}`);
+  } else if (mins.length <= 3 && allHrs) {
+    parts.push(`at minutes ${mins.join(', ')} of every hour`);
+  } else if (mins.length > 3 && allHrs) {
+    const step = mins[1] - mins[0];
+    parts.push(`every ${step === 1 ? '' : step} minute${mins.length > 1 ? 's' : ''}`);
+  } else if (allMins) {
+    if (hrs.length === 1) parts.push(`daily at ${String(hrs[0]).padStart(2, '0')}:00`);
+    else if (hrs.length === 24) parts.push('every minute of every hour');
+    else if (hrs.length <= 3) parts.push(`at hours ${hrs.join(', ')} of every minute`);
+    else {
+      const step = hrs[1] - hrs[0];
+      parts.push(`every ${step === 1 ? '' : step} hour${step > 1 ? 's' : ''}`);
+    }
+  } else {
+    const minDesc = mins.length <= 3 ? mins.join(', ') : `every ${mins[1] - mins[0] || 1} min`;
+    const hrDesc = hrs.length <= 3 ? hrs.join(', ') : `every ${hrs[1] - hrs[0] || 1} hour`;
+    parts.push(`at ${minDesc} past ${hrDesc}`);
+  }
+
+  // Day description
+  if (!allDays && !allWeekdays) {
+    const dayStr = days.length <= 5 ? days.map(d => DAY_NAMES[d] || `day ${d}`).join(', ') : `days ${days.length} of month`;
+    parts.push(`on ${dayStr}`);
+  } else if (!allDays && allWeekdays) {
+    parts.push(`on days ${days.join(', ')} of the month`);
+  } else if (allDays && !allWeekdays) {
+    const wdayStr = wdays.length <= 3 ? wdays.map(w => DAY_NAMES[w] || `day ${w}`).join(', ') : `${wdays.length} days of week`;
+    parts.push(`on ${wdayStr}`);
+  }
+
+  // Month description
+  if (!allMonths && months.length <= 3) {
+    parts.push(`in ${months.map(m => MONTH_NAMES[m]).join(', ')}`);
+  } else if (!allMonths) {
+    parts.push(`during ${months.length} months`);
+  }
+
+  let desc = parts.join(', ');
+  if (desc.length === 0) desc = 'every minute';
+  
+  return {
+    description: desc.charAt(0).toUpperCase() + desc.slice(1),
+    minutes: mins,
+    hours: hrs,
+    days: days,
+    months: months,
+    weekdays: wdays
+  };
+}
+
+function nextRuns(cron, count = 8) {
+  const now = new Date();
+  const runs = [];
+  let candidate = new Date(now);
+  candidate.setSeconds(0, 0);
+
+  // Start from the next minute
+  candidate.setMinutes(candidate.getMinutes() + 1);
+
+  let safety = 0;
+  while (runs.length < count && safety < 2000) {
+    safety++;
+    const m = candidate.getMinutes();
+    const h = candidate.getHours();
+    const d = candidate.getDate();
+    const mo = candidate.getMonth() + 1;
+    const wd = candidate.getDay();
+
+    if (cron.minutes.includes(m) && 
+        cron.hours.includes(h) && 
+        cron.days.includes(d) && 
+        cron.months.includes(mo) && 
+        cron.weekdays.includes(wd)) {
+      runs.push(new Date(candidate));
+    }
+
+    candidate.setMinutes(candidate.getMinutes() + 1);
+  }
+  return runs;
+}
+
+function formatDate(d) {
+  const opts = { 
+    month: 'short', day: 'numeric', 
+    hour: '2-digit', minute: '2-digit', 
+    hour12: true, year: 'numeric' 
+  };
+  return d.toLocaleDateString('en-US', opts);
+}
+
+const input = document.getElementById('cronInput');
+const errorEl = document.getElementById('error');
+const resultEl = document.getElementById('result');
+const explanationEl = document.getElementById('explanation');
+const runsEl = document.getElementById('runs');
+const copyBtn = document.getElementById('copyBtn');
+
+let currentDesc = '';
+
+function analyze() {
+  const expr = input.value.trim();
+  errorEl.classList.remove('visible');
+  resultEl.classList.remove('visible');
+
+  if (!expr) return;
+
+  try {
+    const cron = parseCron(expr);
+    const { description } = explain(cron);
+    const runs = nextRuns(cron, 8);
+
+    currentDesc = description;
+    explanationEl.innerHTML = description;
+
+    runsEl.innerHTML = runs.map(r => 
+      `<li><span class="run-num">#${runs.indexOf(r) + 1}</span> <span>${formatDate(r)}</span></li>`
+    ).join('');
+
+    resultEl.classList.add('visible');
+  } catch (e) {
+    errorEl.textContent = e.message;
+    errorEl.classList.add('visible');
+  }
+}
+
+input.addEventListener('input', analyze);
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter') analyze();
+});
+
+document.querySelectorAll('.preset').forEach(btn => {
+  btn.addEventListener('click', () => {
+    input.value = btn.dataset.cron;
+    analyze();
+  });
+});
+
+copyBtn.addEventListener('click', () => {
+  if (currentDesc) {
+    navigator.clipboard.writeText(currentDesc).then(() => {
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => copyBtn.textContent = 'Copy Description', 1500);
+    });
+  }
+});
+
+// Initial analysis
+analyze();
+</script>
+</body>
+</html>
