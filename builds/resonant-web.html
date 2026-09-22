@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Resonant Web</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #07060d;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #888;
+  }
+  canvas { display: block; cursor: crosshair; }
+  .controls {
+    position: fixed;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 10px;
+    z-index: 10;
+    background: rgba(10,8,20,.75);
+    padding: 10px 18px;
+    border-radius: 30px;
+    border: 1px solid rgba(120,100,220,.18);
+    backdrop-filter: blur(10px);
+  }
+  .controls button {
+    background: none;
+    border: 1px solid rgba(120,100,220,.3);
+    color: #9988cc;
+    padding: 5px 12px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: .65rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    transition: all .25s;
+  }
+  .controls button:hover, .controls button.active {
+    background: rgba(120,100,220,.15);
+    border-color: rgba(160,140,255,.6);
+    color: #c8bbff;
+  }
+  .info {
+    position: fixed;
+    top: 16px;
+    left: 20px;
+    font-size: .6rem;
+    letter-spacing: .15em;
+    opacity: .35;
+    z-index: 10;
+  }
+  .title {
+    position: fixed;
+    top: 16px;
+    right: 20px;
+    font-size: .75rem;
+    letter-spacing: .3em;
+    text-transform: uppercase;
+    opacity: .25;
+    z-index: 10;
+  }
+</style>
+</head>
+<body>
+<div class="info">CLICK to send a resonance pulse · MOVE to attract nodes · 1–6 switch palettes · SPACE clear</div>
+<div class="title">Resonant Web</div>
+<canvas id="c"></canvas>
+<div class="controls">
+  <button id="btnFlow" class="active">Flow</button>
+  <button id="btnPulse">Pulse</button>
+  <button id="btnOrbit">Orbit</button>
+  <button id="btnSave">Save PNG</button>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Palettes ───
+const palettes = [
+  { name: 'Aurora',   bg: [7,6,13],   node: [120,220,255], line: [60,140,220], pulse: [100,255,200] },
+  { name: 'Ember',    bg: [14,6,6],    node: [255,160,60],  line: [220,100,30], pulse: [255,220,80] },
+  { name: 'Nebula',   bg: [10,6,18],   node: [200,120,255], line: [140,60,220], pulse: [255,140,200] },
+  { name: 'Toxic',    bg: [6,12,8],    node: [140,255,100], line: [60,200,80],  pulse: [220,255,80] },
+  { name: 'Frost',    bg: [8,10,16],   node: [180,210,255], line: [100,150,220],pulse: [200,240,255] },
+  { name: 'Void',     bg: [12,10,14],  node: [220,200,255], line: [160,140,200],pulse: [255,220,255] }
+];
+let pal = 0;
+
+// ─── Simplex-like noise (simplified) ───
+function noise(x, y, t) {
+  return (
+    Math.sin(x * 0.8 + t * 0.4) * Math.cos(y * 0.6 - t * 0.3) +
+    Math.sin(x * 0.3 - y * 0.5 + t * 0.25) * 0.5 +
+    Math.cos(x * 1.1 + y * 0.9 - t * 0.35) * 0.3
+  ) / 1.8;
+}
+
+// ─── Nodes ───
+const NODE_COUNT = 90;
+const CONNECTION_DIST = 160;
+const nodes = [];
+
+class Node {
+  constructor() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.vx = (Math.random() - 0.5) * 0.6;
+    this.vy = (Math.random() - 0.5) * 0.6;
+    this.phase = Math.random() * Math.PI * 2;
+    this.radius = 2 + Math.random() * 3;
+    this.energy = 0;
+    this.pulseRing = null;
+  }
+  update(t, mode) {
+    const nx = noise(this.x * 0.004, this.y * 0.004, t) * 0.35;
+    const ny = noise(this.x * 0.004 + 100, this.y * 0.004 + 100, t) * 0.35;
+    this.vx += nx;
+    this.vy += ny;
+
+    // mouse attraction
+    if (mouse.down) {
+      const dx = mouse.x - this.x, dy = mouse.y - this.y;
+      const d = Math.hypot(dx, dy);
+      if (d < 250 && d > 1) {
+        const f = 0.015 / (1 + d * 0.02);
+        this.vx += dx * f;
+        this.vy += dy * f;
+      }
+    }
+
+    // mode-specific
+    if (mode === 'orbit') {
+      const dx = W/2 - this.x, dy = H/2 - this.y;
+      const d = Math.hypot(dx, dy);
+      if (d > 1) {
+        this.vx += -dy * 0.0002 + dx * 0.00005;
+        this.vy += dx * 0.0002 + dy * 0.00005;
+      }
+    } else if (mode === 'pulse') {
+      this.phase += 0.04;
+    }
+
+    // damping
+    this.vx *= 0.985;
+    this.vy *= 0.985;
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // wrap
+    if (this.x < -30) this.x = W + 30;
+    if (this.x > W + 30) this.x = -30;
+    if (this.y < -30) this.y = H + 30;
+    if (this.y > H + 30) this.y = -30;
+
+    // energy decay
+    this.energy *= 0.94;
+
+    // pulse ring
+    if (this.pulseRing) {
+      this.pulseRing.r += 1.8;
+      this.pulseRing.a *= 0.96;
+      if (this.pulseRing.a < 0.01) this.pulseRing = null;
+    }
+  }
+
+  sendPulse() {
+    this.energy = 1;
+    this.pulseRing = { r: 5, a: 0.8 };
+  }
+
+  draw(ctx, t) {
+    const p = palettes[pal];
+    const pulse = 1 + Math.sin(this.phase + t * 1.2) * 0.25 + this.energy * 0.8;
+    const r = this.radius * pulse;
+    const alpha = 0.55 + this.energy * 0.45;
+
+    // glow halo
+    const glow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r * 6);
+    glow.addColorStop(0, `rgba(${p.node[0]},${p.node[1]},${p.node[2]},${alpha * 0.5})`);
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r * 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // core
+    ctx.fillStyle = `rgba(${p.node[0]},${p.node[1]},${p.node[2]},${alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // white hot center
+    ctx.fillStyle = `rgba(255,255,255,${alpha * 0.7})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // pulse ring
+    if (this.pulseRing) {
+      const pr = this.pulseRing.r;
+      ctx.strokeStyle = `rgba(${p.pulse[0]},${p.pulse[1]},${p.pulse[2]},${this.pulseRing.a})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, pr, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+}
+
+for (let i = 0; i < NODE_COUNT; i++) nodes.push(new Node());
+
+// ─── Resonance Waves ───
+const waves = [];
+class Wave {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.r = 0;
+    this.a = 1;
+    this.speed = 4.5;
+  }
+  update() {
+    this.r += this.speed;
+    this.a *= 0.975;
+    return this.a > 0.01;
+  }
+  draw(ctx) {
+    const p = palettes[pal];
+    ctx.strokeStyle = `rgba(${p.pulse[0]},${p.pulse[1]},${p.pulse[2]},${this.a * 0.4})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  affect(node) {
+    const d = Math.hypot(node.x - this.x, node.y - this.y);
+    if (Math.abs(d - this.r) < 40 && d > 1) {
+      const f = this.a * 0.25;
+      node.vx += (node.x - this.x) / d * f;
+      node.vy += (node.y - this.y) / d * f;
+      node.energy = Math.min(1, node.energy + this.a * 0.5);
+      if (this.a > 0.5 && !node.pulseRing) node.pulseRing = { r: 3, a: 0.5 };
+    }
+  }
+}
+
+// ─── Mouse ───
+const mouse = { x: W/2, y: H/2, down: false };
+canvas.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+canvas.addEventListener('mousedown', e => {
+  mouse.down = true;
+  waves.push(new Wave(e.clientX, e.clientY));
+  // direct pulse to nearby nodes
+  nodes.forEach(n => {
+    const d = Math.hypot(n.x - e.clientX, n.y - e.clientY);
+    if (d < 180) { n.sendPulse(); }
+  });
+});
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mouseleave', () => mouse.down = false);
+// touch
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+  mouse.down = true;
+  waves.push(new Wave(t.clientX, t.clientY));
+  nodes.forEach(n => {
+    const d = Math.hypot(n.x - t.clientX, n.y - t.clientY);
+    if (d < 180) n.sendPulse();
+  });
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+});
+canvas.addEventListener('touchend', () => mouse.down = false);
+
+// ─── Controls ───
+let mode = 'flow';
+document.getElementById('btnFlow').addEventListener('click', () => setMode('flow'));
+document.getElementById('btnPulse').addEventListener('click', () => setMode('pulse'));
+document.getElementById('btnOrbit').addEventListener('click', () => setMode('orbit'));
+document.getElementById('btnSave').addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = 'resonant-web.png';
+  link.href = canvas.toDataURL();
+  link.click();
+});
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
+  if (m === 'flow') document.getElementById('btnFlow').classList.add('active');
+  if (m === 'pulse') document.getElementById('btnPulse').classList.add('active');
+  if (m === 'orbit') document.getElementById('btnOrbit').classList.add('active');
+}
+document.addEventListener('keydown', e => {
+  if (e.key >= '1' && e.key <= '6') { pal = parseInt(e.key) - 1; }
+  if (e.key === ' ' || e.code === 'Space') {
+    e.preventDefault();
+    nodes.forEach(n => { n.vx = 0; n.vy = 0; });
+    waves.length = 0;
+  }
+});
+
+// ─── Main loop ───
+let t = 0;
+function draw() {
+  t += 0.016;
+  const p = palettes[pal];
+
+  // fade
+  ctx.fillStyle = `rgba(${p.bg[0]},${p.bg[1]},${p.bg[2]},0.22)`;
+  ctx.fillRect(0, 0, W, H);
+
+  // update waves
+  for (let i = waves.length - 1; i >= 0; i--) {
+    const w = waves[i];
+    w.draw(ctx);
+    nodes.forEach(n => w.affect(n));
+    if (!w.update()) waves.splice(i, 1);
+  }
+
+  // update nodes
+  nodes.forEach(n => n.update(t, mode));
+
+  // connections
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const dx = nodes[i].x - nodes[j].x;
+      const dy = nodes[i].y - nodes[j].y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < CONNECTION_DIST) {
+        const alpha = (1 - dist / CONNECTION_DIST);
+        const intensity = Math.min(nodes[i].energy, nodes[j].energy);
+        const a = alpha * (0.06 + intensity * 0.5);
+        const width = alpha * (0.4 + intensity * 1.8);
+
+        // tension curve
+        const mx = (nodes[i].x + nodes[j].x) / 2;
+        const my = (nodes[i].y + nodes[j].y) / 2;
+        const curvature = (Math.sin(t * 0.7 + i * 0.3) * 12 + 12) * (1 + intensity * 3);
+
+        ctx.strokeStyle = `rgba(${p.line[0]},${p.line[1]},${p.line[2]},${a})`;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        ctx.moveTo(nodes[i].x, nodes[i].y);
+        const nx = mx - dy * curvature / dist;
+        const ny = my + dx * curvature / dist;
+        ctx.quadraticCurveTo(nx, ny, nodes[j].x, nodes[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // draw nodes on top
+  nodes.forEach(n => n.draw(ctx, t));
+
+  requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>
