@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mycelium Mandala</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #ccc;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+  }
+  .ui {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    text-align: center;
+    pointer-events: none;
+  }
+  .title {
+    font-size: 0.7rem;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    opacity: 0.5;
+    margin-bottom: 4px;
+  }
+  .controls {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: flex;
+    gap: 8px;
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    opacity: 0.45;
+  }
+  .controls span {
+    padding: 4px 12px;
+    border: 1px solid rgba(100,200,150,.3);
+    border-radius: 2px;
+    background: rgba(10,10,10,.5);
+  }
+  .hint {
+    position: fixed;
+    bottom: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    font-size: 0.6rem;
+    letter-spacing: 0.2em;
+    opacity: 0;
+    transition: opacity 2s;
+    pointer-events: none;
+  }
+  .hint.show {
+    opacity: 0.4;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="ui">
+  <div class="title">Mycelium Mandala</div>
+</div>
+<div class="hint" id="hint">Click to plant · Hold to grow · Space to pulse</div>
+<div class="controls">
+  <span>1-5 Palette</span>
+  <span>Space Pulse</span>
+  <span>C Clear</span>
+  <span>S Save PNG</span>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Palettes — fungal/biological tones
+const palettes = [
+  { name: 'Biolum', colors: ['#00ffa8','#00ffc8','#88ffcc','#00ff66','#aaffdd','#00ffaa','#22ffbb','#00ff88'] },
+  { name: 'Mycelium', colors: ['#d4a574','#c4956a','#e8c9a0','#b8845c','#f0d4b8','#c9a87c','#a0724c','#dbb896'] },
+  { name: 'Nebula', colors: ['#ff6b9d','#c084fc','#818cf8','#e879f9','#a78bfa','#fb7185','#f472b6','#c084fc'] },
+  { name: 'Arctic', colors: ['#a5f3fc','#67e8f9','#22d3ee','#06b6d4','#cffafe','#67e8f9','#a5f3fc','#e0f2fe'] },
+  { name: 'Void', colors: ['#a78bfa','#7c3aed','#6366f1','#8b5cf6','#4f46e5','#a78bfa','#c084fc','#6366f1'] },
+];
+let paletteIdx = 0;
+
+function randColor() {
+  const p = palettes[paletteIdx].colors;
+  return p[Math.floor(Math.random() * p.length)];
+}
+function rand(a, b) { return Math.random() * (b - a) + a; }
+
+let threads = [];
+let spores = [];
+let rings = [];
+let time = 0;
+let mouse = { x: cx, y: cy, down: false };
+let growing = false;
+let growTimer = 0;
+
+// Thread class — mycelium growth
+class Thread {
+  constructor(x, y, angle, depth, maxDepth) {
+    this.x = x;
+    this.y = y;
+    this.angle = angle;
+    this.depth = depth;
+    this.maxDepth = maxDepth || 5;
+    this.speed = rand(0.3, 0.8);
+    this.length = 0;
+    this.maxLength = rand(30, 80) * (1 - depth * 0.15);
+    this.thickness = Math.max(0.5, 2.5 - depth * 0.5);
+    this.color = randColor();
+    this.branches = 0;
+    this.maxBranches = depth < 3 ? Math.floor(rand(1, 3)) : 0;
+    this.wobble = rand(0.02, 0.06);
+    this.wobbleAmp = rand(0.3, 0.8);
+    this.t = 0;
+    this.alive = true;
+    this.trail = [];
+  }
+
+  update() {
+    if (!this.alive) return;
+    this.t += 0.02;
+    this.wobbleAmp *= 0.998;
+    this.angle += Math.sin(this.t * 3 + this.depth) * this.wobble * this.wobbleAmp;
+    
+    const prevX = this.x;
+    const prevY = this.y;
+    this.x += Math.cos(this.angle) * this.speed;
+    this.y += Math.sin(this.angle) * this.speed;
+    this.length += this.speed;
+    this.trail.push({ x: prevX, y: prevY, x2: this.x, y2: this.y, a: 1 });
+
+    // Fade trail
+    for (let i = this.trail.length - 1; i >= 0; i--) {
+      this.trail[i].a -= 0.003;
+      if (this.trail[i].a <= 0) this.trail.splice(i, 1);
+    }
+
+    // Branch
+    if (this.length > this.maxLength * 0.4 && this.branches < this.maxBranches && Math.random() < 0.015) {
+      this.branches++;
+      const branchAngle = this.angle + rand(-0.8, 0.8);
+      threads.push(new Thread(this.x, this.y, branchAngle, this.depth + 1, this.maxDepth));
+      if (Math.random() < 0.3) {
+        threads.push(new Thread(this.x, this.y, this.angle + rand(-0.5, 0.5), this.depth + 1, this.maxDepth));
+      }
+    }
+
+    // Spore release
+    if (Math.random() < 0.01 && this.depth >= 2) {
+      spores.push(new Spore(this.x, this.y, this.color));
+    }
+
+    if (this.length > this.maxLength) {
+      this.alive = false;
+      // Release a burst of spores at tip
+      for (let i = 0; i < 3; i++) {
+        spores.push(new Spore(this.x, this.y, this.color));
+      }
+    }
+  }
+
+  draw() {
+    if (this.trail.length === 0) return;
+    ctx.globalAlpha = 0.8;
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = this.thickness;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(this.trail[0].x, this.trail[0].y);
+    for (let i = 1; i < this.trail.length; i++) {
+      ctx.lineTo(this.trail[i].x, this.trail[i].y);
+    }
+    ctx.stroke();
+
+    // Glow at tip
+    if (this.alive) {
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = this.color;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.thickness * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// Spore — floating luminous particle
+class Spore {
+  constructor(x, y, color) {
+    this.x = x;
+    this.y = y;
+    this.vx = rand(-0.3, 0.3);
+    this.vy = rand(-0.5, -0.1);
+    this.life = 1;
+    this.decay = rand(0.003, 0.008);
+    this.size = rand(1, 2.5);
+    this.color = color || randColor();
+    this.pulse = rand(0, Math.PI * 2);
+    this.pulseSpeed = rand(0.02, 0.05);
+  }
+  update() {
+    this.x += this.vx + Math.sin(time * 0.01 + this.pulse) * 0.1;
+    this.y += this.vy;
+    this.vy -= 0.001; // buoyancy
+    this.life -= this.decay;
+    this.pulse += this.pulseSpeed;
+  }
+  draw() {
+    if (this.life <= 0) return;
+    const glow = 0.3 + Math.sin(this.pulse) * 0.2;
+    ctx.globalAlpha = this.life * 0.6;
+    ctx.fillStyle = this.color;
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * (1 + Math.sin(this.pulse) * 0.3), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+// Sacred geometry ring
+class Ring {
+  constructor(x, y, radius, sides) {
+    this.x = x;
+    this.y = y;
+    this.radius = radius;
+    this.sides = sides || 6;
+    this.rotation = rand(0, Math.PI * 2);
+    this.rotSpeed = rand(0.001, 0.003) * (Math.random() < 0.5 ? 1 : -1);
+    this.life = 1;
+    this.color = randColor();
+    this.thickness = rand(0.5, 1.5);
+    this.growing = true;
+    this.targetRadius = radius;
+    this.radius = 0;
+  }
+  update() {
+    this.rotation += this.rotSpeed;
+    if (this.growing) {
+      this.radius += (this.targetRadius - this.radius) * 0.03;
+      if (Math.abs(this.targetRadius - this.radius) < 0.5) this.growing = false;
+    }
+  }
+  draw() {
+    if (this.radius < 1) return;
+    ctx.globalAlpha = 0.25 * this.life;
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = this.thickness;
+    ctx.shadowBlur = 4;
+    ctx.shadowColor = this.color;
+    ctx.beginPath();
+    for (let i = 0; i <= this.sides; i++) {
+      const a = this.rotation + (i / this.sides) * Math.PI * 2;
+      const px = this.x + Math.cos(a) * this.radius;
+      const py = this.y + Math.sin(a) * this.radius;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+}
+
+// Plant a mycelium cluster
+function plantMycelium(x, y) {
+  const count = Math.floor(rand(8, 15));
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2 + rand(-0.2, 0.2);
+    threads.push(new Thread(x, y, angle, 0, rand(4, 6)));
+  }
+  // Sacred geometry rings
+  const ringCount = Math.floor(rand(2, 4));
+  for (let i = 0; i < ringCount; i++) {
+    const sides = [3,4,5,6,8][Math.floor(rand(0,5))];
+    rings.push(new Ring(x, y, rand(40, 120) * (i + 1), sides));
+  }
+  // Spore burst
+  for (let i = 0; i < 15; i++) {
+    spores.push(new Spore(x + rand(-10,10), y + rand(-10,10), randColor()));
+  }
+}
+
+// Initial mandala
+function initMandala() {
+  const count = 6;
+  const radius = Math.min(W, H) * 0.2;
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2;
+    const x = cx + Math.cos(angle) * radius;
+    const y = cy + Math.sin(angle) * radius;
+    plantMycelium(x, y);
+  }
+  // Center bloom
+  rings.push(new Ring(cx, cy, 30, 6));
+  rings.push(new Ring(cx, cy, 60, 12));
+  rings.push(new Ring(cx, cy, 90, 8));
+}
+
+// Pulse wave
+function pulse() {
+  rings.push(new Ring(cx, cy, 20, 32));
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const x = cx + Math.cos(angle) * 100;
+    const y = cy + Math.sin(angle) * 100;
+    plantMycelium(x, y);
+  }
+  for (let i = 0; i < 30; i++) {
+    spores.push(new Spore(cx + rand(-50,50), cy + rand(-50,50), randColor()));
+  }
+}
+
+// Mouse interaction
+canvas.addEventListener('mousedown', (e) => {
+  mouse.down = true;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  plantMycelium(e.clientX, e.clientY);
+});
+canvas.addEventListener('mouseup', () => { mouse.down = false; });
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  if (mouse.down && Math.random() < 0.3) {
+    spores.push(new Spore(e.clientX, e.clientY, randColor()));
+  }
+});
+
+// Touch support
+canvas.addEventListener('touchstart', (e) => {
+  mouse.down = true;
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  plantMycelium(t.clientX, t.clientY);
+});
+canvas.addEventListener('touchmove', (e) => {
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  if (mouse.down && Math.random() < 0.3) {
+    spores.push(new Spore(t.clientX, t.clientY, randColor()));
+  }
+});
+canvas.addEventListener('touchend', () => { mouse.down = false; });
+
+// Keyboard
+window.addEventListener('keydown', (e) => {
+  if (e.key === ' ') { pulse(); e.preventDefault(); }
+  if (e.key === 'c' || e.key === 'C') {
+    threads = []; spores = []; rings = [];
+  }
+  if (e.key === 's' || e.key === 'S') {
+    const link = document.createElement('a');
+    link.download = 'mycelium-mandala.png';
+    link.href = canvas.toDataURL();
+    link.click();
+  }
+  if (e.key >= '1' && e.key <= '5') {
+    paletteIdx = parseInt(e.key) - 1;
+  }
+});
+
+// Auto-grow occasionally
+setInterval(() => {
+  if (threads.length < 200) {
+    const angle = rand(0, Math.PI * 2);
+    const dist = rand(50, 150);
+    plantMycelium(cx + Math.cos(angle) * dist, cy + Math.sin(angle) * dist);
+  }
+}, 3000);
+
+// Show hint briefly
+setTimeout(() => { document.getElementById('hint').classList.add('show'); }, 500);
+setTimeout(() => { document.getElementById('hint').classList.remove('show'); }, 5000);
+
+// Animation loop
+function animate() {
+  time++;
+  // Soft fade
+  ctx.globalAlpha = 0.08;
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Update & draw rings
+  rings = rings.filter(r => r.life > 0);
+  rings.forEach(r => {
+    r.update();
+    r.life -= 0.001;
+    r.draw();
+  });
+
+  // Update & draw threads
+  threads = threads.filter(t => t.alive || t.trail.length > 0);
+  threads.forEach(t => {
+    t.update();
+    t.draw();
+  });
+
+  // Update & draw spores
+  spores = spores.filter(s => s.life > 0);
+  spores.forEach(s => {
+    s.update();
+    s.draw();
+  });
+
+  // Cursor glow
+  ctx.globalAlpha = 0.1;
+  ctx.fillStyle = randColor();
+  ctx.beginPath();
+  ctx.arc(mouse.x, mouse.y, 60, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.globalAlpha = 1;
+  requestAnimationFrame(animate);
+}
+
+initMandala();
+animate();
+</script>
+</body>
+</html>
