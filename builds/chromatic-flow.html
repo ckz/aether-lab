@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chromatic Flow</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050508;
+    overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+  }
+  canvas {
+    display: block;
+    cursor: crosshair;
+  }
+  .ui {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    color: rgba(255,255,255,0.5);
+    font-size: 12px;
+    letter-spacing: 1px;
+    pointer-events: none;
+    text-transform: uppercase;
+  }
+  .ui span {
+    display: block;
+    margin-bottom: 4px;
+  }
+</style>
+</head>
+<body>
+<div class="ui">
+  <span>Move mouse to attract</span>
+  <span>Click to burst</span>
+  <span>Space to clear</span>
+</div>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const mouse = { x: W / 2, y: H / 2, active: false };
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => mouse.active = false);
+canvas.addEventListener('click', e => {
+  for (let i = 0; i < 60; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 4;
+    particles.push(new Particle(e.clientX, e.clientY, {
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1,
+      hue: Math.random() * 360
+    }));
+  }
+});
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    particles = [];
+    ctx.fillStyle = 'rgba(5, 5, 8, 1)';
+    ctx.fillRect(0, 0, W, H);
+  }
+});
+
+class Particle {
+  constructor(x, y, opts = {}) {
+    this.x = x;
+    this.y = y;
+    this.vx = opts.vx || (Math.random() - 0.5) * 1;
+    this.vy = opts.vy || (Math.random() - 0.5) * 1;
+    this.life = opts.life !== undefined ? opts.life : 1;
+    this.hue = opts.hue || Math.random() * 360;
+    this.size = opts.size || 1 + Math.random() * 1.5;
+  }
+
+  update() {
+    // Flow field based on simplified noise
+    const scale = 0.003;
+    const angle = Math.sin(this.x * scale + Date.now() * 0.0003) *
+                  Math.cos(this.y * scale + Date.now() * 0.0002) * Math.PI * 2;
+    
+    this.vx += Math.cos(angle) * 0.03;
+    this.vy += Math.sin(angle) * 0.03;
+
+    // Mouse attraction
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 300 && dist > 1) {
+        const force = 0.5 / dist;
+        this.vx += dx * force;
+        this.vy += dy * force;
+      }
+    }
+
+    // Damping
+    this.vx *= 0.99;
+    this.vy *= 0.99;
+
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= 0.0015;
+    this.hue += 0.3;
+
+    // Wrap
+    if (this.x < 0) this.x = W;
+    if (this.x > W) this.x = 0;
+    if (this.y < 0) this.y = H;
+    if (this.y > H) this.y = 0;
+  }
+
+  draw() {
+    const alpha = Math.max(0, this.life) * 0.8;
+    ctx.fillStyle = `hsla(${this.hue % 360}, 80%, 60%, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+const particles = [];
+for (let i = 0; i < 400; i++) {
+  particles.push(new Particle(Math.random() * W, Math.random() * H));
+}
+
+function animate() {
+  // Fade trail
+  ctx.fillStyle = 'rgba(5, 5, 8, 0.08)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Spawn gentle new particles
+  if (particles.length < 600 && Math.random() < 0.3) {
+    particles.push(new Particle(Math.random() * W, Math.random() * H));
+  }
+
+  particles.forEach((p, i) => {
+    p.update();
+    p.draw();
+    if (p.life <= 0) particles.splice(i, 1);
+  });
+
+  requestAnimationFrame(animate);
+}
+
+// Initial clear
+ctx.fillStyle = 'rgba(5, 5, 8, 1)';
+ctx.fillRect(0, 0, W, H);
+animate();
+</script>
+</body>
+</html>
