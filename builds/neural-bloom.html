@@ -5,466 +5,264 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Neural Bloom — Generative Art</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #0a0a0f;
-    overflow: hidden;
-    font-family: 'Courier New', monospace;
-    color: #aaa;
-    height: 100vh;
-    width: 100vw;
-  }
-  canvas { display: block; position: absolute; top: 0; left: 0; }
-  .controls {
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 12px;
-    z-index: 10;
-    background: rgba(10,10,15,0.7);
-    padding: 10px 20px;
-    border-radius: 30px;
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255,255,255,0.1);
-  }
-  .controls button {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.2);
-    color: #ccc;
-    padding: 8px 18px;
-    border-radius: 20px;
-    cursor: pointer;
-    font-family: inherit;
-    font-size: 13px;
-    transition: all 0.3s;
-    letter-spacing: 0.5px;
-  }
-  .controls button:hover {
-    background: rgba(255,255,255,0.15);
-    border-color: rgba(255,255,255,0.4);
-    color: #fff;
-  }
-  .controls button.active {
-    background: rgba(120, 180, 255, 0.2);
-    border-color: rgba(120, 180, 255, 0.6);
-    color: #a0d0ff;
-  }
-  .info {
-    position: fixed;
-    top: 20px;
-    left: 20px;
-    font-size: 11px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    opacity: 0.4;
-    z-index: 10;
-  }
-  .fps {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    font-size: 11px;
-    opacity: 0.4;
-    z-index: 10;
-  }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a0f;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+  cursor: crosshair;
+}
+canvas { display: block; }
+#info {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255,255,255,0.4);
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  pointer-events: none;
+  z-index: 10;
+}
+#stats {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  color: rgba(255,255,255,0.3);
+  font-size: 11px;
+  letter-spacing: 1px;
+  pointer-events: none;
+  z-index: 10;
+  text-align: right;
+}
+#title {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  color: rgba(255,255,255,0.15);
+  font-size: 14px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  pointer-events: none;
+  z-index: 10;
+}
 </style>
 </head>
 <body>
-<div class="info">Neural Bloom — Click to pollinate</div>
-<div class="fps" id="fps"></div>
 <canvas id="canvas"></canvas>
-<div class="controls">
-  <button id="mode1" class="active">Bloom</button>
-  <button id="mode2">Flow</button>
-  <button id="mode3">Crystal</button>
-  <button id="reset">Reset</button>
-</div>
-
+<div id="title">Neural Bloom</div>
+<div id="stats"></div>
+<div id="info">click to seed · space to pause · c to clear</div>
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-let W, H, centerX, centerY;
+const stats = document.getElementById('stats');
 
+let W, H;
 function resize() {
   W = canvas.width = window.innerWidth;
   H = canvas.height = window.innerHeight;
-  centerX = W / 2;
-  centerY = H / 2;
 }
 resize();
 window.addEventListener('resize', resize);
 
-// State
-let mode = 0;
-let particles = [];
-let vines = [];
+let paused = false;
 let time = 0;
-let mouse = { x: centerX, y: centerY };
-let seedNodes = [];
+let particles = [];
+let mouse = { x: W/2, y: H/2, active: false };
 
-// Color palettes
-const palettes = [
-  ['#ff6b9d', '#c084fc', '#60a5fa', '#f472b6', '#a78bfa', '#38bdf8'],
-  ['#10b981', '#06b6d4', '#3b82f6', '#14b8a6', '#22d3ee', '#6366f1'],
-  ['#f59e0b', '#ef4444', '#f97316', '#eab308', '#fb923c', '#fbbf24'],
-  ['#ec4899', '#f43f5e', '#d946ef', '#fb7185', '#e879f9', '#fda4af'],
-];
-
-function randomColor(palette) {
-  const p = palette || palettes[Math.floor(Math.random() * palettes.length)];
-  return p[Math.floor(Math.random() * p.length)];
-}
-
-// Seed nodes that grow from center
-class SeedNode {
-  constructor(x, y) {
-    this.x = x;
-    this.y = y;
-    this.energy = 1;
-    this.maxEnergy = 0.4 + Math.random() * 0.6;
-    this.palette = palettes[Math.floor(Math.random() * palettes.length)];
-    this.branches = [];
-    this.age = 0;
-    this.hue = Math.random() * 360;
-    this.maxBranches = 3 + Math.floor(Math.random() * 8);
-    this.growDelay = 10 + Math.random() * 30;
-    this.dead = false;
-  }
-
-  update() {
-    if (this.dead) return;
-    this.age++;
-    if (this.age > this.growDelay && this.branches.length < this.maxBranches && Math.random() < 0.03) {
-      this.branches.push(new Branch(this.x, this.y, this.hue, this.palette, this));
-    }
-    this.branches.forEach(b => b.update());
-  }
-
-  draw() {
-    this.branches.forEach(b => b.draw());
-  }
-}
-
-class Branch {
-  constructor(x, y, hue, palette, parent) {
-    this.points = [{x, y}];
-    this.angle = Math.random() * Math.PI * 2;
-    this.speed = 0.3 + Math.random() * 1.2;
-    this.life = 0;
-    this.maxLife = 80 + Math.random() * 200;
-    this.hue = hue + (Math.random() - 0.5) * 60;
-    this.palette = palette;
-    this.parent = parent;
-    this.width = 1 + Math.random() * 2;
-    this.wobble = (Math.random() - 0.5) * 0.08;
-    this.color = randomColor(palette);
-    this.leaves = [];
-    this.dead = false;
-  }
-
-  update() {
-    if (this.dead) return;
-    this.life++;
-    
-    if (this.life > this.maxLife * 0.7) {
-      this.speed *= 0.98;
-    }
-    
-    if (this.life > this.maxLife || this.speed < 0.05) {
-      this.dead = true;
-      return;
-    }
-
-    this.angle += this.wobble + Math.sin(this.life * 0.05) * 0.02;
-    const last = this.points[this.points.length - 1];
-    const nx = last.x + Math.cos(this.angle) * this.speed;
-    const ny = last.y + Math.sin(this.angle) * this.speed;
-
-    if (nx < 0 || nx > W || ny < 0 || ny > H) {
-      this.dead = true;
-      return;
-    }
-
-    this.points.push({x: nx, y: ny});
-
-    // Occasionally spawn leaf particle
-    if (Math.random() < 0.02 && particles.length < 800) {
-      particles.push(new Particle(nx, ny, this.color));
-    }
-
-    // Occasionally branch
-    if (this.life > 20 && this.life < this.maxLife * 0.6 && Math.random() < 0.008) {
-      this.parent.branches.push(new Branch(nx, ny, this.hue, this.palette, this.parent));
-    }
-  }
-
-  draw() {
-    if (this.points.length < 2) return;
-    ctx.beginPath();
-    ctx.moveTo(this.points[0].x, this.points[0].y);
-    for (let i = 1; i < this.points.length; i++) {
-      ctx.lineTo(this.points[i].x, this.points[i].y);
-    }
-    const alpha = Math.min(1, this.life / 20) * Math.min(1, (this.maxLife - this.life) / 30);
-    ctx.strokeStyle = this.color + Math.floor(alpha * 200).toString(16).padStart(2, '0');
-    ctx.lineWidth = this.width * (1 - this.life / this.maxLife);
-    ctx.lineCap = 'round';
-    ctx.stroke();
-  }
-}
+const CONFIG = {
+  maxParticles: 600,
+  baseSpeed: 0.3,
+  connectionDist: 120,
+  hueBase: 200,
+  hueRange: 80,
+  trailAlpha: 0.04,
+  particleSize: 2,
+  neuronChance: 0.002
+};
 
 class Particle {
-  constructor(x, y, color) {
-    this.x = x;
-    this.y = y;
-    this.vx = (Math.random() - 0.5) * 0.5;
-    this.vy = -0.2 - Math.random() * 0.8;
-    this.life = 0;
-    this.maxLife = 40 + Math.random() * 80;
-    this.color = color;
-    this.size = 1 + Math.random() * 3;
-  }
-
-  update() {
-    this.life++;
-    this.x += this.vx;
-    this.y += this.vy;
-    this.vy += 0.005;
-    this.vx += (Math.random() - 0.5) * 0.05;
-  }
-
-  draw() {
-    const alpha = 1 - this.life / this.maxLife;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size * alpha, 0, Math.PI * 2);
-    ctx.fillStyle = this.color + Math.floor(alpha * 180).toString(16).padStart(2, '0');
-    ctx.fill();
-  }
-
-  get dead() { return this.life > this.maxLife; }
-}
-
-// Flow field particles
-class FlowParticle {
-  constructor() {
-    this.reset();
-  }
-
-  reset() {
-    this.x = Math.random() * W;
-    this.y = Math.random() * H;
-    this.vx = 0;
-    this.vy = 0;
-    this.life = 0;
-    this.maxLife = 100 + Math.random() * 200;
-    this.color = randomColor();
-    this.size = 0.5 + Math.random() * 1.5;
-    this.history = [];
-  }
-
-  update() {
-    this.life++;
-    if (this.life > this.maxLife) { this.reset(); return; }
-    
-    const scale = 0.003;
-    const angle = Math.sin(this.x * scale + time * 0.02) * Math.cos(this.y * scale + time * 0.015) * Math.PI * 2;
-    this.vx += Math.cos(angle) * 0.3;
-    this.vy += Math.sin(angle) * 0.3;
-    this.vx *= 0.95;
-    this.vy *= 0.95;
-
-    this.history.push({x: this.x, y: this.y});
-    if (this.history.length > 20) this.history.shift();
-
-    this.x += this.vx;
-    this.y += this.vy;
-
-    if (this.x < 0 || this.x > W || this.y < 0 || this.y > H) this.reset();
-  }
-
-  draw() {
-    if (this.history.length < 2) return;
-    ctx.beginPath();
-    ctx.moveTo(this.history[0].x, this.history[0].y);
-    for (let i = 1; i < this.history.length; i++) {
-      ctx.lineTo(this.history[i].x, this.history[i].y);
-    }
-    const alpha = (1 - this.life / this.maxLife) * 0.6;
-    ctx.strokeStyle = this.color + Math.floor(alpha * 150).toString(16).padStart(2, '0');
-    ctx.lineWidth = this.size;
-    ctx.stroke();
-  }
-}
-
-// Crystal mode
-let crystals = [];
-class Crystal {
-  constructor(x, y) {
+  constructor(x, y, isNeuron = false) {
     this.x = x || Math.random() * W;
     this.y = y || Math.random() * H;
-    this.size = 20 + Math.random() * 80;
-    this.angle = Math.random() * Math.PI * 2;
-    this.sides = 4 + Math.floor(Math.random() * 5);
-    this.rotationSpeed = (Math.random() - 0.5) * 0.005;
-    this.color = randomColor();
-    this.life = 0;
-    this.maxLife = 200 + Math.random() * 300;
-    this.growSpeed = 0.3 + Math.random() * 0.7;
+    this.vx = (Math.random() - 0.5) * CONFIG.baseSpeed * 2;
+    this.vy = (Math.random() - 0.5) * CONFIG.baseSpeed * 2;
+    this.life = 1;
+    this.decay = 0.0003 + Math.random() * 0.0005;
+    this.hue = CONFIG.hueBase + Math.random() * CONFIG.hueRange;
+    this.size = isNeuron ? CONFIG.particleSize * 3 : CONFIG.particleSize * (0.5 + Math.random());
+    this.isNeuron = isNeuron;
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    this.pulseSpeed = 0.01 + Math.random() * 0.02;
   }
-
+  
   update() {
-    this.life++;
-    this.angle += this.rotationSpeed;
-    if (this.life > this.maxLife * 0.7) {
-      this.size *= 0.995;
+    if (!paused) {
+      this.x += this.vx;
+      this.y += this.vy;
+      this.life -= this.decay;
+      this.pulsePhase += this.pulseSpeed;
+      
+      // Gentle attraction to mouse when active
+      if (mouse.active) {
+        const dx = mouse.x - this.x;
+        const dy = mouse.y - this.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 200) {
+          const force = 0.0003;
+          this.vx += dx * force;
+          this.vy += dy * force;
+        }
+      }
+      
+      // Speed limit
+      const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
+      const maxSpeed = 1.5;
+      if (speed > maxSpeed) {
+        this.vx = (this.vx / speed) * maxSpeed;
+        this.vy = (this.vy / speed) * maxSpeed;
+      }
+      
+      // Wrap edges
+      if (this.x < 0) this.x = W;
+      if (this.x > W) this.x = 0;
+      if (this.y < 0) this.y = H;
+      if (this.y > H) this.y = 0;
     }
   }
-
+  
   draw() {
-    const alpha = Math.min(1, this.life / 30) * Math.min(1, (this.maxLife - this.life) / 40);
-    const s = this.size * (0.3 + 0.7 * Math.min(1, this.life / 60));
+    const pulse = this.isNeuron ? 1 + Math.sin(this.pulsePhase) * 0.5 : 1;
+    const alpha = this.life * (this.isNeuron ? 0.9 : 0.6);
+    const size = this.size * pulse;
     
-    ctx.save();
-    ctx.translate(this.x, this.y);
-    ctx.rotate(this.angle);
+    // Glow
+    const glow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, size * 4);
+    glow.addColorStop(0, `hsla(${this.hue}, 80%, 60%, ${alpha})`);
+    glow.addColorStop(0.5, `hsla(${this.hue}, 70%, 50%, ${alpha * 0.3})`);
+    glow.addColorStop(1, `hsla(${this.hue}, 60%, 40%, 0)`);
+    
     ctx.beginPath();
-    for (let i = 0; i < this.sides; i++) {
-      const a = (i / this.sides) * Math.PI * 2;
-      const px = Math.cos(a) * s;
-      const py = Math.sin(a) * s;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    }
-    ctx.closePath();
-    ctx.strokeStyle = this.color + Math.floor(alpha * 200).toString(16).padStart(2, '0');
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    ctx.fillStyle = this.color + Math.floor(alpha * 30).toString(16).padStart(2, '0');
+    ctx.arc(this.x, this.y, size * 4, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
     ctx.fill();
-    ctx.restore();
-  }
-
-  get dead() { return this.life > this.maxLife || this.size < 1; }
-}
-
-// Bloom mode: seed nodes
-function seedBloom(x, y) {
-  seedNodes.push(new SeedNode(x, y));
-}
-
-// Flow mode: flow particles
-let flowParticles = [];
-function initFlow() {
-  flowParticles = [];
-  for (let i = 0; i < 300; i++) {
-    flowParticles.push(new FlowParticle());
+    
+    // Core
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, size, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${this.hue}, 90%, 70%, ${alpha})`;
+    ctx.fill();
   }
 }
 
-// Crystal mode
-function spawnCrystals(count) {
+// Initialize with some particles
+for (let i = 0; i < 150; i++) {
+  particles.push(new Particle());
+}
+
+// Draw connections
+function drawConnections() {
+  for (let i = 0; i < particles.length; i++) {
+    for (let j = i + 1; j < particles.length; j++) {
+      const dx = particles[i].x - particles[j].x;
+      const dy = particles[i].y - particles[j].y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      
+      if (dist < CONFIG.connectionDist) {
+        const alpha = (1 - dist / CONFIG.connectionDist) * 0.15;
+        const avgHue = (particles[i].hue + particles[j].hue) / 2;
+        
+        ctx.beginPath();
+        ctx.moveTo(particles[i].x, particles[i].y);
+        ctx.lineTo(particles[j].x, particles[j].y);
+        ctx.strokeStyle = `hsla(${avgHue}, 60%, 50%, ${alpha})`;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+// Spawn burst at position
+function spawnBurst(x, y, count = 20) {
   for (let i = 0; i < count; i++) {
-    crystals.push(new Crystal());
+    const p = new Particle(x, y, Math.random() < 0.1);
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 2;
+    p.vx = Math.cos(angle) * speed;
+    p.vy = Math.sin(angle) * speed;
+    particles.push(p);
+  }
+  // Trim if over limit
+  while (particles.length > CONFIG.maxParticles) {
+    particles.shift();
   }
 }
 
-// Initial state
-seedBloom(centerX, centerY);
-
-// Mouse interaction
+// Event handlers
 canvas.addEventListener('mousemove', (e) => {
   mouse.x = e.clientX;
   mouse.y = e.clientY;
+  mouse.active = true;
+});
+
+canvas.addEventListener('mouseleave', () => {
+  mouse.active = false;
 });
 
 canvas.addEventListener('click', (e) => {
-  if (mode === 0) {
-    seedBloom(e.clientX, e.clientY);
-  } else if (mode === 1) {
-    for (let i = 0; i < 20; i++) {
-      flowParticles.push(new FlowParticle());
-    }
-  } else {
-    crystals.push(new Crystal(e.clientX, e.clientY));
+  spawnBurst(e.clientX, e.clientY, 30);
+});
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  const touch = e.touches[0];
+  mouse.x = touch.clientX;
+  mouse.y = touch.clientY;
+  mouse.active = true;
+  spawnBurst(touch.clientX, touch.clientY, 30);
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    paused = !paused;
+  } else if (e.code === 'KeyC') {
+    particles = [];
+    ctx.fillStyle = 'rgba(10, 10, 15, 1)';
+    ctx.fillRect(0, 0, W, H);
   }
 });
 
-// Mode switching
-document.getElementById('mode1').addEventListener('click', () => setMode(0));
-document.getElementById('mode2').addEventListener('click', () => setMode(1));
-document.getElementById('mode3').addEventListener('click', () => setMode(2));
-document.getElementById('reset').addEventListener('click', reset);
-
-function setMode(m) {
-  mode = m;
-  document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
-  document.getElementById('mode' + (m + 1)).classList.add('active');
-  reset();
-}
-
-function reset() {
-  particles = [];
-  vines = [];
-  seedNodes = [];
-  crystals = [];
-  flowParticles = [];
-  time = 0;
-  
-  if (mode === 0) {
-    seedBloom(centerX, centerY);
-  } else if (mode === 1) {
-    initFlow();
-  } else {
-    spawnCrystals(5);
-  }
-}
-
-// FPS tracking
-let frameCount = 0;
-let lastFpsTime = performance.now();
-
 // Animation loop
 function animate() {
-  requestAnimationFrame(animate);
-  time++;
-
-  // Fade based on mode
-  if (mode === 0) {
-    ctx.fillStyle = 'rgba(10, 10, 15, 0.02)';
-  } else if (mode === 1) {
-    ctx.fillStyle = 'rgba(10, 10, 15, 0.05)';
-  } else {
-    ctx.fillStyle = 'rgba(10, 10, 15, 0.08)';
-  }
+  // Trail effect
+  ctx.fillStyle = `rgba(10, 10, 15, ${CONFIG.trailAlpha})`;
   ctx.fillRect(0, 0, W, H);
-
-  // Mode-specific updates
-  if (mode === 0) {
-    seedNodes.forEach(n => { n.update(); n.draw(); });
-  } else if (mode === 1) {
-    flowParticles.forEach(p => { p.update(); p.draw(); });
-    // Cap flow particles
-    if (flowParticles.length > 600) flowParticles = flowParticles.slice(-400);
-  } else {
-    if (Math.random() < 0.05) spawnCrystals(1);
-    crystals.forEach(c => { c.update(); c.draw(); });
-    crystals = crystals.filter(c => !c.dead);
+  
+  if (!paused) {
+    time++;
+    
+    // Random neuron spawning
+    if (Math.random() < CONFIG.neuronChance && particles.length < CONFIG.maxParticles) {
+      particles.push(new Particle(null, null, true));
+    }
   }
-
-  // Particles always
-  particles.forEach(p => { p.update(); p.draw(); });
-  particles = particles.filter(p => !p.dead);
-
-  // FPS
-  frameCount++;
-  const now = performance.now();
-  if (now - lastFpsTime > 1000) {
-    document.getElementById('fps').textContent = frameCount + ' fps';
-    frameCount = 0;
-    lastFpsTime = now;
-  }
+  
+  // Update and draw
+  drawConnections();
+  
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => {
+    p.update();
+    p.draw();
+  });
+  
+  // Stats
+  stats.innerHTML = `particles: ${particles.length}<br>time: ${time}`;
+  
+  requestAnimationFrame(animate);
 }
 
 animate();
