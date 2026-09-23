@@ -3,138 +3,102 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Aether's Gravity Sandbox</title>
+<title>Gravity Sandbox</title>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body {
-  background: #0a0a0f;
-  color: #e0e0ff;
-  font-family: 'Courier New', monospace;
-  overflow: hidden;
-  height: 100vh;
-}
-#canvas {
-  display: block;
-  cursor: crosshair;
-  position: absolute;
-  top: 0;
-  left: 0;
-}
-#ui {
-  position: absolute;
-  top: 16px;
-  left: 16px;
-  background: rgba(10, 10, 20, 0.85);
-  border: 1px solid rgba(100, 140, 255, 0.3);
-  border-radius: 8px;
-  padding: 14px 18px;
-  font-size: 13px;
-  z-index: 10;
-  backdrop-filter: blur(8px);
-  max-width: 280px;
-}
-#ui h1 {
-  font-size: 16px;
-  color: #7ab4ff;
-  margin-bottom: 8px;
-  letter-spacing: 1px;
-}
-#ui .row {
-  margin: 5px 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-#ui label { color: #aaa; font-size: 12px; }
-#ui input[type=range] { width: 120px; accent-color: #7ab4ff; }
-#ui button {
-  background: rgba(100, 140, 255, 0.2);
-  border: 1px solid rgba(100, 140, 255, 0.4);
-  color: #7ab4ff;
-  padding: 5px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 12px;
-  margin: 2px;
-  transition: all 0.2s;
-}
-#ui button:hover { background: rgba(100, 140, 255, 0.4); }
-#ui button.active { background: rgba(100, 140, 255, 0.5); }
-#stats {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  background: rgba(10, 10, 20, 0.85);
-  border: 1px solid rgba(100, 140, 255, 0.3);
-  border-radius: 8px;
-  padding: 10px 14px;
-  font-size: 12px;
-  z-index: 10;
-  color: #7ab4ff;
-  backdrop-filter: blur(8px);
-}
-#hint {
-  position: absolute;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: rgba(160, 180, 220, 0.6);
-  font-size: 12px;
-  z-index: 10;
-  text-align: center;
-  pointer-events: none;
-}
-.color-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  margin-right: 6px;
-  vertical-align: middle;
-}
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color: #e0e0e0;
+    height: 100vh;
+    width: 100vw;
+  }
+  canvas { display: block; cursor: crosshair; }
+  .hud {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    background: rgba(10, 10, 20, 0.85);
+    border: 1px solid rgba(100, 140, 255, 0.3);
+    border-radius: 12px;
+    padding: 16px 20px;
+    backdrop-filter: blur(10px);
+    z-index: 10;
+    min-width: 220px;
+  }
+  .hud h2 {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: #6e9fff;
+    margin-bottom: 10px;
+  }
+  .hud .stat {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    margin-bottom: 6px;
+    color: #aaa;
+  }
+  .hud .stat span { color: #fff; font-weight: 600; }
+  .hud .controls {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(100, 140, 255, 0.2);
+    font-size: 11px;
+    color: #777;
+    line-height: 1.7;
+  }
+  .hud .controls kbd {
+    background: rgba(100, 140, 255, 0.15);
+    border: 1px solid rgba(100, 140, 255, 0.3);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 10px;
+    color: #6e9fff;
+  }
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(10, 10, 20, 0.9);
+    border: 1px solid rgba(100, 140, 255, 0.3);
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 13px;
+    color: #6e9fff;
+    opacity: 0;
+    transition: opacity 0.4s;
+    pointer-events: none;
+    z-index: 20;
+  }
+  .toast.show { opacity: 1; }
 </style>
 </head>
 <body>
-<canvas id="canvas"></canvas>
+<canvas id="sandbox"></canvas>
 
-<div id="ui">
-  <h1>✦ Aether's Gravity Sandbox ✦</h1>
-  <div class="row">
-    <label>Gravity</label>
-    <input type="range" id="gravity" min="0" max="2" step="0.05" value="0.5">
-  </div>
-  <div class="row">
-    <label>Trail</label>
-    <input type="range" id="trail" min="0" max="0.3" step="0.01" value="0.08">
-  </div>
-  <div class="row">
-    <label>Bounce</label>
-    <input type="range" id="bounce" min="0.1" max="1.5" step="0.05" value="0.8">
-  </div>
-  <div class="row" style="margin-top:8px;">
-    <label>Mode:</label>
-  </div>
-  <div class="row">
-    <button id="modeAttract" class="active">Attract</button>
-    <button id="modeRepel">Repel</button>
-    <button id="modeVortex">Vortex</button>
-  </div>
-  <div class="row" style="margin-top:6px;">
-    <button id="clearAll">Clear All</button>
-    <button id="spawnBurst">Burst +50</button>
+<div class="hud">
+  <h2>🌌 Gravity Sandbox</h2>
+  <div class="stat">Bodies: <span id="count">0</span></div>
+  <div class="stat">FPS: <span id="fps">0</span></div>
+  <div class="stat">Gravity: <span id="gravMode">ON</span></div>
+  <div class="controls">
+    <kbd>Click</kbd> + drag to launch<br>
+    <kbd>Shift</kbd>+click for planet mode<br>
+    <kbd>G</kbd> toggle gravity<br>
+    <kbd>C</kbd> clear all<br>
+    <kbd>Space</kbd> pause/resume<br>
+    <kbd>1-3</kbd> change palette
   </div>
 </div>
 
-<div id="stats">
-  Particles: <span id="particleCount">0</span><br>
-  FPS: <span id="fps">0</span>
-</div>
-
-<div id="hint">Click & drag to spawn • Right-click to attract • Hold Shift for vortex mode</div>
+<div class="toast" id="toast"></div>
 
 <script>
-const canvas = document.getElementById('canvas');
+const canvas = document.getElementById('sandbox');
 const ctx = canvas.getContext('2d');
 
 let W, H;
@@ -145,59 +109,169 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-const particles = [];
-const MAX_PARTICLES = 2000;
+// State
+let bodies = [];
+let gravityOn = true;
+let paused = false;
+let paletteIdx = 0;
+let mouse = { x: 0, y: 0, down: false, startX: 0, startY: 0 };
+let fps = 0, frameCount = 0, lastFpsTime = performance.now();
 
-// Hue palette cycles through beautiful colors
-const palette = [
-  { h: 210, s: 80, l: 65 }, // soft blue
-  { h: 260, s: 70, l: 60 }, // purple
-  { h: 180, s: 75, l: 55 }, // teal
-  { h: 320, s: 65, l: 65 }, // pink
-  { h: 40, s: 80, l: 60 },   // gold
-  { h: 150, s: 70, l: 55 },  // green
+const palettes = [
+  ['#6e9fff', '#ff6eb4', '#6effc8', '#ffdd6e', '#c06eff', '#ff9f6e'],
+  ['#ff4444', '#ff8844', '#ffcc44', '#44ff44', '#4488ff', '#cc44ff'],
+  ['#00ffcc', '#00ccff', '#4488ff', '#8844ff', '#cc44ff', '#ff44aa']
 ];
 
-function createParticle(x, y, vx = 0, vy = 0) {
-  if (particles.length >= MAX_PARTICLES) return;
-  const color = palette[Math.floor(Math.random() * palette.length)];
-  const hueShift = (Math.random() - 0.5) * 30;
-  particles.push({
-    x, y,
-    vx: vx + (Math.random() - 0.5) * 2,
-    vy: vy + (Math.random() - 0.5) * 2,
-    radius: Math.random() * 2.5 + 1.2,
-    life: 1,
-    decay: Math.random() * 0.0008 + 0.0002,
-    h: color.h + hueShift,
-    s: color.s,
-    l: color.l,
+const G = 0.15;
+const TRAIL_LENGTH = 35;
+const SOFTENING = 8;
+
+class Body {
+  constructor(x, y, vx, vy, mass, isPlanet) {
+    this.x = x; this.y = y;
+    this.vx = vx; this.vy = vy;
+    this.mass = mass;
+    this.radius = isPlanet ? 8 + mass * 0.3 : 2 + Math.sqrt(mass) * 1.2;
+    this.isPlanet = isPlanet;
+    this.trail = [];
+    this.life = 1.0;
+    this.hue = Math.random() * 360;
+    this.age = 0;
+    const pal = palettes[paletteIdx];
+    this.color = pal[Math.floor(Math.random() * pal.length)];
+    this.glowColor = this.color + '44';
+  }
+
+  update(dt) {
+    if (!paused) {
+      // Gravity
+      if (gravityOn) {
+        for (let other of bodies) {
+          if (other === this) continue;
+          let dx = other.x - this.x;
+          let dy = other.y - this.y;
+          let distSq = dx * dx + dy * dy + SOFTENING;
+          let dist = Math.sqrt(distSq);
+          let force = G * other.mass / distSq;
+          this.vx += force * dx / dist;
+          this.vy += force * dy / dist;
+        }
+      }
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      this.trail.push({ x: this.x, y: this.y });
+      if (this.trail.length > TRAIL_LENGTH) this.trail.shift();
+    }
+    this.age++;
+  }
+
+  draw(ctx) {
+    // Trail
+    if (this.trail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(this.trail[0].x, this.trail[0].y);
+      for (let i = 1; i < this.trail.length; i++) {
+        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+      }
+      ctx.strokeStyle = this.color + '40';
+      ctx.lineWidth = this.radius * 0.5;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+
+    // Glow
+    const glow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius * 3);
+    glow.addColorStop(0, this.color + '88');
+    glow.addColorStop(1, this.color + '00');
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius * 3, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
+    ctx.fill();
+
+    // Core
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fillStyle = this.color;
+    ctx.fill();
+
+    // Bright center
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius * 0.4, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+  }
+
+  boundsCheck() {
+    const margin = 200;
+    if (this.x < -margin || this.x > W + margin || this.y < -margin || this.y > H + margin) {
+      return false;
+    }
+    return true;
+  }
+}
+
+// Background stars
+const stars = [];
+for (let i = 0; i < 150; i++) {
+  stars.push({
+    x: Math.random() * 2000,
+    y: Math.random() * 2000,
+    r: Math.random() * 1.2,
+    twinkle: Math.random() * Math.PI * 2,
+    speed: 0.01 + Math.random() * 0.03
   });
 }
 
-// Mouse state
-const mouse = { x: W/2, y: H/2, down: false, right: false, shift: false };
+function drawStars() {
+  for (let s of stars) {
+    s.twinkle += s.speed;
+    const alpha = 0.3 + Math.sin(s.twinkle) * 0.3;
+    ctx.beginPath();
+    ctx.arc(s.x % W, s.y % H, s.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(200, 220, 255, ${alpha})`;
+    ctx.fill();
+  }
+}
+
+// Input
 canvas.addEventListener('mousedown', (e) => {
-  if (e.button === 0) mouse.down = true;
-  if (e.button === 2) mouse.right = true;
+  mouse.down = true;
+  mouse.startX = e.clientX;
+  mouse.startY = e.clientY;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
 });
-canvas.addEventListener('mouseup', (e) => {
-  if (e.button === 0) mouse.down = false;
-  if (e.button === 2) mouse.right = false;
-});
+
 canvas.addEventListener('mousemove', (e) => {
   mouse.x = e.clientX;
   mouse.y = e.clientY;
 });
-canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-canvas.addEventListener('keydown', (e) => { if (e.key === 'Shift') mouse.shift = true; });
-canvas.addEventListener('keyup', (e) => { if (e.key === 'Shift') mouse.shift = false; });
+
+canvas.addEventListener('mouseup', (e) => {
+  if (!mouse.down) return;
+  mouse.down = false;
+  const dx = mouse.startX - e.clientX;
+  const dy = mouse.startY - e.clientY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const speed = dist * 0.04;
+  const angle = Math.atan2(dy, dx);
+  const vx = Math.cos(angle) * speed;
+  const vy = Math.sin(angle) * speed;
+  const mass = e.shiftKey ? 30 + Math.random() * 50 : 3 + Math.random() * 12;
+  const isPlanet = e.shiftKey;
+  bodies.push(new Body(mouse.startX, mouse.startY, vx, vy, mass, isPlanet));
+  updateCount();
+  if (isPlanet) showToast('🪐 Planet launched!');
+});
 
 // Touch support
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
-  mouse.down = true;
   const t = e.touches[0];
+  mouse.down = true;
+  mouse.startX = t.clientX;
+  mouse.startY = t.clientY;
   mouse.x = t.clientX;
   mouse.y = t.clientY;
 });
@@ -207,154 +281,152 @@ canvas.addEventListener('touchmove', (e) => {
   mouse.x = t.clientX;
   mouse.y = t.clientY;
 });
-canvas.addEventListener('touchend', () => { mouse.down = false; });
+canvas.addEventListener('touchend', (e) => {
+  if (!mouse.down) return;
+  mouse.down = false;
+  const dx = mouse.startX - mouse.x;
+  const dy = mouse.startY - mouse.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const speed = dist * 0.04;
+  const angle = Math.atan2(dy, dx);
+  bodies.push(new Body(mouse.startX, mouse.startY, Math.cos(angle) * speed, Math.sin(angle) * speed, 3 + Math.random() * 12, false));
+  updateCount();
+});
 
-// Controls
-const controls = {
-  gravity: document.getElementById('gravity'),
-  trail: document.getElementById('trail'),
-  bounce: document.getElementById('bounce'),
-};
-let mode = 'attract'; // attract | repel | vortex
-document.getElementById('modeAttract').onclick = () => setMode('attract');
-document.getElementById('modeRepel').onclick = () => setMode('repel');
-document.getElementById('modeVortex').onclick = () => setMode('vortex');
-function setMode(m) {
-  mode = m;
-  document.querySelectorAll('#ui button').forEach(b => b.classList.remove('active'));
-  document.getElementById('mode' + m.charAt(0).toUpperCase() + m.slice(1)).classList.add('active');
-}
-document.getElementById('clearAll').onclick = () => particles.length = 0;
-document.getElementById('spawnBurst').onclick = () => {
-  const cx = W/2 + (Math.random() - 0.5) * 300;
-  const cy = H/2 + (Math.random() - 0.5) * 300;
-  for (let i = 0; i < 50; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const s = Math.random() * 4 + 1;
-    createParticle(cx, cy, Math.cos(a) * s, Math.sin(a) * s);
+// Keyboard
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'g' || e.key === 'G') {
+    gravityOn = !gravityOn;
+    document.getElementById('gravMode').textContent = gravityOn ? 'ON' : 'OFF';
+    showToast(gravityOn ? '🌍 Gravity: ON' : '🚀 Gravity: OFF');
   }
-};
+  if (e.key === 'c' || e.key === 'C') {
+    bodies = [];
+    updateCount();
+    showToast('✨ Cleared');
+  }
+  if (e.key === ' ') {
+    e.preventDefault();
+    paused = !paused;
+    showToast(paused ? '⏸ Paused' : '▶ Running');
+  }
+  if (e.key >= '1' && e.key <= '3') {
+    paletteIdx = parseInt(e.key) - 1;
+    bodies.forEach(b => {
+      const pal = palettes[paletteIdx];
+      b.color = pal[Math.floor(Math.random() * pal.length)];
+    });
+    showToast('🎨 Palette ' + e.key);
+  }
+});
 
-// FPS
-let frameCount = 0, lastFpsUpdate = performance.now(), fps = 0;
+function updateCount() {
+  document.getElementById('count').textContent = bodies.length;
+}
 
-function animate(time) {
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toast._timeout);
+  toast._timeout = setTimeout(() => toast.classList.remove('show'), 1500);
+}
+
+// Launch line preview
+function drawLaunchLine() {
+  if (!mouse.down) return;
+  ctx.beginPath();
+  ctx.moveTo(mouse.startX, mouse.startY);
+  ctx.lineTo(mouse.x, mouse.y);
+  ctx.strokeStyle = 'rgba(110, 159, 255, 0.6)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Arrow head
+  const dx = mouse.startX - mouse.x;
+  const dy = mouse.startY - mouse.y;
+  const angle = Math.atan2(dy, dx);
+  const arrowSize = 10;
+  ctx.beginPath();
+  ctx.moveTo(mouse.startX, mouse.startY);
+  ctx.lineTo(mouse.startX + Math.cos(angle) * arrowSize, mouse.startY + Math.sin(angle) * arrowSize);
+  ctx.strokeStyle = 'rgba(110, 159, 255, 0.8)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Preview dot
+  ctx.beginPath();
+  ctx.arc(mouse.startX, mouse.startY, 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#6e9fff';
+  ctx.fill();
+}
+
+// Main loop
+let lastTime = performance.now();
+function animate(now) {
+  requestAnimationFrame(animate);
+
+  const dt = Math.min((now - lastTime) / 16.67, 3);
+  lastTime = now;
+
   // FPS
   frameCount++;
-  if (time - lastFpsUpdate >= 1000) {
+  if (now - lastFpsTime >= 1000) {
     fps = frameCount;
     frameCount = 0;
-    lastFpsUpdate = time;
+    lastFpsTime = now;
+    document.getElementById('fps').textContent = fps;
   }
 
-  const gravity = parseFloat(controls.gravity.value);
-  const trail = parseFloat(controls.trail.value);
-  const bounce = parseFloat(controls.bounce.value);
-
-  // Trail effect
-  ctx.fillStyle = `rgba(10, 10, 18, ${trail})`;
+  // Clear with fade
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.15)';
   ctx.fillRect(0, 0, W, H);
 
-  // Spawn on drag
-  if (mouse.down && particles.length < MAX_PARTICLES) {
-    for (let i = 0; i < 3; i++) {
-      createParticle(mouse.x, mouse.y);
-    }
+  drawStars();
+
+  // Update and draw bodies
+  bodies = bodies.filter(b => b.boundsCheck());
+  for (let b of bodies) {
+    b.update(dt);
+    b.draw(ctx);
   }
 
-  // Update & draw particles
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-
-    // Mouse interaction
-    if (mouse.down || mouse.right) {
-      const dx = mouse.x - p.x;
-      const dy = mouse.y - p.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) + 0.01;
-      const force = Math.min(800 / (dist * dist), 3);
-      const nx = dx / dist;
-      const ny = dy / dist;
-
-      let fx = 0, fy = 0;
-      if (mouse.shift || mode === 'vortex') {
-        // Perpendicular force (vortex)
-        fx = -ny * force * 1.5;
-        fy = nx * force * 1.5;
-        // Pull in slightly
-        fx += nx * force * 0.3;
-        fy += ny * force * 0.3;
-      } else if (mode === 'attract') {
-        fx = nx * force;
-        fy = ny * force;
-      } else if (mode === 'repel') {
-        fx = -nx * force * 1.3;
-        fy = -ny * force * 1.3;
-      }
-      p.vx += fx;
-      p.vy += fy;
-    }
-
-    // Gravity
-    p.vy += gravity * 0.15;
-
-    // Damping
-    p.vx *= 0.998;
-    p.vy *= 0.998;
-
-    // Move
-    p.x += p.vx;
-    p.y += p.vy;
-
-    // Bounce off walls
-    if (p.x < p.radius) { p.x = p.radius; p.vx *= -bounce; }
-    if (p.x > W - p.radius) { p.x = W - p.radius; p.vx *= -bounce; }
-    if (p.y < p.radius) { p.y = p.radius; p.vy *= -bounce; }
-    if (p.y > H - p.radius) { p.y = H - p.radius; p.vy *= -bounce; }
-
-    // Life decay
-    p.life -= p.decay;
-
-    // Draw glow
-    const alpha = p.life * 0.9;
-    const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius * 6);
-    glow.addColorStop(0, `hsla(${p.h}, ${p.s}%, ${p.l}%, ${alpha})`);
-    glow.addColorStop(0.4, `hsla(${p.h}, ${p.s}%, ${p.l}%, ${alpha * 0.4})`);
-    glow.addColorStop(1, `hsla(${p.h}, ${p.s}%, ${p.l}%, 0)`);
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.radius * 6, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Core
-    ctx.fillStyle = `hsla(${p.h}, ${p.s}%, ${Math.min(p.l + 20, 95)}%, ${alpha})`;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Remove dead
-    if (p.life <= 0 || p.x < -50 || p.x > W + 50 || p.y < -50 || p.y > H + 50) {
-      particles.splice(i, 1);
-    }
-  }
-
-  // Update UI
-  document.getElementById('particleCount').textContent = particles.length;
-  document.getElementById('fps').textContent = fps;
-
-  requestAnimationFrame(animate);
+  drawLaunchLine();
+  updateCount();
 }
 
-// Initial burst
-setTimeout(() => {
-  for (let i = 0; i < 80; i++) {
-    const x = Math.random() * W;
-    const y = Math.random() * H * 0.6;
-    const a = Math.random() * Math.PI * 2;
-    const s = Math.random() * 3 + 0.5;
-    createParticle(x, y, Math.cos(a) * s, Math.sin(a) * s);
-  }
-}, 100);
+// Start with a demo system
+function createDemoSystem() {
+  const cx = W / 2, cy = H / 2;
+  // Central star
+  bodies.push(new Body(cx, cy, 0, 0, 200, true));
+  bodies[bodies.length - 1].radius = 14;
+  bodies[bodies.length - 1].color = '#ffdd6e';
 
+  // Orbiting bodies
+  const orbits = [
+    { dist: 100, speed: 1.2, mass: 8 },
+    { dist: 160, speed: 0.8, mass: 12 },
+    { dist: 220, speed: 0.55, mass: 6 },
+    { dist: 280, speed: 0.4, mass: 18 }
+  ];
+
+  orbits.forEach((o, i) => {
+    const angle = (i / orbits.length) * Math.PI * 2;
+    const x = cx + Math.cos(angle) * o.dist;
+    const y = cy + Math.sin(angle) * o.dist;
+    const vx = -Math.sin(angle) * o.speed;
+    const vy = Math.cos(angle) * o.speed;
+    bodies.push(new Body(x, y, vx, vy, o.mass, false));
+  });
+
+  updateCount();
+  showToast('🌟 Demo system ready — click to add!');
+}
+
+createDemoSystem();
 requestAnimationFrame(animate);
 </script>
 </body>
