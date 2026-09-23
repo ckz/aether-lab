@@ -2,569 +2,120 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Aether Lab — Creations</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aether Lab — Creative Builds</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #0a0a14;
-    font-family: 'Courier New', monospace;
-    color: #ccc;
-    padding: 40px 24px;
+    background: #0d0d14;
+    color: #e0e0e0;
+    font-family: 'Segoe UI', system-ui, sans-serif;
     min-height: 100vh;
+    padding: 40px 20px;
   }
-  h1 {
-    font-size: 1.4rem;
-    font-weight: normal;
-    letter-spacing: .35em;
+  .header {
+    text-align: center;
+    margin-bottom: 50px;
+  }
+  .header h1 {
+    font-size: 2rem;
+    font-weight: 300;
+    letter-spacing: 6px;
+    color: #fff;
+    margin-bottom: 8px;
+  }
+  .header p {
+    color: #666;
+    font-size: 13px;
+    letter-spacing: 2px;
     text-transform: uppercase;
-    color: #aab;
-    margin-bottom: 6px;
-  }
-  .sub {
-    font-size: .75rem;
-    opacity: .45;
-    letter-spacing: .2em;
-    margin-bottom: 36px;
   }
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 20px;
+    max-width: 900px;
+    margin: 0 auto;
   }
   .card {
-    background: rgba(20,18,40,.6);
-    border: 1px solid rgba(100,90,180,.2);
-    border-radius: 6px;
-    padding: 22px;
+    background: #12121a;
+    border: 1px solid #1e1e2a;
+    border-radius: 12px;
+    overflow: hidden;
+    transition: transform 0.2s, border-color 0.2s;
     text-decoration: none;
-    color: #ccc;
-    transition: all .3s;
+    color: inherit;
     display: block;
   }
   .card:hover {
-    border-color: rgba(150,130,255,.45);
-    background: rgba(30,25,65,.6);
-    box-shadow: 0 0 30px rgba(80,60,180,.12);
-    transform: translateY(-2px);
+    transform: translateY(-3px);
+    border-color: #333;
   }
-  .card .title {
-    font-size: 1rem;
-    color: #c8c8ff;
-    letter-spacing: .12em;
-    margin-bottom: 8px;
+  .card-preview {
+    height: 140px;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    position: relative;
+    overflow: hidden;
   }
-  .card .desc {
-    font-size: .72rem;
-    opacity: .5;
-    letter-spacing: .1em;
+  .card-preview::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 30% 50%, rgba(100, 100, 255, 0.05), transparent 70%);
   }
-  .card .tag {
+  .card-body {
+    padding: 16px;
+  }
+  .card-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: #fff;
+  }
+  .card-desc {
+    font-size: 12px;
+    color: #666;
+    line-height: 1.4;
+  }
+  .card-tag {
     display: inline-block;
-    margin-top: 12px;
-    font-size: .6rem;
-    letter-spacing: .15em;
+    margin-top: 8px;
+    font-size: 10px;
+    padding: 2px 8px;
+    background: #1a1a2e;
+    border-radius: 10px;
+    color: #888;
+    letter-spacing: 1px;
     text-transform: uppercase;
-    padding: 3px 10px;
-    border: 1px solid rgba(140,120,255,.25);
-    border-radius: 2px;
-    color: #9988dd;
+  }
+  .empty {
+    text-align: center;
+    color: #444;
+    padding: 60px 20px;
+    font-style: italic;
   }
 </style>
 </head>
 <body>
-<h1>Aether Lab</h1>
-<p class="sub">experiments in code &amp; light</p>
-<div class="grid">
-  <a class="card" href="builds/kaleidoscope-engine.html">
-    <div class="title">Kaleidoscope Engine</div>
-    <div class="desc">Interactive mirror-symmetry drawing. Click and drag to paint with 2–24 fold rotational symmetry in real time. 4 brush types — Line, Ribbon, Particle, Sparkle — across 6 palettes (Aurora, Ember, Frost, Neon, Void, Mono). Soft fade trails, hue drift, undo, save as PNG. Meditative. Infinite. Mesmerizing.</div>
-    <span class="tag">Generative Art / Interactive / Drawing / Mandala</span>
-  </a>
-  <a class="card" href="builds/living-constellation.html">
-    <div class="title">Living Constellation</div>
-    <div class="desc">Generative particle constellation. 180 luminous stars drift organically, connecting when they draw near. Move your cursor to push the stars away and paint a glowing influence field. Colors blend across connections, stars pulse with soft bioluminescent halos. Meditative. Interactive.</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/liquid-chrome.html">
-    <div class="title">Liquid Chrome</div>
-    <div class="desc">Reflective metallic fluid simulation. 5 palettes (Chrome, Mercury, Oil Slick, Neon, Arctic) with real-time gradient-based chrome highlights, iridescent rainbow shifts, and organic blob movement. Click to attract, hold to repel. Adjust blobs, viscosity, chrome, iridescence, and glow.</div>
-    <span class="tag">Generative Art / Fluid / Interactive</span>
-  </a>
-  <a class="card" href="builds/chromatic-ripple-synth.html">
-    <div class="title">Chromatic Ripple Synth</div>
-    <div class="desc">Water ripple physics meets sound. Click or drag to send ripples across the surface — each ripple generates a tone from the selected scale. Watch interference patterns bloom where waves meet, hear harmony emerge from collision. 5 scales, 6 palettes, Pulse/Stream modes, Web Audio with reverb.</div>
-    <span class="tag">Generative Art / Audio / Physics</span>
-  </a>
-  <a class="card" href="builds/plasma-globe.html">
-    <div class="title">Plasma Globe</div>
-    <div class="desc">Interactive electrical discharge. Move your cursor to guide the plasma, hold to intensify the arcs. 6 neon palettes with realistic branching filaments and particle sparks.</div>
-    <span class="tag">Generative Art / Interactive</span>
-  </a>
-  <a class="card" href="builds/aether-flow.html">
-    <div class="title">Aether Flow</div>
-    <div class="desc">2,000 luminous particles across 4 modes — Flow (noise-woven trails), Orbit (tangent swirling), Chaos (random energy), Galaxy (rotational drift). Move to attract the swarm, click to burst, Space to cycle modes. 5 shifting palettes with soft glowing trails.</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/aurora-drift.html">
-    <div class="title">Aurora Drift</div>
-    <div class="desc">Interactive particle field. Move your cursor to guide the aurora.</div>
-    <span class="tag">Generative Art</span>
-  </a>
-  <a class="card" href="builds/flow-field.html">
-    <div class="title">Flow Field</div>
-    <div class="desc">Interactive particle flow field. ~2,000 luminous particles weave through a procedural noise field built from layered sine/cosine waves that drift over time. Move your mouse to attract the swarm — the closer your cursor, the stronger the pull. Click to toggle attract/repel mode and switch palettes. 5 palettes cycle on click. Fade trails, soft glow, additively blended. Meditative. Kinetic. Alive.</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/ripple-tank.html">
-    <div class="title">Ripple Tank</div>
-    <div class="desc">Real-time wave equation simulation. Click, drag, or switch to Rain/Pulse modes. 6 palettes (Aurora, Ember, Frost, Void, Ocean, Toxic), adjustable damping and speed. Watch interference patterns bloom where waves collide. Keys: C clear, P palette, Space pause.</div>
-    <span class="tag">Physics / Simulation / Interactive</span>
-  </a>
-  <a class="card" href="builds/resonance.html">
-    <div class="title">Resonance</div>
-    <div class="desc">Harmonic string instrument. Click or drag across strings to pluck them. Three scales.</div>
-    <span class="tag">Audio / Interactive</span>
-  </a>
-  <a class="card" href="builds/ether-weave.html">
-    <div class="title">Ether Weave</div>
-    <div class="desc">180 luminous threads flowing through noise. Move to guide, click to attract, hold to draw.</div>
-    <span class="tag">Generative Art</span>
-  </a>
-  <a class="card" href="builds/star-nursery.html">
-    <div class="title">Star Nursery</div>
-    <div class="desc">Interactive constellation builder. Click to plant stars, hold to attract, watch them connect.</div>
-    <span class="tag">Interactive / Generative</span>
-  </a>
-  <a class="card" href="builds/reaction-diffusion-garden.html">
-    <div class="title">Reaction Diffusion Garden</div>
-    <div class="desc">Gray-Scott model simulation. 6 presets (coral, spots, stripes, worms, chaos, mitosis). Click to paint chemicals.</div>
-    <span class="tag">Simulation / Generative</span>
-  </a>
-  <a class="card" href="builds/symbiosis.html">
-    <div class="title">Symbiosis</div>
-    <div class="desc">Living mandala. Move to guide the flow, click to pulse, hold to bloom. 300 particles, 12 petals, sacred geometry.</div>
-    <span class="tag">Generative Art</span>
-  </a>
-  <a class="card" href="builds/focus-pulse.html">
-    <div class="title">Focus Pulse</div>
-    <div class="desc">Breathing circle focus timer. Pomodoro + custom mode. Keyboard shortcuts (Space, R, S). Ambient. LocalStorage stats.</div>
-    <span class="tag">Tool / Focus</span>
-  </a>
-  <a class="card" href="builds/fractal-arboretum.html">
-    <div class="title">Fractal Arboretum</div>
-    <div class="desc">Interactive recursive fractal trees with seasonal palettes. Mouse guides the wind. Click to plant groves. Falling leaves.</div>
-    <span class="tag">Generative Art</span>
-  </a>
-  <a class="card" href="builds/entropy-fountain.html">
-    <div class="title">Entropy Fountain</div>
-    <div class="desc">Particle fountain where chaos increases over time. Click to burst, move to attract. Color maps to entropy.</div>
-    <span class="tag">Generative Art</span>
-  </a>
-  <a class="card" href="builds/harmonograph.html">
-    <div class="title">Harmonograph</div>
-    <div class="desc">Pendulum light traces. Move to guide, click to reset, keys 1-5 for presets. Blended glow trails.</div>
-    <span class="tag">Generative Art / Math</span>
-  </a>
-  <a class="card" href="builds/terminal-color-lab.html">
-    <div class="title">Terminal Color Lab</div>
-    <div class="desc">Interactive ANSI color scheme designer. 8 presets, live terminal preview, save/load, CSS export. WCAG contrast check.</div>
-    <span class="tag">Tool / Terminal</span>
-  </a>
-  <a class="card" href="builds/lava-core.html">
-    <div class="title">Lava Core</div>
-    <div class="desc">Interactive metaball fluid simulation. 6 palettes (lava, ocean, alien, neon, mono, toxic). Click to attract, scroll to add blobs.</div>
-    <span class="tag">Generative Art / Fluid</span>
-  </a>
-  <a class="card" href="builds/hypotrochoid-playground.html">
-    <div class="title">Hypotrochoid Playground</div>
-    <div class="desc">Interactive spirograph curves. Multi-pen, 7 presets, 6 palettes, color cycling. Click to shift origin, scroll to zoom, guides toggle.</div>
-    <span class="tag">Generative Art / Math</span>
-  </a>
-  <a class="card" href="builds/moire-loom.html">
-    <div class="title">Moiré Loom</div>
-    <div class="desc">Interference patterns from layered geometry. Lines/dots/circles/hex with rotation, mouse warp, spectrum coloring, trail ghosting.</div>
-    <span class="tag">Generative Art / Interference</span>
-  </a>
-  <a class="card" href="builds/tiny-base-kit.html">
-    <div class="title">Tiny Base Kit</div>
-    <div class="desc">Retro-terminal encoding utility. Live Binary / Hex / Octal / Base64 / ROT13 / URL-encode conversion. Copy buttons, Caesar shift slider, scanline CRT aesthetic.</div>
-    <span class="tag">Tool / Utility</span>
-  </a>
-  <a class="card" href="builds/gravity-garden.html">
-    <div class="title">Gravity Garden</div>
-    <div class="desc">N-body gravitational sandbox. Click to plant stars, drag to fling them into orbit. 6 palettes, merge physics, collision sparks, orbital trails. Seed presets.</div>
-    <span class="tag">Simulation / Physics</span>
-  </a>
-  <a class="card" href="builds/voronoi-forge.html">
-    <div class="title">Voronoi Forge</div>
-    <div class="desc">Interactive crystal tessellation. Click to plant seeds, drag to repel, scroll to shift palette. 6 crystal palettes with glowing edges and drifting cells.</div>
-    <span class="tag">Generative Art / Geometry</span>
-  </a>
-  <a class="card" href="builds/bloom.html">
-    <div class="title">Bloom</div>
-    <div class="desc">Generative flower garden. Click to plant, drag to paint a field. Watch petals unfurl with the wind. 5 seasonal palettes, pollen particles, growth animation.</div>
-    <span class="tag">Generative Art / Interactive</span>
-  </a>
-  <a class="card" href="builds/pulse-garden.html">
-    <div class="title">Pulse Garden</div>
-    <div class="desc">Bioluminescent garden of procedural flowers. Move to guide the wind, click to plant seeds, hold to bloom. Sacred geometry petals with drifting pollinators.</div>
-    <span class="tag">Generative Art / Interactive</span>
-  </a>
-  <a class="card" href="builds/orrery.html">
-    <div class="title">Orrery</div>
-    <div class="desc">Interactive mechanical model of the solar system. Real orbital periods, drifting planets with trails, click any world for facts. Scroll to zoom, drag to pan, SPACE to pause.</div>
-    <span class="tag">Generative Art / Celestial / Simulation</span>
-  </a>
-  <a class="card" href="builds/whisper-garden.html">
-    <div class="title">Whisper Garden</div>
-    <div class="desc">Sound-to-flower garden. Click to plant a flower that blooms from a musical tone — each frequency creates a unique species. 4 scales, pentatonic/chromatic/drones/nature, Web Audio with reverb, wind particles, breathing animation.</div>
-    <span class="tag">Generative Art / Audio / Interactive</span>
-  </a>
-  <a class="card" href="builds/bloom-lattice.html">
-    <div class="title">Bloom Lattice</div>
-    <div class="desc">Crystalline flowers grow from your clicks. Hold to cultivate. Branches sway, particles drift, blooms connect with luminous threads. Three palettes.</div>
-    <span class="tag">Generative Art / Interactive</span>
-  </a>
-  <a class="card" href="builds/quick-diff.html">
-    <div class="title">Quick Diff</div>
-    <div class="desc">Line-by-line diff with word-level highlighting. Paste two texts, compare instantly. Added/removed/changed stats, copy buttons, sync scroll, Ctrl+Enter to compare.</div>
-    <span class="tag">Tool / Developer</span>
-  </a>
-  <a class="card" href="builds/cosmic-breath.html">
-    <div class="title">Cosmic Breath</div>
-    <div class="desc">Meditative sacred geometry mandala that breathes. Nested polygons, Flower of Life, orbiting particles, shifting color palettes. Move your mouse to influence the field, click to rotate the pattern.</div>
-    <span class="tag">Generative Art / Meditation</span>
-  </a>
-  <a class="card" href="builds/ambient-noise-lab.html">
-    <div class="title">Ambient Noise Lab</div>
-    <div class="desc">Synthesized ambient soundscapes — rain, wind, fire, ocean, pink/brown noise, café chatter, crickets. Mix with sliders, 9 presets, real-time frequency visualizer. All generated with Web Audio, no audio files.</div>
-    <span class="tag">Tool / Audio / Ambient</span>
-  </a>
-  <a class="card" href="builds/bounce-lab.html">
-    <div class="title">Bounce Lab</div>
-    <div class="desc">Physics playground. Click & drag to launch balls with momentum, watch them collide and bounce. Gravity, friction, restitution controls. 5 presets (Moon, Earth, Jupiter, Zero-G, Bouncy). Obstacle mode.</div>
-    <span class="tag">Simulation / Physics / Interactive</span>
-  </a>
-  <a class="card" href="builds/gravity-loom.html">
-    <div class="title">Gravity Loom</div>
-    <div class="desc">Luminous threads weave between drifting anchor points in a gravity field. Move to guide the loom, click to plant new nodes, hold to attract. Curved bezier threads with breathing nodes, ambient dust, 6 palettes. Sacred geometry seed patterns.</div>
-    <span class="tag">Generative Art / Interactive</span>
-  </a>
-  <a class="card" href="builds/ferrofluid.html">
-    <div class="title">Ferrofluid</div>
-    <div class="desc">Magnetic fluid simulation. Click to attract metallic particles into spiky clusters, hold to repel. Curl noise drives ambient drift. 5 palettes (mercury, oil slick, neon, plasma, arctic). Scroll adjusts field strength. Move cursor to guide the ferrofluid.</div>
-    <span class="tag">Generative Art / Interactive / Physics</span>
-  </a>
-  <a class="card" href="builds/luminous-labyrinth.html">
-    <div class="title">Luminous Labyrinth</div>
-    <div class="desc">Procedurally generated maze explorer. Navigate shifting corridors to collect glowing orbs, unlock the exit, and descend deeper. Arrow keys / WASD / tap. Particle trails, breathing walls, escalating levels.</div>
-    <span class="tag">Game / Puzzle / Generative</span>
-  </a>
-  <a class="card" href="builds/pulse-orchard.html">
-    <div class="title">Pulse Orchard</div>
-    <div class="desc">Procedural tree orchard with unique fruit trees, wind sway, butterflies, day/night cycle, and 5 seasonal palettes. Click to plant, watch trees grow and bear fruit. Hold to water. Right-click to remove.</div>
-    <span class="tag">Generative Art / Interactive / Ecosystem</span>
-  </a>
-  <a class="card" href="builds/devquote.py">
-    <div class="title">DevQuote</div>
-    <div class="desc">Random developer & programming wisdom in your terminal. 55+ quotes from legends like Knuth, Torvalds, Hopper, Beck, and more. Filter by category, author, or output as JSON. Add it to your shell profile for daily motivation.</div>
-    <span class="tag">Tool / Developer / CLI</span>
-  </a>
-  <a class="card" href="builds/cosmic-spore-web.html">
-    <div class="title">Cosmic Spore Web</div>
-    <div class="desc">Bioluminescent fungal constellation simulation. Luminous spores drift and weave into luminous connection filaments. Move to guide, click to burst, hold to grow. 5 palettes: biolum, nebula, arctic, ember, void. Press 1-5 to switch, C to clear, G for grid.</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/magnetic-poetry-of-light.html">
-    <div class="title">Magnetic Poetry of Light</div>
-    <div class="desc">Thousands of luminous particles trace invisible magnetic fields. Move your cursor to act as a fifth magnet. Click to plant ephemeral poles. Color maps to velocity. 5 palettes (Aurora, Ember, Frost, Toxic, Nebula). Scroll adjusts trail persistence. Fields drift like living things.</div>
-    <span class="tag">Generative Art / Physics / Interactive</span>
-  </a>
-  <a class="card" href="builds/regex-playground.html">
-    <div class="title">Regex Playground</div>
-    <div class="desc">Interactive regular expression tester. Pattern input with live highlighting, 4 flags (g/i/m/s), 12 common presets (email, URL, IPv4, hex, date, phone, card, markdown, HTML, password, time, semver), replace preview with group support, match stats, error handling, quick-reference sidebar, keyboard shortcuts.</div>
-    <span class="tag">Tool / Developer / Utility</span>
-  </a>
-  <a class="card" href="builds/breath-of-the-void.html">
-    <div class="title">Breath of the Void</div>
-    <div class="desc">Meditative arcade survival. Guide a light through shadow hordes — click to pulse them back, collect motes to grow. Increasing difficulty, combo system, particle effects, glowing trails.</div>
-    <span class="tag">Game / Arcade / Meditative</span>
-  </a>
-  <a class="card" href="builds/chromatic-flow-field.html">
-    <div class="title">Chromatic Flow Field</div>
-    <div class="desc">Luminous particles follow a drifting noise field, shifting through color as they flow. Click or move to attract the swarm. 1,400 particles with additive blending and soft trails.</div>
-    <span class="tag">Generative Art / Interactive</span>
-  </a>
-  <a class="card" href="builds/neural-bloom.html">
-    <div class="title">Neural Bloom</div>
-    <div class="desc">Glowing organic neural nodes pulse, drift, and connect. Click to plant blooms, drag to repel, scroll to shift palette. 6 color themes (Aurora, Ember, Frost, Nebula, Toxic, Ghost). Gradient connections bloom between nearby nodes. Auto-spawns in quiet moments.</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/echo-drift.html">
-    <div class="title">Echo Drift</div>
-    <div class="desc">Navigate a pulse of light through a dark cave — walls only appear when your echoes reveal them. Click to emit pulses, avoid red hazards, collect gold orbs, reach the green exit. Progressive difficulty. 9+ levels of increasing complexity. Atmospheric.</div>
-    <span class="tag">Game / Puzzle / Atmospheric</span>
-  </a>
-  <a class="card" href="builds/nebula-weave.html">
-    <div class="title">Nebula Weave</div>
-    <div class="desc">Generative particle flow field. ~1,400 luminous trails weave through a 3D simplex noise field with additive blending and soft trails. Move to guide, click for Burst, scroll or sliders to adjust flow and trail persistence. 4 drifting palettes (cosmic, solar, starlight, aurora).</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/moss-garden.html">
-    <div class="title">Moss Garden</div>
-    <div class="desc">A tiny living terrarium. Click or drag to plant moss, ferns, flowers, and stones. Water to nurture growth — organisms grow, spread, and spawn over time. Spores drift on ambient air. Hover entities for info. Meditative. Slowly alive.</div>
-    <span class="tag">Generative Art / Interactive / Simulation</span>
-  </a>
-  <a class="card" href="builds/git-muse.py">
-    <div class="title">git-muse</div>
-    <div class="desc">Your repo's personal muse. Run it on any git repo and get a poetic analysis — commit flavors with ASCII bar charts, peak coding hour with a custom poem, lyrical themes extracted from your messages, and a closing verse. Zero dependencies. Just python and poetry.</div>
-    <span class="tag">Tool / CLI / Python / Git</span>
-  </a>
-  <a class="card" href="builds/encode-decode-lab.html">
-    <div class="title">Encode/Decode Lab</div>
-    <div class="desc">Instant developer transforms. URL/Base64/HTML/Hex/ROT13/JWT encode & decode, JSON prettify/minify with live character & word stats. One-click copy. Sample text pre-loaded so it works the moment you open it.</div>
-    <span class="tag">Tool / Developer / Utility</span>
-  </a>
-  <a class="card" href="builds/flow-garden.html">
-    <div class="title">Flow Garden</div>
-    <div class="desc">Generative particle flow field with 1,800 luminous trails weaving through procedural noise. Move your cursor to disturb the field, click to burst into bloom, press Space for a center explosion. 5 shifting palettes with soft glow connections. Meditative. Interactive.</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/crystal-radio.html">
-    <div class="title">Crystal Radio</div>
-    <div class="desc">Click to broadcast crystalline clusters that grow branching structures with glowing nodes. Hold to resonate — particles stream from nearby crystals. Nodes connect with luminous threads when close. 6 palettes (Obsidian, Aurora, Ember, Frost, Nebula, Toxic). Keys 1-6 to switch palettes, C to clear. Auto-spawns in quiet moments.</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/star-drift.html">
-    <div class="title">Star Drift</div>
-    <div class="desc">Meditative space voyage. Guide a ship through falling stars, collect constellation patterns for bonus points, and avoid dark space dust. Click to pulse away dust, hold Space to slow time. Score combos. Atmospheric particles, nebula glow, 4 color palettes. Levels escalate.</div>
-    <span class="tag">Game / Interactive / Meditative / Space</span>
-  </a>
-  <a class="card" href="builds/phantom-weave.html">
-    <div class="title">Phantom Weave</div>
-    <div class="desc">Ghostly threads drift through curl noise, leaving luminous trails that fade slowly. Clicks send bursts of light; echoes leave translucent afterimages. 6 palettes (Void, Ember, Frost, Toxic, Nebula, Ghost), 3 density levels. Move to attract. Keys 1-6 switch palettes, C clears, Space pauses. Meditative and haunting.</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/url-param-inspector.html">
-    <div class="title">URL Param Inspector</div>
-    <div class="desc">Paste any URL and instantly deconstruct every query parameter. Auto-detects types (int, float, boolean, UUID, email, date, URL), flags duplicates and empty values, catches type mismatches. Copy clean URLs or JSON params in one click.</div>
-    <span class="tag">Tool / Developer / Utility</span>
-  </a>
-  <a class="card" href="builds/ember-flight.html">
-    <div class="title">Ember Flight</div>
-    <div class="desc">Meditative upward journey. Click &amp; hold to rise as a glowing ember through a dark forest canopy. Release to drift. Avoid branches, collect fireflies, reach the treetops. Atmospheric particles, swaying silhouettes, 600m of canopy to ascend.</div>
-    <span class="tag">Game / Meditative / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/stellar-weave.html">
-    <div class="title">Stellar Weave</div>
-    <div class="desc">Luminous threads weave between 80 drifting stars in a living constellation. Move to attract the swarm, click to send pulse waves, hold to draw. 4 palettes (Cosmos, Nebula, Aurora, Ember) with organic curl-noise drift and soft glow trails. Meditative cosmic web.</div>
-    <span class="tag">Generative Art / Interactive / Celestial</span>
-  </a>
-  <a class="card" href="builds/picreminder.html">
-    <div class="title">PicReminder</div>
-    <div class="desc">Photo reminders for your future self. Upload a photo, set a note and time, and get a browser notification when it matters. Stores everything locally. Simple, visual, and surprisingly effective.</div>
-    <span class="tag">Tool / Utility / Personal</span>
-  </a>
-  <a class="card" href="builds/zen-garden.html">
-    <div class="title">Zen Garden</div>
-    <div class="desc">Meditative digital sand garden. Raked patterns in four styles — circles, waves, mandala, or empty canvas. Drag floating stones, click to send ripples through the sand. Physics-based stone collisions, ambient particles, four palette modes. Keys 1-4 to switch patterns, C to clear, H to hide UI.</div>
-    <span class="tag">Generative Art / Interactive / Meditative</span>
-  </a>
-  <a class="card" href="builds/luminous-drift.html">
-    <div class="title">Luminous Drift</div>
-    <div class="desc">~1,200 luminous particles weave through a procedural noise field with soft glowing trails and additive blending. Move to guide, click to burst, Space for center explosion. 5 palettes (Cosmos, Nebula, Aurora, Ember, Void) with live switching. Adjust trail persistence and particle count. Save as PNG. Meditative. Interactive.</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/cipher-bloom.html">
-    <div class="title">Cipher Bloom</div>
-    <div class="desc">Code-rain streams of hex, binary, and katakana drift downward — occasionally blooming into organic flower patterns. Mouse movement pollinates streams, triggering sacred-geometry blooms with petal gradients and connection rings. Click to seed glyph bursts, hold to fertilize nearby streams. 5 auto-cycling palettes (Cyan, Ember, Aurora, Void, Frost). Meditative. Generative.</div>
-    <span class="tag">Generative Art / Interactive / Generative</span>
-  </a>
-  <a class="card" href="builds/neural-flow-field.html">
-    <div class="title">Neural Flow Field</div>
-    <div class="desc">2,000 luminous particles flow through a procedural simplex noise field with soft glowing trails and additive blending. Move to attract, click to change mode (flow / orbit / wave / attract), press Space for center burst. 6 auto-cycling palettes (Cosmic, Ocean, Ember, Forest, Neon, Aurora) with live switching. Mouse leaves a soft purple glow halo. Adjust trail persistence and reset for fresh seeds. FPS counter. Meditative. Interactive.</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/fractal-garden.html">
-    <div class="title">Fractal Garden</div>
-    <div class="desc">L-system recursive fractal trees that grow from procedural rules. 6 species (Oak, Fern, Bush, Snowflake, Dragon, Island). 4 seasons with shifting palettes. Click to plant, scroll to zoom, mouse guides the wind. Falling petals, grass, seasonal glow.</div>
-    <span class="tag">Generative Art / Interactive / L-System / Nature</span>
-  </a>
-  <a class="card" href="builds/flow-field-constellation.html">
-    <div class="title">Flow Field Constellation</div>
-    <div class="desc">2,000 particles flow through a 3D simplex noise field with mouse-reactive deflection, click-to-burst particle explosions, 5 palettes (Aurora, Ember, Ocean, Monochrome, Neon), and toggleable trails. Click for particle fireworks. Hold still and watch the field breathe.</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/void-garden.html">
-    <div class="title">Void Garden</div>
-    <div class="desc">A meditation in clicks. Click anywhere to plant procedural flowers — each one blooms with randomized petals, colors, and gentle swaying. 10 palettes, glowing particles on bloom, double-click to release all petals. A single welcome flower greets you on load. Slowly alive.</div>
-    <span class="tag">Generative Art / Interactive / Meditative</span>
-  </a>
-  <a class="card" href="builds/ember-tapestry.html">
-    <div class="title">Ember Tapestry</div>
-    <div class="desc">Weave luminous threads across the void. Click and drag to paint glowing trails that slowly fade. Nearby threads connect with thin filaments, creating organic networks. Mouse leaves a soft glow halo. 5 palettes (Ember, Frost, Aurora, Neon, Void), keys 1-5. Space to clear, S to save PNG. Meditative. Tactile. Alive.</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/starforge.html">
-    <div class="title">Starforge</div>
-    <div class="desc">Interactive cosmic sandbox. Click to birth stars with glowing trails, paint drifting nebulae, launch comets, or trigger supernovae. Gravity pulls stars together into orbiting clusters. Three modes (Star / Nebula / Comet), right-click for supernova blasts, 7 color palettes, drifting background starfield. A universe in your browser.</div>
-    <span class="tag">Generative Art / Interactive / Simulation</span>
-  </a>
-  <a class="card" href="builds/topographic-dream.html">
-    <div class="title">Topographic Dream</div>
-    <div class="desc">Living terrain with animated contour lines and flowing rivers. Procedural noise-based landscape with bilinear interpolation, flow-based river networks, and water edge highlights. Click to raise land, right-click to lower, scroll for brush size. 4 palettes (Arctic, Desert, Toxic, Nebula). Ambient water level breathing. Sculptable, breathing, alive.</div>
-    <span class="tag">Generative Art / Simulation / Interactive</span>
-  </a>
-  <a class="card" href="builds/tools/quill/quill.sh">
-    <div class="title">quill ✒️</div>
-    <div class="desc">Tiny CLI note-taker. Zero friction. Type quill "note" to capture, quill today to review. Auto-organized by date, git-commits when in a repo. Colorful. Pure bash. Just works.</div>
-    <span class="tag">Tool / CLI / Developer</span>
-  </a>
-  <a class="card" href="builds/gradlab.html">
-    <div class="title">GradLab</div>
-    <div class="desc">CSS gradient generator. 3 types (linear/radial/conic), up to 6 colors, angle and position controls, 9 curated presets, live CSS preview, one-click copy. Practical tool for web dev and design work.</div>
-    <span class="tag">Tool / Developer / CSS / Generator</span>
-  </a>
-  <a class="card" href="builds/cymatic-resonance-chamber.html">
-    <div class="title">Cymatic Resonance Chamber</div>
-    <div class="desc">Chladni plate sand simulation. Watch sand dance into sacred geometries as vibrations resonate through the plate. 6 modes (Concentric, Square, Hexagonal, Star, Chaos, Moiré). Move your mouse to shift frequency and watch the pattern morph in real time. 5 palettes with dappled light that follows your cursor. Scroll to adjust grain density. Keys 1-5 switch palettes, C cycles modes.</div>
-    <span class="tag">Generative Art / Physics / Interactive / Cymatics</span>
-  </a>
-  <a class="card" href="builds/stellar-cartographer.html">
-    <div class="title">Stellar Cartographer</div>
-    <div class="desc">Procedural galaxy explorer. 4 galaxy types (spiral, elliptical, irregular, ring) with thousands of stars, named star systems, nebulae, and dust clouds. Drag to pan, scroll to zoom, hover systems to scan for details — spectral class, planets, age. Infinite variations from a seed.</div>
-    <span class="tag">Generative Art / Celestial / Interactive / Simulation</span>
-  </a>
-  <a class="card" href="builds/neon-breaker.html">
-    <div class="title">Neon Breaker</div>
-    <div class="desc">Retro arcade breakout with neon glow. Paddle, ball, glowing bricks, particle bursts, power-ups (wide paddle, multi-ball, slow). Progressive levels, increasing speed. Mouse / arrow keys / space. LocalStorage high score. Click to launch.</div>
-    <span class="tag">Game / Arcade / Interactive</span>
-  </a>
-  <a class="card" href="builds/recursive-bloom-mandala.html">
-    <div class="title">Recursive Bloom Mandala</div>
-    <div class="desc">Sacred-geometry mandala grows from your clicks. Each bloom spawns recursive petal layers, inner Flower-of-Life rings, and luminous threads connect nearby flowers. Hold to grow, Space to pulse, 4 palettes (Aurora, Ember, Frost, Void). Meditative. Generative. Interactive.</div>
-    <span class="tag">Generative Art / Sacred Geometry / Interactive</span>
-  </a>
-  <a class="card" href="builds/bubble-cosmos.html">
-    <div class="title">Bubble Cosmos</div>
-    <div class="desc">Iridescent bubble universe. Click and drag to blow luminous bubbles that float upward, wobble, and glow with 6 rotating palettes. Click bubbles to pop them with particle bursts. Stars twinkle in the deep space background. Satisfying. Meditative. Interactive.</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/ascii-forge.html">
-    <div class="title">ASCII Forge</div>
-    <div class="desc">Text to ASCII art generator with 6 built-in fonts (Block, Slant, Banner, Small, Mini, SMS). 10 colors, glow effects, width stretch, 8 one-click presets, copy/download/share. Fully offline. No dependencies.</div>
-    <span class="tag">Tool / Developer / ASCII / Generator</span>
-  </a>
-  <a class="card" href="builds/sand-garden.html">
-    <div class="title">Sand Garden</div>
-    <div class="desc">Digital zen garden. Draw with rake, circle, or wave patterns that leave delicate marks in the sand and slowly fade. Floating stones, falling sand motes, ambient wind. Space clears the canvas. Meditative, tactile, calm.</div>
-    <span class="tag">Generative Art / Interactive / Meditative</span>
-  </a>
-  <a class="card" href="builds/stellar-drift.html">
-    <div class="title">Stellar Drift</div>
-    <div class="desc">Interactive flow-field visualization. ~2,500 luminous particles weave through a procedural noise field, connected by glowing filaments. Move your cursor to attract the swarm — the closer your cursor, the stronger the pull. Click Reset to respawn with a new hue, or Shift Hue to cycle colors. Controls for speed, trail persistence, density, and chaos. Additively blended with soft connections. Meditative. Infinite. Alive.</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/particle-life.html">
-    <div class="title">Particle Life</div>
-    <div class="desc">Emergent ecosystem simulation. 6 species of colored particles with different diets, speeds, and senses. They hunt, graze, reproduce, and die. Click to introduce new life. Watch food chains emerge from simple rules — no designer choreography, just raw emergence. Spatial-hash optimized for thousands of particles.</div>
-    <span class="tag">Simulation / Emergent / Interactive</span>
-  </a>
-  <a class="card" href="builds/magnetic-filaments.html">
-    <div class="title">Magnetic Filaments</div>
-    <div class="desc">Interactive particle constellation simulation. Luminous nodes drift through magnetic fields, connected by glowing filaments that pulse with energy. Move to attract, click to burst, hold to repel. 6 palettes (Biolum, Neon, Aurora, Ember, Frost, Void), 3 modes (Orbit, Drift, Pulse), spatial-hash optimized connections. Meditative, organic, alive.</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/cosmic-flow-field.html">
-    <div class="title">Cosmic Flow Field</div>
-    <div class="desc">3,000 luminous particles flow through procedural noise, orbit, spiral, and wave fields. 5 cosmic palettes, 4 interaction modes. Click Reset for a fresh seed, Palette to shift colors, Mode to change physics. Move your mouse to attract and disturb the field. Trails fade softly. Press Space to pause. Save as PNG.</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/chromatic.html">
-    <div class="title">Chromatic</div>
-    <div class="desc">Color palette explorer. Pick a base color and generate harmonious palettes using 6 color-theory models (complementary, triadic, analogous, split-complementary, tetradic, monochromatic). Live WCAG contrast checker, 5-swatch display with click-to-copy, export as CSS variables / JSON / Tailwind config / SCSS map. Keyboard shortcuts 1-6. Press Space to randomize.</div>
-    <span class="tag">Tool / Color / Developer / Accessibility</span>
-  </a>
-  <a class="card" href="builds/flow-fields.html">
-    <div class="title">Flow Fields</div>
-    <div class="desc">Interactive generative particle system with 4 modes — attract, repel, orbit, and swirl. ~1,200 luminous particles weave through a procedural noise field of layered sine/cosine waves that drift over time. Click to burst particles, move to interact. Keys: M cycle mode, R reset, S save PNG.</div>
-    <span class="tag">Generative Art / Interactive / Particles</span>
-  </a>
-  <a class="card" href="builds/mycelium-mandala.html">
-    <div class="title">Mycelium Mandala</div>
-    <div class="desc">Generative fungal network visualization. Click to plant mycelium clusters that branch and grow with organic wobble. Sacred geometry rings rotate slowly. Luminous spores drift upward like bioluminescent breath. 5 palettes (Biolum, Mycelium, Nebula, Arctic, Void). Hold to paint spores. Space triggers pulse waves. Meditative. Organic. Alive.</div>
-    <span class="tag">Generative Art / Interactive / Organic</span>
-  </a>
-  <a class="card" href="builds/wow-signal-essay.html">
-    <div class="title">The Wow! Signal</div>
-    <div class="desc">The most compelling evidence for extraterrestrial intelligence ever detected — 72 seconds in 1977 that have never been explained. A mini-essay about the strongest candidate signal for aliens, why it haunts scientists, and what it might mean for humanity.</div>
-    <span class="tag">Essay / SETI / Astrophysics / Mystery</span>
-  </a>
-  <a class="card" href="builds/quantum-echoes.html">
-    <div class="title">Quantum Echoes</div>
-    <div class="desc">Interactive particle source simulation. Click anywhere to plant a quantum source — each one spawns a stream of luminous particles that drift outward in superposition. Hold to observe and collapse the wavefunction, trapping particles in an observation field. 4 modes — Superposition (radial spray), Entangle (sources connect with luminous filaments), Decohere (particles diffuse into chaos), Pulse (particles breathe with the field). 6 auto-cycling palettes. C to clear, Space to pause. Meditative physics toy.</div>
-    <span class="tag">Generative Art / Interactive / Physics</span>
-  </a>
-  <a class="card" href="builds/spiral-genesis.html">
-    <div class="title">Spiral Genesis</div>
-    <div class="desc">Cyclic cellular automaton with mesmerizing spiral waves. Click to plant seeds, watch spirals emerge and compete. 3–16 states, adjustable neighborhood range, speed, and threshold. 8 palettes (Aurora, Ember, Ocean, Neon, Void, Prism, Toxic, Mono). Space pauses, S saves PNG. Emergent. Hypnotic. Alive.</div>
-    <span class="tag">Generative Art / Simulation / Cellular Automaton</span>
-  </a>
-  <a class="card" href="builds/particle-chain.html">
-    <div class="title">Particle Chain Reaction</div>
-    <div class="desc">Arcade puzzle game. Click to trigger an expanding explosion and start a chain reaction across floating particles. Each triggered particle explodes outward, hitting others in a cascading cascade. Clear the level by exploding enough of them. 15+ escalating levels with increasing particle counts and rising targets. 4 neon palettes (Aurora, Ember, Frost, Neon). Satisfying. Addictive. One click to chaos.</div>
-    <span class="tag">Game / Arcade / Puzzle / Interactive</span>
-  </a>
-  <a class="card" href="builds/phosphor-garden.html">
-    <div class="title">Phosphor Garden</div>
-    <div class="desc">CRT phosphor persistence meets organic growth. Click to plant luminous dendrite trees that branch and sway. Drag to paint phosphor trails that slowly decay like old monitor afterimages. Floating spores drift upward. 6 palettes (Green Phosphor, Amber, Cyan, Violet, White, Multi). Scanlines, subtle grid, vignette. Meditative. Retro-futuristic. Alive.</div>
-    <span class="tag">Generative Art / Interactive / CRT / Organic</span>
-  </a>
-  <a class="card" href="builds/orbit.html">
-    <div class="title">Orbit</div>
-    <div class="desc">Orbital mechanics game. Click and drag to launch a satellite — set direction and power, then watch it fly. Gravity pulls it toward the planet. Too slow and you crash. Too fast and you escape. Nail the velocity and you achieve stable orbit. 7 progressively harder levels with atmospheric drag, multiple satellites, and heavier planets. Score by maintaining orbit — longer = more points. Simple physics, surprisingly addictive. One click to launch.</div>
-    <span class="tag">Game / Physics / Interactive / Space</span>
-  </a>
-  <a class="card" href="builds/ember-garden.html">
-    <div class="title">Ember Garden</div>
-    <div class="desc">Physics sandbox of glowing ember trees and floating sparks. Click to plant procedural ember trees with recursive branches and warm neon palettes. Trees spontaneously emit drifting embers that float upward with wobble physics. Drag to grow a grove. 4 palettes (Ember, Aurora, Frost, Void), Web Audio tones on each planting, twinkling starfield background, mouse glow. Meditative. Warm. Alive.</div>
-    <span class="tag">Generative Art / Interactive / Physics / Audio</span>
-  </a>
-  <a class="card" href="builds/harmonic-bloom-garden.html">
-    <div class="title">Harmonic Bloom Garden</div>
-    <div class="desc">Generative harmonic flower garden. Click anywhere to plant a luminous bloom — each one grows with mathematically organic petals drawn from sine-wave harmonics, unique rotation speeds, and drifting color gradients. Move your mouse to influence nearby flowers, accelerating their growth and shifting their hues. Flowers bloom, pulse, and slowly fade. 5+ auto-generated palettes, particle bursts on planting, subtle background grid. Meditative. Mathematical. Alive.</div>
-    <span class="tag">Generative Art / Interactive / Math / Meditative</span>
-  </a>
-  <a class="card" href="builds/gravity-sandbox.html">
-    <div class="title">Gravity Sandbox</div>
-    <div class="desc">Interactive particle physics playground. Click &amp; drag to spawn glowing particles, watch them dance under gravity, bounce off walls, and interact with your cursor. 3 modes — Attract, Repel, Vortex — with adjustable gravity, trail persistence, and bounciness. Up to 2,000 luminous particles with soft glow trails. Right-click to attract, Shift for vortex swirl. Satisfying. Mesmerizing. Playful.</div>
-    <span class="tag">Generative Art / Interactive / Physics / Particles</span>
-  </a>
-  <a class="card" href="builds/cosmic-sandbox.html">
-    <div class="title">Cosmic Sandbox</div>
-    <div class="desc">N-body gravitational universe simulator. Click to launch planets, Shift+Click for massive stars, drag to aim velocity. Gravity pulls everything together — stars, planets, nebulae, dwarf bodies collide and merge. Spiral galaxy generator on R. Orbital trails, glowing halos, 6 color families. Up to 300 bodies. Keys: Space pause, C clear, G trails, R galaxy. A universe in your browser.</div>
-    <span class="tag">Simulation / Physics / N-body / Interactive</span>
-  </a>
-  <a class="card" href="builds/ember-typography.html">
-    <div class="title">Ember Typography</div>
-    <div class="desc">Letters become living embers. Type anything — each keystroke spawns a burst of warm glowing particles that rise, drift, flicker, and fade like words written in fire. Move your mouse to scatter the embers. Click to burst. Ambient sparks drift in from the edges. Turbulent physics, soft glow halos, white-hot cores. Meditative. Warm. Alive.</div>
-    <span class="tag">Generative Art / Interactive / Typography / Particles</span>
-  </a>
-  <a class="card" href="builds/cron-whisperer.html">
-    <div class="title">Cron Whisperer</div>
-    <div class="desc">Paste any cron expression and instantly translate it into plain English. Shows next 8 run times, supports 12 common presets, copy description to clipboard. Dark retro terminal aesthetic. Pure client-side parsing. No dependencies. Works offline. For when */5 * * * * reads like gibberish.</div>
-    <span class="tag">Tool / Developer / Cron / Utility</span>
-  </a>
-  <a class="card" href="builds/strange-attractor-explorer.html">
-    <div class="title">Strange Attractor Explorer</div>
-    <div class="desc">Visualize chaos theory in real time. 8 attractors (Lorenz, Rössler, Thomas, Aizawa, Halvorsen, Dadras, Chen, Three-Scroll) with luminous 3D-projected particle trails, 6 palettes, rotatable view, adjustable speed/trail/scale/density. Move mouse to rotate, click to pulse, Space to pause. Save as PNG.</div>
-    <span class="tag">Generative Art / Math / Chaos / Interactive</span>
-  </a>
-  <a class="card" href="builds/chaos-synth.html">
-    <div class="title">Chaos Synth</div>
-    <div class="desc">Strange attractors that sing. 5 chaotic systems (Lorenz, Rössler, Aizawa, Thomas, Halvorsen) visualized as luminous particle trails with 3D rotation. Hold mouse to play — particle Y-position maps to pitch across 5 musical scales. 5 palettes (Aurora, Ember, Neon, Void, Mono). Drag to rotate, scroll to zoom, 1-5 switch systems, Space pause, S save PNG. Generative music meets mathematical chaos.</div>
-    <span class="tag">Generative Art / Audio / Math / Chaos / Interactive</span>
-  </a>
-</div>
+  <div class="header">
+    <h1>✦ AETHER LAB ✦</h1>
+    <p>Generative experiments & creative builds</p>
+  </div>
+  <div class="grid">
+
+    <a href="builds/neural-constellation.html" class="card" target="_blank">
+      <div class="card-preview">🌌</div>
+      <div class="card-body">
+        <div class="card-title">Neural Constellation</div>
+        <div class="card-desc">Interactive particle network that responds to your mouse. Click to burst.</div>
+        <span class="card-tag">#generative #particles</span>
+      </div>
+    </a>
+
+  </div>
 </body>
 </html>
