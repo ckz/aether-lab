@@ -10,211 +10,348 @@
     background: #0a0a0f;
     overflow: hidden;
     font-family: 'Courier New', monospace;
-    cursor: crosshair;
+    color: #666;
   }
-  canvas { display: block; }
-  #overlay {
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0; left: 0;
+  }
+  .ui {
     position: fixed;
     bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: rgba(255,255,255,0.5);
-    font-size: 12px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    pointer-events: none;
+    left: 20px;
     z-index: 10;
+    font-size: 12px;
+    background: rgba(10,10,15,0.7);
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid #1a1a2e;
+    backdrop-filter: blur(10px);
   }
-  #controls {
+  .ui h1 {
+    font-size: 14px;
+    color: #8af;
+    margin-bottom: 8px;
+    font-weight: normal;
+    letter-spacing: 2px;
+  }
+  .ui .stat { color: #555; margin: 2px 0; }
+  .ui .stat span { color: #8af; }
+  .controls {
     position: fixed;
     top: 20px;
     right: 20px;
-    color: rgba(255,255,255,0.4);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .controls button {
+    background: rgba(10,10,15,0.7);
+    border: 1px solid #1a1a2e;
+    color: #8af;
+    padding: 8px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
     font-size: 11px;
     letter-spacing: 1px;
-    text-align: right;
-    pointer-events: none;
-    z-index: 10;
-    line-height: 1.8;
+    backdrop-filter: blur(10px);
+    transition: all 0.3s;
   }
-  #fade {
+  .controls button:hover {
+    background: rgba(30,40,80,0.8);
+    border-color: #4af;
+  }
+  .hint {
     position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    background: #0a0a0f;
-    opacity: 0;
-    pointer-events: none;
-    z-index: 5;
-    transition: opacity 2s ease;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    font-size: 11px;
+    color: #333;
+    background: rgba(10,10,15,0.5);
+    padding: 8px 12px;
+    border-radius: 6px;
+    backdrop-filter: blur(10px);
   }
-  #fade.active { opacity: 1; }
 </style>
 </head>
 <body>
-<canvas id="canvas"></canvas>
-<div id="overlay">move your mouse to shape the flow</div>
-<div id="controls">
-  particles: <span id="pCount">0</span><br>
-  mode: <span id="mode">attract</span>
+<canvas id="c"></canvas>
+<div class="hint">move mouse to attract · click to burst</div>
+<div class="ui">
+  <h1>FLOW FIELD</h1>
+  <div class="stat">particles: <span id="pCount">0</span></div>
+  <div class="stat">fps: <span id="fps">0</span></div>
+  <div class="stat">generation: <span id="gen">0</span></div>
 </div>
-<div id="fade"></div>
+<div class="controls">
+  <button onclick="resetPalette()">new palette</button>
+  <button onclick="resetParticles()">scatter</button>
+  <button onclick="toggleTrails()">toggle trails</button>
+</div>
 
 <script>
-const canvas = document.getElementById('canvas');
+const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-const fade = document.getElementById('fade');
-let W, H, particles, cols, rows, scale = 20;
-let mouse = { x: -9999, y: -9999, active: false };
-let attractMode = true;
-let time = 0;
 
-// Color palettes
-const palettes = [
-  ['#00f5d4', '#00bbf9', '#9b5de5', '#f15bb5', '#fee440'],
-  ['#ff6b6b', '#feca57', '#48dbfb', '#ff9ff3', '#54a0ff'],
-  ['#2ed573', '#1e90ff', '#ff6348', '#ffa502', '#7bed9f'],
-  ['#e056fd', '#be2edd', '#ff7979', '#badc58', '#dff9fb'],
-];
-
-let palette = palettes[0];
-
+let W, H;
 function resize() {
   W = canvas.width = window.innerWidth;
   H = canvas.height = window.innerHeight;
-  cols = Math.ceil(W / scale) + 1;
-  rows = Math.ceil(H / scale) + 1;
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, W, H);
 }
+resize();
+window.addEventListener('resize', resize);
 
-function initParticles() {
-  const count = Math.min(Math.floor((W * H) / 800), 3000);
-  particles = [];
-  for (let i = 0; i < count; i++) {
-    particles.push({
-      x: Math.random() * W,
-      y: Math.random() * H,
-      vx: 0,
-      vy: 0,
-      color: palette[Math.floor(Math.random() * palette.length)],
-      size: Math.random() * 1.5 + 0.5,
-      life: Math.random() * 200 + 100,
-      age: 0,
-      speed: Math.random() * 0.5 + 0.3,
-    });
+// Noise approximation (simplex-like)
+class Noise {
+  constructor() {
+    this.perm = new Uint8Array(512);
+    const p = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) p[i] = i;
+    for (let i = 255; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [p[i], p[j]] = [p[j], p[i]];
+    }
+    for (let i = 0; i < 512; i++) this.perm[i] = p[i & 255];
   }
-  document.getElementById('pCount').textContent = count;
+  fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+  lerp(a, b, t) { return a + t * (b - a); }
+  grad(hash, x, y, z) {
+    const h = hash & 15;
+    const u = h < 8 ? x : y;
+    const v = h < 4 ? y : h === 12 || h === 14 ? x : z;
+    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+  }
+  noise3d(x, y, z) {
+    const X = Math.floor(x) & 255, Y = Math.floor(y) & 255, Z = Math.floor(z) & 255;
+    x -= Math.floor(x); y -= Math.floor(y); z -= Math.floor(z);
+    const u = this.fade(x), v = this.fade(y), w = this.fade(z);
+    const p = this.perm;
+    const A = p[X] + Y, AA = p[A] + Z, AB = p[A + 1] + Z;
+    const B = p[X + 1] + Y, BA = p[B] + Z, BB = p[B + 1] + Z;
+    return this.lerp(
+      this.lerp(this.lerp(this.grad(p[AA], x, y, z), this.grad(p[BA], x - 1, y, z), u),
+                this.lerp(this.grad(p[AB], x, y - 1, z), this.grad(p[BB], x - 1, y - 1, z), u), v),
+      this.lerp(this.lerp(this.grad(p[AA + 1], x, y, z - 1), this.grad(p[BA + 1], x - 1, y, z - 1), u),
+                this.lerp(this.grad(p[AB + 1], x, y - 1, z - 1), this.grad(p[BB + 1], x - 1, y - 1, z - 1), u), v),
+      w);
+  }
 }
 
-function getFlowAngle(x, y) {
-  // Simplex-like noise approximation
-  const zoom = 0.008;
-  const angle = (
-    Math.sin(x * zoom + time * 0.3) * 2 +
-    Math.cos(y * zoom * 0.7 + time * 0.2) * 2 +
-    Math.sin((x + y) * zoom * 0.5 + time * 0.15) * 1.5 +
-    Math.cos(Math.sqrt(x * x + y * y) * zoom * 0.3 - time * 0.1) * 1.5
-  );
+const noise = new Noise();
 
-  // Mouse influence
-  if (mouse.active) {
-    const dx = mouse.x - x;
-    const dy = mouse.y - y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const radius = 200;
-    if (dist < radius) {
-      const force = (1 - dist / radius) * 3;
-      const mouseAngle = Math.atan2(dy, dx);
-      if (attractMode) {
-        return angle + force * Math.sin(mouseAngle - angle);
-      } else {
-        return angle + force * Math.sin(mouseAngle + Math.PI - angle);
+// Palettes
+const palettes = [
+  // aurora
+  ['#00ffa3', '#00d4ff', '#7b2fff', '#ff2d95', '#00ffa3'],
+  // ember
+  ['#ff6b00', '#ff2d2d', '#ffaa00', '#ffe066', '#ff6b00'],
+  // ocean
+  ['#0033ff', '#00aaff', '#00ffd5', '#0066ff', '#0033ff'],
+  // neon rain
+  ['#ff00ff', '#00ffff', '#ffff00', '#ff00ff', '#00ffff'],
+  // forest
+  ['#00ff41', '#00cc33', '#33ff99', '#00ff41', '#99ff33'],
+  // void
+  ['#4a00ff', '#8a2be2', '#ff00ff', '#4a00ff', '#8a2be2'],
+  // sunset
+  ['#ff4500', '#ff8c00', '#ffd700', '#ff6347', '#ff4500'],
+];
+
+let palette = palettes[Math.floor(Math.random() * palettes.length)];
+let showTrails = true;
+
+function resetPalette() {
+  palette = palettes[Math.floor(Math.random() * palettes.length)];
+}
+
+function getColor(t) {
+  const idx = t * (palette.length - 1);
+  const i = Math.floor(idx);
+  const f = idx - i;
+  const c1 = palette[Math.min(i, palette.length - 1)];
+  const c2 = palette[Math.min(i + 1, palette.length - 1)];
+  return lerpColor(c1, c2, f);
+}
+
+function lerpColor(a, b, t) {
+  const ar = parseInt(a.slice(1,3),16), ag = parseInt(a.slice(3,5),16), ab = parseInt(a.slice(5,7),16);
+  const br = parseInt(b.slice(1,3),16), bg = parseInt(b.slice(3,5),16), bb = parseInt(b.slice(5,7),16);
+  const r = Math.round(ar + (br-ar)*t), g = Math.round(ag + (bg-ag)*t), bl = Math.round(ab + (bb-ab)*t);
+  return `rgb(${r},${g},${bl})`;
+}
+
+// Particles
+const MAX_PARTICLES = 3000;
+let particles = [];
+let generation = 0;
+let time = 0;
+
+class Particle {
+  constructor(x, y, burst) {
+    this.x = x ?? Math.random() * W;
+    this.y = y ?? Math.random() * H;
+    this.vx = 0;
+    this.vy = 0;
+    this.life = burst ? Math.random() * 30 + 10 : Infinity;
+    this.maxLife = this.life;
+    this.colorOffset = Math.random();
+    this.speed = 0.5 + Math.random() * 2;
+    this.trail = [];
+    this.trailLen = 3 + Math.floor(Math.random() * 8);
+  }
+
+  update(mx, my) {
+    const scale = 0.003;
+    const n = noise.noise3d(this.x * scale, this.y * scale, time * 0.3);
+    const angle = n * Math.PI * 4;
+
+    this.vx += Math.cos(angle) * 0.15 * this.speed;
+    this.vy += Math.sin(angle) * 0.15 * this.speed;
+
+    // Mouse attraction
+    if (mx !== undefined) {
+      const dx = mx - this.x, dy = my - this.y;
+      const dist = Math.sqrt(dx*dx + dy*dy) + 1;
+      if (dist < 200) {
+        const force = (200 - dist) / 200 * 0.3;
+        this.vx += (dx / dist) * force;
+        this.vy += (dy / dist) * force;
       }
     }
+
+    this.vx *= 0.96;
+    this.vy *= 0.96;
+
+    this.trail.push({ x: this.x, y: this.y });
+    if (this.trail.length > this.trailLen) this.trail.shift();
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    if (this.life !== Infinity) this.life--;
+
+    // Wrap around
+    if (this.x < 0) this.x = W;
+    if (this.x > W) this.x = 0;
+    if (this.y < 0) this.y = H;
+    if (this.y > H) this.y = 0;
   }
-  return angle;
-}
 
-function update() {
-  time += 0.005;
+  draw() {
+    const alpha = this.life === Infinity ? 0.7 : (this.life / this.maxLife) * 0.7;
+    const color = getColor(this.colorOffset);
 
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-    const angle = getFlowAngle(p.x, p.y);
-    p.vx += Math.cos(angle) * 0.15 * p.speed;
-    p.vy += Math.sin(angle) * 0.15 * p.speed;
-    p.vx *= 0.96;
-    p.vy *= 0.96;
-    p.x += p.vx;
-    p.y += p.vy;
-    p.age++;
-
-    // Respawn if dead or out of bounds
-    if (p.age > p.life || p.x < -10 || p.x > W + 10 || p.y < -10 || p.y > H + 10) {
-      p.x = Math.random() * W;
-      p.y = Math.random() * H;
-      p.vx = 0;
-      p.vy = 0;
-      p.age = 0;
-      p.life = Math.random() * 200 + 100;
-      p.color = palette[Math.floor(Math.random() * palette.length)];
+    if (this.trail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(this.trail[0].x, this.trail[0].y);
+      for (let i = 1; i < this.trail.length; i++) {
+        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+      }
+      ctx.strokeStyle = color.replace('rgb', 'rgba').replace(')', `,${alpha * 0.3})`);
+      ctx.lineWidth = 1;
+      ctx.stroke();
     }
-  }
-}
 
-function draw() {
-  // Fade trail
-  ctx.fillStyle = 'rgba(10, 10, 15, 0.03)';
-  ctx.fillRect(0, 0, W, H);
-
-  for (const p of particles) {
-    const alpha = Math.sin((p.age / p.life) * Math.PI) * 0.8;
+    ctx.fillStyle = color.replace('rgb', 'rgba').replace(')', `,${alpha})`);
     ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-    ctx.fillStyle = p.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+    ctx.arc(this.x, this.y, 1.2, 0, Math.PI * 2);
     ctx.fill();
   }
+
+  get dead() {
+    return this.life === Infinity ? false : this.life <= 0;
+  }
 }
 
+// Initialize
+for (let i = 0; i < 2000; i++) {
+  particles.push(new Particle());
+}
+
+function resetParticles() {
+  particles = [];
+  generation++;
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, W, H);
+  for (let i = 0; i < MAX_PARTICLES; i++) {
+    particles.push(new Particle());
+  }
+}
+
+function toggleTrails() {
+  showTrails = !showTrails;
+}
+
+// Mouse
+let mx, my;
+window.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+window.addEventListener('touchmove', e => {
+  mx = e.touches[0].clientX;
+  my = e.touches[0].clientY;
+});
+window.addEventListener('mouseout', () => { mx = undefined; my = undefined; });
+
+window.addEventListener('click', e => {
+  for (let i = 0; i < 200; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = Math.random() * 4;
+    const p = new Particle(e.clientX, e.clientY, true);
+    p.vx = Math.cos(a) * sp;
+    p.vy = Math.sin(a) * sp;
+    particles.push(p);
+  }
+  // Trim if over max
+  while (particles.length > MAX_PARTICLES + 500) particles.shift();
+});
+
+// Stats
+let lastTime = performance.now();
+let frameCount = 0;
+let fps = 0;
+
+// Loop
 function animate() {
-  update();
-  draw();
-  requestAnimationFrame(animate);
-}
+  time += 0.005;
 
-// Events
-canvas.addEventListener('mousemove', (e) => {
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
-  mouse.active = true;
-});
-
-canvas.addEventListener('mouseleave', () => {
-  mouse.active = false;
-});
-
-canvas.addEventListener('click', () => {
-  attractMode = !attractMode;
-  document.getElementById('mode').textContent = attractMode ? 'attract' : 'repel';
-  // Fade transition
-  fade.classList.add('active');
-  setTimeout(() => {
-    palette = palettes[Math.floor(Math.random() * palettes.length)];
+  if (showTrails) {
+    ctx.fillStyle = 'rgba(10, 10, 15, 0.03)';
+    ctx.fillRect(0, 0, W, H);
+  } else {
     ctx.fillStyle = '#0a0a0f';
     ctx.fillRect(0, 0, W, H);
-    fade.classList.remove('active');
-  }, 500);
-});
+  }
 
-window.addEventListener('resize', () => {
-  resize();
-  initParticles();
-});
+  particles.forEach(p => {
+    p.update(mx, my);
+    p.draw();
+  });
 
-// Start
-resize();
-initParticles();
-// Clear once
-ctx.fillStyle = '#0a0a0f';
-ctx.fillRect(0, 0, W, H);
+  // Remove dead particles
+  if (particles.some(p => p.dead)) {
+    particles = particles.filter(p => !p.dead);
+  }
+
+  // Stats
+  frameCount++;
+  const now = performance.now();
+  if (now - lastTime > 1000) {
+    fps = frameCount;
+    frameCount = 0;
+    lastTime = now;
+  }
+
+  document.getElementById('pCount').textContent = particles.length;
+  document.getElementById('fps').textContent = fps;
+  document.getElementById('gen').textContent = generation;
+
+  requestAnimationFrame(animate);
+}
 animate();
 </script>
 </body>
