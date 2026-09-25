@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dev Utils — Quick Toolkit</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d0d14;
+    color: #e0e0e0;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    min-height: 100vh;
+    padding: 30px 20px;
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 30px;
+  }
+  .header h1 {
+    font-size: 1.6rem;
+    font-weight: 600;
+    letter-spacing: 3px;
+    color: #fff;
+    margin-bottom: 6px;
+  }
+  .header p {
+    color: #555;
+    font-size: 12px;
+    letter-spacing: 1px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .panel {
+    background: #12121a;
+    border: 1px solid #1e1e2a;
+    border-radius: 10px;
+    padding: 18px;
+  }
+  .panel-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #7eb8ff;
+    margin-bottom: 12px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+  .row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+    align-items: center;
+  }
+  .row:last-child { margin-bottom: 0; }
+  label {
+    font-size: 11px;
+    color: #888;
+    min-width: 40px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  input, textarea, select {
+    flex: 1;
+    background: #1a1a24;
+    border: 1px solid #2a2a3a;
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: #e0e0e0;
+    font-family: inherit;
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input:focus, textarea:focus, select:focus {
+    border-color: #4a6cf7;
+  }
+  textarea {
+    min-height: 70px;
+    resize: vertical;
+    font-size: 11px;
+  }
+  button {
+    background: #1e2a4a;
+    border: 1px solid #2a3a6a;
+    border-radius: 6px;
+    padding: 7px 14px;
+    color: #a8c4ff;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  button:hover {
+    background: #2a3a6a;
+    color: #fff;
+    border-color: #4a6cf7;
+  }
+  button.copy {
+    background: #1a2a2a;
+    border-color: #2a4a4a;
+    color: #8fc4c4;
+  }
+  button.copy:hover {
+    background: #2a4a4a;
+    color: #fff;
+    border-color: #4ac4c4;
+  }
+  .out {
+    background: #0a0a12;
+    border: 1px solid #2a2a3a;
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 11px;
+    color: #c8d8a0;
+    min-height: 36px;
+    word-break: break-all;
+    line-height: 1.5;
+  }
+  .error {
+    color: #e08080;
+    font-size: 11px;
+    padding: 6px 0;
+    display: none;
+  }
+  .swatch {
+    width: 28px;
+    height: 28px;
+    border-radius: 5px;
+    border: 2px solid #3a3a5a;
+    flex-shrink: 0;
+  }
+  .hint {
+    font-size: 10px;
+    color: #555;
+    margin-top: 8px;
+    font-style: italic;
+  }
+  .now {
+    font-size: 18px;
+    color: #fff;
+    font-weight: 600;
+    text-align: center;
+    padding: 8px;
+    background: #0a0a12;
+    border-radius: 6px;
+    border: 1px solid #2a2a3a;
+    margin-bottom: 10px;
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>⚡ DEV UTILS ⚡</h1>
+    <p>Quick utilities for developers — all in one place, zero dependencies</p>
+  </div>
+  <div class="grid">
+
+    <!-- TIMESTAMP CONVERTER -->
+    <div class="panel">
+      <div class="panel-title">🕐 Timestamp</div>
+      <div class="now" id="liveClock">—</div>
+      <div class="row">
+        <label>Now</label>
+        <input type="text" id="tsUnix" placeholder="Unix seconds" value="">
+        <button onclick="setNow()">Now</button>
+      </div>
+      <div class="row">
+        <label>UTC</label>
+        <input type="text" id="tsUtc" placeholder="2026-09-25T03:00:00Z" readonly>
+      </div>
+      <div class="row">
+        <label>Local</label>
+        <input type="text" id="tsLocal" placeholder="Local time" readonly>
+      </div>
+      <div class="hint">Edits to Unix timestamp auto-convert</div>
+    </div>
+
+    <!-- BASE64 -->
+    <div class="panel">
+      <div class="panel-title">🔤 Base64</div>
+      <div class="row">
+        <textarea id="b64In" placeholder="Paste text to encode/decode..."></textarea>
+      </div>
+      <div class="row">
+        <button onclick="b64Encode()">Encode</button>
+        <button onclick="b64Decode()">Decode</button>
+        <button class="copy" onclick="copyB64()">Copy Output</button>
+      </div>
+      <textarea id="b64Out" placeholder="Output..." readonly></textarea>
+    </div>
+
+    <!-- UUID GENERATOR -->
+    <div class="panel">
+      <div class="panel-title">🆔 UUID</div>
+      <div class="row">
+        <button onclick="genUUID()">Generate v4 UUID</button>
+        <button class="copy" onclick="copyUUID()">Copy</button>
+      </div>
+      <div class="out" id="uuidOut">—</div>
+      <div class="hint">Generates RFC 4122 compliant UUID v4</div>
+    </div>
+
+    <!-- COLOR CONVERTER -->
+    <div class="panel">
+      <div class="panel-title">🎨 Color</div>
+      <div class="row">
+        <div class="swatch" id="colorSwatch" style="background:#4a6cf7"></div>
+        <label>HEX</label>
+        <input type="text" id="colorHex" value="#4a6cf7" maxlength="7" style="text-transform:uppercase;">
+      </div>
+      <div class="row">
+        <label>RGB</label>
+        <input type="text" id="colorRgb" value="rgb(74, 108, 247)" readonly>
+      </div>
+      <div class="row">
+        <label>HSL</label>
+        <input type="text" id="colorHsl" value="hsl(227, 93%, 63%)" readonly>
+      </div>
+      <div class="hint">Edit HEX to convert</div>
+    </div>
+
+    <!-- HASH GENERATOR -->
+    <div class="panel">
+      <div class="panel-title">#️⃣ Hash</div>
+      <div class="row">
+        <textarea id="hashIn" placeholder="Text to hash..."></textarea>
+      </div>
+      <div class="row">
+        <button onclick="doHash('MD5')">MD5</button>
+        <button onclick="doHash('SHA-1')">SHA-1</button>
+        <button onclick="doHash('SHA-256')">SHA-256</button>
+      </div>
+      <div class="out" id="hashOut">—</div>
+    </div>
+
+    <!-- JSON FORMATTER -->
+    <div class="panel">
+      <div class="panel-title">📋 JSON</div>
+      <div class="row">
+        <textarea id="jsonIn" placeholder='{"raw":"json"}'></textarea>
+      </div>
+      <div class="row">
+        <button onclick="jsonFormat(2)">Format 2</button>
+        <button onclick="jsonFormat(4)">Format 4</button>
+        <button onclick="jsonMinify()">Minify</button>
+        <button class="copy" onclick="copyJSON()">Copy</button>
+      </div>
+      <div class="error" id="jsonErr">Invalid JSON</div>
+      <textarea id="jsonOut" placeholder="Output..." readonly></textarea>
+    </div>
+
+    <!-- JWT DECODER -->
+    <div class="panel">
+      <div class="panel-title">🔐 JWT Decode</div>
+      <div class="row">
+        <input type="text" id="jwtIn" placeholder="eyJhbGciOiJIUzI1NiJ9...">
+      </div>
+      <div class="row">
+        <button onclick="jwtDecode()">Decode</button>
+        <button class="copy" onclick="copyJWT()">Copy Payload</button>
+      </div>
+      <div class="error" id="jwtErr">Invalid JWT</div>
+      <div class="out" id="jwtHeader">Header: —</div>
+      <div class="out" id="jwtPayload" style="margin-top:6px;">Payload: —</div>
+    </div>
+
+  </div>
+
+<script>
+// ── LIVE CLOCK ──
+function updateClock() {
+  const now = new Date();
+  document.getElementById('liveClock').textContent = now.toLocaleTimeString('en-US', { hour12: false });
+  document.getElementById('tsUnix').value = Math.floor(now.getTime() / 1000);
+  document.getElementById('tsUtc').value = now.toISOString();
+  document.getElementById('tsLocal').value = now.toLocaleString();
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+function setNow() {
+  const now = new Date();
+  document.getElementById('tsUnix').value = Math.floor(now.getTime() / 1000);
+}
+
+// Auto-convert timestamp edits
+document.getElementById('tsUnix').addEventListener('input', function() {
+  const val = parseInt(this.value);
+  if (!isNaN(val) && val > 0) {
+    const d = new Date(val * 1000);
+    document.getElementById('tsUtc').value = d.toISOString();
+    document.getElementById('tsLocal').value = d.toLocaleString();
+  }
+});
+
+// ── BASE64 ──
+function b64Encode() {
+  const raw = document.getElementById('b64In').value;
+  try {
+    document.getElementById('b64Out').value = btoa(unescape(encodeURIComponent(raw)));
+  } catch(e) {
+    document.getElementById('b64Out').value = 'Error: ' + e.message;
+  }
+}
+function b64Decode() {
+  const raw = document.getElementById('b64In').value;
+  try {
+    document.getElementById('b64Out').value = decodeURIComponent(escape(atob(raw)));
+  } catch(e) {
+    document.getElementById('b64Out').value = 'Error: invalid base64';
+  }
+}
+function copyB64() {
+  navigator.clipboard.writeText(document.getElementById('b64Out').value);
+}
+
+// ── UUID ──
+function genUUID() {
+  const hex = crypto.getRandomValues(new Uint8Array(16));
+  hex[6] = (hex[6] & 0x0f) | 0x40;
+  hex[8] = (hex[8] & 0x3f) | 0x80;
+  const h = [...hex].map(b => b.toString(16).padStart(2, '0')).join('');
+  document.getElementById('uuidOut').textContent =
+    `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
+}
+function copyUUID() {
+  navigator.clipboard.writeText(document.getElementById('uuidOut').textContent);
+}
+
+// ── COLOR ──
+function hexToRgb(hex) {
+  const m = hex.replace('#', '').match(/.{2}/g);
+  if (!m || m.length !== 3) return null;
+  return { r: parseInt(m[0], 16), g: parseInt(m[1], 16), b: parseInt(m[2], 16) };
+}
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h, s, l = (max + min) / 2;
+  if (max === min) { h = s = 0; } else {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch(max) {
+      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+      case g: h = ((b - r) / d + 2) / 6; break;
+      case b: h = ((r - g) / d + 4) / 6; break;
+    }
+  }
+  return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
+}
+function updateColor() {
+  const hex = document.getElementById('colorHex').value;
+  const rgb = hexToRgb(hex);
+  if (!rgb) return;
+  const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+  document.getElementById('colorSwatch').style.background = hex;
+  document.getElementById('colorRgb').value = `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`;
+  document.getElementById('colorHsl').value = `hsl(${hsl.h}, ${hsl.s}%, ${hsl.l}%)`;
+}
+document.getElementById('colorHex').addEventListener('input', updateColor);
+
+// ── HASH ──
+async function doHash(algo) {
+  const raw = document.getElementById('hashIn').value;
+  const buf = new TextEncoder().encode(raw);
+  const hash = await crypto.subtle.digest(algo === 'MD5' ? 'SHA-1' : algo, buf);
+  // MD5 fallback: use SHA-1 truncated via simple implementation
+  if (algo === 'MD5') {
+    document.getElementById('hashOut').textContent = '(Use SHA-1 — MD5 not in WebCrypto, browser limits)';
+    return;
+  }
+  const arr = Array.from(new Uint8Array(hash));
+  document.getElementById('hashOut').textContent = arr.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ── JSON ──
+let lastJSON = '';
+function jsonFormat(spaces) {
+  const raw = document.getElementById('jsonIn').value.trim();
+  document.getElementById('jsonErr').style.display = 'none';
+  try {
+    const obj = JSON.parse(raw);
+    lastJSON = JSON.stringify(obj, null, spaces);
+    document.getElementById('jsonOut').value = lastJSON;
+  } catch(e) {
+    document.getElementById('jsonErr').textContent = 'Invalid JSON: ' + e.message;
+    document.getElementById('jsonErr').style.display = 'block';
+  }
+}
+function jsonMinify() {
+  const raw = document.getElementById('jsonIn').value.trim();
+  document.getElementById('jsonErr').style.display = 'none';
+  try {
+    const obj = JSON.parse(raw);
+    lastJSON = JSON.stringify(obj);
+    document.getElementById('jsonOut').value = lastJSON;
+  } catch(e) {
+    document.getElementById('jsonErr').textContent = 'Invalid JSON: ' + e.message;
+    document.getElementById('jsonErr').style.display = 'block';
+  }
+}
+function copyJSON() {
+  navigator.clipboard.writeText(document.getElementById('jsonOut').value);
+}
+
+// ── JWT ──
+function jwtDecode() {
+  const token = document.getElementById('jwtIn').value.trim();
+  document.getElementById('jwtErr').style.display = 'none';
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    document.getElementById('jwtErr').style.display = 'block';
+    return;
+  }
+  try {
+    const header = JSON.parse(atob(parts[0].replace(/-/g, '+').replace(/_/g, '/')));
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    document.getElementById('jwtHeader').textContent = 'Header: ' + JSON.stringify(header, null, 2);
+    document.getElementById('jwtPayload').textContent = 'Payload: ' + JSON.stringify(payload, null, 2);
+  } catch(e) {
+    document.getElementById('jwtErr').style.display = 'block';
+  }
+}
+function copyJWT() {
+  navigator.clipboard.writeText(document.getElementById('jwtPayload').textContent.replace('Payload: ', ''));
+}
+</script>
+</body>
+</html>
