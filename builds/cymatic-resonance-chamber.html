@@ -8,376 +8,436 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     background: #050508;
-    font-family: 'Courier New', monospace;
-    color: #ccc;
+    color: #c0c0d0;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
     overflow: hidden;
     height: 100vh;
-    display: flex;
-    flex-direction: column;
-  }
-  canvas {
-    display: block;
-    flex: 1;
     cursor: crosshair;
   }
-  .hud {
+  canvas { display: block; }
+
+  #ui {
     position: fixed;
-    top: 16px;
-    left: 16px;
-    font-size: 11px;
-    opacity: 0.6;
-    letter-spacing: 0.15em;
-    line-height: 1.8;
-    pointer-events: none;
+    top: 20px;
+    left: 20px;
     z-index: 10;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #666;
+    pointer-events: none;
   }
-  .controls {
+  #ui .title {
+    font-size: 14px;
+    color: #9a9ac0;
+    margin-bottom: 6px;
+    letter-spacing: 3px;
+  }
+  #ui .stat {
+    margin: 3px 0;
+  }
+  #ui .stat span {
+    color: #4a9eff;
+  }
+
+  #controls {
     position: fixed;
-    bottom: 16px;
+    bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
-    gap: 8px;
+    gap: 10px;
     z-index: 10;
-    background: rgba(10,10,20,0.7);
+    background: rgba(5, 5, 8, 0.85);
     padding: 10px 16px;
-    border-radius: 8px;
-    border: 1px solid rgba(100,90,180,0.25);
+    border-radius: 30px;
+    border: 1px solid #1a1a2e;
     backdrop-filter: blur(8px);
   }
-  .controls button {
-    background: rgba(30,25,60,0.8);
-    color: #aab;
-    border: 1px solid rgba(100,90,180,0.35);
+  .mode-btn {
+    background: transparent;
+    border: 1px solid #2a2a3e;
+    color: #888;
     padding: 6px 14px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-family: 'Courier New', monospace;
-    font-size: 11px;
-    letter-spacing: 0.12em;
-    transition: all 0.25s;
-  }
-  .controls button:hover {
-    background: rgba(50,40,100,0.9);
-    color: #ddf;
-    border-color: rgba(150,130,255,0.6);
-  }
-  .controls button.active {
-    background: rgba(80,60,200,0.4);
-    color: #fff;
-    border-color: rgba(180,160,255,0.8);
-    box-shadow: 0 0 20px rgba(100,80,220,0.4);
-  }
-  .hint {
-    position: fixed;
-    top: 16px;
-    right: 16px;
+    border-radius: 20px;
     font-size: 10px;
-    opacity: 0.4;
-    letter-spacing: 0.1em;
-    text-align: right;
-    line-height: 1.7;
-    pointer-events: none;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+  .mode-btn:hover {
+    border-color: #4a9eff;
+    color: #4a9eff;
+  }
+  .mode-btn.active {
+    background: #1a2a4a;
+    border-color: #4a9eff;
+    color: #fff;
+    box-shadow: 0 0 12px rgba(74, 158, 255, 0.25);
+  }
+
+  #hint {
+    position: fixed;
+    bottom: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: #444;
+    letter-spacing: 1px;
+    text-transform: uppercase;
     z-index: 10;
+    pointer-events: none;
+    text-align: center;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  #ui, #controls, #hint {
+    animation: fadeIn 1.2s ease-out;
   }
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
-<div class="hud" id="hud">
-  CYMATIC RESONANCE CHAMBER<br>
-  <span id="modeLabel">MODE: CONCENTRIC</span><br>
-  <span id="freqLabel">FREQ: 1.00 / 2.00</span>
-</div>
-<div class="hint">
-  MOVE — shift frequency<br>
-  CLICK — change mode<br>
-  SCROLL — grain density<br>
-  1-5 — palette<br>
-  SPACE — pause
-</div>
-<div class="controls">
-  <button data-mode="0" class="active">Concentric</button>
-  <button data-mode="1">Square</button>
-  <button data-mode="2">Hexagonal</button>
-  <button data-mode="3">Star</button>
-  <button data-mode="4">Chaos</button>
-  <button data-mode="5">Moiré</button>
-</div>
+  <div id="ui">
+    <div class="title">⟐ CYMATIC RESONANCE CHAMBER</div>
+    <div class="stat">NODES: <span id="nodeCount">0</span></div>
+    <div class="stat">FREQ: <span id="freqDisplay">0.00</span> Hz</div>
+    <div class="stat">MODE: <span id="modeDisplay">ATTRACT</span></div>
+  </div>
+
+  <div id="hint">Click to place resonant nodes · Drag to shape · Right-click to remove</div>
+
+  <div id="controls">
+    <button class="mode-btn active" data-mode="attract">Attract</button>
+    <button class="mode-btn" data-mode="repel">Repel</button>
+    <button class="mode-btn" data-mode="vortex">Vortex</button>
+    <button class="mode-btn" data-mode="chaos">Chaos</button>
+    <button class="mode-btn" data-mode="clear">Clear All</button>
+  </div>
+
+  <canvas id="canvas"></canvas>
 
 <script>
-const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
-let W, H, cx, cy;
+(() => {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  let W, H;
 
-function resize() {
-  W = canvas.width = window.innerWidth;
-  H = canvas.height = window.innerHeight;
-  cx = W / 2;
-  cy = H / 2;
-}
-resize();
-window.addEventListener('resize', resize);
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
 
-// State
-let mouseX = 0.5, mouseY = 0.5;
-let mode = 0;
-let paletteIdx = 0;
-let paused = false;
-let grainDensity = 80000; // total particles
-let time = 0;
-let freqX = 1.0, freqY = 2.0;
-let targetFreqX = 1.0, targetFreqY = 2.0;
-let targetMouseX = 0.5, targetMouseY = 0.5;
+  // State
+  let nodes = [];
+  let mode = 'attract';
+  let mouse = { x: W/2, y: H/2, down: false };
+  let dragNode = null;
+  let time = 0;
+  const MAX_NODES = 12;
 
-// Palettes: each is [bg, sand colors array, accent]
-const palettes = [
-  { name: 'Obsidian', bg: '#050508', colors: ['#f4e4c1','#d4a574','#a67c52','#8b6914','#c9b896'], accent: '#ffe4b5' },
-  { name: 'Aurora', bg: '#060a10', colors: ['#7fffd4','#00ced1','#20b2aa','#48d1cc','#7fffd4'], accent: '#e0ffff' },
-  { name: 'Ember', bg: '#0a0505', colors: ['#ff6b35','#f7931e','#ff4500','#ff8c00','#ffa07a'], accent: '#ffd700' },
-  { name: 'Frost', bg: '#050810', colors: ['#b0e0e6','#87ceeb','#add8e6','#e0f6ff','#ffffff'], accent: '#e6f3ff' },
-  { name: 'Nebula', bg: '#080510', colors: ['#ff6b9d','#c44569','#f8a5c2','#ff7979','#e056a0'], accent: '#ffb8d4' },
-];
+  // Palette
+  const palette = [
+    { r: 74, g: 158, b: 255 },   // blue
+    { r: 138, g: 100, b: 255 },  // purple
+    { r: 255, g: 100, b: 150 },  // pink
+    { r: 100, g: 255, b: 200 },  // cyan
+    { r: 255, g: 180, b: 80 },   // gold
+  ];
 
-let currentPalette = palettes[0];
+  // Particles
+  const particles = [];
+  const PARTICLE_COUNT = 3000;
 
-// Sand grain positions (precomputed grid)
-let grains = [];
-let grainImageData = null;
-
-function initGrains() {
-  const cols = Math.ceil(Math.sqrt(grainDensity * (W / H)));
-  const rows = Math.ceil(grainDensity / cols);
-  const spacingX = W / cols;
-  const spacingY = H / rows;
-  grains = [];
-  for (let i = 0; i < cols; i++) {
-    for (let j = 0; j < rows; j++) {
-      grains.push({
-        x: i * spacingX + spacingX * 0.5,
-        y: j * spacingY + spacingY * 0.5,
-        col: i,
-        row: j,
-        cols: cols,
-        rows: rows,
-      });
+  class Particle {
+    constructor() {
+      this.x = Math.random() * W;
+      this.y = Math.random() * H;
+      this.vx = 0;
+      this.vy = 0;
+      this.life = Math.random() * 200 + 100;
+      this.age = Math.random() * this.life;
+      this.paletteIndex = Math.floor(Math.random() * palette.length);
     }
-  }
-  grainDensity = grains.length;
-}
-initGrains();
 
-// Chladni equation: amplitude at (x,y) on a plate
-function chladniAmplitude(x, y, fx, fy, mode) {
-  const nx = x / W;
-  const ny = y / H;
-  const pi2 = Math.PI * 2;
-  
-  switch (mode) {
-    case 0: // Concentric rings + radial
-      return Math.sin(fx * pi2 * nx) * Math.sin(fy * pi2 * ny) +
-             Math.sin(fx * 0.5 * pi2 * (nx * nx + ny * ny)) * 0.5;
-    
-    case 1: // Square symmetry
-      return Math.sin(fx * pi2 * nx) * Math.sin(fy * pi2 * ny) +
-             Math.sin(fx * pi2 * ny) * Math.sin(fy * pi2 * nx);
-    
-    case 2: // Hexagonal
-      const hex1 = Math.sin(fx * pi2 * nx) * Math.sin(fy * pi2 * ny);
-      const hex2 = Math.sin(fx * pi2 * (nx * 0.5 + ny * 0.866)) * Math.sin(fy * pi2 * (nx * 0.5 - ny * 0.866));
-      const hex3 = Math.sin(fx * pi2 * (nx * 0.5 - ny * 0.866)) * Math.sin(fy * pi2 * (nx * 0.5 + ny * 0.866));
-      return hex1 + hex2 * 0.7 + hex3 * 0.7;
-    
-    case 3: // Star / radial
-      const dx = nx - 0.5, dy = ny - 0.5;
-      const r = Math.sqrt(dx * dx + dy * dy);
-      const theta = Math.atan2(dy, dx);
-      return Math.sin(fx * r * 8) * Math.cos(fy * theta * 3) +
-             Math.sin(fy * r * 6) * 0.5;
-    
-    case 4: // Chaos - overlapping many modes
-      return Math.sin(fx * pi2 * nx + time * 0.3) * Math.sin(fy * pi2 * ny) +
-             Math.sin(fx * pi2 * ny + time * 0.2) * Math.sin(fy * pi2 * nx) +
-             Math.sin((fx + fy) * pi2 * (nx + ny) * 0.5 + time * 0.15) * 0.6 +
-             Math.sin(fx * pi2 * Math.sqrt(nx * nx + ny * ny) + time * 0.1) * 0.4;
-    
-    case 5: // Moiré
-      const a = fx * pi2 * nx;
-      const b = fy * pi2 * ny;
-      return Math.sin(a + b + time * 0.2) * Math.cos(a - b + time * 0.15) +
-             Math.sin(a * 1.5 + time * 0.1) * Math.cos(b * 1.5 + time * 0.12) * 0.5;
-    
-    default:
-      return Math.sin(fx * pi2 * nx) * Math.sin(fy * pi2 * ny);
-  }
-}
-
-function getAmplitude(g) {
-  return chladniAmplitude(g.x, g.y, freqX, freqY, mode);
-}
-
-// Smooth noise for dappled light
-function smoothNoise(x, y, t) {
-  return (Math.sin(x * 0.01 + t) + Math.sin(y * 0.013 + t * 0.7) +
-          Math.sin((x + y) * 0.008 + t * 0.5) + Math.sin(Math.sqrt(x * x + y * y) * 0.005 + t * 0.3)) * 0.25;
-}
-
-// Render
-function render() {
-  if (!paused) {
-    time += 0.016;
-  }
-  
-  // Smooth mouse-driven frequency
-  targetFreqX = 0.5 + mouseX * 3.5;
-  targetFreqY = 0.5 + mouseY * 3.5;
-  freqX += (targetFreqX - freqX) * 0.03;
-  freqY += (targetFreqY - freqY) * 0.03;
-  
-  // Background with subtle vignette
-  const bgGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.7);
-  bgGrad.addColorStop(0, currentPalette.bg);
-  bgGrad.addColorStop(1, '#000');
-  ctx.fillStyle = bgGrad;
-  ctx.fillRect(0, 0, W, H);
-  
-  // Draw sand grains
-  const colors = currentPalette.colors;
-  const accent = currentPalette.accent;
-  
-  for (let i = 0; i < grains.length; i++) {
-    const g = grains[i];
-    const amp = getAmplitude(g);
-    
-    // Amplitude near zero = standing wave node = sand collects here
-    const nodeStrength = Math.exp(-amp * amp * 8);
-    
-    if (nodeStrength > 0.15) {
-      // Color based on position in the pattern
-      const colorIdx = Math.floor((amp + 2) / 4 * colors.length) % colors.length;
-      const baseColor = colors[colorIdx];
-      
-      // Parse color for alpha
-      const r = parseInt(baseColor.slice(1, 3), 16);
-      const gVal = parseInt(baseColor.slice(3, 5), 16);
-      const b = parseInt(baseColor.slice(5, 7), 16);
-      
-      // Alpha based on node strength
-      const alpha = Math.min(1, nodeStrength * 1.2);
-      
-      // Size varies with node strength
-      const size = 0.8 + nodeStrength * 1.8;
-      
-      // Slight glow on strong nodes
-      if (nodeStrength > 0.7) {
-        ctx.fillStyle = `rgba(${r},${gVal},${b},${alpha * 0.3})`;
-        ctx.beginPath();
-        ctx.arc(g.x, g.y, size * 3, 0, Math.PI * 2);
-        ctx.fill();
+    update() {
+      this.age++;
+      if (this.age > this.life) {
+        this.x = Math.random() * W;
+        this.y = Math.random() * H;
+        this.age = 0;
+        this.life = Math.random() * 200 + 100;
+        this.paletteIndex = Math.floor(Math.random() * palette.length);
       }
-      
-      // Sand grain
-      ctx.fillStyle = `rgba(${r},${gVal},${b},${alpha})`;
-      ctx.beginPath();
-      ctx.arc(g.x, g.y, size, 0, Math.PI * 2);
-      ctx.fill();
+
+      let fx = 0, fy = 0;
+
+      // Nodal field from placed nodes
+      for (const node of nodes) {
+        const dx = this.x - node.x;
+        const dy = this.y - node.y;
+        const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+        const maxDist = 350;
+
+        if (dist < maxDist) {
+          const force = (1 - dist/maxDist) * node.strength;
+          const angle = Math.atan2(dy, dx);
+
+          // Cymatic wave pattern
+          const wavePhase = (dist / 30) - time * 0.03 * node.frequency;
+          const wave = Math.sin(wavePhase) * 0.5 + 0.5;
+
+          // Nodal line avoidance (Chladni pattern)
+          const nodal = Math.abs(Math.sin(wavePhase * 2));
+          const nodalForce = nodal < 0.15 ? -1.5 : 0.3;
+
+          switch (mode) {
+            case 'attract':
+              fx += Math.cos(angle) * force * 0.4 * wave * nodalForce;
+              fy += Math.sin(angle) * force * 0.4 * wave * nodalForce;
+              break;
+            case 'repel':
+              fx -= Math.cos(angle) * force * 0.6 * (1 - wave);
+              fy -= Math.sin(angle) * force * 0.6 * (1 - wave);
+              break;
+            case 'vortex':
+              fx += Math.cos(angle + Math.PI/2) * force * 0.5 * wave;
+              fy += Math.sin(angle + Math.PI/2) * force * 0.5 * wave;
+              break;
+            case 'chaos':
+              fx += Math.cos(angle * 3 + time * 0.02) * force * 0.3;
+              fy += Math.sin(angle * 3 - time * 0.02) * force * 0.3;
+              break;
+          }
+        }
+      }
+
+      // Subtle global flow
+      fx += Math.sin(this.y * 0.003 + time * 0.005) * 0.08;
+      fy += Math.cos(this.x * 0.003 + time * 0.005) * 0.08;
+
+      this.vx = this.vx * 0.92 + fx * 0.3;
+      this.vy = this.vy * 0.92 + fy * 0.3;
+
+      // Speed limit
+      const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
+      if (speed > 3) {
+        this.vx = (this.vx / speed) * 3;
+        this.vy = (this.vy / speed) * 3;
+      }
+
+      this.x += this.vx;
+      this.y += this.vy;
+
+      // Wrap
+      if (this.x < 0) this.x = W;
+      if (this.x > W) this.x = 0;
+      if (this.y < 0) this.y = H;
+      if (this.y > H) this.y = 0;
+    }
+
+    draw() {
+      const alpha = Math.sin((this.age / this.life) * Math.PI) * 0.8;
+      const c = palette[this.paletteIndex];
+      const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
+      const bright = Math.min(1, speed / 2);
+
+      ctx.fillStyle = `rgba(${c.r},${c.g},${c.b},${alpha * bright})`;
+      ctx.fillRect(this.x, this.y, 1.5, 1.5);
     }
   }
-  
-  // Dappled light overlay — mouse proximity creates a soft light pool
-  const lightX = mouseX * W;
-  const lightY = mouseY * H;
-  const lightGrad = ctx.createRadialGradient(lightX, lightY, 0, lightX, lightY, 200);
-  lightGrad.addColorStop(0, 'rgba(255,255,240,0.04)');
-  lightGrad.addColorStop(0.5, 'rgba(255,255,240,0.015)');
-  lightGrad.addColorStop(1, 'rgba(255,255,240,0)');
-  ctx.fillStyle = lightGrad;
-  ctx.fillRect(0, 0, W, H);
-  
-  // Second, larger ambient light following mouse slowly
-  const ambientX = cx + Math.sin(time * 0.2) * 100 + (mouseX - 0.5) * 150;
-  const ambientY = cy + Math.cos(time * 0.15) * 80 + (mouseY - 0.5) * 150;
-  const ambGrad = ctx.createRadialGradient(ambientX, ambientY, 0, ambientX, ambientY, 350);
-  ambGrad.addColorStop(0, `rgba(${parseInt(accent.slice(1,3),16)},${parseInt(accent.slice(3,5),16)},${parseInt(accent.slice(5,7),16)},0.03)`);
-  ambGrad.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = ambGrad;
-  ctx.fillRect(0, 0, W, H);
-  
-  // Update HUD
-  document.getElementById('modeLabel').textContent = `MODE: ${['CONCENTRIC','SQUARE','HEXAGONAL','STAR','CHAOS','MOIRÉ'][mode]}`;
-  document.getElementById('freqLabel').textContent = `FREQ: ${freqX.toFixed(2)} / ${freqY.toFixed(2)}`;
-}
 
-// Animation loop
-function animate() {
-  render();
-  requestAnimationFrame(animate);
-}
-
-// Input handlers
-canvas.addEventListener('mousemove', (e) => {
-  targetMouseX = e.clientX / W;
-  targetMouseY = e.clientY / H;
-  mouseX += (targetMouseX - mouseX) * 0.08;
-  mouseY += (targetMouseY - mouseY) * 0.08;
-});
-
-canvas.addEventListener('touchmove', (e) => {
-  e.preventDefault();
-  const t = e.touches[0];
-  targetMouseX = t.clientX / W;
-  targetMouseY = t.clientY / H;
-  mouseX += (targetMouseX - mouseX) * 0.08;
-  mouseY += (targetMouseY - mouseY) * 0.08;
-}, { passive: false });
-
-canvas.addEventListener('click', () => {
-  mode = (mode + 1) % 6;
-  updateButtons();
-});
-
-// Scroll to adjust grain density
-canvas.addEventListener('wheel', (e) => {
-  e.preventDefault();
-  grainDensity = Math.max(10000, Math.min(200000, grainDensity - e.deltaY * 100));
-  initGrains();
-});
-
-// Buttons
-const buttons = document.querySelectorAll('.controls button');
-buttons.forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    mode = parseInt(btn.dataset.mode);
-    updateButtons();
-  });
-});
-
-function updateButtons() {
-  buttons.forEach(b => {
-    b.classList.toggle('active', parseInt(b.dataset.mode) === mode);
-  });
-}
-
-// Keyboard
-document.addEventListener('keydown', (e) => {
-  if (e.key >= '1' && e.key <= '5') {
-    paletteIdx = parseInt(e.key) - 1;
-    currentPalette = palettes[paletteIdx];
+  // Initialize particles
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    particles.push(new Particle());
   }
-  if (e.key === ' ') {
-    paused = !paused;
+
+  // Nodes
+  class ResonantNode {
+    constructor(x, y) {
+      this.x = x;
+      this.y = y;
+      this.strength = 1;
+      this.frequency = 0.5 + Math.random() * 1.5;
+      this.phase = Math.random() * Math.PI * 2;
+      this.paletteIndex = Math.floor(Math.random() * palette.length);
+      this.birth = time;
+      this.pulsePhase = Math.random() * Math.PI * 2;
+    }
+  }
+
+  // Mouse
+  canvas.addEventListener('mousedown', (e) => {
+    if (e.button === 2) {
+      // Right click - remove nearest node
+      if (nodes.length > 0) {
+        let nearest = 0, minDist = Infinity;
+        for (let i = 0; i < nodes.length; i++) {
+          const dx = nodes[i].x - e.clientX;
+          const dy = nodes[i].y - e.clientY;
+          const d = dx*dx + dy*dy;
+          if (d < minDist) { minDist = d; nearest = i; }
+        }
+        if (minDist < 2500) nodes.splice(nearest, 1);
+      }
+      return;
+    }
+    mouse.down = true;
+    // Check if clicking existing node
+    for (const node of nodes) {
+      const dx = node.x - e.clientX;
+      const dy = node.y - e.clientY;
+      if (dx*dx + dy*dy < 900) {
+        dragNode = node;
+        return;
+      }
+    }
+    // Add new node
+    if (nodes.length < MAX_NODES) {
+      nodes.push(new ResonantNode(e.clientX, e.clientY));
+    }
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    if (dragNode) {
+      dragNode.x = e.clientX;
+      dragNode.y = e.clientY;
+    }
+  });
+
+  canvas.addEventListener('mouseup', () => {
+    mouse.down = false;
+    dragNode = null;
+  });
+
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // Touch support
+  canvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
-  }
-  if (e.key === 'c' || e.key === 'C') {
-    // Cycle mode via keyboard
-    mode = (mode + 1) % 6;
-    updateButtons();
-  }
-});
+    const t = e.touches[0];
+    if (nodes.length < MAX_NODES) {
+      nodes.push(new ResonantNode(t.clientX, t.clientY));
+    }
+  });
 
-// Start
-animate();
+  // Controls
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const m = btn.dataset.mode;
+      if (m === 'clear') {
+        nodes = [];
+        return;
+      }
+      mode = m;
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // Render loop
+  function render() {
+    time++;
+
+    // Fade trail
+    ctx.fillStyle = 'rgba(5, 5, 8, 0.12)';
+    ctx.fillRect(0, 0, W, H);
+
+    // Draw nodal influence lines between nearby nodes
+    ctx.strokeStyle = 'rgba(74, 158, 255, 0.04)';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const dx = nodes[i].x - nodes[j].x;
+        const dy = nodes[i].y - nodes[j].y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 400) {
+          const alpha = (1 - dist/400) * 0.08;
+          ctx.strokeStyle = `rgba(74, 158, 255, ${alpha})`;
+          ctx.beginPath();
+          ctx.moveTo(nodes[i].x, nodes[i].y);
+          ctx.lineTo(nodes[j].x, nodes[j].y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Update and draw particles
+    for (const p of particles) {
+      p.update();
+      p.draw();
+    }
+
+    // Draw nodes
+    for (const node of nodes) {
+      const age = (time - node.birth) / 60;
+      const pulse = Math.sin(time * 0.05 + node.pulsePhase) * 0.3 + 0.7;
+      const c = palette[node.paletteIndex];
+      const radius = (8 + age * 3) * pulse;
+
+      // Glow
+      const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, radius * 4);
+      gradient.addColorStop(0, `rgba(${c.r},${c.g},${c.b},0.3)`);
+      gradient.addColorStop(0.5, `rgba(${c.r},${c.g},${c.b},0.08)`);
+      gradient.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, radius * 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Core
+      ctx.fillStyle = `rgba(${c.r},${c.g},${c.b},0.8)`;
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, radius * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Ring
+      ctx.strokeStyle = `rgba(${c.r},${c.g},${c.b},0.2)`;
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Frequency label
+      ctx.fillStyle = `rgba(${c.r},${c.g},${c.b},0.4)`;
+      ctx.font = '8px monospace';
+      ctx.fillText(`${node.frequency.toFixed(2)}Hz`, node.x + radius + 4, node.y + 3);
+    }
+
+    // Update UI
+    document.getElementById('nodeCount').textContent = nodes.length;
+    const avgFreq = nodes.length > 0
+      ? (nodes.reduce((s, n) => s + n.frequency, 0) / nodes.length * 120).toFixed(2)
+      : '0.00';
+    document.getElementById('freqDisplay').textContent = avgFreq;
+    document.getElementById('modeDisplay').textContent = mode.toUpperCase();
+
+    requestAnimationFrame(render);
+  }
+
+  // Initial fill
+  ctx.fillStyle = '#050508';
+  ctx.fillRect(0, 0, W, H);
+
+  // Seed a few nodes for visual interest
+  setTimeout(() => {
+    if (nodes.length === 0) {
+      nodes.push(new ResonantNode(W * 0.3, H * 0.4));
+      nodes.push(new ResonantNode(W * 0.7, H * 0.6));
+      nodes.push(new ResonantNode(W * 0.5, H * 0.3));
+    }
+  }, 800);
+
+  render();
+})();
 </script>
 </body>
 </html>
