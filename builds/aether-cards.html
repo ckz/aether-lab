@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aether's Curiosity Cards — Memory Game</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    background: radial-gradient(ellipse at top, #1a1a3e 0%, #0a0a1f 60%, #000010 100%);
+    color: #e8e8f0;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    overflow-x: hidden;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  h1 {
+    font-size: clamp(1.6rem, 4vw, 2.4rem);
+    margin: 10px 0 6px;
+    background: linear-gradient(90deg, #ff7bff, #7bc8ff, #7bffce);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: none;
+    letter-spacing: 0.5px;
+  }
+  .subtitle {
+    color: #aab;
+    font-size: 0.95rem;
+    margin-bottom: 16px;
+  }
+  .stats {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .stat {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 10px 18px;
+    min-width: 110px;
+    text-align: center;
+    backdrop-filter: blur(6px);
+  }
+  .stat-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #9aa;
+  }
+  .stat-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-top: 2px;
+    background: linear-gradient(90deg, #ffb3ff, #b3e6ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    max-width: 720px;
+    width: 100%;
+    perspective: 1000px;
+  }
+  @media (max-width: 520px) {
+    .grid { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  }
+  .card {
+    position: relative;
+    aspect-ratio: 3 / 4;
+    cursor: pointer;
+    transform-style: preserve-3d;
+    transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .card.flipped { transform: rotateY(180deg); }
+  .card.matched {
+    transform: rotateY(180deg) scale(0.96);
+    cursor: default;
+  }
+  .face {
+    position: absolute;
+    inset: 0;
+    backface-visibility: hidden;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 3rem;
+    user-select: none;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  }
+  .back {
+    background: linear-gradient(135deg, #2b1d5e 0%, #1e2b5e 50%, #5e1d4a 100%);
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 2rem;
+  }
+  .front {
+    background: linear-gradient(160deg, #1c1c3a 0%, #2a1f4a 100%);
+    transform: rotateY(180deg);
+    color: #fff;
+    text-shadow: 0 2px 10px rgba(180, 140, 255, 0.5);
+    flex-direction: column;
+    gap: 8px;
+  }
+  .front .icon { font-size: 3rem; }
+  .front .label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    opacity: 0.85;
+  }
+  .controls {
+    margin-top: 20px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  button {
+    background: linear-gradient(135deg, rgba(120, 90, 255, 0.25), rgba(90, 200, 255, 0.25));
+    color: #e8e8f0;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    padding: 10px 18px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+    backdrop-filter: blur(4px);
+  }
+  button:hover {
+    background: linear-gradient(135deg, rgba(140, 110, 255, 0.4), rgba(110, 220, 255, 0.4));
+    transform: translateY(-1px);
+  }
+  .win-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    backdrop-filter: blur(6px);
+  }
+  .win-overlay.active { display: flex; }
+  .win-card {
+    background: linear-gradient(160deg, #1e1e4a, #2a1f5a);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 24px;
+    padding: 32px 40px;
+    text-align: center;
+    max-width: 420px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .win-emoji { font-size: 3.5rem; margin-bottom: 12px; }
+  .win-title {
+    font-size: 1.8rem;
+    background: linear-gradient(90deg, #ffb3ff, #b3e6ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+  }
+  .win-text { color: #ccd; margin-bottom: 18px; line-height: 1.5; }
+  .confetti {
+    position: fixed;
+    pointer-events: none;
+    font-size: 1.4rem;
+    animation: fall 3s linear forwards;
+    z-index: 60;
+  }
+  @keyframes fall {
+    0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
+    100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.06); }
+  }
+  .card.matched .front { animation: pulse 1.6s ease-in-out infinite; border-color: rgba(180, 255, 200, 0.4); }
+</style>
+</head>
+<body>
+  <h1>✨ Aether's Curiosity Cards</h1>
+  <p class="subtitle">Match the pairs. Ken-themed cosmic edition.</p>
+  <div class="stats">
+    <div class="stat"><div class="stat-label">Moves</div><div class="stat-value" id="moves">0</div></div>
+    <div class="stat"><div class="stat-label">Matches</div><div class="stat-value" id="matches">0 / 8</div></div>
+    <div class="stat"><div class="stat-label">Best</div><div class="stat-value" id="best">—</div></div>
+    <div class="stat"><div class="stat-label">Time</div><div class="stat-value" id="timer">0:00</div></div>
+  </div>
+  <div class="grid" id="grid"></div>
+  <div class="controls">
+    <button id="reset">🔄 New Game</button>
+    <button id="hint">💡 Hint</button>
+  </div>
+  <div class="win-overlay" id="win">
+    <div class="win-card">
+      <div class="win-emoji">🌌</div>
+      <div class="win-title">Curiosity Complete!</div>
+      <div class="win-text" id="win-text">You matched all the pairs.</div>
+      <button id="playAgain">Play Again</button>
+    </div>
+  </div>
+  <script>
+    const PAIRS = [
+      { icon: '🛸', label: 'OpenClaw' },
+      { icon: '🧠', label: 'Curiosity' },
+      { icon: '⚡', label: 'Aether' },
+      { icon: '🎵', label: 'Spotify' },
+      { icon: '🚀', label: 'Ship It' },
+      { icon: '🔮', label: 'Oracle' },
+      { icon: '🌊', label: 'Ocean' },
+      { icon: '🔥', label: 'Dev Mode' },
+    ];
+    let cards = [];
+    let flipped = [];
+    let matched = new Set();
+    let moves = 0;
+    let timerStart = null;
+    let timerInterval = null;
+    let bestScore = localStorage.getItem('aether-cards-best') || null;
+    let lockBoard = false;
+    const grid = document.getElementById('grid');
+    const movesEl = document.getElementById('moves');
+    const matchesEl = document.getElementById('matches');
+    const bestEl = document.getElementById('best');
+    const timerEl = document.getElementById('timer');
+    const winEl = document.getElementById('win');
+    const winText = document.getElementById('win-text');
+
+    function shuffle(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    function startTimer() {
+      if (timerInterval) return;
+      timerStart = Date.now();
+      timerInterval = setInterval(() => {
+        const s = Math.floor((Date.now() - timerStart) / 1000);
+        const m = Math.floor(s / 60);
+        timerEl.textContent = `${m}:${String(s % 60).padStart(2, '0')}`;
+      }, 250);
+    }
+
+    function stopTimer() {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+
+    function init() {
+      stopTimer();
+      flipped = [];
+      matched = new Set();
+      moves = 0;
+      lockBoard = false;
+      movesEl.textContent = '0';
+      matchesEl.textContent = `0 / ${PAIRS.length}`;
+      timerEl.textContent = '0:00';
+      bestEl.textContent = bestScore ? `${bestScore} moves` : '—';
+      winEl.classList.remove('active');
+      const deck = shuffle([...PAIRS, ...PAIRS]).map((p, i) => ({ ...p, id: i }));
+      cards = deck;
+      grid.innerHTML = '';
+      deck.forEach((card, idx) => {
+        const el = document.createElement('div');
+        el.className = 'card';
+        el.dataset.idx = idx;
+        el.dataset.label = card.label;
+        el.innerHTML = `
+          <div class="face back">✦</div>
+          <div class="face front">
+            <div class="icon">${card.icon}</div>
+            <div class="label">${card.label}</div>
+          </div>
+        `;
+        el.addEventListener('click', () => handleFlip(el, card));
+        grid.appendChild(el);
+      });
+    }
+
+    function handleFlip(el, card) {
+      if (lockBoard) return;
+      if (el.classList.contains('flipped') || el.classList.contains('matched')) return;
+      if (flipped.length >= 2) return;
+      startTimer();
+      el.classList.add('flipped');
+      flipped.push({ el, card });
+      if (flipped.length === 2) {
+        moves++;
+        movesEl.textContent = moves;
+        const [a, b] = flipped;
+        if (a.card.label === b.card.label) {
+          matched.add(a.card.label);
+          a.el.classList.add('matched');
+          b.el.classList.add('matched');
+          matchesEl.textContent = `${matched.size} / ${PAIRS.length}`;
+          flipped = [];
+          if (matched.size === PAIRS.length) {
+            stopTimer();
+            if (!bestScore || moves < bestScore) {
+              bestScore = moves;
+              localStorage.setItem('aether-cards-best', bestScore);
+              bestEl.textContent = `${bestScore} moves`;
+            }
+            winText.textContent = `You solved it in ${moves} moves and ${timerEl.textContent}.`;
+            winEl.classList.add('active');
+            spawnConfetti();
+          }
+        } else {
+          lockBoard = true;
+          setTimeout(() => {
+            a.el.classList.remove('flipped');
+            b.el.classList.remove('flipped');
+            flipped = [];
+            lockBoard = false;
+          }, 900);
+        }
+      }
+    }
+
+    function spawnConfetti() {
+      const symbols = ['✨', '🚀', '🛸', '🧠', '⚡', '🌟', '💫', '🔮'];
+      for (let i = 0; i < 60; i++) {
+        setTimeout(() => {
+          const c = document.createElement('div');
+          c.className = 'confetti';
+          c.textContent = symbols[Math.floor(Math.random() * symbols.length)];
+          c.style.left = Math.random() * 100 + 'vw';
+          c.style.animationDuration = (2 + Math.random() * 2) + 's';
+          c.style.fontSize = (1 + Math.random() * 1.4) + 'rem';
+          document.body.appendChild(c);
+          setTimeout(() => c.remove(), 3500);
+        }, i * 40);
+      }
+    }
+
+    function revealHint() {
+      if (lockBoard) return;
+      const unmatched = Array.from(document.querySelectorAll('.card:not(.flipped):not(.matched)'));
+      const byLabel = {};
+      unmatched.forEach(el => {
+        const lbl = el.dataset.label;
+        byLabel[lbl] = byLabel[lbl] || [];
+        byLabel[lbl].push(el);
+      });
+      const pair = Object.values(byLabel).find(arr => arr.length === 2);
+      if (!pair) return;
+      pair.forEach(el => el.classList.add('flipped'));
+      setTimeout(() => {
+        pair.forEach(el => el.classList.remove('flipped'));
+      }, 800);
+    }
+
+    document.getElementById('reset').addEventListener('click', init);
+    document.getElementById('hint').addEventListener('click', revealHint);
+    document.getElementById('playAgain').addEventListener('click', init);
+    bestEl.textContent = bestScore ? `${bestScore} moves` : '—';
+    init();
+  </script>
+</body>
+</html>
