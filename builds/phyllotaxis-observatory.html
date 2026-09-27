@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phyllotaxis Observatory</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050508;
+    color: #e0e0e0;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+    cursor: crosshair;
+  }
+  .controls {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    background: rgba(10, 10, 18, 0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid #1e1e2e;
+    border-radius: 12px;
+    padding: 16px;
+    min-width: 220px;
+    z-index: 10;
+    font-size: 12px;
+  }
+  .controls h2 {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 12px;
+  }
+  .control-group {
+    margin-bottom: 10px;
+  }
+  .control-group label {
+    display: flex;
+    justify-content: space-between;
+    color: #aaa;
+    margin-bottom: 4px;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+  .control-group input[type="range"] {
+    width: 100%;
+    accent-color: #ff6b9d;
+    height: 4px;
+  }
+  .hint {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid #1e1e2e;
+    color: #555;
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  .stats {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: rgba(10, 10, 18, 0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid #1e1e2e;
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-size: 11px;
+    color: #666;
+    z-index: 10;
+    letter-spacing: 1px;
+  }
+  .stats span {
+    color: #ff6b9d;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+  <div class="controls">
+    <h2>✦ Phyllotaxis Observatory</h2>
+    <div class="control-group">
+      <label>Divergence <span id="divVal">137.5°</span></label>
+      <input type="range" id="divergence" min="1" max="360" step="0.1" value="137.5">
+    </div>
+    <div class="control-group">
+      <label>Speed <span id="speedVal">1.0x</span></label>
+      <input type="range" id="speed" min="0.1" max="3" step="0.1" value="1">
+    </div>
+    <div class="control-group">
+      <label>Scale <span id="scaleVal">8</span></label>
+      <input type="range" id="scale" min="3" max="20" step="0.5" value="8">
+    </div>
+    <div class="control-group">
+      <label>Point Size <span id="sizeVal">4</span></label>
+      <input type="range" id="pointSize" min="1" max="12" step="0.5" value="4">
+    </div>
+    <div class="control-group">
+      <label>Trail Fade <span id="fadeVal">0.08</span></label>
+      <input type="range" id="fade" min="0.01" max="0.3" step="0.01" value="0.08">
+    </div>
+    <div class="hint">
+      Move mouse to attract seeds. Scroll to zoom. Press Space to reset.
+    </div>
+  </div>
+
+  <div class="stats">
+    Seeds: <span id="seedCount">0</span> | FPS: <span id="fps">0</span>
+  </div>
+
+  <canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H, cx, cy;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const controls = {
+  divergence: document.getElementById('divergence'),
+  speed: document.getElementById('speed'),
+  scale: document.getElementById('scale'),
+  pointSize: document.getElementById('pointSize'),
+  fade: document.getElementById('fade'),
+  divVal: document.getElementById('divVal'),
+  speedVal: document.getElementById('speedVal'),
+  scaleVal: document.getElementById('scaleVal'),
+  sizeVal: document.getElementById('sizeVal'),
+  fadeVal: document.getElementById('fadeVal'),
+};
+
+let mouse = { x: cx, y: cy, active: false };
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => mouse.active = false);
+
+let zoom = 1;
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoom *= e.deltaY < 0 ? 1.05 : 0.95;
+  zoom = Math.max(0.2, Math.min(5, zoom));
+});
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    ctx.fillStyle = '#050508';
+    ctx.fillRect(0, 0, W, H);
+  }
+});
+
+const palettes = [
+  ['#ff6b9d', '#c44569', '#f8b595', '#ffc3a0', '#ff9a9e'],
+  ['#00d2ff', '#3a7bd5', '#00f5ff', '#7b2ff7', '#c471f5'],
+  ['#f5af19', '#f12711', '#ffecd2', '#fcb69f', '#ff9a76'],
+  ['#11998e', '#38ef7d', '#56ab2f', '#a8e063', '#d4fc79'],
+  ['#654ea3', '#eaafc8', '#a855f7', '#6366f1', '#8b5cf6'],
+];
+let currentPalette = 0;
+
+let seeds = [];
+let angle = 0;
+let lastTime = performance.now();
+let frameCount = 0;
+let fps = 0;
+
+function hslToRgb(h, s, l) {
+  let r, g, b;
+  if (s === 0) { r = g = b = l; }
+  else {
+    const hue2rgb = (p, q, t) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
+
+function draw() {
+  const now = performance.now();
+  const dt = (now - lastTime) / 1000;
+  lastTime = now;
+
+  frameCount++;
+  if (frameCount % 30 === 0) {
+    fps = Math.round(30 / (dt * 30));
+    document.getElementById('fps').textContent = fps || 0;
+  }
+
+  const div = parseFloat(controls.divergence.value) * Math.PI / 180;
+  const speed = parseFloat(controls.speed.value);
+  const scale = parseFloat(controls.scale.value);
+  const pointSize = parseFloat(controls.pointSize.value);
+  const fade = parseFloat(controls.fade.value);
+
+  controls.divVal.textContent = controls.divergence.value + '°';
+  controls.speedVal.textContent = speed.toFixed(1) + 'x';
+  controls.scaleVal.textContent = scale;
+  controls.sizeVal.textContent = pointSize;
+  controls.fadeVal.textContent = fade.toFixed(2);
+
+  ctx.fillStyle = `rgba(5, 5, 8, ${fade})`;
+  ctx.fillRect(0, 0, W, H);
+
+  const palette = palettes[currentPalette];
+  const batch = Math.floor(speed * 8);
+
+  for (let b = 0; b < batch; b++) {
+    const n = seeds.length;
+    const a = n * div + angle;
+    const r = scale * Math.sqrt(n) * zoom;
+    const rawX = cx + r * Math.cos(a);
+    const rawY = cy + r * Math.sin(a);
+
+    let x = rawX, y = rawY;
+    if (mouse.active) {
+      const dx = mouse.x - rawX;
+      const dy = mouse.y - rawY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const maxDist = 200 * zoom;
+      if (dist < maxDist) {
+        const force = (1 - dist / maxDist) * 40 * zoom;
+        x += (dx / dist) * force;
+        y += (dy / dist) * force;
+      }
+    }
+
+    const colorIndex = Math.floor((n * 0.02 + angle * 0.5) % palette.length);
+    const nextColorIndex = (colorIndex + 1) % palette.length;
+    const t = (n * 0.02 + angle * 0.5) % 1;
+
+    const hueShift = (Math.sin(n * 0.1 + angle * 0.2) + 1) / 2;
+    const size = pointSize * (0.7 + 0.3 * hueShift);
+
+    const alpha = Math.max(0.2, Math.min(1, 1 - r / (Math.max(W, H) * 0.6)));
+
+    ctx.beginPath();
+    ctx.arc(x, y, size, 0, Math.PI * 2);
+    ctx.fillStyle = palette[colorIndex];
+    ctx.globalAlpha = alpha;
+    ctx.fill();
+
+    if (Math.random() < 0.1) {
+      ctx.beginPath();
+      ctx.arc(x, y, size * 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = palette[colorIndex];
+      ctx.globalAlpha = alpha * 0.15;
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    seeds.push({ x, y, hue: n * 0.02 });
+  }
+
+  angle += 0.002 * speed;
+
+  if (seeds.length > 25000) {
+    seeds = seeds.slice(-15000);
+  }
+
+  document.getElementById('seedCount').textContent = seeds.length.toLocaleString();
+
+  requestAnimationFrame(draw);
+}
+
+setTimeout(() => {
+  ctx.fillStyle = '#050508';
+  ctx.fillRect(0, 0, W, H);
+  draw();
+}, 100);
+
+setInterval(() => {
+  currentPalette = (currentPalette + 1) % palettes.length;
+}, 12000);
+</script>
+</body>
+</html>
