@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quantum Entanglement</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+  }
+  .overlay {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(10, 10, 15, 0.85);
+    border: 1px solid #1a1a2a;
+    border-radius: 8px;
+    padding: 16px 20px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #888;
+    backdrop-filter: blur(10px);
+    z-index: 10;
+  }
+  .overlay strong {
+    color: #fff;
+    display: block;
+    margin-bottom: 4px;
+    font-size: 13px;
+  }
+  .overlay .key {
+    color: #88f;
+  }
+  .stats {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: rgba(10, 10, 15, 0.7);
+    border: 1px solid #1a1a2a;
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 11px;
+    color: #666;
+    z-index: 10;
+  }
+  .stats span {
+    color: #aaf;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="stats">
+  Entangled pairs: <span id="pairs">0</span> | 
+  Entanglements: <span id="entanglements">0</span>
+</div>
+
+<div class="overlay">
+  <strong>⚛️ Quantum Entanglement Simulator</strong>
+  <span class="key">Click</span> to create entangled particle pairs<br>
+  <span class="key">Move mouse</span> to influence the quantum field<br>
+  <span class="key">Space</span> to collapse all superpositions<br>
+  <span class="key">R</span> to reset
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const mouse = { x: W/2, y: H/2, active: false };
+document.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+
+const particles = [];
+let entanglementCount = 0;
+let totalPairs = 0;
+
+class Particle {
+  constructor(x, y, partner = null) {
+    this.x = x;
+    this.y = y;
+    this.partner = partner;
+    this.vx = (Math.random() - 0.5) * 1.5;
+    this.vy = (Math.random() - 0.5) * 1.5;
+    this.radius = Math.random() * 2 + 1.5;
+    this.life = 1;
+    this.decay = 0.0001 + Math.random() * 0.0002;
+    this.phase = Math.random() * Math.PI * 2;
+    this.phaseSpeed = 0.02 + Math.random() * 0.02;
+    this.hue = Math.random() * 60 + 200; // blue to purple range
+    this.entangled = partner !== null;
+    
+    if (partner) {
+      this.entanglementStrength = 1;
+      this.quantumState = Math.random() > 0.5 ? 'up' : 'down';
+    }
+  }
+
+  update() {
+    // Quantum uncertainty
+    const uncertainty = 0.3;
+    this.vx += (Math.random() - 0.5) * uncertainty;
+    this.vy += (Math.random() - 0.5) * uncertainty;
+
+    // Mouse influence
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < 200) {
+        const force = (200 - dist) / 200 * 0.02;
+        this.vx += dx / dist * force;
+        this.vy += dy / dist * force;
+      }
+    }
+
+    // Entanglement force
+    if (this.entangled && this.partner && this.partner.life > 0) {
+      const dx = this.partner.x - this.x;
+      const dy = this.partner.y - this.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      
+      // Entanglement creates a subtle attractive force
+      const entangleForce = 0.005;
+      this.vx += dx / dist * entangleForce;
+      this.vy += dy / dist * entangleForce;
+      
+      // Quantum tunneling - occasional teleportation
+      if (Math.random() < 0.001) {
+        const angle = Math.random() * Math.PI * 2;
+        const tunnelDist = 20 + Math.random() * 30;
+        this.x += Math.cos(angle) * tunnelDist;
+        this.y += Math.sin(angle) * tunnelDist;
+      }
+    }
+
+    // Damping
+    this.vx *= 0.999;
+    this.vy *= 0.999;
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Wrap
+    if (this.x < 0) this.x = W;
+    if (this.x > W) this.x = 0;
+    if (this.y < 0) this.y = H;
+    if (this.y > H) this.y = 0;
+
+    this.life -= this.decay;
+    this.phase += this.phaseSpeed;
+  }
+
+  draw() {
+    const alpha = this.life * 0.8;
+    const pulse = Math.sin(this.phase) * 0.3 + 0.7;
+    
+    // Glow
+    const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius * 4);
+    const color = `hsla(${this.hue}, 80%, 60%, ${alpha * pulse})`;
+    gradient.addColorStop(0, color);
+    gradient.addColorStop(1, 'transparent');
+    
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius * 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Core
+    ctx.fillStyle = `hsla(${this.hue}, 90%, 70%, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function createEntangledPair(x, y) {
+  const p1 = new Particle(x, y);
+  const p2 = new Particle(x, y, p1);
+  p1.partner = p2;
+  p1.entangled = true;
+  p2.entangled = true;
+  
+  // Same quantum state (superposition until observed)
+  const state = Math.random() > 0.5 ? 'up' : 'down';
+  p1.quantumState = state;
+  p2.quantumState = state;
+  
+  particles.push(p1, p2);
+  entanglementCount++;
+  totalPairs++;
+  updateStats();
+}
+
+function drawEntanglementLine(p1, p2) {
+  if (!p1.entangled || !p2.entangled) return;
+  
+  const alpha = Math.min(p1.life, p2.life) * 0.3;
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  
+  // Fade line with distance
+  const lineAlpha = alpha * Math.max(0, 1 - dist / 400);
+  
+  ctx.strokeStyle = `rgba(100, 150, 255, ${lineAlpha})`;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([5, 10]);
+  ctx.lineDashOffset = Date.now() * 0.02;
+  ctx.beginPath();
+  ctx.moveTo(p1.x, p1.y);
+  ctx.lineTo(p2.x, p2.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function updateStats() {
+  document.getElementById('pairs').textContent = totalPairs;
+  document.getElementById('entanglements').textContent = entanglementCount;
+}
+
+canvas.addEventListener('click', e => {
+  createEntangledPair(e.clientX, e.clientY);
+});
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    // Collapse all superpositions
+    particles.forEach(p => {
+      if (p.entangled && p.life > 0) {
+        p.hue = p.quantumState === 'up' ? 200 + Math.random() * 20 : 280 + Math.random() * 20;
+        p.entanglementStrength = 0;
+      }
+    });
+  } else if (e.code === 'KeyR') {
+    particles.length = 0;
+    entanglementCount = 0;
+    totalPairs = 0;
+    updateStats();
+  }
+});
+
+// Background stars
+const stars = [];
+for (let i = 0; i < 100; i++) {
+  stars.push({
+    x: Math.random() * W,
+    y: Math.random() * H,
+    size: Math.random() * 1.5,
+    twinkle: Math.random() * Math.PI * 2
+  });
+}
+
+function drawStars() {
+  stars.forEach(star => {
+    star.twinkle += 0.02;
+    const alpha = 0.3 + Math.sin(star.twinkle) * 0.3;
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function animate() {
+  // Trail effect
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.1)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  drawStars();
+
+  // Update and draw particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.update();
+    
+    if (p.life <= 0) {
+      particles.splice(i, 1);
+      continue;
+    }
+    
+    p.draw();
+    
+    // Draw entanglement line
+    if (p.entangled && p.partner) {
+      drawEntanglementLine(p, p.partner);
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>
