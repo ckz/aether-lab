@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Topographic Dreamscape</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #07090d;
+    color: #e0e0e0;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+  }
+  canvas { display: block; }
+  .overlay {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .overlay h1 {
+    font-size: 14px;
+    font-weight: 400;
+    letter-spacing: 4px;
+    color: rgba(255,255,255,0.6);
+    text-transform: uppercase;
+  }
+  .overlay p {
+    font-size: 11px;
+    color: rgba(255,255,255,0.35);
+    margin-top: 4px;
+    letter-spacing: 1px;
+  }
+  .controls {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 12px;
+    z-index: 10;
+    background: rgba(7,9,13,0.6);
+    backdrop-filter: blur(10px);
+    padding: 10px 20px;
+    border-radius: 40px;
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .controls button {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.12);
+    color: rgba(255,255,255,0.7);
+    padding: 6px 14px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 11px;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+    pointer-events: all;
+  }
+  .controls button:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.3);
+    color: #fff;
+  }
+  .controls button.active {
+    background: rgba(100,180,255,0.15);
+    border-color: rgba(100,180,255,0.4);
+    color: #a0d4ff;
+  }
+</style>
+</head>
+<body>
+  <div class="overlay">
+    <h1>Topographic Dreamscape</h1>
+    <p>Move mouse to sculpt terrain · Scroll to zoom · Click to ripple</p>
+  </div>
+  <div class="controls">
+    <button id="btnPalette">Palette</button>
+    <button id="btnSpeed">Speed</button>
+    <button id="btnWire">Wire</button>
+    <button id="btnReset">Reset</button>
+  </div>
+  <canvas id="canvas"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+
+  let W, H;
+  const resize = () => {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  };
+  resize();
+  window.addEventListener('resize', resize);
+
+  // Simplex-like noise
+  const noise = (() => {
+    const perm = new Uint8Array(512);
+    const grad = [[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]];
+    const p = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) p[i] = i;
+    for (let i = 255; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [p[i], p[j]] = [p[j], p[i]];
+    }
+    for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+    const dot = (g, x, y) => g[0]*x + g[1]*y;
+    const fade = t => t*t*t*(t*(t*6-15)+10);
+    const lerp = (a,b,t) => a + t*(b-a);
+    return (x, y) => {
+      const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+      const xf = x - Math.floor(x), yf = y - Math.floor(y);
+      const u = fade(xf), v = fade(yf);
+      const a = perm[X]+Y, b = perm[X+1]+Y;
+      const g00 = grad[perm[a] & 7], g10 = grad[perm[b] & 7];
+      const g01 = grad[perm[a+1] & 7], g11 = grad[perm[b+1] & 7];
+      const n00 = dot(g00, xf, yf), n10 = dot(g10, xf-1, yf);
+      const n01 = dot(g01, xf, yf-1), n11 = dot(g11, xf-1, yf-1);
+      return lerp(lerp(n00, n10, u), lerp(n01, n11, u), v);
+    };
+  })();
+
+  // State
+  let mouse = { x: W/2, y: H/2, active: false };
+  let time = 0;
+  let paletteIndex = 0;
+  let speedMode = 1; // 0=slow, 1=normal, 2=fast
+  let wireMode = 0; // 0=fill, 1=wire, 2=both
+  const speeds = [0.15, 0.35, 0.7];
+  const speedLabels = ['Slow', 'Flow', 'Rush'];
+  const wireLabels = ['Fill', 'Wire', 'Both'];
+
+  const palettes = [
+    { name: 'Arctic', base: [10, 25, 40], stops: [[30, 100, 180], [80, 200, 255], [200, 240, 255]] },
+    { name: 'Ember', base: [30, 10, 5], stops: [[180, 60, 20], [255, 140, 40], [255, 220, 120]] },
+    { name: 'Void', base: [8, 5, 20], stops: [[60, 20, 100], [140, 60, 200], [220, 180, 255]] },
+    { name: 'Toxic', base: [5, 20, 10], stops: [[20, 140, 80], [60, 220, 120], [180, 255, 180]] },
+    { name: 'Dusk', base: [20, 12, 25], stops: [[140, 60, 120], [220, 120, 160], [255, 200, 220]] },
+  ];
+
+  const GRID = 80;
+  let CELL_W, CELL_H;
+  const computeCell = () => {
+    CELL_W = Math.max(12, W / GRID);
+    CELL_H = Math.max(8, H / GRID);
+  };
+  computeCell();
+  window.addEventListener('resize', computeCell);
+
+  const terrain = [];
+  const initTerrain = () => {
+    terrain.length = 0;
+    for (let y = 0; y < GRID; y++) {
+      terrain[y] = [];
+      for (let x = 0; x < GRID; x++) {
+        terrain[y][x] = { h: 0, v: 0 };
+      }
+    }
+  };
+  initTerrain();
+
+  // Ripples from clicks
+  const ripples = [];
+  canvas.addEventListener('click', (e) => {
+    ripples.push({ x: e.clientX, y: e.clientY, r: 0, maxR: 300, life: 1 });
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    mouse.active = true;
+  });
+  canvas.addEventListener('mouseleave', () => mouse.active = false);
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+  }, { passive: false });
+
+  const getHeight = (x, y, t) => {
+    const nx = x / (CELL_W * 3);
+    const ny = y / (CELL_H * 3);
+    let h = 0;
+    h += noise(nx + t * 0.3, ny + t * 0.2) * 0.6;
+    h += noise(nx * 2.3 - t * 0.15, ny * 2.3 + t * 0.1) * 0.3;
+    h += noise(nx * 5.1 + t * 0.08, ny * 5.1 - t * 0.06) * 0.1;
+    return h;
+  };
+
+  const colorForHeight = (h, palette) => {
+    const t = (h + 1) / 2; // normalize roughly 0..1
+    const stops = palette.stops;
+    const idx = Math.min(stops.length - 2, Math.max(0, Math.floor(t * (stops.length - 1))));
+    const frac = t * (stops.length - 1) - idx;
+    const c0 = stops[idx], c1 = stops[idx + 1];
+    const r = c0[0] + (c1[0] - c0[0]) * frac;
+    const g = c0[1] + (c1[1] - c0[1]) * frac;
+    const b = c0[2] + (c1[2] - c0[2]) * frac;
+    return [r, g, b];
+  };
+
+  const draw = () => {
+    time += 0.008 * speeds[speedMode];
+    const palette = palettes[paletteIndex];
+    ctx.fillStyle = `rgb(${palette.base[0]}, ${palette.base[1]}, ${palette.base[2]})`;
+    ctx.fillRect(0, 0, W, H);
+
+    // Draw terrain as filled quads
+    const points = [];
+    for (let gy = 0; gy <= GRID; gy++) {
+      points[gy] = [];
+      for (let gx = 0; gx <= GRID; gx++) {
+        const px = gx * CELL_W;
+        const py = gy * CELL_H;
+        let h = getHeight(px, py, time);
+
+        // Mouse influence
+        if (mouse.active) {
+          const dx = px - mouse.x, dy = py - mouse.y;
+          const dist = Math.sqrt(dx*dx + dy*dy);
+          const radius = 180;
+          if (dist < radius) {
+            const influence = (1 - dist / radius);
+            h += influence * 1.2 * Math.sin(time * 3);
+          }
+        }
+
+        // Ripple influence
+        for (let i = ripples.length - 1; i >= 0; i--) {
+          const rp = ripples[i];
+          const dx = px - rp.x, dy = py - rp.y;
+          const dist = Math.sqrt(dx*dx + dy*dy);
+          const ringDist = Math.abs(dist - rp.r);
+          if (ringDist < 40) {
+            h += rp.life * (1 - ringDist / 40) * 1.5 * Math.sin(ringDist * 0.3);
+          }
+        }
+
+        points[gy][gx] = { x: px, y: py, h };
+      }
+    }
+
+    // Draw filled quads
+    if (wireMode !== 1) {
+      for (let gy = 0; gy < GRID; gy++) {
+        for (let gx = 0; gx < GRID; gx++) {
+          const tl = points[gy][gx], tr = points[gy][gx+1];
+          const bl = points[gy+1][gx], br = points[gy+1][gx+1];
+          const avgH = (tl.h + tr.h + bl.h + br.h) / 4;
+          const [r, g, b] = colorForHeight(avgH, palette);
+          ctx.fillStyle = `rgba(${r|0}, ${g|0}, ${b|0}, 0.85)`;
+          ctx.beginPath();
+          ctx.moveTo(tl.x, tl.y);
+          ctx.lineTo(tr.x, tr.y);
+          ctx.lineTo(br.x, br.y);
+          ctx.lineTo(bl.x, bl.y);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+    }
+
+    // Draw wireframe
+    if (wireMode !== 0) {
+      ctx.strokeStyle = `rgba(255,255,255,0.08)`;
+      ctx.lineWidth = 0.5;
+      for (let gy = 0; gy <= GRID; gy++) {
+        ctx.beginPath();
+        for (let gx = 0; gx <= GRID; gx++) {
+          const p = points[gy][gx];
+          if (gx === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        }
+        ctx.stroke();
+      }
+      for (let gx = 0; gx <= GRID; gx++) {
+        ctx.beginPath();
+        for (let gy = 0; gy <= GRID; gy++) {
+          const p = points[gy][gx];
+          if (gy === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        }
+        ctx.stroke();
+      }
+    }
+
+    // Update ripples
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      const rp = ripples[i];
+      rp.r += 4;
+      rp.life -= 0.015;
+      if (rp.life <= 0 || rp.r > rp.maxR) ripples.splice(i, 1);
+    }
+
+    // Scanline effect
+    ctx.fillStyle = 'rgba(0,0,0,0.03)';
+    for (let y = 0; y < H; y += 4) {
+      ctx.fillRect(0, y, W, 1);
+    }
+
+    // Vignette
+    const grad = ctx.createRadialGradient(W/2, H/2, W*0.25, W/2, H/2, W*0.75);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.5)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    requestAnimationFrame(draw);
+  };
+
+  draw();
+
+  // Controls
+  document.getElementById('btnPalette').addEventListener('click', () => {
+    paletteIndex = (paletteIndex + 1) % palettes.length;
+  });
+  document.getElementById('btnSpeed').addEventListener('click', () => {
+    speedMode = (speedMode + 1) % 3;
+  });
+  document.getElementById('btnWire').addEventListener('click', () => {
+    wireMode = (wireMode + 1) % 3;
+  });
+  document.getElementById('btnReset').addEventListener('click', () => {
+    initTerrain();
+    ripples.length = 0;
+    time = Math.random() * 100;
+  });
+})();
+</script>
+</body>
+</html>
