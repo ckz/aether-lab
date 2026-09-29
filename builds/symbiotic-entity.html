@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Symbiotic Entity</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #4a9eff;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0; left: 0;
+  }
+  #info {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(74, 158, 255, 0.6);
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 10;
+    text-shadow: 0 0 10px rgba(74, 158, 255, 0.3);
+  }
+  #stats {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    color: rgba(74, 158, 255, 0.4);
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-align: right;
+    pointer-events: none;
+    z-index: 10;
+    line-height: 1.8;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="info">move your cursor to interact</div>
+<div id="stats"></div>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const stats = document.getElementById('stats');
+
+let width, height;
+function resize() {
+  width = canvas.width = window.innerWidth;
+  height = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const mouse = { x: width / 2, y: height / 2, active: false };
+window.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+window.addEventListener('mouseleave', () => mouse.active = false);
+window.addEventListener('touchmove', e => {
+  if (e.touches.length > 0) {
+    mouse.x = e.touches[0].clientX;
+    mouse.y = e.touches[0].clientY;
+    mouse.active = true;
+  }
+});
+
+// Symbiotic Entity
+const entity = {
+  x: width / 2,
+  y: height / 2,
+  vx: 0,
+  vy: 0,
+  radius: 80,
+  breathPhase: 0,
+  color: { h: 200, s: 70, l: 50 },
+  tendrils: [],
+  particles: [],
+  energy: 0.5,
+  state: 'dormant',
+  pulseHistory: []
+};
+
+// Initialize tendrils
+for (let i = 0; i < 12; i++) {
+  entity.tendrils.push({
+    angle: (Math.PI * 2 / 12) * i,
+    length: 100 + Math.random() * 80,
+    segments: 8,
+    phase: Math.random() * Math.PI * 2,
+    speed: 0.5 + Math.random() * 0.5
+  });
+}
+
+// Particle system
+class Particle {
+  constructor(x, y, type = 'ambient') {
+    this.x = x || Math.random() * width;
+    this.y = y || Math.random() * height;
+    this.vx = (Math.random() - 0.5) * 0.5;
+    this.vy = (Math.random() - 0.5) * 0.5;
+    this.life = 1;
+    this.decay = 0.002 + Math.random() * 0.003;
+    this.size = 1 + Math.random() * 2;
+    this.type = type;
+    this.hue = 200 + Math.random() * 40;
+  }
+  
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= this.decay;
+    
+    // Gentle attraction to entity
+    if (entity.state === 'active') {
+      const dx = entity.x - this.x;
+      const dy = entity.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 300 && dist > 0) {
+        const force = 0.02 * (1 - dist / 300);
+        this.vx += (dx / dist) * force;
+        this.vy += (dy / dist) * force;
+      }
+    }
+    
+    // Damping
+    this.vx *= 0.99;
+    this.vy *= 0.99;
+  }
+  
+  draw() {
+    ctx.save();
+    ctx.globalAlpha = this.life * 0.6;
+    ctx.fillStyle = `hsla(${this.hue}, 70%, 60%, ${this.life})`;
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = `hsla(${this.hue}, 70%, 60%, 0.5)`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+// Spawn initial particles
+for (let i = 0; i < 50; i++) {
+  entity.particles.push(new Particle());
+}
+
+// Draw breathing core
+function drawCore() {
+  entity.breathPhase += 0.02;
+  const breathScale = 1 + Math.sin(entity.breathPhase) * 0.15;
+  const energyInfluence = entity.energy * 0.2;
+  const r = entity.radius * breathScale * (1 + energyInfluence);
+  
+  // Outer glow
+  const gradient = ctx.createRadialGradient(
+    entity.x, entity.y, r * 0.1,
+    entity.x, entity.y, r * 2
+  );
+  gradient.addColorStop(0, `hsla(${entity.color.h}, ${entity.color.s}%, ${entity.color.l}%, 0.3)`);
+  gradient.addColorStop(0.5, `hsla(${entity.color.h}, ${entity.color.s}%, ${entity.color.l}%, 0.1)`);
+  gradient.addColorStop(1, 'transparent');
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(entity.x, entity.y, r * 2, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Core
+  const coreGrad = ctx.createRadialGradient(
+    entity.x, entity.y, 0,
+    entity.x, entity.y, r
+  );
+  coreGrad.addColorStop(0, `hsla(${entity.color.h + 20}, 80%, 70%, 0.9)`);
+  coreGrad.addColorStop(0.5, `hsla(${entity.color.h}, ${entity.color.s}%, ${entity.color.l}%, 0.6)`);
+  coreGrad.addColorStop(1, `hsla(${entity.color.h}, ${entity.color.s}%, ${entity.color.l}%, 0)`);
+  
+  ctx.fillStyle = coreGrad;
+  ctx.beginPath();
+  ctx.arc(entity.x, entity.y, r, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Nucleus
+  ctx.fillStyle = `hsla(${entity.color.h + 30}, 90%, 80%, 0.8)`;
+  ctx.beginPath();
+  ctx.arc(entity.x, entity.y, r * 0.2, 0, Math.PI * 2);
+  ctx.fill();
+  
+  return r;
+}
+
+// Draw tendrils
+function drawTendrils(coreRadius) {
+  entity.tendrils.forEach((tendril, i) => {
+    ctx.save();
+    ctx.strokeStyle = `hsla(${entity.color.h + i * 5}, ${entity.color.s}%, ${entity.color.l}%, 0.4)`;
+    ctx.lineWidth = 2;
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = `hsla(${entity.color.h}, ${entity.color.s}%, ${entity.color.l}%, 0.3)`;
+    
+    const wave = Math.sin(entity.breathPhase * tendril.speed + tendril.phase) * 0.5;
+    const targetX = entity.x + Math.cos(tendril.angle + wave) * tendril.length;
+    const targetY = entity.y + Math.sin(tendril.angle + wave) * tendril.length;
+    
+    // Curved tendril
+    ctx.beginPath();
+    ctx.moveTo(entity.x, entity.y);
+    
+    const segments = tendril.segments;
+    for (let j = 1; j <= segments; j++) {
+      const t = j / segments;
+      const wobble = Math.sin(t * Math.PI * 2 + entity.breathPhase * 2) * 20 * t;
+      const perpX = -Math.sin(tendril.angle) * wobble;
+      const perpY = Math.cos(tendril.angle) * wobble;
+      
+      const x = entity.x + (targetX - entity.x) * t + perpX;
+      const y = entity.y + (targetY - entity.y) * t + perpY;
+      ctx.lineTo(x, y);
+    }
+    
+    ctx.stroke();
+    
+    // Tendril tip particle
+    const tipX = targetX;
+    const tipY = targetY;
+    const tipGrad = ctx.createRadialGradient(tipX, tipY, 0, tipX, tipY, 8);
+    tipGrad.addColorStop(0, `hsla(${entity.color.h + 20}, 80%, 70%, 0.8)`);
+    tipGrad.addColorStop(1, 'transparent');
+    ctx.fillStyle = tipGrad;
+    ctx.beginPath();
+    ctx.arc(tipX, tipY, 8, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.restore();
+  });
+}
+
+// Draw symbiotic connections
+function drawConnections() {
+  entity.particles.forEach((p, i) => {
+    if (p.life < 0.3 || entity.state !== 'active') return;
+    
+    const dx = entity.x - p.x;
+    const dy = entity.y - p.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    
+    if (dist < 200 && dist > coreRadius * 0.5) {
+      ctx.save();
+      ctx.strokeStyle = `hsla(${entity.color.h}, ${entity.color.s}%, ${entity.color.l}%, ${(1 - dist / 200) * 0.2 * p.life})`;
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(entity.x, entity.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+  });
+}
+
+let coreRadius = entity.radius;
+
+// Animation loop
+function animate() {
+  // Fade trail
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.15)';
+  ctx.fillRect(0, 0, width, height);
+  
+  // Update entity position (gentle drift + mouse attraction)
+  if (mouse.active) {
+    const dx = mouse.x - entity.x;
+    const dy = mouse.y - entity.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    
+    if (dist > 10) {
+      const force = 0.03;
+      entity.vx += (dx / dist) * force;
+      entity.vy += (dy / dist) * force;
+      entity.energy = Math.min(1, entity.energy + 0.01);
+      entity.state = dist < 200 ? 'engaged' : 'active';
+    }
+  } else {
+    entity.energy = Math.max(0.3, entity.energy - 0.005);
+    entity.state = entity.energy > 0.6 ? 'dormant' : 'resting';
+  }
+  
+  // Apply velocity with damping
+  entity.vx *= 0.95;
+  entity.vy *= 0.95;
+  entity.x += entity.vx;
+  entity.y += entity.vy;
+  
+  // Keep in bounds
+  entity.x = Math.max(50, Math.min(width - 50, entity.x));
+  entity.y = Math.max(50, Math.min(height - 50, entity.y));
+  
+  // Spawn particles
+  if (Math.random() < 0.3 + entity.energy * 0.5) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = coreRadius * (0.8 + Math.random() * 0.4);
+    entity.particles.push(new Particle(
+      entity.x + Math.cos(angle) * dist,
+      entity.y + Math.sin(angle) * dist,
+      'entity'
+    ));
+  }
+  
+  // Update particles
+  entity.particles = entity.particles.filter(p => {
+    p.update();
+    return p.life > 0;
+  });
+  
+  // Limit particles
+  if (entity.particles.length > 200) {
+    entity.particles = entity.particles.slice(-200);
+  }
+  
+  // Draw everything
+  drawConnections();
+  entity.particles.forEach(p => p.draw());
+  coreRadius = drawCore();
+  drawTendrils(coreRadius);
+  
+  // Update stats
+  stats.innerHTML = `
+    state: ${entity.state}<br>
+    energy: ${(entity.energy * 100).toFixed(0)}%<br>
+    particles: ${entity.particles.length}<br>
+    pos: ${entity.x.toFixed(0)}, ${entity.y.toFixed(0)}
+  `;
+  
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>
