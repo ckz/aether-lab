@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Particle Loom</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+    cursor: crosshair;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+  }
+  .controls {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    background: rgba(10, 10, 15, 0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid #1e1e2a;
+    border-radius: 12px;
+    padding: 16px;
+    z-index: 10;
+    min-width: 200px;
+  }
+  .controls h2 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: #fff;
+    letter-spacing: 1px;
+  }
+  .control-group {
+    margin-bottom: 10px;
+  }
+  .control-group label {
+    display: block;
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .control-group input[type="range"] {
+    width: 100%;
+    accent-color: #7c6cff;
+  }
+  .control-group select {
+    width: 100%;
+    background: #12121a;
+    color: #e0e0e0;
+    border: 1px solid #1e1e2a;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  .hint {
+    font-size: 10px;
+    color: #555;
+    margin-top: 12px;
+    line-height: 1.5;
+  }
+  .stats {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: rgba(10, 10, 15, 0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid #1e1e2a;
+    border-radius: 12px;
+    padding: 12px 16px;
+    z-index: 10;
+    font-size: 11px;
+    color: #666;
+    font-family: monospace;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div class="controls">
+  <h2>✦ PARTICLE LOOM ✦</h2>
+  <div class="control-group">
+    <label>Threads: <span id="threadCount">8</span></label>
+    <input type="range" id="threads" min="3" max="20" value="8">
+  </div>
+  <div class="control-group">
+    <label>Speed: <span id="speedVal">1.0</span>x</label>
+    <input type="range" id="speed" min="1" max="30" value="10">
+  </div>
+  <div class="control-group">
+    <label>Palette</label>
+    <select id="palette">
+      <option value="cosmic">Cosmic</option>
+      <option value="aurora">Aurora</option>
+      <option value="ember">Ember</option>
+      <option value="ocean">Ocean</option>
+      <option value="neon">Neon</option>
+      <option value="mono">Mono</option>
+    </select>
+  </div>
+  <div class="hint">
+    Move mouse to guide threads<br>
+    Click to weave bursts<br>
+    Space to pause<br>
+    C to clear
+  </div>
+</div>
+
+<div class="stats">
+  <div>Particles: <span id="particleCount">0</span></div>
+  <div>FPS: <span id="fps">0</span></div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let width, height;
+function resize() {
+  width = canvas.width = window.innerWidth;
+  height = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const palettes = {
+  cosmic: ['#ff006e', '#8338ec', '#3a86ff', '#06ffa5', '#ffbe0b'],
+  aurora: ['#00ff87', '#60efff', '#0061ff', '#a855f7', '#ff006e'],
+  ember: ['#ff4500', '#ff6b35', '#f7931e', '#ffcc02', '#ff0040'],
+  ocean: ['#0077b6', '#00b4d8', '#90e0ef', '#48cae4', '#023e8a'],
+  neon: ['#ff00ff', '#00ffff', '#ffff00', '#ff0080', '#80ff00'],
+  mono: ['#ffffff', '#cccccc', '#999999', '#666666', '#333333']
+};
+
+let config = {
+  threads: 8,
+  speed: 1,
+  palette: 'cosmic',
+  paused: false
+};
+
+let threads = [];
+let particles = [];
+let mouse = { x: width / 2, y: height / 2, active: false };
+let lastTime = performance.now();
+let frameCount = 0;
+let fps = 0;
+
+class Thread {
+  constructor(index, total) {
+    this.index = index;
+    this.total = total;
+    this.reset();
+  }
+
+  reset() {
+    this.x = Math.random() * width;
+    this.y = Math.random() * height;
+    this.vx = (Math.random() - 0.5) * 2;
+    this.vy = (Math.random() - 0.5) * 2;
+    this.colorIndex = this.index % 5;
+    this.life = 1;
+    this.trail = [];
+    this.maxTrail = 30 + Math.random() * 30;
+  }
+
+  update() {
+    const palette = palettes[config.palette];
+    const color = palette[this.colorIndex];
+
+    // Noise-like wandering
+    const angle = Math.sin(this.x * 0.003 + performance.now() * 0.0005) * Math.PI * 2;
+    const noiseX = Math.cos(angle) * 0.3;
+    const noiseY = Math.sin(angle) * 0.3;
+
+    this.vx += noiseX * 0.1 * config.speed;
+    this.vy += noiseY * 0.1 * config.speed;
+
+    // Mouse attraction
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 300) {
+        const force = (300 - dist) / 300 * 0.5;
+        this.vx += (dx / dist) * force * config.speed;
+        this.vy += (dy / dist) * force * config.speed;
+      }
+    }
+
+    // Damping
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+
+    // Speed limit
+    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    if (speed > 4) {
+      this.vx = (this.vx / speed) * 4;
+      this.vy = (this.vy / speed) * 4;
+    }
+
+    this.x += this.vx * config.speed;
+    this.y += this.vy * config.speed;
+
+    // Wrap
+    if (this.x < 0) this.x = width;
+    if (this.x > width) this.x = 0;
+    if (this.y < 0) this.y = height;
+    if (this.y > height) this.y = 0;
+
+    // Trail
+    this.trail.push({ x: this.x, y: this.y });
+    if (this.trail.length > this.maxTrail) {
+      this.trail.shift();
+    }
+  }
+
+  draw() {
+    const palette = palettes[config.palette];
+    const color = palette[this.colorIndex];
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round';
+    ctx.globalAlpha = 0.6;
+
+    if (this.trail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(this.trail[0].x, this.trail[0].y);
+      for (let i = 1; i < this.trail.length; i++) {
+        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+      }
+      ctx.stroke();
+    }
+
+    // Head glow
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = 1;
+  }
+}
+
+class Particle {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 3;
+    this.vy = (Math.random() - 0.5) * 3;
+    this.life = 1;
+    this.decay = 0.01 + Math.random() * 0.02;
+    const palette = palettes[config.palette];
+    this.color = palette[Math.floor(Math.random() * palette.length)];
+  }
+
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+    this.life -= this.decay;
+  }
+
+  draw() {
+    ctx.globalAlpha = this.life * 0.5;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function initThreads() {
+  threads = [];
+  for (let i = 0; i < config.threads; i++) {
+    threads.push(new Thread(i, config.threads));
+  }
+}
+
+function createBurst(x, y) {
+  for (let i = 0; i < 20; i++) {
+    particles.push(new Particle(x, y));
+  }
+}
+
+// Draw background weave lines
+function drawWeave() {
+  ctx.strokeStyle = 'rgba(30, 30, 50, 0.3)';
+  ctx.lineWidth = 0.5;
+  const spacing = 40;
+
+  for (let x = 0; x < width; x += spacing) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+  }
+  for (let y = 0; y < height; y += spacing) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+}
+
+function update() {
+  if (config.paused) return;
+
+  // Fade effect
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.05)';
+  ctx.fillRect(0, 0, width, height);
+
+  // Draw weave
+  drawWeave();
+
+  // Update threads
+  threads.forEach(thread => {
+    thread.update();
+    thread.draw();
+  });
+
+  // Update particles
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => {
+    p.update();
+    p.draw();
+  });
+
+  // Stats
+  frameCount++;
+  const now = performance.now();
+  if (now - lastTime >= 1000) {
+    fps = frameCount;
+    frameCount = 0;
+    lastTime = now;
+  }
+
+  document.getElementById('particleCount').textContent = threads.length + particles.length;
+  document.getElementById('fps').textContent = fps;
+
+  requestAnimationFrame(update);
+}
+
+// Controls
+document.getElementById('threads').addEventListener('input', (e) => {
+  config.threads = parseInt(e.target.value);
+  document.getElementById('threadCount').textContent = config.threads;
+  initThreads();
+});
+
+document.getElementById('speed').addEventListener('input', (e) => {
+  config.speed = e.target.value / 10;
+  document.getElementById('speedVal').textContent = config.speed.toFixed(1);
+});
+
+document.getElementById('palette').addEventListener('change', (e) => {
+  config.palette = e.target.value;
+});
+
+// Mouse
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+
+canvas.addEventListener('mouseleave', () => {
+  mouse.active = false;
+});
+
+canvas.addEventListener('click', (e) => {
+  createBurst(e.clientX, e.clientY);
+});
+
+// Keyboard
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    config.paused = !config.paused;
+  }
+  if (e.code === 'KeyC') {
+    ctx.fillStyle = '#0a0a0f';
+    ctx.fillRect(0, 0, width, height);
+    threads.forEach(t => t.trail = []);
+    particles = [];
+  }
+});
+
+// Init
+initThreads();
+update();
+</script>
+</body>
+</html>
