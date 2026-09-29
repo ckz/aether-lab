@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Aether Curiosity — Flow Field</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #0b0c10; color: #c5c6c7; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+    body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 24px; }
+    h1 { font-size: clamp(18px, 3vw, 26px); margin: 0; letter-spacing: 1px; }
+    canvas { display: block; border-radius: 14px; background: radial-gradient(circle at 30% 20%, #1f2833, #0b0c10 65%); box-shadow: 0 20px 60px rgba(0,0,0,0.5); max-width: min(1100px, 94vw); max-height: 72vh; }
+    .meta { opacity: .85; font-size: 13px; text-align: center; line-height: 1.6; }
+    .controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+    button, label { background: #1f2833; color: #66fcf1; border: 1px solid #45a29e55; padding: 10px 14px; border-radius: 10px; cursor: pointer; font: inherit; transition: transform .08s ease, background .2s; }
+    button:hover, label:hover { background: #2a3544; transform: translateY(-1px); }
+  </style>
+</head>
+<body>
+  <h1>🌀 Aether Curiosity — Generative Flow Field</h1>
+  <canvas id="stage" aria-label="Generative flow field animation"></canvas>
+  <div class="controls">
+    <button id="btnRegenerate">Regenerate</button>
+    <button id="btnPause">Pause</button>
+    <label>Speed <input id="rngSpeed" type="range" min="1" max="100" value="40" /></label>
+    <label>Particles <input id="rngCount" type="range" min="200" max="6000" value="2200" /></label>
+  </div>
+  <div class="meta">
+    Move mouse to gently steer the field. Resize the window to redraw.
+  </div>
+
+  <script>
+    const canvas = document.getElementById('stage');
+    const ctx = canvas.getContext('2d');
+    const btnRegenerate = document.getElementById('btnRegenerate');
+    const btnPause = document.getElementById('btnPause');
+    const rngSpeed = document.getElementById('rngSpeed');
+    const rngCount = document.getElementById('rngCount');
+
+    let W = 0, H = 0, particles = [], running = true, mouse = { x: -9999, y: -9999 };
+    let seed = Math.random() * 12345;
+
+    function rand(x) {
+      let s = seed + x * 9301 + 49297;
+      s = (s * 49297 + 9301) & 0x7fffffff;
+      return (s >>> 0) / 0xffffffff;
+    }
+
+    function noise(x, y, t) {
+      const s = Math.sin(x * 0.012 + t) * Math.cos(y * 0.013 + t * 0.7);
+      const s2 = Math.sin((x + y) * 0.009 + t * 1.3);
+      const s3 = Math.cos(x * 0.019 - y * 0.014 + t * 0.4);
+      return (s + s2 * 0.7 + s3 * 0.5) / 2.7;
+    }
+
+    function hsl(i, alpha) {
+      const hue = (210 + i * 28 + performance.now() * 0.005) % 360;
+      return `hsla(${hue},85%,62%,${alpha})`;
+    }
+
+    function resize() {
+      const maxW = Math.min(1100, window.innerWidth * 0.94);
+      const maxH = window.innerHeight * 0.72;
+      const ratio = maxW / maxH;
+      let w = maxW, h = maxH;
+      if (w / h > ratio) { w = h * ratio; } else { h = w / ratio; }
+      canvas.width = Math.floor(w * devicePixelRatio);
+      canvas.height = Math.floor(h * devicePixelRatio);
+      canvas.style.width = Math.floor(w) + 'px';
+      canvas.style.height = Math.floor(h) + 'px';
+      W = canvas.width; H = canvas.height;
+    }
+
+    function spawnParticles() {
+      const count = parseInt(rngCount.value, 10) || 2200;
+      particles = new Array(count);
+      for (let i = 0; i < count; i++) {
+        particles[i] = {
+          x: rand(i) * W,
+          y: rand(i + 1) * H,
+          vx: 0, vy: 0,
+          life: rand(i + 2),
+          maxLife: 0.55 + rand(i + 3) * 0.9,
+          size: 0.7 + rand(i + 4) * 1.6,
+        };
+      }
+    }
+
+    function frame() {
+      if (!running) return requestAnimationFrame(frame);
+      const speed = rngSpeed.value / 40;
+      const t = performance.now() * 0.00025 * speed;
+
+      ctx.fillStyle = 'rgba(11,12,16,0.14)';
+      ctx.fillRect(0, 0, W, H);
+
+      const mx = mouse.x * devicePixelRatio;
+      const my = mouse.y * devicePixelRatio;
+
+      for (let i = 0, len = particles.length; i < len; i++) {
+        const p = particles[i];
+        const angle = noise(p.x, p.y, t) * Math.PI * 4;
+        let ax = Math.cos(angle);
+        let ay = Math.sin(angle);
+
+        const dx = mx - p.x, dy = my - p.y;
+        const d2 = dx * dx + dy * dy + 1;
+        if (d2 < 180000) {
+          const f = 180000 / d2 * 0.00004;
+          ax += dx * f;
+          ay += dy * f;
+        }
+
+        const mag = Math.hypot(ax, ay) + 0.0001;
+        ax /= mag; ay /= mag;
+
+        p.vx = p.vx * 0.88 + ax * speed * 1.1;
+        p.vy = p.vy * 0.88 + ay * speed * 1.1;
+        p.x += p.vx; p.y += p.vy;
+
+        p.life += 0.004 * speed;
+        if (p.life > p.maxLife || p.x < -20 || p.x > W + 20 || p.y < -20 || p.y > H + 20) {
+          p.x = rand(i + 10 + performance.now() * 0.0001) * W;
+          p.y = rand(i + 11 + performance.now() * 0.0001) * H;
+          p.vx = 0; p.vy = 0; p.life = 0;
+        }
+
+        const alpha = Math.max(0, 1 - p.life / p.maxLife) * 0.9;
+        ctx.fillStyle = hsl(i, alpha);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * devicePixelRatio, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      requestAnimationFrame(frame);
+    }
+
+    window.addEventListener('resize', () => { resize(); spawnParticles(); });
+    window.addEventListener('pointermove', (e) => {
+      const r = canvas.getBoundingClientRect();
+      mouse.x = e.clientX - r.left;
+      mouse.y = e.clientY - r.top;
+    });
+    window.addEventListener('pointerleave', () => { mouse.x = -9999; mouse.y = -9999; });
+
+    btnRegenerate.addEventListener('click', () => { seed = Math.random() * 12345; resize(); spawnParticles(); });
+    btnPause.addEventListener('click', () => { running = !running; btnPause.textContent = running ? 'Pause' : 'Play'; });
+
+    resize();
+    spawnParticles();
+    frame();
+  </script>
+</body>
+</html>

@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dream Machine</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a12;
+    overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color: #e0e0e0;
+  }
+  canvas {
+    display: block;
+    cursor: crosshair;
+  }
+  .overlay {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .title {
+    font-size: 14px;
+    font-weight: 300;
+    letter-spacing: 4px;
+    color: rgba(255,255,255,0.7);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .subtitle {
+    font-size: 11px;
+    color: rgba(255,255,255,0.35);
+    letter-spacing: 1px;
+  }
+  .controls {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: flex;
+    gap: 12px;
+    pointer-events: all;
+  }
+  .btn {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: rgba(255,255,255,0.7);
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 11px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+  .btn:hover {
+    background: rgba(255,255,255,0.12);
+    border-color: rgba(255,255,255,0.3);
+    color: #fff;
+  }
+  .info {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10;
+    font-size: 10px;
+    color: rgba(255,255,255,0.3);
+    text-align: right;
+    letter-spacing: 1px;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+  <div class="overlay">
+    <div class="title">Dream Machine</div>
+    <div class="subtitle">Move your cursor to weave dreams</div>
+  </div>
+  <div class="info">
+    CLICK — burst<br>
+    SPACE — pause<br>
+    SEGMENTS — 1-9<br>
+    C — cycle palette<br>
+    R — reset
+  </div>
+  <div class="controls">
+    <button class="btn" onclick="cyclePalette()">PALETTE</button>
+    <button class="btn" onclick="toggleSymmetry()">SYMMETRY</button>
+    <button class="btn" onclick="saveImage()">SAVE PNG</button>
+    <button class="btn" onclick="resetCanvas()">RESET</button>
+  </div>
+  <canvas id="canvas"></canvas>
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    let w, h, cx, cy;
+    function resize() {
+      w = canvas.width = window.innerWidth;
+      h = canvas.height = window.innerHeight;
+      cx = w / 2;
+      cy = h / 2;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    let segments = 8;
+    let paletteIndex = 0;
+    let symmetry = true;
+    let paused = false;
+
+    const palettes = [
+      { name: 'Nebula', colors: ['#ff006e', '#8338ec', '#3a86ff', '#fb5607', '#ffbe0b'] },
+      { name: 'Aurora', colors: ['#06ffa5', '#00d4ff', '#7b2ff7', '#ff2e96', '#00ff88'] },
+      { name: 'Ember', colors: ['#ff4500', '#ff8c00', '#ffd700', '#ff6347', '#ff1493'] },
+      { name: 'Ocean', colors: ['#0077b6', '#00b4d8', '#90e0ef', '#48cae4', '#023e8a'] },
+      { name: 'Forest', colors: ['#2d6a4f', '#40916c', '#52b788', '#74c69d', '#b7e4c7'] },
+      { name: 'Cosmic', colors: ['#e0aaff', '#c77dff', '#9d4edd', '#7b2cbf', '#3c096c'] },
+    ];
+
+    function getColors() {
+      return palettes[paletteIndex].colors;
+    }
+
+    let particles = [];
+    let mouse = { x: cx, y: cy, active: false };
+
+    class Particle {
+      constructor(x, y, burst = false) {
+        this.x = x;
+        this.y = y;
+        this.originX = x;
+        this.originY = y;
+        this.vx = (Math.random() - 0.5) * (burst ? 4 : 1);
+        this.vy = (Math.random() - 0.5) * (burst ? 4 : 1);
+        this.life = 1;
+        this.decay = 0.003 + Math.random() * 0.008;
+        this.size = 1.5 + Math.random() * 2.5;
+        this.angle = Math.random() * Math.PI * 2;
+        this.spin = (Math.random() - 0.5) * 0.02;
+        this.orbit = 20 + Math.random() * 80;
+        this.orbitSpeed = (Math.random() - 0.5) * 0.02;
+        this.color = getColors()[Math.floor(Math.random() * getColors().length)];
+        this.hue = Math.random();
+      }
+      update() {
+        if (paused) return;
+        const dx = mouse.x - this.x;
+        const dy = mouse.y - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 200 && mouse.active) {
+          const force = (200 - dist) / 200;
+          this.vx += (dx / dist) * force * 0.3;
+          this.vy += (dy / dist) * force * 0.3;
+        }
+        this.vx *= 0.98;
+        this.vy *= 0.98;
+        this.x += this.vx;
+        this.y += this.vy;
+        this.angle += this.spin;
+        this.life -= this.decay;
+        this.hue = (this.hue + 0.001) % 1;
+      }
+      draw(ctx) {
+        const colors = getColors();
+        const colorIdx = Math.floor(this.hue * colors.length) % colors.length;
+        const alpha = this.life * 0.8;
+        ctx.strokeStyle = colors[colorIdx];
+        ctx.globalAlpha = alpha;
+        ctx.lineWidth = this.size;
+        ctx.beginPath();
+        ctx.moveTo(this.x, this.y);
+        ctx.lineTo(
+          this.x + Math.cos(this.angle) * this.orbit * this.life,
+          this.y + Math.sin(this.angle) * this.orbit * this.life
+        );
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    function addParticles(x, y, count, burst = false) {
+      for (let i = 0; i < count; i++) {
+        particles.push(new Particle(x, y, burst));
+      }
+    }
+
+    function drawKaleidoscope() {
+      if (!symmetry) {
+        ctx.save();
+        ctx.translate(cx, cy);
+        particles.forEach(p => {
+          p.update();
+          p.draw(ctx);
+        });
+        ctx.restore();
+        return;
+      }
+
+      const angleStep = (Math.PI * 2) / segments;
+      ctx.save();
+      ctx.translate(cx, cy);
+      for (let s = 0; s < segments; s++) {
+        ctx.save();
+        ctx.rotate(angleStep * s);
+        if (s % 2 === 1) ctx.scale(1, -1);
+        particles.forEach(p => {
+          const rx = p.x - cx;
+          const ry = p.y - cy;
+          const px = rx * Math.cos(angleStep * s) - ry * Math.sin(angleStep * s);
+          const py = rx * Math.sin(angleStep * s) + ry * Math.cos(angleStep * s);
+          const dx = px;
+          const dy = py;
+          const nx = p.x - cx;
+          const ny = p.y - cy;
+          p.update();
+          const colors = getColors();
+          const colorIdx = Math.floor(p.hue * colors.length) % colors.length;
+          const alpha = p.life * 0.8;
+          ctx.strokeStyle = colors[colorIdx];
+          ctx.globalAlpha = alpha;
+          ctx.lineWidth = p.size;
+          ctx.beginPath();
+          const px1 = nx + Math.cos(p.angle + angleStep * s) * p.orbit * p.life;
+          const py1 = ny + Math.sin(p.angle + angleStep * s) * p.orbit * p.life;
+          ctx.moveTo(nx, ny);
+          ctx.lineTo(px1, py1);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        });
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
+    function animate() {
+      if (!paused) {
+        ctx.fillStyle = 'rgba(10, 10, 18, 0.08)';
+        ctx.fillRect(0, 0, w, h);
+      }
+      drawKaleidoscope();
+      particles = particles.filter(p => p.life > 0);
+      if (particles.length > 1500) particles.splice(0, particles.length - 1500);
+      if (mouse.active && !paused) {
+        addParticles(mouse.x, mouse.y, 3);
+      }
+      requestAnimationFrame(animate);
+    }
+
+    canvas.addEventListener('mousemove', e => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+      mouse.active = true;
+    });
+    canvas.addEventListener('mouseleave', () => mouse.active = false);
+
+    canvas.addEventListener('click', e => {
+      addParticles(e.clientX, e.clientY, 40, true);
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.key === ' ') { paused = !paused; e.preventDefault(); }
+      if (e.key >= '1' && e.key <= '9') segments = parseInt(e.key);
+      if (e.key === 'c' || e.key === 'C') cyclePalette();
+      if (e.key === 'r' || e.key === 'R') resetCanvas();
+    });
+
+    function cyclePalette() {
+      paletteIndex = (paletteIndex + 1) % palettes.length;
+    }
+    function toggleSymmetry() {
+      symmetry = !symmetry;
+    }
+    function resetCanvas() {
+      particles = [];
+      ctx.fillStyle = 'rgba(10, 10, 18, 1)';
+      ctx.fillRect(0, 0, w, h);
+    }
+    function saveImage() {
+      const link = document.createElement('a');
+      link.download = 'dream-machine-' + Date.now() + '.png';
+      link.href = canvas.toDataURL();
+      link.click();
+    }
+
+    animate();
+  </script>
+</body>
+</html>
