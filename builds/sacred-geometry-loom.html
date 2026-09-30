@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sacred Geometry Loom</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #888;
+  }
+  canvas { display: block; }
+  .hud {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 20px;
+    padding: 10px 24px;
+    background: rgba(10,10,15,0.8);
+    border: 1px solid #1a1a2e;
+    border-radius: 30px;
+    backdrop-filter: blur(10px);
+    font-size: 11px;
+    letter-spacing: 1px;
+    z-index: 10;
+  }
+  .hud span { color: #555; }
+  .hud .val { color: #7a7aff; }
+  .title {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 12px;
+    letter-spacing: 8px;
+    color: #333;
+    text-transform: uppercase;
+    z-index: 10;
+  }
+  .mode-indicator {
+    position: fixed;
+    top: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: #444;
+    z-index: 10;
+    transition: color 0.5s;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="title">Sacred Geometry Loom</div>
+<div class="mode-indicator" id="modeIndicator">■ FLOWER OF LIFE</div>
+<div class="hud">
+  <span>Mode: <span class="val" id="hudMode">1</span>/6</span>
+  <span>Layers: <span class="val" id="hudLayers">3</span></span>
+  <span>Speed: <span class="val" id="hudSpeed">1.0</span>x</span>
+  <span>Particles: <span class="val" id="hudParticles">0</span></span>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H, cx, cy;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// State
+let mode = 0;
+const modes = ['FLOWER OF LIFE', 'METATRON\'S CUBE', 'TORUS KNOT', 'SEED OF LIFE', 'VESICA PISCIS', 'GOLDEN SPIRAL'];
+let layers = 3;
+let speed = 1.0;
+let time = 0;
+let mouseX = cx, mouseY = cy;
+let mouseActive = false;
+let particles = [];
+let seeds = [];
+
+// Palette: cyan, violet, gold, emerald, rose, ice
+const palettes = [
+  ['#00d4ff', '#7b2fff', '#ffd700', '#00ffa3', '#ff6b9d', '#a0e0ff'],
+  ['#ff6b35', '#f7c948', '#ee5a24', '#ffa502', '#ff6348', '#ffd32a'],
+  ['#00ffa3', '#00d4aa', '#00ff88', '#7fff00', '#00ffd4', '#55ffaa'],
+  ['#ff6b9d', '#c471f5', '#fa71cd', '#ff6b9d', '#e040fb', '#ff80ab'],
+];
+let palette = palettes[0];
+
+// Utility
+const TAU = Math.PI * 2;
+const rand = (a, b) => Math.random() * (b - a) + a;
+const lerp = (a, b, t) => a + (b - a) * t;
+const dist = (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1);
+
+// Noise approximation
+function noise(x, y, t) {
+  return Math.sin(x * 0.01 + t) * Math.cos(y * 0.012 - t * 0.7) +
+         Math.sin((x + y) * 0.008 + t * 1.3) * 0.5 +
+         Math.cos(x * 0.005 - y * 0.006 + t * 0.5) * 0.3;
+}
+
+class Particle {
+  constructor(x, y, color) {
+    this.x = x; this.y = y;
+    this.ox = x; this.oy = y;
+    this.vx = 0; this.vy = 0;
+    this.color = color;
+    this.life = 1;
+    this.decay = rand(0.003, 0.012);
+    this.size = rand(1, 3);
+  }
+  update() {
+    const dx = mouseX - this.x;
+    const dy = mouseY - this.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const force = mouseActive ? 80 / (d + 50) : 0;
+    this.vx += (dx / d) * force * 0.02;
+    this.vy += (dy / d) * force * 0.02;
+    this.vx += (this.ox - this.x) * 0.003;
+    this.vy += (this.oy - this.y) * 0.003;
+    this.vx *= 0.96; this.vy *= 0.96;
+    this.x += this.vx * speed;
+    this.y += this.vy * speed;
+    this.life -= this.decay * speed;
+  }
+  draw() {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, TAU);
+    ctx.fillStyle = this.color + Math.floor(this.life * 180).toString(16).padStart(2, '0');
+    ctx.fill();
+  }
+}
+
+class Seed {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.birth = time;
+    this.maxLife = rand(400, 900);
+    this.color = palette[Math.floor(rand(0, palette.length))];
+    this.ring = rand(15, 50);
+    this.rotSpeed = rand(-0.02, 0.02);
+    this.angle = rand(0, TAU);
+    this.petalCount = Math.floor(rand(3, 8));
+    this.size = rand(0.3, 1.2);
+  }
+  get alive() { return time - this.birth < this.maxLife; }
+  get progress() { return (time - this.birth) / this.maxLife; }
+  emit() {
+    if (Math.random() < 0.15 * speed) {
+      const a = this.angle + rand(-0.5, 0.5);
+      const r = this.ring * (0.3 + this.progress * 0.7);
+      const px = this.x + Math.cos(a) * r;
+      const py = this.y + Math.sin(a) * r;
+      particles.push(new Particle(px, py, this.color));
+    }
+  }
+  draw() {
+    const p = this.progress;
+    const alpha = p < 0.1 ? p / 0.1 : p > 0.8 ? (1 - p) / 0.2 : 1;
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = 1;
+    const ringR = this.ring * (0.5 + p * 0.5) * this.size;
+
+    // Petal ring
+    for (let i = 0; i < this.petalCount; i++) {
+      const a = this.angle + (TAU / this.petalCount) * i + time * this.rotSpeed * speed;
+      const px = this.x + Math.cos(a) * ringR;
+      const py = this.y + Math.sin(a) * ringR;
+      ctx.beginPath();
+      ctx.arc(px, py, 3 + p * 8, 0, TAU);
+      ctx.stroke();
+    }
+
+    // Center glow
+    const grd = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, ringR * 0.4);
+    grd.addColorStop(0, this.color + '44');
+    grd.addColorStop(1, this.color + '00');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, ringR * 0.4, 0, TAU);
+    ctx.fill();
+
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ===== DRAWING FUNCTIONS =====
+
+function drawBackground() {
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.12)';
+  ctx.fillRect(0, 0, W, H);
+}
+
+function drawFlowerOfLife() {
+  const r = Math.min(W, H) * 0.04 * layers;
+  const breathe = Math.sin(time * 0.5 * speed) * 0.1 + 1;
+
+  ctx.strokeStyle = palette[0] + '30';
+  ctx.lineWidth = 1;
+
+  // Center
+  drawCircle(cx, cy, r * breathe, palette[0] + '40');
+  // First ring: 6 circles
+  for (let i = 0; i < 6; i++) {
+    const a = (TAU / 6) * i + time * 0.2 * speed;
+    const px = cx + Math.cos(a) * r * breathe;
+    const py = cy + Math.sin(a) * r * breathe;
+    drawCircle(px, py, r * breathe, palette[i % palette.length] + '30');
+  }
+  // Second ring: 12 circles
+  if (layers > 1) {
+    for (let ring = 0; ring < 2; ring++) {
+      const ringR = r * 2 * breathe * (ring + 1);
+      const count = 6 + ring * 6;
+      for (let i = 0; i < count; i++) {
+        const a = (TAU / count) * i + time * 0.15 * speed + ring * 0.5;
+        const px = cx + Math.cos(a) * ringR;
+        const py = cy + Math.sin(a) * ringR;
+        drawCircle(px, py, r * breathe * 0.7, palette[(i + ring) % palette.length] + '20');
+      }
+    }
+  }
+  // Third layer: outer ring
+  if (layers > 2) {
+    for (let i = 0; i < 18; i++) {
+      const a = (TAU / 18) * i + time * 0.1 * speed;
+      const px = cx + Math.cos(a) * r * 3 * breathe;
+      const py = cy + Math.sin(a) * r * 3 * breathe;
+      drawCircle(px, py, r * breathe * 0.5, palette[i % palette.length] + '15');
+    }
+  }
+}
+
+function drawMetatronsCube() {
+  const r = Math.min(W, H) * 0.1 * layers;
+  const breathe = Math.sin(time * 0.4 * speed) * 0.08 + 1;
+  const points = [];
+
+  // Center
+  points.push({x: cx, y: cy});
+
+  // Inner hexagon
+  for (let i = 0; i < 6; i++) {
+    const a = (TAU / 6) * i + time * 0.15 * speed;
+    points.push({x: cx + Math.cos(a) * r * breathe, y: cy + Math.sin(a) * r * breathe});
+  }
+
+  // Outer hexagon
+  for (let i = 0; i < 6; i++) {
+    const a = (TAU / 6) * i + time * 0.1 * speed + Math.PI / 6;
+    points.push({x: cx + Math.cos(a) * r * 2 * breathe, y: cy + Math.sin(a) * r * 2 * breathe});
+  }
+
+  // Draw all connections
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < points.length; i++) {
+    for (let j = i + 1; j < points.length; j++) {
+      const d = dist(points[i].x, points[i].y, points[j].x, points[j].y);
+      if (d < r * 3 * breathe) {
+        const alpha = (1 - d / (r * 3 * breathe)) * 0.3;
+        ctx.strokeStyle = palette[i % palette.length] + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+        ctx.beginPath();
+        ctx.moveTo(points[i].x, points[i].y);
+        ctx.lineTo(points[j].x, points[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Draw nodes
+  for (let i = 0; i < points.length; i++) {
+    const pulse = Math.sin(time * 2 * speed + i) * 0.5 + 0.5;
+    ctx.fillStyle = palette[i % palette.length] + '88';
+    ctx.beginPath();
+    ctx.arc(points[i].x, points[i].y, 2 + pulse * 3, 0, TAU);
+    ctx.fill();
+  }
+}
+
+function drawTorusKnot() {
+  const p = 2, q = 3;
+  const scale = Math.min(W, H) * 0.12 * layers;
+  const R = scale * 2;
+  const r = scale * 0.6;
+  const tubeR = scale * 0.15;
+
+  ctx.lineWidth = 1;
+  const steps = 300;
+  const pts = [];
+
+  for (let i = 0; i < steps; i++) {
+    const t_val = (i / steps) * TAU * p;
+    const twist = time * 0.3 * speed;
+    const x = (R + r * Math.cos(q * t_val + twist)) * Math.cos(t_val + twist);
+    const y = (R + r * Math.cos(q * t_val + twist)) * Math.sin(t_val + twist);
+    const z = r * Math.sin(q * t_val + twist);
+    const persp = 600 / (600 + z);
+    pts.push({
+      x: cx + x * persp,
+      y: cy + y * persp,
+      z: z,
+      color: palette[Math.floor((i / steps) * palette.length)]
+    });
+  }
+
+  // Draw as flowing lines with depth
+  for (let i = 0; i < pts.length; i++) {
+    const p1 = pts[i];
+    const p2 = pts[(i + 1) % pts.length];
+    const depth = (p1.z + r) / (r * 2);
+    const alpha = 0.1 + depth * 0.4;
+    ctx.strokeStyle = p1.color + Math.floor(alpha * 200).toString(16).padStart(2, '0');
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p2.x, p2.y);
+    ctx.stroke();
+  }
+
+  // Occasional particles along the knot
+  if (Math.random() < 0.3) {
+    const idx = Math.floor(rand(0, pts.length));
+    particles.push(new Particle(pts[idx].x, pts[idx].y, pts[idx].color));
+  }
+}
+
+function drawSeedOfLife() {
+  const r = Math.min(W, H) * 0.08 * layers;
+  const breathe = Math.sin(time * 0.6 * speed) * 0.08 + 1;
+  const petals = 6;
+
+  ctx.lineWidth = 1.5;
+
+  // Center circle
+  drawCircle(cx, cy, r * breathe, palette[0] + '50');
+
+  // 6 petals (overlapping circles around center)
+  for (let i = 0; i < petals; i++) {
+    const a = (TAU / petals) * i + time * 0.2 * speed;
+    const px = cx + Math.cos(a) * r * breathe;
+    const py = cy + Math.sin(a) * r * breathe;
+    const overlap = r * breathe * 2 * Math.cos(Math.PI / petals);
+    drawCircle(px, py, r * breathe, palette[(i + 1) % palette.length] + '35');
+
+    // Petal tip highlight
+    const tipX = cx + Math.cos(a) * (r * breathe * 2);
+    const tipY = cy + Math.sin(a) * (r * breathe * 2);
+    const grd = ctx.createRadialGradient(tipX, tipY, 0, tipX, tipY, r * 0.3);
+    grd.addColorStop(0, palette[i % palette.length] + '33');
+    grd.addColorStop(1, palette[i % palette.length] + '00');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(tipX, tipY, r * 0.3, 0, TAU);
+    ctx.fill();
+  }
+
+  // Inner star
+  ctx.strokeStyle = palette[5] + '20';
+  for (let i = 0; i < petals; i++) {
+    const a = (TAU / petals) * i + time * 0.1 * speed;
+    const nextA = (TAU / petals) * ((i + 2) % petals) + time * 0.1 * speed;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(a) * r * breathe * 2.5, cy + Math.sin(a) * r * breathe * 2.5);
+    ctx.stroke();
+  }
+}
+
+function drawVesicaPiscis() {
+  const r = Math.min(W, H) * 0.1 * layers;
+  const breathe = Math.sin(time * 0.5 * speed) * 0.1 + 1;
+  const gap = r * 0.3;
+
+  const c1x = cx - gap * breathe;
+  const c1y = cy;
+  const c2x = cx + gap * breathe;
+  const c2y = cy;
+
+  // Two overlapping circles
+  drawCircle(c1x, c1y, r * breathe, palette[0] + '35');
+  drawCircle(c2x, c2y, r * breathe, palette[1] + '35');
+
+  // Intersection highlight
+  ctx.strokeStyle = palette[4] + '25';
+  ctx.lineWidth = 1;
+  const intersectR = r * breathe * 0.6;
+  ctx.beginPath();
+  ctx.arc(cx, cy, intersectR, 0, TAU);
+  ctx.stroke();
+
+  // Lens shape
+  const lensGrd = ctx.createRadialGradient(cx, cy, 0, cx, cy, intersectR);
+  lensGrd.addColorStop(0, palette[2] + '20');
+  lensGrd.addColorStop(1, palette[2] + '00');
+  ctx.fillStyle = lensGrd;
+  ctx.beginPath();
+  ctx.arc(cx, cy, intersectR, 0, TAU);
+  ctx.fill();
+
+  // Vertical alignment line
+  ctx.strokeStyle = palette[3] + '15';
+  ctx.setLineDash([5, 10]);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r * 2 * breathe);
+  ctx.lineTo(cx, cy + r * 2 * breathe);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawGoldenSpiral() {
+  const phi = 1.618033988749895;
+  const scale = Math.min(W, H) * 0.02 * layers;
+  const breathe = Math.sin(time * 0.3 * speed) * 0.05 + 1;
+  const turns = 6;
+
+  ctx.lineWidth = 1.5;
+
+  // Golden spiral
+  ctx.strokeStyle = palette[0] + '40';
+  ctx.beginPath();
+  let first = true;
+  for (let i = 0; i < 500; i++) {
+    const t = i / 500 * turns * TAU;
+    const r = scale * Math.pow(phi, t / (TAU / 2)) * breathe;
+    const x = cx + Math.cos(t + time * 0.1 * speed) * r;
+    const y = cy + Math.sin(t + time * 0.1 * speed) * r;
+    if (first) { ctx.moveTo(x, y); first = false; }
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Golden ratio rectangles
+  const rectCount = 5;
+  for (let i = 0; i < rectCount; i++) {
+    const s = scale * Math.pow(phi, i) * breathe;
+    const a = (TAU / rectCount) * i + time * 0.2 * speed;
+    ctx.strokeStyle = palette[i % palette.length] + '18';
+    ctx.strokeRect(cx + Math.cos(a) * s - s/2, cy + Math.sin(a) * s - s/2, s, s);
+  }
+
+  // Spiral dots
+  for (let i = 0; i < 50; i++) {
+    const t = i / 50 * turns * TAU;
+    const r = scale * Math.pow(phi, t / (TAU / 2)) * breathe;
+    const x = cx + Math.cos(t + time * 0.1 * speed) * r;
+    const y = cy + Math.sin(t + time * 0.1 * speed) * r;
+    const pulse = Math.sin(time * 2 + i * 0.3) * 0.5 + 0.5;
+    ctx.fillStyle = palette[i % palette.length] + Math.floor(pulse * 150).toString(16).padStart(2, '0');
+    ctx.beginPath();
+    ctx.arc(x, y, 1.5 + pulse * 2, 0, TAU);
+    ctx.fill();
+  }
+}
+
+function drawCircle(x, y, r, color) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, TAU);
+  ctx.stroke();
+}
+
+function drawPattern() {
+  switch (mode) {
+    case 0: drawFlowerOfLife(); break;
+    case 1: drawMetatronsCube(); break;
+    case 2: drawTorusKnot(); break;
+    case 3: drawSeedOfLife(); break;
+    case 4: drawVesicaPiscis(); break;
+    case 5: drawGoldenSpiral(); break;
+  }
+}
+
+// ===== INTERACTION =====
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  mouseActive = true;
+});
+canvas.addEventListener('mouseleave', () => { mouseActive = false; });
+canvas.addEventListener('click', e => {
+  seeds.push(new Seed(e.clientX, e.clientY));
+  // Burst
+  for (let i = 0; i < 20; i++) {
+    const a = rand(0, TAU);
+    const r = rand(5, 40);
+    particles.push(new Particle(e.clientX + Math.cos(a) * r, e.clientY + Math.sin(a) * r, palette[Math.floor(rand(0, palette.length))]));
+  }
+});
+
+document.addEventListener('keydown', e => {
+  switch (e.key) {
+    case '1': case '2': case '3': case '4': case '5': case '6':
+      mode = parseInt(e.key) - 1;
+      document.getElementById('hudMode').textContent = e.key;
+      document.getElementById('modeIndicator').textContent = '■ ' + modes[mode];
+      break;
+    case 'c': case 'C':
+      seeds = [];
+      particles = [];
+      ctx.fillStyle = '#0a0a0f';
+      ctx.fillRect(0, 0, W, H);
+      break;
+    case ' ':
+      speed = speed === 0 ? 1 : 0;
+      document.getElementById('hudSpeed').textContent = speed.toFixed(1);
+      break;
+    case 'ArrowUp':
+      layers = Math.min(5, layers + 1);
+      document.getElementById('hudLayers').textContent = layers;
+      break;
+    case 'ArrowDown':
+      layers = Math.max(1, layers - 1);
+      document.getElementById('hudLayers').textContent = layers;
+      break;
+    case 'p': case 'P':
+      palette = palettes[(palettes.indexOf(palette) + 1) % palettes.length];
+      break;
+  }
+});
+
+// ===== MAIN LOOP =====
+function loop() {
+  time += 0.016 * speed;
+
+  drawBackground();
+  drawPattern();
+
+  // Seeds
+  for (let i = seeds.length - 1; i >= 0; i--) {
+    seeds[i].emit();
+    seeds[i].draw();
+    if (!seeds[i].alive) seeds.splice(i, 1);
+  }
+
+  // Particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update();
+    particles[i].draw();
+    if (particles[i].life <= 0) particles.splice(i, 1);
+  }
+
+  // HUD
+  document.getElementById('hudParticles').textContent = particles.length + seeds.length;
+
+  // Fade particles when idle
+  if (!mouseActive && particles.length > 500) {
+    particles.splice(0, 10);
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// Initial clear
+ctx.fillStyle = '#0a0a0f';
+ctx.fillRect(0, 0, W, H);
+
+// Start with a few seeds
+for (let i = 0; i < 3; i++) {
+  seeds.push(new Seed(cx + rand(-100, 100), cy + rand(-100, 100)));
+}
+
+loop();
+</script>
+</body>
+</html>
