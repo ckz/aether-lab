@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosmic Fireplace — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; cursor: none; }
+  canvas { display: block; }
+  #ui {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    font-family: 'Courier New', monospace; font-size: 11px;
+    color: rgba(255,180,80,0.6); letter-spacing: 2px; text-transform: uppercase;
+    pointer-events: none; user-select: none;
+  }
+  #palette-label {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    font-family: 'Courier New', monospace; font-size: 10px;
+    color: rgba(255,180,80,0.35); letter-spacing: 3px; text-transform: uppercase;
+    pointer-events: none; user-select: none;
+  }
+  #custom-cursor {
+    position: fixed; width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(255,200,100,0.8); pointer-events: none;
+    transform: translate(-50%, -50%); z-index: 999;
+    box-shadow: 0 0 8px rgba(255,150,50,0.6);
+  }
+  #hint {
+    position: fixed; bottom: 44px; left: 50%; transform: translateX(-50%);
+    font-family: 'Courier New', monospace; font-size: 10px;
+    color: rgba(255,180,80,0.25); letter-spacing: 1px;
+    pointer-events: none; user-select: none; white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+  <div id="ui">✦ Cosmic Fireplace — 1-5 Palette &nbsp;|&nbsp; Space Pause &nbsp;|&nbsp; C Clear ✦</div>
+  <div id="hint">Move cursor near the hearth · click to burst embers</div>
+  <div id="palette-label">Classic Fire</div>
+  <div id="custom-cursor"></div>
+  <canvas id="c"></canvas>
+
+<script>
+(() => {
+'use strict';
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const cursor = document.getElementById('custom-cursor');
+const paletteLabel = document.getElementById('palette-label');
+
+let W = canvas.width = window.innerWidth;
+let H = canvas.height = window.innerHeight;
+
+window.addEventListener('resize', () => {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  hearthX = W * 0.5;
+  hearthY = H * 0.78;
+  hearthRX = W * 0.16;
+  hearthRY = H * 0.07;
+});
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let paused = false;
+let currentPalette = 0;
+let frame = 0;
+let mouse = { x: W * 0.5, y: H * 0.5, active: false };
+let hearthX = W * 0.5, hearthY = H * 0.78;
+let hearthRX = W * 0.16, hearthRY = H * 0.07;
+
+// ─── PALETTES ────────────────────────────────────────────────────────────────
+const palettes = [
+  { name: 'Classic Fire',  c: ['#ff2200','#ff5500','#ff8800','#ffaa22','#ffdd66','#ffee99','#fff8e0'] },
+  { name: 'Ethereal Ice',  c: ['#0033ff','#0066ff','#0099ff','#22ccff','#66eeff','#aaffff','#eeffff'] },
+  { name: 'Void Ember',    c: ['#8800ff','#aa22ff','#cc44ff','#ee66ff','#ff88ff','#ffaaff','#ffddff'] },
+  { name: 'Verdant Spirit',c: ['#004400','#006600','#008800','#00aa00','#22cc22','#44ff44','#88ff88'] },
+  { name: 'Golden Dawn',   c: ['#aa4400','#cc6600','#ee8800','#ffaa22','#ffcc44','#ffdd88','#ffffcc'] },
+];
+
+function pal() { return palettes[currentPalette].c; }
+function randColor(a=0.7, b=1.0) {
+  const c = pal();
+  const hex = c[~~(Math.random() * c.length)];
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  const a2 = a + Math.random() * (b - a);
+  return `rgba(${r},${g},${b},${a2})`;
+}
+function hexToRgb(hex) {
+  return [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)];
+}
+
+// ─── LAYER 1: LOGS ────────────────────────────────────────────────────────────
+const logs = [];
+for (let i = 0; i < 5; i++) {
+  logs.push({
+    x: hearthX + (Math.random() - 0.5) * hearthRX * 1.6,
+    y: hearthY + (Math.random() - 0.5) * hearthRY * 1.4,
+    w: 20 + Math.random() * 35,
+    h: 8 + Math.random() * 6,
+    angle: (Math.random() - 0.5) * Math.PI * 0.6,
+    color: ['#1a0a00','#2a1200','#3d1a00','#4a1f00','#0f0500'][~~(Math.random()*5)],
+  });
+}
+
+// ─── LAYER 2: GLOW ORBS ───────────────────────────────────────────────────────
+const glowOrbs = [];
+for (let i = 0; i < 4; i++) {
+  const rgb = hexToRgb(pal()[~~(Math.random() * 3)]);
+  glowOrbs.push({
+    x: hearthX + (Math.random()-0.5) * hearthRX * 1.2,
+    y: hearthY + (Math.random()-0.5) * hearthRY * 2,
+    r: 60 + Math.random() * 80,
+    rgb,
+    phase: Math.random() * Math.PI * 2,
+    speed: 0.008 + Math.random() * 0.015,
+  });
+}
+
+// ─── LAYER 3: FIRE PARTICLES ─────────────────────────────────────────────────
+const MAX_FIRE = 600;
+const fireParts = [];
+
+function spawnFire() {
+  if (fireParts.length >= MAX_FIRE) return;
+  const mx = mouse.x, my = mouse.y;
+  const dx = mx - hearthX, dy = my - hearthY;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const maxInfluence = Math.min(W, H) * 0.45;
+
+  let intensity = 1;
+  if (dist < maxInfluence) {
+    intensity = 1 + 2.5 * (1 - dist / maxInfluence);
+  }
+
+  const count = ~~(3 * intensity) + 1;
+  for (let i = 0; i < count; i++) {
+    if (fireParts.length >= MAX_FIRE) break;
+    const ox = (Math.random()-0.5) * hearthRX * 1.3;
+    const oy = (Math.random()-0.5) * hearthRY * 0.6;
+    fireParts.push({
+      x: hearthX + ox,
+      y: hearthY - 4 + oy,
+      vx: (Math.random()-0.5) * 1.4 + (dist < maxInfluence ? (dx/Math.max(dist,1)) * 0.6 : 0),
+      vy: -(0.8 + Math.random() * 2.2),
+      life: 1,
+      decay: 0.005 + Math.random() * 0.018,
+      size: 4 + Math.random() * 14,
+      wobb: Math.random() * Math.PI * 2,
+    });
+  }
+}
+
+// ─── LAYER 4: EMBERS ─────────────────────────────────────────────────────────
+const MAX_EMBERS = 120;
+const embers = [];
+
+function spawnEmber(burst = false) {
+  if (embers.length >= MAX_EMBERS) return;
+  const intensity = burst ? 4 : 1;
+  for (let i = 0; i < intensity; i++) {
+    if (embers.length >= MAX_EMBERS) break;
+    embers.push({
+      x: hearthX + (Math.random()-0.5) * hearthRX * 2,
+      y: hearthY - Math.random() * 20,
+      vx: (Math.random()-0.5) * 1.6,
+      vy: -(0.4 + Math.random() * 1.8),
+      life: 1,
+      decay: 0.002 + Math.random() * 0.009,
+      size: 1 + Math.random() * 2.5,
+      twink: Math.random() * Math.PI * 2,
+    });
+  }
+}
+
+// ─── LAYER 5: SMOKE ──────────────────────────────────────────────────────────
+const MAX_SMOKE = 40;
+const smokeParts = [];
+
+function spawnSmoke() {
+  if (smokeParts.length >= MAX_SMOKE || Math.random() > 0.04) return;
+  smokeParts.push({
+    x: hearthX + (Math.random()-0.5) * hearthRX * 0.8,
+    y: hearthY - hearthRY * 0.5,
+    vx: (Math.random()-0.5) * 0.35,
+    vy: -(0.15 + Math.random() * 0.45),
+    life: 1,
+    decay: 0.002 + Math.random() * 0.006,
+    size: 6 + Math.random() * 18,
+    rot: Math.random() * Math.PI * 2,
+  });
+}
+
+// ─── BURST SYSTEM ────────────────────────────────────────────────────────────
+function burst(cx, cy) {
+  for (let i = 0; i < 35; i++) {
+    if (fireParts.length >= MAX_FIRE) break;
+    const ang = Math.random() * Math.PI * 2;
+    const spd = 1.5 + Math.random() * 4;
+    const c = pal()[~~(Math.random() * 4)];
+    fireParts.push({
+      x: cx, y: cy,
+      vx: Math.cos(ang)*spd, vy: Math.sin(ang)*spd - 1.5,
+      life: 1, decay: 0.012 + Math.random() * 0.025,
+      size: 5 + Math.random() * 14, wobb: Math.random() * Math.PI * 2,
+    });
+  }
+  for (let i = 0; i < 18; i++) {
+    if (embers.length >= MAX_EMBERS) break;
+    const ang = Math.random() * Math.PI * 2;
+    const spd = 2 + Math.random() * 5;
+    embers.push({
+      x: cx, y: cy,
+      vx: Math.cos(ang)*spd, vy: Math.sin(ang)*spd - 2,
+      life: 1, decay: 0.004 + Math.random() * 0.012,
+      size: 1 + Math.random() * 3, twink: Math.random() * Math.PI * 2,
+    });
+  }
+}
+
+// ─── RENDER HELPERS ──────────────────────────────────────────────────────────
+function drawLog(log) {
+  ctx.save();
+  ctx.translate(log.x, log.y);
+  ctx.rotate(log.angle);
+  const g = ctx.createLinearGradient(-log.w/2, -log.h/2, log.w/2, log.h/2);
+  g.addColorStop(0, log.color);
+  g.addColorStop(1, '#2a1000');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.roundRect(-log.w/2, -log.h/2, log.w, log.h, 4);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawGlowOrbs() {
+  glowOrbs.forEach(o => {
+    const a = 0.06 + 0.05 * Math.sin(frame * o.speed + o.phase);
+    const pulse = 1 + 0.15 * Math.sin(frame * o.speed * 1.5);
+    const g = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, o.r * pulse);
+    g.addColorStop(0, `rgba(${o.rgb[0]},${o.rgb[1]},${o.rgb[2]},${a * 1.5})`);
+    g.addColorStop(0.4, `rgba(${o.rgb[0]},${o.rgb[1]},${o.rgb[2]},${a * 0.5})`);
+    g.addColorStop(1, 'transparent');
+    ctx.fillStyle = g;
+    ctx.fillRect(o.x - o.r*2, o.y - o.r*2, o.r*4, o.r*4);
+  });
+}
+
+function drawFire(p) {
+  const c = pal();
+  const idx = ~~((1 - p.life) * (c.length - 1));
+  const next = Math.min(idx + 1, c.length - 1);
+  const t = (1 - p.life) * (c.length - 1) - idx;
+  const [r1,g1,b1] = hexToRgb(c[idx]);
+  const [r2,g2,b2] = hexToRgb(c[next]);
+  const r = ~~(r1 + (r2-r1)*t), g = ~~(g1 + (g2-g1)*t), b = ~~(b1 + (b2-b1)*t);
+  const a = p.life * 0.85;
+
+  const flicker = 1 + 0.12 * Math.sin(frame * 0.3 + p.wobb);
+  const size = p.size * p.life * flicker;
+
+  const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, size);
+  grad.addColorStop(0, `rgba(255,255,240,${a})`);
+  grad.addColorStop(0.25, `rgba(${r},${g},${b},${a * 0.85})`);
+  grad.addColorStop(0.6, `rgba(${r},${~~(g*0.5)},0,${a * 0.35})`);
+  grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawEmber(p) {
+  const alpha = p.life * (0.5 + 0.5 * Math.sin(p.twink + frame * 0.15));
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = pal()[~~(Math.random() * 3)];
+  ctx.shadowColor = ctx.fillStyle;
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawSmoke(p) {
+  ctx.save();
+  ctx.globalAlpha = p.life * 0.04;
+  ctx.fillStyle = '#444';
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawHearth() {
+  // Stone surround
+  ctx.save();
+  const hw = hearthRX * 2.2, hh = hearthRY * 2.8;
+  const hx = hearthX - hw/2, hy = hearthY - hh * 0.15;
+  const sg = ctx.createLinearGradient(hx, hy, hx, hy + hh);
+  sg.addColorStop(0, '#3a3a4a');
+  sg.addColorStop(0.5, '#252530');
+  sg.addColorStop(1, '#1a1a22');
+  ctx.fillStyle = sg;
+
+  ctx.beginPath();
+  ctx.moveTo(hx + 10, hy);
+  ctx.lineTo(hx + hw - 10, hy);
+  ctx.quadraticCurveTo(hx + hw + 5, hy, hx + hw, hy + 12);
+  ctx.lineTo(hx + hw, hy + hh - 15);
+  ctx.quadraticCurveTo(hx + hw, hy + hh, hx + hw - 12, hy + hh);
+  ctx.lineTo(hx + 12, hy + hh);
+  ctx.quadraticCurveTo(hx, hy + hh, hx, hy + hh - 15);
+  ctx.lineTo(hx, hy + 12);
+  ctx.quadraticCurveTo(hx, hy, hx + 10, hy);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawHearthGlow() {
+  // Warm floor reflection
+  const g = ctx.createRadialGradient(hearthX, hearthY + 10, 0, hearthX, hearthY + 10, hearthRX * 2.2);
+  const [r,gv,b] = hexToRgb(pal()[1]);
+  g.addColorStop(0, `rgba(${r},${gv},${b},0.12)`);
+  g.addColorStop(0.5, `rgba(${r},${gv},${b},0.04)`);
+  g.addColorStop(1, 'transparent');
+  ctx.fillStyle = g;
+  ctx.fillRect(hearthX - hearthRX*3, hearthY - 20, hearthRX*6, hearthRY*4);
+
+  // Central core glow
+  const pulse = 1 + 0.2 * Math.sin(frame * 0.04);
+  const cg = ctx.createRadialGradient(hearthX, hearthY - 10, 0, hearthX, hearthY - 10, hearthRX * 1.1 * pulse);
+  const [cr,cg2,cb] = hexToRgb(pal()[0]);
+  cg.addColorStop(0, `rgba(${cr},${cg2},${cb},0.35)`);
+  cg.addColorStop(0.4, `rgba(${cr},${cg2},${cb},0.1)`);
+  cg.addColorStop(1, 'transparent');
+  ctx.fillStyle = cg;
+  ctx.fillRect(hearthX - hearthRX*2, hearthY - 60, hearthRX*4, 80);
+}
+
+function drawBackground() {
+  // Deep dark gradient
+  const bg = ctx.createRadialGradient(W/2, H * 0.75, 0, W/2, H * 0.75, Math.max(W, H) * 0.8);
+  bg.addColorStop(0, '#1a0e06');
+  bg.addColorStop(0.5, '#0c0604');
+  bg.addColorStop(1, '#030201');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Warm ambient fill from hearth
+  const am = ctx.createRadialGradient(hearthX, hearthY, 0, hearthX, hearthY, Math.max(W, H) * 0.55);
+  const [ar,ag2,ab] = hexToRgb(pal()[1]);
+  am.addColorStop(0, `rgba(${ar},${ag2},${ab},0.06)`);
+  am.addColorStop(1, 'transparent');
+  ctx.fillStyle = am;
+  ctx.fillRect(0, 0, W, H);
+
+  // Vignette
+  const vig = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.3, W/2, H/2, Math.max(W,H)*0.72);
+  vig.addColorStop(0, 'transparent');
+  vig.addColorStop(1, 'rgba(0,0,0,0.65)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ─── MAIN LOOP ───────────────────────────────────────────────────────────────
+function loop() {
+  if (!paused) {
+    frame++;
+    spawnFire();
+    if (frame % 4 === 0) spawnEmber();
+    spawnSmoke();
+  }
+
+  ctx.clearRect(0, 0, W, H);
+  drawBackground();
+  drawHearthGlow();
+  drawGlowOrbs();
+  drawHearth();
+
+  // Smoke (behind flames)
+  smokeParts.forEach(p => {
+    drawSmoke(p);
+    if (!paused) {
+      p.x += p.vx; p.y += p.vy;
+      p.life -= p.decay;
+      p.size *= 1.005;
+      p.rot += 0.003;
+    }
+  });
+
+  // Flames
+  fireParts.forEach(p => {
+    drawFire(p);
+    if (!paused) {
+      p.wobb += 0.08;
+      p.vx += (Math.random()-0.5) * 0.12;
+      p.vy -= 0.012;
+      p.x += p.vx; p.y += p.vy;
+      p.life -= p.decay;
+      p.size *= 0.996;
+    }
+  });
+
+  // Embers (on top)
+  embers.forEach(p => {
+    drawEmber(p);
+    if (!paused) {
+      p.twink += 0.05;
+      p.vx += (Math.random()-0.5) * 0.06;
+      p.x += p.vx; p.y += p.vy;
+      p.life -= p.decay;
+    }
+  });
+
+  // Cleanup
+  for (let i = fireParts.length-1; i >= 0; i--) if (fireParts[i].life <= 0) fireParts.splice(i,1);
+  for (let i = embers.length-1; i >= 0; i--) if (embers[i].life <= 0) embers.splice(i,1);
+  for (let i = smokeParts.length-1; i >= 0; i--) if (smokeParts[i].life <= 0) smokeParts.splice(i,1);
+
+  requestAnimationFrame(loop);
+}
+
+// ─── INPUT ───────────────────────────────────────────────────────────────────
+document.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+  cursor.style.left = e.clientX + 'px';
+  cursor.style.top = e.clientY + 'px';
+});
+
+canvas.addEventListener('click', e => burst(e.clientX, e.clientY));
+
+document.addEventListener('keydown', e => {
+  if (e.key === ' ') { e.preventDefault(); paused = !paused; }
+  else if (e.key === 'c' || e.key === 'C') {
+    fireParts.length = 0; embers.length = 0; smokeParts.length = 0;
+  }
+  else if (e.key >= '1' && e.key <= '5') {
+    currentPalette = parseInt(e.key) - 1;
+    paletteLabel.textContent = palettes[currentPalette].name;
+    glowOrbs.forEach(o => {
+      const hex = pal()[~~(Math.random() * 3)];
+      o.rgb = hexToRgb(hex);
+    });
+  }
+});
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+  burst(t.clientX, t.clientY);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY;
+}, { passive: false });
+
+loop();
+})();
+</script>
+</body>
+</html>
