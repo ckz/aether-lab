@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Text Alchemy</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #08080f;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0; left: 0;
+    z-index: 0;
+  }
+  .ui {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 10;
+    padding: 20px 30px;
+    background: linear-gradient(transparent, rgba(8,8,15,0.95) 40%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .title {
+    font-size: 11px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    color: #556;
+    position: fixed;
+    top: 20px;
+    left: 30px;
+    z-index: 10;
+  }
+  .subtitle {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: #334;
+    position: fixed;
+    top: 40px;
+    left: 30px;
+    z-index: 10;
+  }
+  .stats {
+    position: fixed;
+    top: 20px;
+    right: 30px;
+    z-index: 10;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: #445;
+    text-align: right;
+    line-height: 1.8;
+  }
+  .input-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    width: 100%;
+    max-width: 700px;
+  }
+  #textInput {
+    flex: 1;
+    background: rgba(20, 20, 35, 0.8);
+    border: 1px solid #2a2a40;
+    border-radius: 8px;
+    padding: 14px 18px;
+    color: #ccc;
+    font-family: 'Courier New', monospace;
+    font-size: 15px;
+    outline: none;
+    transition: border-color 0.3s;
+    backdrop-filter: blur(10px);
+  }
+  #textInput:focus {
+    border-color: #556;
+  }
+  #textInput::placeholder {
+    color: #334;
+  }
+  button {
+    background: rgba(30, 30, 50, 0.8);
+    border: 1px solid #2a2a40;
+    border-radius: 8px;
+    padding: 14px 22px;
+    color: #889;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-transform: uppercase;
+    backdrop-filter: blur(10px);
+  }
+  button:hover {
+    background: rgba(40, 40, 70, 0.9);
+    border-color: #556;
+    color: #aab;
+  }
+  .hint {
+    font-size: 10px;
+    color: #334;
+    letter-spacing: 1px;
+    text-align: center;
+  }
+  .hint kbd {
+    background: #1a1a2a;
+    border: 1px solid #2a2a3a;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 10px;
+    color: #556;
+  }
+</style>
+</head>
+<body>
+  <div class="title">✦ Text Alchemy</div>
+  <div class="subtitle">transform words into living light</div>
+  <div class="stats" id="stats">
+    particles: 0<br>
+    glyphs: 0<br>
+    fps: 60
+  </div>
+  <canvas id="canvas"></canvas>
+  <div class="ui">
+    <div class="input-row">
+      <input type="text" id="textInput" placeholder="type something..." autofocus />
+      <button id="alchemize">⬡ Alchemize</button>
+      <button id="clear">✕</button>
+    </div>
+    <div class="hint">
+      <kbd>Enter</kbd> alchemize &nbsp; <kbd>Space</kbd> pause &nbsp; <kbd>C</kbd> clear &nbsp; <kbd>S</kbd> save &nbsp; click canvas to scatter
+    </div>
+  </div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H, DPR;
+function resize() {
+  DPR = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- State ---
+let particles = [];
+let glyphs = [];
+let paused = false;
+let mouse = { x: W / 2, y: H / 2, active: false };
+let lastTime = performance.now();
+let frameCount = 0;
+let fps = 60;
+let fpsTimer = 0;
+
+// --- Palettes ---
+const PALETTES = [
+  ['#ff6b9d', '#c44dff', '#4dc9f6', '#ffe66d', '#ff8a5c'],
+  ['#00ffc8', '#00a8ff', '#a855f7', '#ff0080', '#ffd700'],
+  ['#ff006e', '#8338ec', '#3a86ff', '#fb5607', '#ffbe0b'],
+  ['#e0aaff', '#c77dff', '#9d4edd', '#7b2ff7', '#5a189a'],
+  ['#f72585', '#b5179e', '#7209b7', '#560bad', '#480ca8'],
+  ['#06d6a0', '#1b9aaa', '#ef476f', '#ffc43d', '#06ffa5'],
+];
+
+function hashChar(ch) {
+  let h = 0;
+  for (let i = 0; i < ch.length; i++) {
+    h = ((h << 5) - h + ch.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+function pickFromSeed(seed, arr) {
+  return arr[Math.abs(seed) % arr.length];
+}
+
+// --- Particle ---
+class Particle {
+  constructor(x, y, ch) {
+    const seed = hashChar(ch);
+    this.x = x;
+    this.y = y;
+    this.originX = x;
+    this.originY = y;
+    this.char = ch;
+    this.seed = seed;
+
+    const palette = pickFromSeed(seed, PALETTES);
+    this.color = pickFromSeed(seed + 1, palette);
+    this.size = 1 + (seed % 40) / 10;
+    this.maxSize = this.size * 3;
+
+    this.vx = (Math.random() - 0.5) * 4;
+    this.vy = (Math.random() - 0.5) * 4;
+    this.life = 1;
+    this.decay = 0.002 + (seed % 30) / 3000;
+    this.waveAmp = 0.5 + (seed % 100) / 100;
+    this.waveFreq = 0.01 + (seed % 50) / 1000;
+    this.phase = Math.random() * Math.PI * 2;
+    this.drift = (seed % 3) - 1; // -1, 0, 1: drift direction
+    this.type = seed % 4; // particle shape type
+    this.trail = [];
+    this.maxTrail = 8 + (seed % 20);
+    this.pulsePhase = Math.random() * Math.PI * 2;
+  }
+
+  update(time) {
+    this.trail.push({ x: this.x, y: this.y });
+    if (this.trail.length > this.maxTrail) this.trail.shift();
+
+    this.pulsePhase += 0.03;
+    const pulse = Math.sin(this.pulsePhase) * 0.3 + 0.7;
+
+    // Organic drift
+    this.vx += Math.sin(time * this.waveFreq + this.phase) * this.waveAmp * 0.1;
+    this.vy += Math.cos(time * this.waveFreq * 1.3 + this.phase) * this.waveAmp * 0.1;
+
+    // Drift bias
+    this.vx += this.drift * 0.02;
+
+    // Mouse attraction
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 200) {
+        const force = (200 - dist) / 200 * 0.3;
+        this.vx += (dx / dist) * force;
+        this.vy += (dy / dist) * force;
+      }
+    }
+
+    // Damping
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Wrap
+    if (this.x < -50) this.x = W + 50;
+    if (this.x > W + 50) this.x = -50;
+    if (this.y < -50) this.y = H + 50;
+    if (this.y > H + 50) this.y = -50;
+
+    this.life -= this.decay;
+    this.currentSize = this.size * pulse * (0.5 + this.life * 0.5);
+    return this.life > 0;
+  }
+
+  draw(ctx) {
+    const alpha = this.life * 0.8;
+
+    // Trail
+    if (this.trail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(this.trail[0].x, this.trail[0].y);
+      for (let i = 1; i < this.trail.length; i++) {
+        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+      }
+      ctx.strokeStyle = this.color + '20';
+      ctx.lineWidth = this.currentSize * 0.3;
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = alpha;
+
+    switch (this.type) {
+      case 0: // circle with glow
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.currentSize, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.currentSize * 2, 0, Math.PI * 2);
+        ctx.fillStyle = this.color + '15';
+        ctx.fill();
+        break;
+      case 1: // diamond
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.phase);
+        ctx.beginPath();
+        ctx.moveTo(0, -this.currentSize * 1.5);
+        ctx.lineTo(this.currentSize, 0);
+        ctx.lineTo(0, this.currentSize * 1.5);
+        ctx.lineTo(-this.currentSize, 0);
+        ctx.closePath();
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        ctx.restore();
+        break;
+      case 2: // ring
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.currentSize * 1.5, 0, Math.PI * 2);
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        break;
+      case 3: // cross / star
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.phase * 0.5);
+        const s = this.currentSize;
+        ctx.beginPath();
+        ctx.moveTo(-s * 2, 0); ctx.lineTo(s * 2, 0);
+        ctx.moveTo(0, -s * 2); ctx.lineTo(0, s * 2);
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.restore();
+        break;
+    }
+
+    ctx.globalAlpha = 1;
+  }
+}
+
+// --- Glyph marker ---
+class GlyphMarker {
+  constructor(x, y, ch, color) {
+    this.x = x;
+    this.y = y;
+    this.char = ch;
+    this.color = color;
+    this.life = 1;
+    this.decay = 0.003;
+    this.maxLife = 1;
+    this.size = 14;
+  }
+  update() {
+    this.life -= this.decay;
+    this.size += 0.05;
+    return this.life > 0;
+  }
+  draw(ctx) {
+    ctx.globalAlpha = this.life * 0.4;
+    ctx.font = `${this.size}px Courier New`;
+    ctx.fillStyle = this.color;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(this.char, this.x, this.y);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// --- Alchemize text ---
+function alchemize(text) {
+  const chars = text.replace(/\s/g, '').split('');
+  if (chars.length === 0) return;
+
+  const totalChars = chars.length;
+  const cols = Math.ceil(Math.sqrt(totalChars * (W / H)));
+  const rows = Math.ceil(totalChars / cols);
+  const cellW = W / cols;
+  const cellH = H * 0.7 / rows;
+  const offsetY = H * 0.1;
+
+  chars.forEach((ch, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const cx = cellW * (col + 0.5) + (Math.random() - 0.5) * cellW * 0.5;
+    const cy = cellH * (row + 0.5) + offsetY + (Math.random() - 0.5) * cellH * 0.3;
+
+    const seed = hashChar(ch);
+    const palette = pickFromSeed(seed, PALETTES);
+    const color = pickFromSeed(seed + 1, palette);
+
+    // Spawn particles
+    const count = 5 + (seed % 25);
+    for (let j = 0; j < count; j++) {
+      const angle = (j / count) * Math.PI * 2 + seed;
+      const dist = Math.random() * 30;
+      particles.push(new Particle(
+        cx + Math.cos(angle) * dist,
+        cy + Math.sin(angle) * dist,
+        ch
+      ));
+    }
+
+    // Glyph marker
+    glyphs.push(new GlyphMarker(cx, cy, ch, color));
+  });
+}
+
+// --- Render ---
+function render(time) {
+  if (!paused) {
+    // Fade
+    ctx.fillStyle = 'rgba(8, 8, 15, 0.12)';
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle vignette
+    const vg = ctx.createRadialGradient(W/2, H/2, W*0.2, W/2, H/2, W*0.7);
+    vg.addColorStop(0, 'transparent');
+    vg.addColorStop(1, 'rgba(8,8,15,0.03)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+
+    const t = time * 0.001;
+
+    // Update & draw glyphs
+    glyphs = glyphs.filter(g => {
+      const alive = g.update();
+      if (alive) g.draw(ctx);
+      return alive;
+    });
+
+    // Update & draw particles
+    particles = particles.filter(p => {
+      const alive = p.update(t);
+      if (alive) p.draw(ctx);
+      return alive;
+    });
+
+    // FPS
+    frameCount++;
+    fpsTimer += time - lastTime;
+    lastTime = time;
+    if (fpsTimer >= 1000) {
+      fps = frameCount;
+      frameCount = 0;
+      fpsTimer = 0;
+    }
+  }
+
+  // Stats
+  document.getElementById('stats').innerHTML =
+    `particles: ${particles.length}<br>glyphs: ${glyphs.length}<br>fps: ${fps}`;
+
+  requestAnimationFrame(render);
+}
+
+// --- Events ---
+const input = document.getElementById('textInput');
+
+document.getElementById('alchemize').addEventListener('click', () => {
+  const text = input.value.trim();
+  if (text) alchemize(text);
+});
+
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const text = input.value.trim();
+    if (text) alchemize(text);
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.target === input) return;
+  if (e.key === ' ') { paused = !paused; e.preventDefault(); }
+  if (e.key === 'c' || e.key === 'C') {
+    particles = [];
+    glyphs = [];
+    ctx.fillStyle = '#08080f';
+    ctx.fillRect(0, 0, W, H);
+  }
+  if (e.key === 's' || e.key === 'S') {
+    const link = document.createElement('a');
+    link.download = 'text-alchemy.png';
+    link.href = canvas.toDataURL();
+    link.click();
+  }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('click', (e) => {
+  for (let i = 0; i < 40; i++) {
+    const p = new Particle(e.clientX, e.clientY, String.fromCharCode(33 + Math.random() * 94));
+    p.size = 1 + Math.random() * 3;
+    p.maxSize = p.size * 4;
+    p.vx = (Math.random() - 0.5) * 12;
+    p.vy = (Math.random() - 0.5) * 12;
+    particles.push(p);
+  }
+});
+
+// Touch support
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  mouse.active = true;
+}, { passive: false });
+canvas.addEventListener('touchend', () => { mouse.active = false; });
+
+// Auto-demo with ambient particles
+function ambientParticles() {
+  if (particles.length < 30 && !paused) {
+    const chars = '✦∮∑∏∫≈≠∞∆∇Ω◆◇○●□■△▽◁▷';
+    const ch = chars[Math.floor(Math.random() * chars.length)];
+    const p = new Particle(
+      Math.random() * W,
+      Math.random() * H,
+      ch
+    );
+    p.size = 0.5 + Math.random() * 1.5;
+    p.maxSize = p.size * 3;
+    p.decay = 0.001;
+    particles.push(p);
+  }
+  setTimeout(ambientParticles, 500);
+}
+ambientParticles();
+
+// Start
+requestAnimationFrame(render);
+</script>
+</body>
+</html>
