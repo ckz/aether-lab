@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ripple Mandala — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color: #ccc;
+  }
+  canvas { display: block; cursor: crosshair; }
+  .controls {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    background: rgba(10,10,15,0.85);
+    border: 1px solid #222;
+    border-radius: 10px;
+    padding: 16px 20px;
+    backdrop-filter: blur(10px);
+    z-index: 10;
+    min-width: 220px;
+  }
+  .controls h2 {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #aaa;
+    margin-bottom: 12px;
+  }
+  .control-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 12px;
+  }
+  .control-row label { color: #888; }
+  .control-row input[type="range"] {
+    width: 110px;
+    accent-color: #7b6ff7;
+  }
+  .control-row span { color: #bbb; font-variant-numeric: tabular-nums; }
+  .palette-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .palette-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: transform 0.15s, border-color 0.15s;
+  }
+  .palette-btn:hover { transform: scale(1.15); }
+  .palette-btn.active { border-color: #fff; }
+  .hint {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: #555;
+    letter-spacing: 1px;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="controls">
+  <h2>Ripple Mandala</h2>
+  <div class="control-row">
+    <label>Rings</label>
+    <input type="range" id="rings" min="3" max="24" value="10">
+    <span id="ringsVal">10</span>
+  </div>
+  <div class="control-row">
+    <label>Points</label>
+    <input type="range" id="points" min="3" max="24" value="8">
+    <span id="pointsVal">8</span>
+  </div>
+  <div class="control-row">
+    <label>Speed</label>
+    <input type="range" id="speed" min="1" max="20" value="8">
+    <span id="speedVal">8</span>
+  </div>
+  <div class="control-row">
+    <label>Trail</label>
+    <input type="range" id="trail" min="1" max="40" value="12">
+    <span id="trailVal">12</span>
+  </div>
+  <div class="control-row">
+    <label>Symmetry</label>
+    <input type="range" id="symmetry" min="1" max="12" value="6">
+    <span id="symmetryVal">6</span>
+  </div>
+  <div class="palette-row" id="palettes"></div>
+</div>
+
+<div class="hint">move mouse to sculpt · click to burst · space to pause · s to save · c to clear</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H, CX, CY;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  CX = W / 2;
+  CY = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const PALETTES = [
+  { name: 'Aurora', colors: ['#7b6ff7','#4ecdc4','#a8ff78','#ff6b9d','#c7b3ff','#ffd700'] },
+  { name: 'Ember', colors: ['#ff4d00','#ff8c00','#ffb347','#ffe066','#ff6b6b','#c0392b'] },
+  { name: 'Ocean', colors: ['#0077b6','#00b4d8','#90e0ef','#48cae4','#023e8a','#ade8f4'] },
+  { name: 'Nebula', colors: ['#e040fb','#7c4dff','#536dfe','#18ffff','#ff4081','#b388ff'] },
+  { name: 'Forest', colors: ['#2e7d32','#66bb6a','#aed581','#c8e6c9','#1b5e20','#dcedc8'] },
+  { name: 'Monochrome', colors: ['#ffffff','#cccccc','#999999','#666666','#eeeeee','#aaaaaa'] },
+];
+
+let state = {
+  rings: 10,
+  points: 8,
+  speed: 8,
+  trail: 12,
+  symmetry: 6,
+  palette: 0,
+  paused: false,
+  mouseX: CX,
+  mouseY: CY,
+  mouseActive: false,
+  time: 0,
+  ripples: [],
+};
+
+// Build palette buttons
+const palRow = document.getElementById('palettes');
+PALETTES.forEach((p, i) => {
+  const btn = document.createElement('div');
+  btn.className = 'palette-btn' + (i === 0 ? ' active' : '');
+  btn.style.background = `linear-gradient(135deg, ${p.colors[0]}, ${p.colors[2]}, ${p.colors[4]})`;
+  btn.title = p.name;
+  btn.addEventListener('click', () => {
+    state.palette = i;
+    document.querySelectorAll('.palette-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+  palRow.appendChild(btn);
+});
+
+// Sliders
+const sliders = ['rings','points','speed','trail','symmetry'];
+sliders.forEach(name => {
+  const input = document.getElementById(name);
+  const display = document.getElementById(name + 'Val');
+  input.addEventListener('input', () => {
+    state[name] = parseInt(input.value);
+    display.textContent = input.value;
+  });
+});
+
+window.addEventListener('mousemove', e => {
+  state.mouseX = e.clientX;
+  state.mouseY = e.clientY;
+  state.mouseActive = true;
+});
+window.addEventListener('mouseleave', () => { state.mouseActive = false; });
+
+window.addEventListener('click', e => {
+  // Don't burst if clicking controls
+  if (e.target.closest('.controls')) return;
+  for (let i = 0; i < 60; i++) {
+    state.ripples.push({
+      x: e.clientX,
+      y: e.clientY,
+      r: 0,
+      maxR: 150 + Math.random() * 250,
+      life: 1,
+      decay: 0.008 + Math.random() * 0.015,
+      color: PALETTES[state.palette].colors[Math.floor(Math.random() * 6)],
+      speed: 2 + Math.random() * 4,
+    });
+  }
+});
+
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); state.paused = !state.paused; }
+  if (e.key === 's' || e.key === 'S') savePNG();
+  if (e.key === 'c' || e.key === 'C') { state.ripples = []; ctx.fillStyle = 'rgba(10,10,15,0.95)'; ctx.fillRect(0,0,W,H); }
+});
+
+function savePNG() {
+  const link = document.createElement('a');
+  link.download = 'ripple-mandala.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+function hslToString(h, s, l, a) {
+  return `hsla(${h % 360}, ${s}%, ${l}%, ${a})`;
+}
+
+function draw() {
+  if (!state.paused) state.time += 0.016 * (state.speed / 8);
+
+  // Fade trail
+  ctx.fillStyle = `rgba(10,10,15,${0.03 + state.trail * 0.005})`;
+  ctx.fillRect(0, 0, W, H);
+
+  const pal = PALETTES[state.palette].colors;
+  const t = state.time;
+  const rings = state.rings;
+  const points = state.points;
+  const sym = state.symmetry;
+
+  // Mouse influence
+  let mx = CX, my = CY;
+  if (state.mouseActive) {
+    mx += (state.mouseX - CX) * 0.25;
+    my += (state.mouseY - CY) * 0.25;
+  }
+
+  // Draw mandala layers
+  for (let ring = 0; ring < rings; ring++) {
+    const ringFrac = ring / rings;
+    const baseRadius = 40 + ringFrac * (Math.min(W, H) * 0.42);
+    const hueShift = (t * 30 + ring * 25) % 360;
+    const alpha = 0.25 + ringFrac * 0.5;
+
+    ctx.save();
+    ctx.translate(CX, CY);
+    ctx.rotate(t * 0.15 * (ring % 2 === 0 ? 1 : -1) + ring * 0.3);
+
+    // Draw ring points
+    for (let s = 0; s < sym; s++) {
+      const angle = (Math.PI * 2 / sym) * s;
+      const wobble = Math.sin(t * 2 + ring + s) * 20;
+      const px = Math.cos(angle) * (baseRadius + wobble);
+      const py = Math.sin(angle) * (baseRadius + wobble);
+
+      const colorIdx = (ring + s) % pal.length;
+      const hue = (hueShift + ring * 40 + s * 60) % 360;
+
+      // Glow
+      const grd = ctx.createRadialGradient(px, py, 0, px, py, 18 + ringFrac * 12);
+      grd.addColorStop(0, hslToString(hue, 80, 60 + ringFrac * 20, alpha * 0.9));
+      grd.addColorStop(0.5, hslToString(hue + 30, 70, 50, alpha * 0.3));
+      grd.addColorStop(1, 'transparent');
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(px, py, 18 + ringFrac * 12, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Core dot
+      ctx.fillStyle = hslToString(hue, 90, 70, alpha);
+      ctx.beginPath();
+      ctx.arc(px, py, 2 + ringFrac * 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Connecting arcs between symmetric points
+    for (let s = 0; s < sym; s++) {
+      const a1 = (Math.PI * 2 / sym) * s;
+      const a2 = (Math.PI * 2 / sym) * ((s + 1) % sym);
+      const wobble1 = Math.sin(t * 2 + ring + s) * 20;
+      const wobble2 = Math.sin(t * 2 + ring + s + 1) * 20;
+      const x1 = Math.cos(a1) * (baseRadius + wobble1);
+      const y1 = Math.sin(a1) * (baseRadius + wobble1);
+      const x2 = Math.cos(a2) * (baseRadius + wobble2);
+      const y2 = Math.sin(a2) * (baseRadius + wobble2);
+
+      const hue = (hueShift + s * 50) % 360;
+      ctx.strokeStyle = hslToString(hue, 70, 55, alpha * 0.4);
+      ctx.lineWidth = 0.6 + ringFrac;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      // Curved arc
+      const mx2 = (x1 + x2) / 2 + Math.sin(t + s) * 15;
+      const my2 = (y1 + y2) / 2 + Math.cos(t + s) * 15;
+      ctx.quadraticCurveTo(mx2, my2, x2, y2);
+      ctx.stroke();
+    }
+
+    // Petal shapes between rings
+    if (ring > 0 && ring % 2 === 0) {
+      const innerR = 40 + ((ring - 1) / rings) * (Math.min(W, H) * 0.42);
+      const outerR = baseRadius;
+      const hue = (hueShift + ring * 30) % 360;
+      ctx.fillStyle = hslToString(hue, 60, 50, alpha * 0.08);
+      ctx.strokeStyle = hslToString(hue, 70, 60, alpha * 0.25);
+      ctx.lineWidth = 0.8;
+      for (let s = 0; s < sym; s++) {
+        const a = (Math.PI * 2 / sym) * s + t * 0.1;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * innerR, Math.sin(a) * innerR);
+        ctx.quadraticCurveRatio = 0.5;
+        const midR = (innerR + outerR) / 2 + Math.sin(t * 3 + s) * 10;
+        ctx.quadraticCurveTo(Math.cos(a + 0.3) * midR, Math.sin(a + 0.3) * midR, Math.cos(a + Math.PI * 2 / sym) * outerR, Math.sin(a + Math.PI * 2 / sym) * outerR);
+        ctx.quadraticCurveTo(Math.cos(a + 0.3) * midR, Math.sin(a + 0.3) * midR, Math.cos(a) * innerR, Math.sin(a) * innerR);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  // Center glow
+  const cGrd = ctx.createRadialGradient(CX, CY, 0, CX, CY, 60);
+  const cHue = (t * 20) % 360;
+  cGrd.addColorStop(0, hslToString(cHue, 80, 70, 0.6));
+  cGrd.addColorStop(0.5, hslToString(cHue + 40, 70, 50, 0.15));
+  cGrd.addColorStop(1, 'transparent');
+  ctx.fillStyle = cGrd;
+  ctx.beginPath();
+  ctx.arc(CX, CY, 60, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Update & draw ripples
+  state.ripples = state.ripples.filter(rp => rp.life > 0);
+  state.ripples.forEach(rp => {
+    rp.r += rp.speed;
+    rp.life -= rp.decay;
+    ctx.strokeStyle = rp.color;
+    ctx.globalAlpha = rp.life * 0.6;
+    ctx.lineWidth = 1.5 * rp.life;
+    ctx.beginPath();
+    ctx.arc(rp.x, rp.y, rp.r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  });
+
+  // Mouse proximity glow
+  if (state.mouseActive) {
+    const mGrd = ctx.createRadialGradient(state.mouseX, state.mouseY, 0, state.mouseX, state.mouseY, 80);
+    const mHue = (t * 40 + 200) % 360;
+    mGrd.addColorStop(0, hslToString(mHue, 70, 60, 0.15));
+    mGrd.addColorStop(1, 'transparent');
+    ctx.fillStyle = mGrd;
+    ctx.beginPath();
+    ctx.arc(state.mouseX, state.mouseY, 80, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+</body>
+</html>
