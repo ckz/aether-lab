@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Symbiotic Nebula — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000008;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #a0c8ff;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #ui h1 {
+    font-size: 14px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: #4a7fff;
+    margin-bottom: 6px;
+    text-shadow: 0 0 10px #4a7fff88;
+  }
+  #ui p {
+    font-size: 11px;
+    color: #6688aa;
+    line-height: 1.6;
+  }
+  #stats {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    font-size: 10px;
+    color: #334466;
+    z-index: 10;
+    pointer-events: none;
+    letter-spacing: 1px;
+  }
+  #hint {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    font-size: 10px;
+    color: #334466;
+    z-index: 10;
+    pointer-events: none;
+    text-align: right;
+    letter-spacing: 1px;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>✦ Symbiotic Nebula</h1>
+  <p>Move mouse to guide organisms<br>
+  Click to seed new life<br>
+  Hold to attract · Release to scatter</p>
+</div>
+<div id="stats"></div>
+<div id="hint">aether lab · curiosity drop</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+let mouse = { x: 0, y: 0, down: false, active: false };
+let organisms = [];
+let particles = [];
+let filaments = [];
+let time = 0;
+
+const PALETTES = [
+  { core: '#4a7fff', glow: '#1a3f8f', accent: '#ff4a8f', bg: '#0a0a2f' },
+  { core: '#00ffa8', glow: '#005f4f', accent: '#ffaa00', bg: '#000a08' },
+  { core: '#ff6b4a', glow: '#8f2a1a', accent: '#ffdd4a', bg: '#0f0505' },
+  { core: '#c04aff', glow: '#5f1a8f', accent: '#4affff', bg: '#0a000f' },
+  { core: '#ffaa4a', glow: '#8f5a1a', accent: '#4a9fff', bg: '#0f0a00' },
+];
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mousedown', () => mouse.down = true);
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mouseleave', () => mouse.active = false);
+canvas.addEventListener('click', e => seedOrganisms(e.clientX, e.clientY, 5 + Math.floor(Math.random() * 8)));
+
+// Touch support
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  mouse.active = true;
+  mouse.down = true;
+}, { passive: false });
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  mouse.down = true;
+  mouse.active = true;
+  seedOrganisms(mouse.x, mouse.y, 5 + Math.floor(Math.random() * 8));
+}, { passive: false });
+canvas.addEventListener('touchend', () => mouse.down = false);
+
+class Organism {
+  constructor(x, y, palette) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 2;
+    this.vy = (Math.random() - 0.5) * 2;
+    this.radius = 8 + Math.random() * 20;
+    this.baseRadius = this.radius;
+    this.palette = palette || PALETTES[Math.floor(Math.random() * PALETTES.length)];
+    this.life = 1;
+    this.maxLife = 600 + Math.random() * 1200;
+    this.age = 0;
+    this.phase = Math.random() * Math.PI * 2;
+    this.nodes = [];
+    this.tentacles = [];
+    this.genome = Math.random();
+    this.energy = 0.5;
+    this.reproductionCooldown = 0;
+    
+    // Generate body nodes
+    const nodeCount = 5 + Math.floor(Math.random() * 8);
+    for (let i = 0; i < nodeCount; i++) {
+      this.nodes.push({
+        angle: (i / nodeCount) * Math.PI * 2,
+        dist: this.radius * (0.5 + Math.random() * 0.8),
+        r: 2 + Math.random() * 5,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.5 + Math.random() * 2
+      });
+    }
+    
+    // Generate tentacles
+    const tentCount = 2 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < tentCount; i++) {
+      this.tentacles.push({
+        angle: Math.random() * Math.PI * 2,
+        length: 30 + Math.random() * 80,
+        segments: 4 + Math.floor(Math.random() * 6),
+        phase: Math.random() * Math.PI * 2,
+        width: 1 + Math.random() * 2
+      });
+    }
+  }
+  
+  update() {
+    this.age++;
+    this.life = 1 - (this.age / this.maxLife);
+    
+    if (this.life <= 0) return false;
+    
+    // Mouse interaction
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 200) {
+        const force = (1 - dist / 200) * 0.3;
+        if (mouse.down) {
+          this.vx += (dx / dist) * force;
+          this.vy += (dy / dist) * force;
+          this.energy = Math.min(1, this.energy + 0.01);
+        } else {
+          this.vx -= (dx / dist) * force * 0.5;
+          this.vy -= (dy / dist) * force * 0.5;
+        }
+        this.radius = this.baseRadius * (1 + (1 - dist / 200) * 0.3);
+      }
+    }
+    
+    // Gentle wandering
+    this.vx += (Math.random() - 0.5) * 0.1 * this.genome;
+    this.vy += (Math.random() - 0.5) * 0.1 * this.genome;
+    
+    // Damping
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+    
+    this.x += this.vx;
+    this.y += this.vy;
+    
+    // Soft boundaries
+    const margin = 100;
+    if (this.x < margin) this.vx += 0.1;
+    if (this.x > W - margin) this.vx -= 0.1;
+    if (this.y < margin) this.vy += 0.1;
+    if (this.y > H - margin) this.vy -= 0.1;
+    
+    this.phase += 0.02;
+    
+    // Reproduction
+    this.reproductionCooldown--;
+    if (this.energy > 0.8 && this.reproductionCooldown <= 0 && organisms.length < 50) {
+      this.reproduce();
+    }
+    
+    this.energy *= 0.999;
+    return true;
+  }
+  
+  reproduce() {
+    const child = new Organism(
+      this.x + (Math.random() - 0.5) * 40,
+      this.y + (Math.random() - 0.5) * 40,
+      { ...this.palette }
+    );
+    child.genome = this.genome * 0.7 + Math.random() * 0.3;
+    child.baseRadius = this.baseRadius * (0.8 + Math.random() * 0.4);
+    child.radius = child.baseRadius;
+    this.energy *= 0.4;
+    this.reproductionCooldown = 300;
+    organisms.push(child);
+  }
+  
+  draw() {
+    const alpha = this.life;
+    const pulse = Math.sin(this.phase) * 0.2 + 1;
+    const r = this.radius * pulse;
+    
+    // Outer glow
+    const glow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r * 3);
+    glow.addColorStop(0, this.palette.core + '44');
+    glow.addColorStop(0.5, this.palette.glow + '22');
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r * 3, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Core
+    const core = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r);
+    core.addColorStop(0, this.palette.core);
+    core.addColorStop(0.5, this.palette.glow);
+    core.addColorStop(1, 'transparent');
+    ctx.fillStyle = core;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Nodes
+    ctx.fillStyle = this.palette.accent + 'aa';
+    this.nodes.forEach(node => {
+      const na = node.angle + Math.sin(this.phase * node.speed) * 0.3;
+      const nd = node.dist * (1 + Math.sin(this.phase * 1.5 + node.phase) * 0.15);
+      const nx = this.x + Math.cos(na) * nd;
+      const ny = this.y + Math.sin(na) * nd;
+      
+      ctx.beginPath();
+      ctx.arc(nx, ny, node.r * pulse, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    
+    // Tentacles
+    ctx.strokeStyle = this.palette.core + '66';
+    ctx.lineWidth = 1;
+    this.tentacles.forEach(tent => {
+      ctx.beginPath();
+      let tx = this.x;
+      let ty = this.y;
+      ctx.moveTo(tx, ty);
+      
+      for (let i = 1; i <= tent.segments; i++) {
+        const t = i / tent.segments;
+        const wave = Math.sin(this.phase * 2 + tent.phase + t * 4) * 15;
+        const segLen = tent.length / tent.segments;
+        const ta = tent.angle + wave * 0.02;
+        tx += Math.cos(ta) * segLen + wave * 0.3;
+        ty += Math.sin(ta) * segLen + wave * 0.3;
+        ctx.lineTo(tx, ty);
+      }
+      ctx.stroke();
+    });
+    
+    // Spawn particles occasionally
+    if (Math.random() < 0.1 * this.life) {
+      particles.push(new Particle(this.x, this.y, this.palette));
+    }
+  }
+}
+
+class Particle {
+  constructor(x, y, palette) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 3;
+    this.vy = (Math.random() - 0.5) * 3;
+    this.life = 1;
+    this.decay = 0.005 + Math.random() * 0.02;
+    this.size = 1 + Math.random() * 3;
+    this.palette = palette || PALETTES[Math.floor(Math.random() * PALETTES.length)];
+  }
+  
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vx *= 0.99;
+    this.vy *= 0.99;
+    this.life -= this.decay;
+    return this.life > 0;
+  }
+  
+  draw() {
+    ctx.fillStyle = this.palette.accent + Math.floor(this.life * 180).toString(16).padStart(2, '0');
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+class Filament {
+  constructor(x1, y1, x2, y2, palette) {
+    this.points = [{ x: x1, y: y1 }, { x: x2, y: y2 }];
+    this.palette = palette || PALETTES[Math.floor(Math.random() * PALETTES.length)];
+    this.life = 1;
+    this.decay = 0.003 + Math.random() * 0.005;
+    this.growing = true;
+    this.maxPoints = 20 + Math.floor(Math.random() * 30);
+  }
+  
+  update() {
+    if (this.growing && this.points.length < this.maxPoints) {
+      const last = this.points[this.points.length - 1];
+      const angle = Math.atan2(
+        (this.points[0].y - last.y),
+        (this.points[0].x - last.x)
+      ) + (Math.random() - 0.5) * 1.5;
+      const len = 5 + Math.random() * 15;
+      this.points.push({
+        x: last.x + Math.cos(angle) * len,
+        y: last.y + Math.sin(angle) * len
+      });
+    } else {
+      this.growing = false;
+    }
+    
+    if (!this.growing) {
+      this.life -= this.decay;
+    }
+    return this.life > 0;
+  }
+  
+  draw() {
+    if (this.points.length < 2) return;
+    
+    ctx.strokeStyle = this.palette.core + Math.floor(this.life * 100).toString(16).padStart(2, '0');
+    ctx.lineWidth = 1.5 * this.life;
+    ctx.beginPath();
+    ctx.moveTo(this.points[0].x, this.points[0].y);
+    
+    for (let i = 1; i < this.points.length - 1; i++) {
+      const xc = (this.points[i].x + this.points[i + 1].x) / 2;
+      const yc = (this.points[i].y + this.points[i + 1].y) / 2;
+      ctx.quadraticCurveTo(this.points[i].x, this.points[i].y, xc, yc);
+    }
+    ctx.stroke();
+  }
+}
+
+function seedOrganisms(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    const ox = x + (Math.random() - 0.5) * 100;
+    const oy = y + (Math.random() - 0.5) * 100;
+    organisms.push(new Organism(ox, oy));
+  }
+  // Create connecting filaments
+  for (let i = 0; i < count; i++) {
+    if (Math.random() < 0.5) {
+      filaments.push(new Filament(
+        x + (Math.random() - 0.5) * 60,
+        y + (Math.random() - 0.5) * 60,
+        x + (Math.random() - 0.5) * 120,
+        y + (Math.random() - 0.5) * 120
+      ));
+    }
+  }
+}
+
+// Initial population
+function init() {
+  for (let i = 0; i < 8; i++) {
+    organisms.push(new Organism(
+      200 + Math.random() * (W - 400),
+      200 + Math.random() * (H - 400)
+    ));
+  }
+}
+
+// Background nebula
+function drawNebula() {
+  // Subtle background gradient
+  const bg = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * 0.7);
+  bg.addColorStop(0, '#0a0a2f');
+  bg.addColorStop(0.5, '#050520');
+  bg.addColorStop(1, '#000008');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Nebula clouds
+  const nebulaAlpha = 0.015 + Math.sin(time * 0.001) * 0.005;
+  for (let i = 0; i < 3; i++) {
+    const nx = W * (0.3 + 0.4 * Math.sin(time * 0.0003 + i * 2));
+    const ny = H * (0.3 + 0.4 * Math.cos(time * 0.0004 + i * 1.5));
+    const nr = 200 + Math.sin(time * 0.001 + i) * 50;
+    const neb = ctx.createRadialGradient(nx, ny, 0, nx, ny, nr);
+    const p = PALETTES[i % PALETTES.length];
+    neb.addColorStop(0, p.core + Math.floor(nebulaAlpha * 255).toString(16).padStart(2, '0'));
+    neb.addColorStop(1, 'transparent');
+    ctx.fillStyle = neb;
+    ctx.beginPath();
+    ctx.arc(nx, ny, nr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Star field
+  ctx.fillStyle = '#ffffff';
+  for (let i = 0; i < 100; i++) {
+    const sx = (Math.sin(i * 127.1 + time * 0.0001) * 0.5 + 0.5) * W;
+    const sy = (Math.cos(i * 311.7 + time * 0.0001) * 0.5 + 0.5) * H;
+    const twinkle = 0.3 + Math.sin(time * 0.01 + i) * 0.3;
+    ctx.globalAlpha = twinkle;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 0.5 + Math.random() * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Organism interactions
+function handleInteractions() {
+  for (let i = 0; i < organisms.length; i++) {
+    for (let j = i + 1; j < organisms.length; j++) {
+      const dx = organisms[j].x - organisms[i].x;
+      const dy = organisms[j].y - organisms[i].y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const minDist = organisms[i].radius + organisms[j].radius + 30;
+      
+      if (dist < minDist * 2 && dist > 0) {
+        // Symbiosis: gentle mutual attraction
+        const force = 0.02;
+        organisms[i].vx += (dx / dist) * force;
+        organisms[i].vy += (dy / dist) * force;
+        organisms[j].vx -= (dx / dist) * force;
+        organisms[j].vy -= (dy / dist) * force;
+        
+        // Energy exchange
+        if (organisms[i].energy > organisms[j].energy) {
+          const transfer = (organisms[i].energy - organisms[j].energy) * 0.005;
+          organisms[i].energy -= transfer;
+          organisms[j].energy += transfer;
+        }
+        
+        // Spawn filament between close pairs
+        if (dist < 80 && Math.random() < 0.02) {
+          filaments.push(new Filament(
+            organisms[i].x, organisms[i].y,
+            organisms[j].x, organisms[j].y,
+            organisms[i].palette
+          ));
+        }
+      }
+    }
+  }
+}
+
+// Stats
+const statsEl = document.getElementById('stats');
+
+// Main loop
+function animate() {
+  time++;
+  
+  drawNebula();
+  
+  // Semi-transparent overlay for trails
+  ctx.fillStyle = 'rgba(0, 0, 8, 0.15)';
+  ctx.fillRect(0, 0, W, H);
+  
+  handleInteractions();
+  
+  // Update and draw filaments
+  filaments = filaments.filter(f => {
+    const alive = f.update();
+    if (alive) f.draw();
+    return alive;
+  });
+  
+  // Update and draw organisms
+  organisms = organisms.filter(o => {
+    const alive = o.update();
+    if (alive) o.draw();
+    return alive;
+  });
+  
+  // Update and draw particles
+  particles = particles.filter(p => {
+    const alive = p.update();
+    if (alive) p.draw();
+    return alive;
+  });
+  
+  // Auto-seed if population drops
+  if (organisms.length < 3 && Math.random() < 0.02) {
+    seedOrganisms(
+      100 + Math.random() * (W - 200),
+      100 + Math.random() * (H - 200),
+      3 + Math.floor(Math.random() * 5)
+    );
+  }
+  
+  // Stats
+  if (statsEl && time % 30 === 0) {
+    statsEl.textContent = `organisms: ${organisms.length} · particles: ${particles.length} · filaments: ${filaments.length}`;
+  }
+  
+  requestAnimationFrame(animate);
+}
+
+init();
+animate();
+</script>
+</body>
+</html>
