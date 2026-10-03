@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Liquid Mercury Morphogenesis</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    cursor: crosshair;
+    font-family: 'Courier New', monospace;
+    color: #888;
+  }
+  canvas { display: block; }
+  #info {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    pointer-events: none;
+    z-index: 10;
+    text-shadow: 0 0 10px rgba(100, 200, 255, 0.5);
+    transition: opacity 0.5s;
+  }
+  #info h1 {
+    font-size: 14px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    color: rgba(150, 200, 255, 0.6);
+    margin-bottom: 4px;
+  }
+  #info p {
+    font-size: 11px;
+    color: rgba(100, 150, 200, 0.4);
+  }
+  #stats {
+    position: fixed;
+    top: 15px;
+    right: 20px;
+    font-size: 10px;
+    color: rgba(100, 150, 200, 0.3);
+    pointer-events: none;
+    z-index: 10;
+    text-align: right;
+    line-height: 1.8;
+  }
+  #title-overlay {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #title-overlay h1 {
+    font-size: 18px;
+    letter-spacing: 8px;
+    text-transform: uppercase;
+    background: linear-gradient(135deg, #6af, #f6a, #6fc);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    opacity: 0.6;
+  }
+  #title-overlay p {
+    font-size: 10px;
+    color: rgba(100, 150, 200, 0.3);
+    letter-spacing: 3px;
+    margin-top: 4px;
+  }
+</style>
+</head>
+<body>
+
+<div id="title-overlay">
+  <h1>Liquid Mercury</h1>
+  <p>Morphogenesis · v1.0</p>
+</div>
+
+<div id="stats">
+  <div id="fps">FPS: --</div>
+  <div id="particles">Particles: --</div>
+  <div id="mode">Mode: Flow</div>
+</div>
+
+<div id="info">
+  <h1>Move mouse to sculpt the liquid</h1>
+  <p>Click to pulse · Hold for attractor · Scroll to zoom</p>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── State ───
+const mouse = { x: W / 2, y: H / 2, px: W / 2, py: H / 2, down: false, vx: 0, vy: 0 };
+let zoom = 1;
+let time = 0;
+let frameCount = 0;
+let lastFpsUpdate = performance.now();
+let currentFps = 0;
+
+// ─── Simplex-like Noise (hash-based) ───
+function noise(x, y, z) {
+  const X = Math.floor(x) & 255;
+  const Y = Math.floor(y) & 255;
+  const Z = Math.floor(z) & 255;
+  x -= Math.floor(x);
+  y -= Math.floor(y);
+  z -= Math.floor(z);
+  const u = fade(x), v = fade(y), w = fade(z);
+  const a = (perm[X] + Y) & 255;
+  const b = (perm[X + 1] + Y) & 255;
+  return lerp(w,
+    lerp(v,
+      lerp(u, grad(perm[a], x, y, z), grad(perm[b], x - 1, y, z)),
+      lerp(u, grad(perm[a + 1], x, y - 1, z), grad(perm[b + 1], x - 1, y - 1, z))),
+    lerp(v,
+      lerp(u, grad(perm[a] + 1, x, y, z - 1), grad(perm[b] + 1, x - 1, y, z - 1)),
+      lerp(u, grad(perm[a + 2], x, y - 1, z - 1), grad(perm[b + 2], x - 1, y - 1, z - 1))));
+}
+function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+function lerp(t, a, b) { return a + t * (b - a); }
+function grad(hash, x, y, z) {
+  const h = hash & 15;
+  const u = h < 8 ? x : y;
+  const v = h < 4 ? y : (h === 12 || h === 14 ? x : z);
+  return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+}
+
+// Permutation table
+const perm = new Array(512);
+const p = [151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180];
+for (let i = 0; i < 256; i++) perm[i] = perm[i + 256] = p[i];
+
+// ─── Particles ───
+const NUM_PARTICLES = 3000;
+const particles = [];
+
+class Particle {
+  constructor() {
+    this.reset(true);
+  }
+  reset(initial = false) {
+    this.x = initial ? Math.random() * W : Math.random() * W;
+    this.y = initial ? Math.random() * H : Math.random() * H;
+    this.px = this.x;
+    this.py = this.y;
+    this.vx = 0;
+    this.vy = 0;
+    this.life = initial ? Math.random() * 300 : 200 + Math.random() * 200;
+    this.maxLife = this.life;
+    this.hue = 180 + Math.random() * 80; // cyan-blue range
+    this.size = 0.5 + Math.random() * 1.5;
+    this.alpha = 0.1 + Math.random() * 0.4;
+  }
+  update() {
+    this.px = this.x;
+    this.py = this.y;
+
+    const scale = 0.003 / zoom;
+    const nx = this.x * scale;
+    const ny = this.y * scale;
+    const nt = time * 0.0004;
+
+    // Flow field
+    const angle = noise(nx, ny, nt) * Math.PI * 4;
+    const flowStrength = 1.2;
+
+    this.vx += Math.cos(angle) * flowStrength * 0.15;
+    this.vy += Math.sin(angle) * flowStrength * 0.15;
+
+    // Mouse interaction
+    const dx = mouse.x - this.x;
+    const dy = mouse.y - this.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const influence = 150 * zoom;
+
+    if (dist < influence && dist > 0) {
+      const force = (1 - dist / influence) * 0.8;
+      const nx2 = dx / dist;
+      const ny2 = dy / dist;
+
+      if (mouse.down) {
+        // Attract
+        this.vx += nx2 * force * 2;
+        this.vy += ny2 * force * 2;
+      } else {
+        // Swirl
+        this.vx += -ny2 * force * 1.5 + nx2 * force * 0.3;
+        this.vy += nx2 * force * 1.5 + ny2 * force * 0.3;
+      }
+
+      // Color shift near mouse
+      this.hue = 180 + force * 120;
+    }
+
+    // Damping
+    this.vx *= 0.94;
+    this.vy *= 0.94;
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Wrap edges
+    if (this.x < 0) this.x = W;
+    if (this.x > W) this.x = 0;
+    if (this.y < 0) this.y = H;
+    if (this.y > H) this.y = 0;
+
+    this.life--;
+    if (this.life <= 0) this.reset();
+  }
+  draw(ctx) {
+    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    const lifeRatio = this.life / this.maxLife;
+    const alpha = this.alpha * lifeRatio * Math.min(1, speed * 2);
+
+    // Color based on speed and hue
+    const hue = this.hue + speed * 30;
+    const sat = 70 + speed * 20;
+    const light = 50 + speed * 15;
+
+    ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${light}%, ${alpha})`;
+    ctx.lineWidth = this.size;
+    ctx.beginPath();
+    ctx.moveTo(this.px, this.py);
+    ctx.lineTo(this.x, this.y);
+    ctx.stroke();
+  }
+}
+
+for (let i = 0; i < NUM_PARTICLES; i++) {
+  particles.push(new Particle());
+}
+
+// ─── Mouse Events ───
+canvas.addEventListener('mousemove', (e) => {
+  mouse.px = mouse.x;
+  mouse.py = mouse.y;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.vx = mouse.x - mouse.px;
+  mouse.vy = mouse.y - mouse.py;
+});
+
+canvas.addEventListener('mousedown', () => { mouse.down = true; });
+canvas.addEventListener('mouseup', () => { mouse.down = false; });
+canvas.addEventListener('mouseleave', () => { mouse.down = false; });
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  zoom *= e.deltaY > 0 ? 0.95 : 1.05;
+  zoom = Math.max(0.3, Math.min(3, zoom));
+});
+
+// Touch support
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.px = mouse.x;
+  mouse.py = mouse.y;
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  mouse.down = true;
+}, { passive: false });
+
+canvas.addEventListener('touchend', () => { mouse.down = false; });
+
+// ─── Pulse Effect ───
+function pulse() {
+  particles.forEach(p => {
+    const dx = p.x - mouse.x;
+    const dy = p.y - mouse.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 200 && dist > 0) {
+      const force = (1 - dist / 200) * 8;
+      p.vx += (dx / dist) * force;
+      p.vy += (dy / dist) * force;
+      p.hue = 200 + Math.random() * 100;
+    }
+  });
+}
+
+canvas.addEventListener('click', pulse);
+
+// ─── Animation Loop ───
+// Trail effect: semi-transparent overlay
+function animate() {
+  time++;
+
+  // Fade trail
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.06)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Update & draw particles
+  ctx.globalCompositeOperation = 'lighter';
+  particles.forEach(p => {
+    p.update();
+    p.draw(ctx);
+  });
+  ctx.globalCompositeOperation = 'source-over';
+
+  // FPS counter
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsUpdate >= 1000) {
+    currentFps = frameCount;
+    frameCount = 0;
+    lastFpsUpdate = now;
+    document.getElementById('fps').textContent = `FPS: ${currentFps}`;
+    document.getElementById('particles').textContent = `Particles: ${NUM_PARTICLES}`;
+    document.getElementById('mode').textContent = mouse.down ? 'Mode: Attract' : 'Mode: Flow';
+  }
+
+  requestAnimationFrame(animate);
+}
+
+// ─── Initial flash ───
+ctx.fillStyle = 'rgba(10, 10, 15, 1)';
+ctx.fillRect(0, 0, W, H);
+
+animate();
+
+// ─── Hide info after 8 seconds ───
+setTimeout(() => {
+  const info = document.getElementById('info');
+  if (info) info.style.opacity = '0';
+}, 8000);
+</script>
+
+</body>
+</html>
