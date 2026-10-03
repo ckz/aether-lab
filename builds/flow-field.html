@@ -3,37 +3,33 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flow Field — Aether Lab</title>
+<title>Flow Field — Generative Art</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #0a0a0f;
-    overflow: hidden;
-    font-family: 'Courier New', monospace;
-    color: #aaa;
-  }
+  body { background: #0a0a0f; overflow: hidden; font-family: 'Courier New', monospace; }
   canvas { display: block; }
   #info {
-    position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 13px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    opacity: 0.5;
-    pointer-events: none;
-    text-align: center;
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.4); font-size: 12px; letter-spacing: 2px;
+    text-transform: uppercase; pointer-events: none; z-index: 10;
   }
-  #info span { color: #7bfff0; }
+  #stats {
+    position: fixed; top: 20px; right: 20px;
+    color: rgba(255,255,255,0.3); font-size: 11px; letter-spacing: 1px;
+    pointer-events: none; z-index: 10; text-align: right;
+  }
 </style>
 </head>
 <body>
 <canvas id="canvas"></canvas>
-<div id="info"><span>Aether Lab</span> — Flow Field &nbsp;|&nbsp; move mouse to attract</div>
+<div id="info">move your mouse to disturb the field</div>
+<div id="stats"></div>
+
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
+const stats = document.getElementById('stats');
+
 let W, H;
 function resize() {
   W = canvas.width = window.innerWidth;
@@ -42,88 +38,180 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-let mouse = { x: W / 2, y: H / 2, active: false };
-window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; });
-window.addEventListener('touchmove', e => { mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY; mouse.active = true; });
-
-const PARTICLE_COUNT = 1200;
-const TRAIL_ALPHA = 0.025;
-let particles = [];
-
-function noise(x, y) {
-  const s = Math.sin(x * 0.01 + y * 0.013) * Math.cos(y * 0.011 - x * 0.009);
-  return s * Math.PI;
+// Simplex-like noise approximation
+function noise(x, y, z) {
+  const X = Math.floor(x) & 255;
+  const Y = Math.floor(y) & 255;
+  const Z = Math.floor(z) & 255;
+  x -= Math.floor(x);
+  y -= Math.floor(y);
+  z -= Math.floor(z);
+  const u = x * x * (3 - 2 * x);
+  const v = y * y * (3 - 2 * y);
+  const w = z * z * (3 - 2 * z);
+  const a = (X + Y * 57 + Z * 131) * 0.01745329;
+  const b = (X + 1 + Y * 57 + Z * 131) * 0.01745329;
+  const c = (X + (Y+1) * 57 + Z * 131) * 0.01745329;
+  const d = (X + 1 + (Y+1) * 57 + Z * 131) * 0.01745329;
+  return (1-w) * ((1-v)*((1-u)*Math.sin(a*12.9898+78.233)*43758.5453%1 + u*Math.sin(b*12.9898+78.233)*43758.5453%1) +
+           v*((1-u)*Math.sin(c*12.9898+78.233)*43758.5453%1 + u*Math.sin(d*12.9898+78.233)*43758.5453%1)) +
+          w*((1-v)*((1-u)*Math.sin(a*12.9898+78.233+0.5)*43758.5453%1 + u*Math.sin(b*12.9898+78.233+0.5)*43758.5453%1) +
+           v*((1-u)*Math.sin(c*12.9898+78.233+0.5)*43758.5453%1 + u*Math.sin(d*12.9898+78.233+0.5)*43758.5453%1));
 }
 
-function initParticles() {
-  particles = [];
-  for (let i = 0; i < PARTICLE_COUNT; i++) {
-    particles.push({
-      x: Math.random() * W,
-      y: Math.random() * H,
-      vx: 0,
-      vy: 0,
-      hue: 160 + Math.random() * 60,
-      life: Math.random() * 200,
-      maxLife: 200 + Math.random() * 300,
-      size: 0.5 + Math.random() * 1.5
-    });
+function fbm(x, y, z) {
+  let val = 0, amp = 0.5, freq = 1;
+  for (let i = 0; i < 4; i++) {
+    val += amp * noise(x * freq, y * freq, z * freq);
+    amp *= 0.5;
+    freq *= 2;
   }
+  return val;
 }
-initParticles();
 
-function draw() {
-  ctx.fillStyle = `rgba(10, 10, 15, ${TRAIL_ALPHA})`;
-  ctx.fillRect(0, 0, W, H);
+// Color palettes
+const palettes = [
+  { name: 'Nebula', colors: ['#ff006e', '#8338ec', '#3a86ff', '#00f5d4'] },
+  { name: 'Ember', colors: ['#ff4800', '#ff5400', '#ff7b00', '#ffaa00'] },
+  { name: 'Ocean', colors: ['#0077b6', '#00b4d8', '#90e0ef', '#caf0f8'] },
+  { name: 'Forest', colors: ['#2d6a4f', '#40916c', '#52b788', '#74c69d'] },
+  { name: 'Aurora', colors: ['#7400b8', '#6930c3', '#5390d9', '#48bfe3', '#64dfdf'] },
+  { name: 'Sunset', colors: ['#ff006e', '#fb5607', '#ffbe0b', '#ff006e'] },
+];
 
-  for (let p of particles) {
-    const angle = noise(p.x, p.y) * 2;
-    p.vx += Math.cos(angle) * 0.4;
-    p.vy += Math.sin(angle) * 0.4;
+let currentPalette = 0;
+let palette = palettes[0];
 
+function getColor(t, alpha) {
+  const colors = palette.colors;
+  const idx = t * (colors.length - 1);
+  const i = Math.floor(idx);
+  const f = idx - i;
+  const c1 = hexToRgb(colors[Math.min(i, colors.length-1)]);
+  const c2 = hexToRgb(colors[Math.min(i+1, colors.length-1)]);
+  const r = c1.r + (c2.r - c1.r) * f;
+  const g = c1.g + (c2.g - c1.g) * f;
+  const b = c1.b + (c2.b - c1.b) * f;
+  return `rgba(${r|0},${g|0},${b|0},${alpha})`;
+}
+
+function hexToRgb(hex) {
+  const m = hex.match(/^#([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+  return m ? { r: parseInt(m[1],16), g: parseInt(m[2],16), b: parseInt(m[3],16) } : {r:0,g:0,b:0};
+}
+
+// Particles
+const PARTICLE_COUNT = 2000;
+const particles = [];
+const SCALE = 0.003;
+const TIME_SPEED = 0.0003;
+
+let mouse = { x: -1000, y: -1000, active: false };
+let time = 0;
+let frameCount = 0;
+
+class Particle {
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.prevX = this.x;
+    this.prevY = this.y;
+    this.speed = 0.5 + Math.random() * 1.5;
+    this.life = 0;
+    this.maxLife = 200 + Math.random() * 300;
+  }
+  update() {
+    this.prevX = this.x;
+    this.prevY = this.y;
+
+    const angle = fbm(this.x * SCALE, this.y * SCALE, time) * Math.PI * 4;
+
+    let vx = Math.cos(angle) * this.speed;
+    let vy = Math.sin(angle) * this.speed;
+
+    // Mouse influence
     if (mouse.active) {
-      const dx = mouse.x - p.x;
-      const dy = mouse.y - p.y;
+      const dx = this.x - mouse.x;
+      const dy = this.y - mouse.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 250) {
-        const force = (250 - dist) / 250 * 0.6;
-        p.vx += (dx / dist) * force;
-        p.vy += (dy / dist) * force;
+      if (dist < 200) {
+        const force = (1 - dist / 200) * 3;
+        vx += (dx / dist) * force;
+        vy += (dy / dist) * force;
       }
     }
 
-    p.vx *= 0.96;
-    p.vy *= 0.96;
-    const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
-    if (speed > 3) { p.vx = (p.vx / speed) * 3; p.vy = (p.vy / speed) * 3; }
+    this.x += vx;
+    this.y += vy;
+    this.life++;
 
-    p.x += p.vx;
-    p.y += p.vy;
-    p.life++;
-
-    if (p.x < 0) p.x = W;
-    if (p.x > W) p.x = 0;
-    if (p.y < 0) p.y = H;
-    if (p.y > H) p.y = 0;
-    if (p.life > p.maxLife) {
-      p.x = Math.random() * W;
-      p.y = Math.random() * H;
-      p.vx = 0; p.vy = 0;
-      p.life = 0;
-      p.maxLife = 200 + Math.random() * 300;
-      p.hue = 160 + Math.random() * 60;
+    if (this.x < 0 || this.x > W || this.y < 0 || this.y > H || this.life > this.maxLife) {
+      this.reset();
     }
-
-    const alpha = Math.min(1, p.life / 30) * Math.min(1, (p.maxLife - p.life) / 30) * 0.7;
-    const lightness = 50 + speed * 8;
-    ctx.fillStyle = `hsla(${p.hue}, 80%, ${lightness}%, ${alpha})`;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-    ctx.fill();
   }
-  requestAnimationFrame(draw);
+  draw() {
+    const progress = this.life / this.maxLife;
+    const alpha = Math.sin(progress * Math.PI) * 0.6;
+    if (alpha <= 0) return;
+
+    const colorT = (fbm(this.x * 0.001, this.y * 0.001, time * 0.5) + 1) / 2;
+    ctx.strokeStyle = getColor(colorT, alpha);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(this.prevX, this.prevY);
+    ctx.lineTo(this.x, this.y);
+    ctx.stroke();
+  }
 }
-draw();
+
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+  particles.push(new Particle());
+}
+
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+
+canvas.addEventListener('click', () => {
+  currentPalette = (currentPalette + 1) % palettes.length;
+  palette = palettes[currentPalette];
+});
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  mouse.active = true;
+}, { passive: false });
+
+function animate() {
+  // Fade trail
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.03)';
+  ctx.fillRect(0, 0, W, H);
+
+  time += TIME_SPEED;
+  frameCount++;
+
+  particles.forEach(p => {
+    p.update();
+    p.draw();
+  });
+
+  if (frameCount % 30 === 0) {
+    stats.textContent = `${palette.name}\n${PARTICLE_COUNT} particles`;
+  }
+
+  requestAnimationFrame(animate);
+}
+
+// Clear and start
+ctx.fillStyle = '#0a0a0f';
+ctx.fillRect(0, 0, W, H);
+animate();
 </script>
 </body>
 </html>
