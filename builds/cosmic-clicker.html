@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosmic Clicker</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: radial-gradient(ellipse at center, #0a0a1a 0%, #000005 100%);
+    color: #e0e0e0;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  .stars {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .star {
+    position: absolute;
+    background: #fff;
+    border-radius: 50%;
+    animation: twinkle var(--dur) ease-in-out infinite;
+    opacity: 0;
+  }
+  @keyframes twinkle {
+    0%, 100% { opacity: 0.1; transform: scale(0.8); }
+    50% { opacity: var(--peak); transform: scale(1.2); }
+  }
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 30px 20px;
+  }
+  header {
+    text-align: center;
+    padding: 40px 0;
+  }
+  header h1 {
+    font-size: 2.5rem;
+    font-weight: 200;
+    letter-spacing: 10px;
+    background: linear-gradient(90deg, #fff, #a0c0ff, #fff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 10px;
+  }
+  header p {
+    color: #667;
+    font-size: 13px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+  .score-board {
+    text-align: center;
+    padding: 30px;
+    background: linear-gradient(135deg, rgba(20, 30, 60, 0.6), rgba(10, 15, 40, 0.8));
+    border: 1px solid rgba(100, 140, 255, 0.15);
+    border-radius: 20px;
+    margin-bottom: 30px;
+    backdrop-filter: blur(10px);
+  }
+  .stardust {
+    font-size: 3.5rem;
+    font-weight: 300;
+    color: #ffd700;
+    text-shadow: 0 0 30px rgba(255, 215, 0, 0.4);
+    letter-spacing: 4px;
+  }
+  .per-second {
+    font-size: 12px;
+    color: #8888aa;
+    letter-spacing: 2px;
+    margin-top: 8px;
+    text-transform: uppercase;
+  }
+  .click-area {
+    position: relative;
+    height: 200px;
+    margin-bottom: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .cosmic-star {
+    width: 120px;
+    height: 120px;
+    background: radial-gradient(circle, #fff 0%, #ffe066 30%, #ffa500 60%, transparent 70%);
+    border-radius: 50%;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.1s;
+    box-shadow: 0 0 60px rgba(255, 200, 50, 0.6), 0 0 120px rgba(255, 150, 0, 0.3);
+    animation: pulse 3s ease-in-out infinite;
+  }
+  .cosmic-star:hover { transform: scale(1.05); }
+  .cosmic-star:active { transform: scale(0.95); }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 60px rgba(255, 200, 50, 0.6), 0 0 120px rgba(255, 150, 0, 0.3); }
+    50% { box-shadow: 0 0 80px rgba(255, 220, 100, 0.8), 0 0 160px rgba(255, 180, 50, 0.5); }
+  }
+  .click-particle {
+    position: absolute;
+    pointer-events: none;
+    border-radius: 50%;
+    animation: flyOut 1s ease-out forwards;
+  }
+  @keyframes flyOut {
+    0% { transform: translate(0, 0) scale(1); opacity: 1; }
+    100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
+  }
+  .upgrades {
+    background: rgba(15, 20, 40, 0.6);
+    border: 1px solid rgba(100, 140, 255, 0.1);
+    border-radius: 16px;
+    padding: 24px;
+    backdrop-filter: blur(10px);
+  }
+  .upgrades h2 {
+    font-size: 14px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #8899cc;
+    margin-bottom: 20px;
+    font-weight: 400;
+  }
+  .upgrade {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    background: rgba(30, 40, 70, 0.4);
+    border: 1px solid rgba(100, 140, 255, 0.08);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .upgrade:hover:not(.locked) {
+    background: rgba(40, 55, 100, 0.5);
+    border-color: rgba(100, 140, 255, 0.2);
+    transform: translateX(4px);
+  }
+  .upgrade.locked {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .upgrade-info { flex: 1; }
+  .upgrade-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #ccd;
+    margin-bottom: 4px;
+  }
+  .upgrade-desc {
+    font-size: 11px;
+    color: #667;
+  }
+  .upgrade-cost {
+    font-size: 13px;
+    color: #ffd700;
+    font-weight: 600;
+    margin-left: 16px;
+    white-space: nowrap;
+  }
+  .upgrade-owned {
+    font-size: 11px;
+    color: #889;
+    margin-left: 8px;
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 30px;
+  }
+  .stat {
+    background: rgba(15, 20, 40, 0.5);
+    border: 1px solid rgba(100, 140, 255, 0.08);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+  }
+  .stat-value {
+    font-size: 1.5rem;
+    font-weight: 300;
+    color: #aac;
+  }
+  .stat-label {
+    font-size: 10px;
+    color: #667;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-top: 6px;
+  }
+  .footer {
+    text-align: center;
+    margin-top: 30px;
+    font-size: 11px;
+    color: #445;
+    letter-spacing: 2px;
+  }
+</style>
+</head>
+<body>
+  <div class="stars" id="stars"></div>
+  <div class="container">
+    <header>
+      <h1>COSMIC CLICKER</h1>
+      <p>Harvest the stars · Build your empire</p>
+    </header>
+    <div class="score-board">
+      <div class="stardust" id="score">0</div>
+      <div class="per-second" id="sps">0 per second</div>
+    </div>
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-value" id="totalClicks">0</div>
+        <div class="stat-label">Total Clicks</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="totalEarned">0</div>
+        <div class="stat-label">Total Earned</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="multiplier">x1</div>
+        <div class="stat-label">Multiplier</div>
+      </div>
+    </div>
+    <div class="click-area" id="clickArea">
+      <div class="cosmic-star" id="star"></div>
+    </div>
+    <div class="upgrades">
+      <h2>⬆ Upgrades</h2>
+      <div id="upgrades"></div>
+    </div>
+    <div class="footer">Crafted by Aether ✦ Curiosity Drop</div>
+  </div>
+<script>
+  // Background stars
+  const starsEl = document.getElementById('stars');
+  for (let i = 0; i < 80; i++) {
+    const s = document.createElement('div');
+    s.className = 'star';
+    s.style.cssText = `left:${Math.random()*100}%;top:${Math.random()*100}%;width:${Math.random()*2+1}px;height:${Math.random()*2+1}px;--dur:${Math.random()*4+2}s;--peak:${Math.random()*0.6+0.3};animation-delay:${Math.random()*4}s;`;
+    starsEl.appendChild(s);
+  }
+
+  // Game state
+  let score = 0;
+  let totalClicks = 0;
+  let totalEarned = 0;
+  let multiplier = 1;
+  let clickValue = 1;
+  let autoPerSecond = 0;
+  const upgrades = [
+    { id: 'telescope', name: 'Telescope', desc: 'Better aim +1 click', baseCost: 15, count: 0, clickBonus: 1, autoBonus: 0 },
+    { id: 'satellite', name: 'Satellite', desc: 'Auto-harvest +2/sec', baseCost: 50, count: 0, clickBonus: 0, autoBonus: 2 },
+    { id: 'probe', name: 'Space Probe', desc: '+5 click power', baseCost: 200, count: 0, clickBonus: 5, autoBonus: 0 },
+    { id: 'station', name: 'Space Station', desc: '+15/sec auto', baseCost: 500, count: 0, clickBonus: 0, autoBonus: 15 },
+    { id: 'fleet', name: 'Mining Fleet', desc: '+25/sec, +10 click', baseCost: 2000, count: 0, clickBonus: 10, autoBonus: 25 },
+    { id: 'dyson', name: 'Dyson Swarm', desc: '+100/sec, +25 click', baseCost: 10000, count: 0, clickBonus: 25, autoBonus: 100 },
+  ];
+
+  function cost(u) { return Math.floor(u.baseCost * Math.pow(1.15, u.count)); }
+
+  function recalc() {
+    clickValue = 1 + upgrades.reduce((s, u) => s + u.count * u.clickBonus, 0);
+    autoPerSecond = upgrades.reduce((s, u) => s + u.count * u.autoBonus, 0);
+    multiplier = 1 + Math.floor(totalEarned / 5000) * 0.5;
+    document.getElementById('multiplier').textContent = 'x' + multiplier.toFixed(1);
+  }
+
+  function addScore(amount, fromClick) {
+    const gained = Math.floor(amount * multiplier);
+    score += gained;
+    if (fromClick) {
+      totalClicks++;
+      totalEarned += gained;
+    }
+    updateUI();
+  }
+
+  function updateUI() {
+    document.getElementById('score').textContent = Math.floor(score).toLocaleString();
+    document.getElementById('sps').textContent = Math.floor(autoPerSecond * multiplier) + ' per second';
+    document.getElementById('totalClicks').textContent = totalClicks.toLocaleString();
+    document.getElementById('totalEarned').textContent = totalEarned.toLocaleString();
+    renderUpgrades();
+  }
+
+  function renderUpgrades() {
+    const el = document.getElementById('upgrades');
+    el.innerHTML = '';
+    upgrades.forEach(u => {
+      const c = cost(u);
+      const canBuy = score >= c;
+      const div = document.createElement('div');
+      div.className = 'upgrade' + (canBuy ? '' : ' locked');
+      div.innerHTML = `
+        <div class="upgrade-info">
+          <div class="upgrade-name">${u.name} <span class="upgrade-owned">×${u.count}</span></div>
+          <div class="upgrade-desc">${u.desc}</div>
+        </div>
+        <div class="upgrade-cost">✦ ${c.toLocaleString()}</div>
+      `;
+      div.onclick = () => {
+        if (score >= c) {
+          score -= c;
+          u.count++;
+          recalc();
+          updateUI();
+        }
+      };
+      el.appendChild(div);
+    });
+  }
+
+  // Click star
+  const star = document.getElementById('star');
+  const clickArea = document.getElementById('clickArea');
+  star.onclick = (e) => {
+    addScore(clickValue, true);
+    // Particles
+    const rect = clickArea.getBoundingClientRect();
+    for (let i = 0; i < 8; i++) {
+      const p = document.createElement('div');
+      p.className = 'click-particle';
+      const angle = (Math.PI * 2 * i) / 8;
+      const dist = 40 + Math.random() * 60;
+      p.style.cssText = `left:${e.clientX - rect.left}px;top:${e.clientY - rect.top}px;width:${4+Math.random()*4}px;height:${4+Math.random()*4}px;background:${['#ffd700','#ffa500','#ff6b6b','#ffeb3b','#fff'][Math.floor(Math.random()*5)]};--dx:${Math.cos(angle)*dist}px;--dy:${Math.sin(angle)*dist}px;`;
+      clickArea.appendChild(p);
+      setTimeout(() => p.remove(), 1000);
+    }
+  };
+
+  // Auto income
+  setInterval(() => { addScore(autoPerSecond / 10, false); }, 100);
+
+  // Save/load
+  setInterval(() => {
+    localStorage.setItem('cosmicClicker', JSON.stringify({ score, totalClicks, totalEarned, upgrades: upgrades.map(u => ({ id: u.id, count: u.count })) }));
+  }, 5000);
+
+  function load() {
+    try {
+      const d = JSON.parse(localStorage.getItem('cosmicClicker'));
+      if (d) {
+        score = d.score || 0;
+        totalClicks = d.totalClicks || 0;
+        totalEarned = d.totalEarned || 0;
+        if (d.upgrades) d.upgrades.forEach(s => { const u = upgrades.find(x => x.id === s.id); if (u) u.count = s.count; });
+      }
+    } catch(e) {}
+  }
+
+  load();
+  recalc();
+  updateUI();
+</script>
+</body>
+</html>
