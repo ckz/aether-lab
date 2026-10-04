@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chrono Forge — Time Toolkit for Developers</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #c8c8d4;
+    font-family: 'Courier New', monospace;
+    min-height: 100vh;
+    padding: 20px;
+    overflow-x: hidden;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+  h1 {
+    text-align: center;
+    color: #00e5ff;
+    font-size: 2em;
+    letter-spacing: 8px;
+    margin-bottom: 5px;
+    text-shadow: 0 0 20px rgba(0,229,255,0.5);
+  }
+  .subtitle {
+    text-align: center;
+    color: #667;
+    font-size: 0.85em;
+    margin-bottom: 30px;
+    letter-spacing: 3px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+  }
+  .card {
+    background: linear-gradient(135deg, #141420, #1a1a2e);
+    border: 1px solid #2a2a4a;
+    border-radius: 12px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+  .card:hover { border-color: #00e5ff44; }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #00e5ff, transparent);
+    opacity: 0.6;
+  }
+  .card h2 {
+    color: #ff6b9d;
+    font-size: 1em;
+    letter-spacing: 3px;
+    margin-bottom: 15px;
+    text-transform: uppercase;
+  }
+  .display {
+    background: #0a0a14;
+    border: 1px solid #1e1e3a;
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 10px;
+    font-size: 0.95em;
+    color: #aaffee;
+    word-break: break-all;
+    line-height: 1.6;
+    min-height: 40px;
+    text-shadow: 0 0 8px rgba(0,255,238,0.3);
+  }
+  .display.highlight { color: #00e5ff; }
+  .display.warm { color: #ffb86b; text-shadow: 0 0 8px rgba(255,184,107,0.3); }
+  .display.accent { color: #ff6b9d; text-shadow: 0 0 8px rgba(255,107,157,0.3); }
+  .display.green { color: #50fa7b; text-shadow: 0 0 8px rgba(80,250,123,0.3); }
+  label {
+    display: block;
+    color: #889;
+    font-size: 0.75em;
+    letter-spacing: 2px;
+    margin-bottom: 5px;
+    text-transform: uppercase;
+  }
+  input, select {
+    background: #0a0a14;
+    border: 1px solid #2a2a4a;
+    color: #00e5ff;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input:focus, select:focus { border-color: #00e5ff; }
+  button {
+    background: linear-gradient(135deg, #1e1e3a, #2a2a4a);
+    border: 1px solid #00e5ff44;
+    color: #00e5ff;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.8em;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  button:hover {
+    background: linear-gradient(135deg, #00e5ff22, #00e5ff11);
+    border-color: #00e5ff;
+    box-shadow: 0 0 15px rgba(0,229,255,0.3);
+  }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .ascii-clock {
+    font-size: 0.65em;
+    line-height: 1.2;
+    color: #00e5ff;
+    text-shadow: 0 0 10px rgba(0,229,255,0.5);
+    white-space: pre;
+    text-align: center;
+    letter-spacing: 2px;
+  }
+  .pulse {
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+  .copy-hint {
+    color: #556;
+    font-size: 0.7em;
+    margin-top: 5px;
+    text-align: right;
+  }
+  .footer {
+    text-align: center;
+    color: #334;
+    margin-top: 30px;
+    font-size: 0.75em;
+    letter-spacing: 2px;
+  }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  @media (max-width: 600px) {
+    .grid-2 { grid-template-columns: 1fr; }
+    h1 { font-size: 1.3em; letter-spacing: 4px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>⧖ CHRONO FORGE ⧗</h1>
+  <div class="subtitle">TIME TOOLKIT FOR DEVELOPERS</div>
+
+  <div class="grid">
+    <!-- Live Clock -->
+    <div class="card">
+      <h2>◉ Live Clock</h2>
+      <div class="display highlight" id="live-clock">—</div>
+      <div class="display" id="live-iso">—</div>
+      <div class="display warm" id="live-unix">—</div>
+      <div class="display accent" id="live-hex">—</div>
+      <div class="display green" id="live-binary">—</div>
+      <div class="copy-hint">Updates every 100ms · click any value to copy</div>
+    </div>
+
+    <!-- Unix Converter -->
+    <div class="card">
+      <h2>⇄ Unix Converter</h2>
+      <label>Unix Timestamp (seconds)</label>
+      <input type="text" id="unix-input" placeholder="e.g. 1728000000" oninput="convertUnix()">
+      <div class="display" id="unix-result">Enter a unix timestamp above</div>
+      <label>Or pick a date:</label>
+      <input type="datetime-local" id="unix-date" onchange="convertDate()">
+      <div class="display" id="unix-date-result"></div>
+    </div>
+
+    <!-- Time Since -->
+    <div class="card">
+      <h2>↻ Time Since</h2>
+      <label>Reference date/time</label>
+      <input type="datetime-local" id="since-date" onchange="calcSince()">
+      <div class="display warm" id="since-result">Pick a date above</div>
+      <div class="btn-row">
+        <button onclick="setPreset('since-date', new Date(Date.now() - 86400000).toISOString().slice(0,16))">24h ago</button>
+        <button onclick="setPreset('since-date', new Date(Date.now() - 604800000).toISOString().slice(0,16))">7d ago</button>
+        <button onclick="setPreset('since-date', '2020-01-01T00:00')">2020</button>
+        <button onclick="setPreset('since-date', '2000-01-01T00:00')">Y2K</button>
+        <button onclick="setPreset('since-date', '1969-07-20T20:17')">Moon Landing</button>
+      </div>
+    </div>
+
+    <!-- Countdown -->
+    <div class="card">
+      <h2>◷ Countdown</h2>
+      <label>Target date/time</label>
+      <input type="datetime-local" id="countdown-target" onchange="updateCountdown()">
+      <div class="display accent pulse" id="countdown-display">Set a target date</div>
+      <div class="display" id="countdown-total"></div>
+      <div class="btn-row">
+        <button onclick="setCountdown(new Date(Date.now() + 86400000))">+24h</button>
+        <button onclick="setCountdown(new Date(Date.now() + 604800000))">+7d</button>
+        <button onclick="setCountdown(new Date(Date.now() + 31536000000))">+1y</button>
+        <button onclick="setCountdown(new Date('2026-01-01T00:00'))">Next Year</button>
+      </div>
+    </div>
+
+    <!-- Time Zones -->
+    <div class="card">
+      <h2>🌍 World Clock</h2>
+      <div id="world-clocks"></div>
+    </div>
+
+    <!-- ASCII Clock -->
+    <div class="card">
+      <h2>⬡ ASCII Clock</h2>
+      <div class="ascii-clock" id="ascii-clock">—</div>
+      <div class="btn-row">
+        <button onclick="toggleAscii()">Pause/Play</button>
+      </div>
+    </div>
+
+    <!-- Fun Facts -->
+    <div class="card">
+      <h2>◆ Live Facts</h2>
+      <div class="display warm" id="fact-ms">—</div>
+      <div class="display" id="fact-beats">—</div>
+      <div class="display accent" id="fact-sessions">—</div>
+      <div class="display green" id="fact-unix-next">—</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    CHRONO FORGE v1.0 — All calculations run locally — No data leaves your machine ⚙
+  </div>
+</div>
+
+<script>
+const CITIES = [
+  { name: 'New York', tz: 'America/New_York' },
+  { name: 'London', tz: 'Europe/London' },
+  { name: 'Tokyo', tz: 'Asia/Tokyo' },
+  { name: 'Sydney', tz: 'Australia/Sydney' },
+  { name: 'Dubai', tz: 'Asia/Dubai' },
+  { name: 'UTC', tz: 'UTC' },
+];
+
+let asciiPaused = false;
+
+function init() {
+  const worldDiv = document.getElementById('world-clocks');
+  CITIES.forEach(city => {
+    const div = document.createElement('div');
+    div.className = 'display';
+    div.id = `world-${city.tz.replace(/\//g, '-')}`;
+    div.innerHTML = `<strong>${city.name}</strong><br><span class="tz-time">—</span><br><span class="tz-offset"></span>`;
+    worldDiv.appendChild(div);
+  });
+
+  setInterval(tick, 100);
+  tick();
+}
+
+function tick() {
+  const now = new Date();
+  const ms = now.getTime();
+  const s = Math.floor(ms / 1000);
+  const hex = '0x' + s.toString(16).toUpperCase();
+  const bin = s.toString(2);
+
+  document.getElementById('live-clock').textContent = now.toLocaleString('en-US', {
+    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3
+  });
+  document.getElementById('live-iso').textContent = now.toISOString();
+  document.getElementById('live-unix').textContent = `${s}  (${ms.toLocaleString()} ms)`;
+  document.getElementById('live-hex').textContent = hex;
+  document.getElementById('live-binary').textContent = bin;
+
+  updateWorldClocks(now);
+  updateFacts(now, s);
+  updateCountdown();
+  if (!asciiPaused) renderAsciiClock(now);
+}
+
+function updateWorldClocks(now) {
+  CITIES.forEach(city => {
+    const el = document.getElementById(`world-${city.tz.replace(/\//g, '-')}`);
+    if (!el) return;
+    const time = now.toLocaleString('en-US', {
+      timeZone: city.tz,
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false
+    });
+    const offset = getTimezoneOffset(city.tz);
+    el.innerHTML = `<strong>${city.name}</strong> ${offset}<br><span class="tz-time">${time}</span>`;
+  });
+}
+
+function getTimezoneOffset(tz) {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const target = new Date(utc + 3600000 * getTzOffsetHours(tz));
+  const local = new Date(now.toLocaleString('en-US', { timeZone: tz }));
+  const diff = (local.getTime() - now.getTime()) / 3600000;
+  const sign = diff >= 0 ? '+' : '';
+  const hours = Math.abs(Math.round(diff * 100) / 100);
+  return `(UTC${sign}${hours})`;
+}
+
+function getTzOffsetHours(tz) {
+  const now = new Date();
+  const str = now.toLocaleString('en-US', { timeZone: tz, timeZoneName: 'longOffset' });
+  const match = str.match(/GMT([+-]\d+:\d+)/);
+  if (!match) return 0;
+  const parts = match[1].split(':');
+  let h = parseInt(parts[0]);
+  if (parts[1]) h += parseInt(parts[1]) / 60;
+  return h;
+}
+
+function updateFacts(now, s) {
+  const msOfDay = (now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()) * 1000 + now.getMilliseconds();
+  document.getElementById('fact-ms').textContent = `Milliseconds today: ${msOfDay.toLocaleString()}`;
+
+  const beats = ((msOfDay / 86400000) * 1000).toFixed(2);
+  document.getElementById('fact-beats').textContent = `Swatch Internet Time: @${beats}`;
+
+  const sessionStart = 1728000000;
+  const approxSessions = Math.max(0, Math.floor((s - sessionStart) / 86400));
+  document.getElementById('fact-sessions').textContent = `~Days since ledger start: ${approxSessions}`;
+
+  const nextUnix = Math.ceil(s / 1000000) * 1000000;
+  const nextUnixTime = new Date(nextUnix * 1000);
+  document.getElementById('fact-unix-next').textContent = `Next 1M Unix in ${formatDuration(nextUnix * 1000 - s * 1000)}`;
+}
+
+function formatDuration(ms) {
+  const d = Math.floor(ms / 86400000);
+  const h = Math.floor((ms % 86400000) / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  let parts = [];
+  if (d) parts.push(`${d}d`);
+  if (h) parts.push(`${h}h`);
+  if (m) parts.push(`${m}m`);
+  if (s || !parts.length) parts.push(`${s}s`);
+  return parts.join(' ');
+}
+
+function convertUnix() {
+  const val = document.getElementById('unix-input').value.trim();
+  const result = document.getElementById('unix-date-result');
+  if (!val) { result.textContent = 'Enter a unix timestamp above'; result.className = 'display'; return; }
+  const s = parseInt(val);
+  if (isNaN(s)) { result.textContent = 'Invalid number'; result.className = 'display accent'; return; }
+  const d = new Date(s * 1000);
+  result.textContent = d.toISOString().replace('T', ' ').replace('Z', ' UTC');
+  result.className = 'display green';
+}
+
+function convertDate() {
+  const val = document.getElementById('unix-date').value;
+  const result = document.getElementById('unix-date-result');
+  if (!val) { result.textContent = ''; return; }
+  const d = new Date(val);
+  const s = Math.floor(d.getTime() / 1000);
+  result.textContent = `Unix: ${s}  |  Hex: 0x${s.toString(16).toUpperCase()}`;
+  result.className = 'display green';
+}
+
+function calcSince() {
+  const val = document.getElementById('since-date').value;
+  const display = document.getElementById('since-result');
+  if (!val) { display.textContent = 'Pick a date above'; return; }
+  const target = new Date(val);
+  const diff = Date.now() - target.getTime();
+  if (diff < 0) {
+    display.textContent = `⧗ ${formatDuration(-diff)} until that moment`;
+    display.className = 'display accent';
+  } else {
+    display.textContent = `↻ ${formatDuration(diff)} ago`;
+    display.className = 'display warm';
+  }
+}
+
+function setPreset(id, iso) {
+  document.getElementById(id).value = iso;
+  if (id === 'since-date') calcSince();
+}
+
+function updateCountdown() {
+  const targetVal = document.getElementById('countdown-target').value;
+  const display = document.getElementById('countdown-display');
+  const total = document.getElementById('countdown-total');
+  if (!targetVal) { display.textContent = 'Set a target date'; display.className = 'display accent'; total.textContent = ''; return; }
+  const target = new Date(targetVal);
+  const diff = target.getTime() - Date.now();
+  if (diff <= 0) {
+    display.textContent = '⏲ Time has arrived!';
+    display.className = 'display green';
+    total.textContent = `Target was ${formatDuration(-diff)} ago`;
+  } else {
+    display.textContent = `◷ ${formatDuration(diff)}`;
+    display.className = 'display accent pulse';
+    total.textContent = `Target: ${target.toISOString().replace('T', ' ').replace('Z', ' UTC')}`;
+  }
+}
+
+function setCountdown(date) {
+  const iso = date.toISOString().slice(0, 16);
+  document.getElementById('countdown-target').value = iso;
+  updateCountdown();
+}
+
+function renderAsciiClock(now) {
+  const h = String(now.getHours()).padStart(2, '0');
+  const m = String(now.getMinutes()).padStart(2, '0');
+  const s = String(now.getSeconds()).padStart(2, '0');
+  document.getElementById('ascii-clock').textContent = `
+  ┌─────────────────┐
+  │  ╔═╗╔═╗╔═╗╔═╗  │
+  │  ║${h[0]}║║${h[1]}║║${m[0]}║║${m[1]}║  │
+  │  ╚═╝╚═╝╚═╝╚═╝  │
+  │     :${s}         │
+  └─────────────────┘`;
+}
+
+function toggleAscii() {
+  asciiPaused = !asciiPaused;
+  if (!asciiPaused) renderAsciiClock(new Date());
+}
+
+// Copy click on live displays
+document.querySelectorAll('.display').forEach(el => {
+  el.addEventListener('click', () => {
+    if (el.textContent && el.textContent !== '—') {
+      navigator.clipboard.writeText(el.textContent).then(() => {
+        const orig = el.style.color;
+        el.style.color = '#50fa7b';
+        setTimeout(() => el.style.color = orig, 300);
+      });
+    }
+  });
+});
+
+init();
+</script>
+</body>
+</html>
