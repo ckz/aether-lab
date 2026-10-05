@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon Putt — Mini Golf</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #05060d;
+    color: #e8f0ff;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  #topbar {
+    width: 100%; max-width: 900px;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 20px;
+    background: linear-gradient(180deg, rgba(10,15,30,0.95), rgba(10,15,30,0.7));
+    border-bottom: 1px solid rgba(100,220,255,0.15);
+    backdrop-filter: blur(10px);
+    z-index: 10;
+  }
+  #topbar h1 {
+    font-size: 18px; letter-spacing: 2px;
+    background: linear-gradient(90deg, #00e5ff, #ff80ab);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .stat {
+    font-size: 13px; letter-spacing: 1px;
+    color: #a0b8d8;
+  }
+  .stat span { color: #fff; font-weight: 600; }
+  #gamewrap {
+    flex: 1; width: 100%; max-width: 900px;
+    position: relative; overflow: hidden;
+    background:
+      radial-gradient(ellipse at center, #0a1020 0%, #05060d 70%),
+      #05060d;
+  }
+  canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+  #message {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    background: rgba(10,15,30,0.9);
+    border: 1px solid rgba(100,220,255,0.4);
+    padding: 24px 40px; border-radius: 16px;
+    text-align: center;
+    backdrop-filter: blur(12px);
+    transition: transform 0.3s cubic-bezier(.34,1.56,.64,1);
+    z-index: 20;
+  }
+  #message.show { transform: translate(-50%, -50%) scale(1); }
+  #message h2 {
+    font-size: 28px; letter-spacing: 2px; margin-bottom: 8px;
+    background: linear-gradient(90deg, #00e5ff, #ff80ab);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  #message p { font-size: 14px; color: #a0b8d8; margin-bottom: 14px; }
+  #message button {
+    background: linear-gradient(90deg, #00e5ff, #7c4dff);
+    border: none; color: #fff; padding: 10px 28px; border-radius: 30px;
+    font-size: 14px; letter-spacing: 1px; cursor: pointer;
+    transition: transform 0.15s, filter 0.15s;
+  }
+  #message button:hover { transform: scale(1.05); filter: brightness(1.2); }
+  #hint {
+    position: absolute; bottom: 14px; left: 0; right: 0;
+    text-align: center; font-size: 12px; color: rgba(160,184,216,0.7);
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+  <div id="topbar">
+    <h1>NEON PUTT</h1>
+    <div class="stat">HOLE <span id="holeNum">1</span>/5</div>
+    <div class="stat">STROKES <span id="strokes">0</span></div>
+    <div class="stat">PAR <span id="par">3</span></div>
+    <div class="stat">TOTAL <span id="totalStrokes">0</span></div>
+  </div>
+  <div id="gamewrap">
+    <canvas id="c"></canvas>
+    <div id="message">
+      <h2 id="msgTitle">NICE PUTT!</h2>
+      <p id="msgBody">You finished hole 1 in 3 strokes (par 3)</p>
+      <button id="nextBtn">NEXT HOLE</button>
+    </div>
+    <div id="hint">Drag to aim • Release to putt • Complete all 5 holes</div>
+  </div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const wrap = document.getElementById('gamewrap');
+  let W, H, scale;
+
+  function resize() {
+    const r = wrap.getBoundingClientRect();
+    W = canvas.width = r.width;
+    H = canvas.height = r.height;
+    scale = Math.min(W, H) / 700;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ——— Palette ———
+  const palettes = [
+    { bg: '#05060d', fairway: '#0a1628', green: '#0f2b3a', wall: '#1a3050', wallHi: '#2a4a70', line: '#1e3a5a', ball: '#ffffff', trail: '#00e5ff', hole: '#ff80ab', power: '#ffeb3b', star: '#ffffff' },
+    { bg: '#0d0510', fairway: '#1a0a24', green: '#2a1038', wall: '#401a50', wallHi: '#602878', line: '#301040', ball: '#ffffff', trail: '#ff80ab', hole: '#00e5ff', power: '#ffeb3b', star: '#ffb3ff' },
+    { bg: '#050d08', fairway: '#0a1f14', green: '#103020', wall: '#1a4028', wallHi: '#286038', line: '#143820', ball: '#ffffff', trail: '#76ff03', hole: '#ffab00', power: '#ffeb3b', star: '#d0ffd0' },
+  ];
+  let palette = palettes[0];
+
+  // ——— Holes / Levels ———
+  const holes = [
+    { par: 2, start: {x:120,y:300}, hole: {x:520,y:300}, walls: [{x:300,y:100,w:30,h:400},{x:120,y:100,w:210,h:30}], radius: 18 },
+    { par: 3, start: {x:80,y:80},  hole: {x:580,y:560}, walls: [{x:200,y:100,w:30,h:400},{x:350,y:50,w:30,h:250},{x:480,y:200,w:30,h:400}], radius: 18 },
+    { par: 3, start: {x:100,y:300}, hole: {x:560,y:300}, walls: [{x:220,y:100,w:30,h:200},{x:220,y:350,w:30,h:200},{x:400,y:50,w:30,h:250},{x:400,y:350,w:30,h:250}], radius: 16 },
+    { par: 4, start: {x:60,y:520},  hole: {x:600,y:120}, walls: [{x:140,y:150,w:30,h:420},{x:280,y:100,w:30,h:200},{x:280,y:350,w:30,h:250},{x:420,y:50,w:30,h:250},{x:420,y:350,w:30,h:250}], radius: 15 },
+    { par: 5, start: {x:60,y:300},  hole: {x:600,y:300}, walls: [{x:130,y:80,w:30,h:200},{x:130,y:400,w:30,h:220},{x:260,y:180,w:30,h:180},{x:260,y:380,w:30,h:180},{x:390,y:80,w:30,h:220},{x:390,y:380,w:30,h:220},{x:520,y:180,w:30,h:180}], radius: 14 },
+  ];
+  let currentHole = 0;
+  let strokes = 0, totalStrokes = 0;
+  let finished = false;
+
+  // ——— Ball ———
+  const ball = { x: 0, y: 0, vx: 0, vy: 0, r: 8, moving: false, trail: [] };
+
+  function resetBall() {
+    const h = holes[currentHole];
+    ball.x = h.start.x * scale;
+    ball.y = h.start.y * scale;
+    ball.vx = 0; ball.vy = 0;
+    ball.moving = false;
+    ball.trail = [];
+  }
+
+  // ——— Input ———
+  let dragging = false, dragStart = null, dragCurrent = null;
+
+  function pos(e) {
+    const r = canvas.getBoundingClientRect();
+    const t = (e.touches ? e.touches[0] : e);
+    return { x: t.clientX - r.left, y: t.clientY - r.top };
+  }
+
+  function onDown(e) {
+    if (ball.moving || finished) return;
+    e.preventDefault();
+    dragging = true;
+    dragStart = pos(e);
+    dragCurrent = { ...dragStart };
+  }
+  function onMove(e) {
+    if (!dragging) return;
+    e.preventDefault();
+    dragCurrent = pos(e);
+  }
+  function onUp(e) {
+    if (!dragging) return;
+    e.preventDefault();
+    dragging = false;
+    const dx = dragStart.x - dragCurrent.x;
+    const dy = dragStart.y - dragCurrent.y;
+    const len = Math.hypot(dx, dy);
+    const power = Math.min(len * 0.12, 22);
+    if (power > 0.5) {
+      const ang = Math.atan2(dy, dx);
+      ball.vx = Math.cos(ang) * power;
+      ball.vy = Math.sin(ang) * power;
+      ball.moving = true;
+      strokes++;
+      updateHUD();
+    }
+    dragStart = null;
+    dragCurrent = null;
+  }
+
+  canvas.addEventListener('mousedown', onDown);
+  canvas.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+  canvas.addEventListener('touchstart', onDown, {passive:false});
+  canvas.addEventListener('touchmove', onMove, {passive:false});
+  window.addEventListener('touchend', onUp);
+
+  // ——— Particles ———
+  let particles = [];
+  function spawnParticles(x, y, count, color, spread, life) {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = Math.random() * spread;
+      particles.push({
+        x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s,
+        life: life || 40 + Math.random()*30, maxLife: life || 70,
+        color, r: 1 + Math.random()*2.5
+      });
+    }
+  }
+
+  // ——— Stars background ———
+  let stars = [];
+  function genStars() {
+    stars = [];
+    for (let i = 0; i < 200; i++) {
+      stars.push({ x: Math.random()*W, y: Math.random()*H, r: Math.random()*1.2, a: Math.random()*0.5+0.1, speed: Math.random()*0.01+0.005 });
+    }
+  }
+  genStars();
+  window.addEventListener('resize', genStars);
+
+  // ——— Physics ———
+  function update() {
+    if (ball.moving) {
+      ball.trail.push({x: ball.x, y: ball.y, a: 1});
+      if (ball.trail.length > 30) ball.trail.shift();
+      for (let t of ball.trail) t.a *= 0.92;
+
+      ball.vx *= 0.985;
+      ball.vy *= 0.985;
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      const h = holes[currentHole];
+      const walls = h.walls.map(w => ({...w, w: w.w*scale, h: w.h*scale}));
+      const allWalls = [
+        {x:0,y:0,w:W,h:8},{x:0,y:H-8,w:W,h:8},{x:0,y:0,w:8,h:H},{x:W-8,y:0,w:8,h:H},
+        ...walls
+      ];
+      for (let w of allWalls) {
+        const nx = Math.max(w.x, Math.min(ball.x, w.x + w.w));
+        const ny = Math.max(w.y, Math.min(ball.y, w.y + w.h));
+        const dx = ball.x - nx, dy = ball.y - ny;
+        const d = Math.hypot(dx, dy);
+        if (d < ball.r && d > 0) {
+          const nx2 = dx/d, ny2 = dy/d;
+          ball.x = nx + nx2 * ball.r;
+          ball.y = ny + ny2 * ball.r;
+          const dot = ball.vx * nx2 + ball.vy * ny2;
+          ball.vx -= 1.8 * dot * nx2;
+          ball.vy -= 1.8 * dot * ny2;
+          spawnParticles(ball.x, ball.y, 6, palette.line, 2, 20);
+        }
+      }
+
+      // Hole detection
+      const hx = h.hole.x * scale, hy = h.hole.y * scale, hr = h.radius * scale;
+      const dist = Math.hypot(ball.x - hx, ball.y - hy);
+      const speed = Math.hypot(ball.vx, ball.vy);
+      if (dist < hr && speed < 8) {
+        ball.moving = false;
+        ball.vx = 0; ball.vy = 0;
+        spawnParticles(hx, hy, 50, palette.hole, 6, 60);
+        spawnParticles(hx, hy, 30, palette.trail, 4, 40);
+        finished = true;
+        setTimeout(showScore, 800);
+      } else if (dist < hr && speed >= 8) {
+        // Ball too fast — bounces off rim
+        const a = Math.atan2(ball.y - hy, ball.x - hx);
+        ball.x = hx + Math.cos(a) * hr;
+        ball.y = hy + Math.sin(a) * hr;
+        const t = Math.atan2(ball.vy, ball.vx);
+        ball.vx = Math.cos(t + Math.PI) * speed * 0.6;
+        ball.vy = Math.sin(t + Math.PI) * speed * 0.6;
+        spawnParticles(ball.x, ball.y, 10, palette.line, 3, 25);
+      }
+
+      if (speed < 0.05) {
+        ball.moving = false;
+        ball.vx = 0; ball.vy = 0;
+      }
+    }
+
+    // Particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx; p.y += p.vy;
+      p.vx *= 0.96; p.vy *= 0.96;
+      p.life--;
+      if (p.life <= 0) particles.splice(i, 1);
+    }
+
+    // Stars twinkle
+    for (let s of stars) s.a += Math.sin(Date.now() * s.speed) * 0.01;
+  }
+
+  // ——— Drawing ———
+  function draw() {
+    ctx.fillStyle = palette.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Stars
+    for (let s of stars) {
+      ctx.globalAlpha = Math.max(0.05, s.a);
+      ctx.fillStyle = palette.star;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Course floor (rounded rect with glow)
+    const fx = 50*scale, fy = 40*scale, fw = W-100*scale, fh = H-80*scale;
+    ctx.save();
+    ctx.shadowBlur = 20*scale;
+    ctx.shadowColor = palette.trail;
+    ctx.fillStyle = palette.fairway;
+    roundRect(ctx, fx, fy, fw, fh, 12*scale);
+    ctx.fill();
+    ctx.restore();
+
+    // Fairway inner glow
+    ctx.fillStyle = palette.green;
+    roundRect(ctx, fx + 4*scale, fy + 4*scale, fw - 8*scale, fh - 8*scale, 10*scale);
+    ctx.fill();
+
+    // Grid lines
+    ctx.strokeStyle = palette.line;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.3;
+    const gs = 40 * scale;
+    for (let x = fx + gs; x < fx + fw; x += gs) {
+      ctx.beginPath(); ctx.moveTo(x, fy); ctx.lineTo(x, fy + fh); ctx.stroke();
+    }
+    for (let y = fy + gs; y < fy + fh; y += gs) {
+      ctx.beginPath(); ctx.moveTo(fx, y); ctx.lineTo(fx + fw, y); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // Walls
+    const h = holes[currentHole];
+    for (let w of h.walls) {
+      const wx = w.x*scale, wy = w.y*scale, ww = w.w*scale, wh = w.h*scale;
+      const grad = ctx.createLinearGradient(wx, wy, wx + ww, wy + wh);
+      grad.addColorStop(0, palette.wallHi);
+      grad.addColorStop(1, palette.wall);
+      ctx.fillStyle = grad;
+      ctx.shadowBlur = 8*scale; ctx.shadowColor = palette.trail;
+      roundRect(ctx, wx, wy, ww, wh, 4*scale);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      // Highlight top edge
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(wx+4*scale, wy+1); ctx.lineTo(wx+ww-4*scale, wy+1); ctx.stroke();
+    }
+
+    // Hole
+    const hx = h.hole.x * scale, hy = h.hole.y * scale, hr = h.radius * scale;
+    // Glow
+    ctx.save();
+    ctx.shadowBlur = 25*scale;
+    ctx.shadowColor = palette.hole;
+    ctx.fillStyle = palette.hole;
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    ctx.arc(hx, hy, hr * 1.6, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+    // Dark center
+    const hGrad = ctx.createRadialGradient(hx, hy, 0, hx, hy, hr);
+    hGrad.addColorStop(0, '#000000');
+    hGrad.addColorStop(0.7, '#0a0a14');
+    hGrad.addColorStop(1, palette.hole);
+    ctx.fillStyle = hGrad;
+    ctx.beginPath(); ctx.arc(hx, hy, hr, 0, Math.PI*2); ctx.fill();
+    // Ring
+    ctx.strokeStyle = palette.hole;
+    ctx.lineWidth = 2;
+    ctx.shadowBlur = 6*scale; ctx.shadowColor = palette.hole;
+    ctx.beginPath(); ctx.arc(hx, hy, hr + 3*scale, 0, Math.PI*2); ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Start marker
+    const sx = h.start.x * scale, sy = h.start.y * scale;
+    ctx.strokeStyle = palette.trail;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4*scale, 4*scale]);
+    ctx.beginPath(); ctx.arc(sx, sy, 14*scale, 0, Math.PI*2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+
+    // Aim line
+    if (dragging && dragStart && dragCurrent && !ball.moving) {
+      const dx = dragStart.x - dragCurrent.x;
+      const dy = dragStart.y - dragCurrent.y;
+      const len = Math.hypot(dx, dy);
+      const power = Math.min(len * 0.12, 22);
+      const ang = Math.atan2(dy, dx);
+      const maxAim = 80 * scale;
+      const ax = ball.x + Math.cos(ang) * Math.min(len, maxAim);
+      const ay = ball.y + Math.sin(ang) * Math.min(len, maxAim);
+
+      ctx.strokeStyle = palette.power;
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath(); ctx.moveTo(ball.x, ball.y); ctx.lineTo(ax, ay); ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      // Power dots
+      const dots = 6;
+      for (let i = 1; i <= dots; i++) {
+        const t = i / dots;
+        const px = ball.x + Math.cos(ang) * t * Math.min(len, maxAim);
+        const py = ball.y + Math.sin(ang) * t * Math.min(len, maxAim);
+        ctx.fillStyle = palette.power;
+        ctx.globalAlpha = 0.6 - t * 0.4;
+        ctx.beginPath(); ctx.arc(px, py, (1-t)*3*scale, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      // Arrowhead
+      if (len > 10) {
+        const headLen = 8 * scale;
+        ctx.fillStyle = palette.power;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(ax - Math.cos(ang - 0.4) * headLen, ay - Math.sin(ang - 0.4) * headLen);
+        ctx.lineTo(ax - Math.cos(ang + 0.4) * headLen, ay - Math.sin(ang + 0.4) * headLen);
+        ctx.closePath(); ctx.fill();
+      }
+
+      // Power arc near ball
+      const pct = Math.min(power / 22, 1);
+      ctx.strokeStyle = power > 18 ? '#ff5252' : palette.power;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, 18*scale, -Math.PI/2, -Math.PI/2 + pct * Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Ball trail
+    for (let i = 0; i < ball.trail.length; i++) {
+      const t = ball.trail[i];
+      ctx.globalAlpha = t.a * 0.5;
+      ctx.fillStyle = palette.trail;
+      ctx.beginPath(); ctx.arc(t.x, t.y, ball.r * 0.6 * t.a, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Ball
+    ctx.save();
+    ctx.shadowBlur = 14*scale;
+    ctx.shadowColor = palette.trail;
+    const bGrad = ctx.createRadialGradient(ball.x - 2*scale, ball.y - 2*scale, 0, ball.x, ball.y, ball.r);
+    bGrad.addColorStop(0, '#ffffff');
+    bGrad.addColorStop(0.6, palette.ball);
+    bGrad.addColorStop(1, '#88aacc');
+    ctx.fillStyle = bGrad;
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    // Particles
+    for (let p of particles) {
+      ctx.globalAlpha = p.life / p.maxLife;
+      ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (p.life / p.maxLife), 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // ——— HUD ———
+  function updateHUD() {
+    document.getElementById('holeNum').textContent = currentHole + 1;
+    document.getElementById('strokes').textContent = strokes;
+    document.getElementById('par').textContent = holes[currentHole].par;
+    document.getElementById('totalStrokes').textContent = totalStrokes + strokes;
+  }
+
+  function showScore() {
+    const h = holes[currentHole];
+    const diff = strokes - h.par;
+    let title, body;
+    if (diff <= -2) { title = 'EAGLE! 🦅'; body = `${strokes} strokes on par ${h.par} — legendary!`; }
+    else if (diff === -1) { title = 'BIRDIE! 🐦'; body = `${strokes} on par ${h.par} — sharp.`; }
+    else if (diff === 0) { title = 'PAR! ⛳'; body = `${strokes} on par ${h.par} — steady.`; }
+    else if (diff === 1) { title = 'BOGEY 😅'; body = `${strokes} on par ${h.par} — still good.`; }
+    else { title = `+${diff}`; body = `${strokes} on par ${h.par}. Keep swinging.`; }
+
+    document.getElementById('msgTitle').textContent = title;
+    document.getElementById('msgBody').textContent = body;
+    document.getElementById('nextBtn').textContent = currentHole < holes.length - 1 ? 'NEXT HOLE →' : 'FINISH 🏆';
+    document.getElementById('message').classList.add('show');
+  }
+
+  document.getElementById('nextBtn').addEventListener('click', () => {
+    document.getElementById('message').classList.remove('show');
+    if (currentHole < holes.length - 1) {
+      totalStrokes += strokes;
+      strokes = 0;
+      currentHole++;
+      palette = palettes[currentHole % palettes.length];
+      resetBall();
+      updateHUD();
+    } else {
+      totalStrokes += strokes;
+      const totalPar = holes.reduce((a, b) => a + b.par, 0);
+      const diff = totalStrokes - totalPar;
+      document.getElementById('msgTitle').textContent = `COURSE COMPLETE! 🏆`;
+      document.getElementById('msgBody').textContent = `Total: ${totalStrokes} strokes on par ${totalPar} (${diff >= 0 ? '+' : ''}${diff})`;
+      document.getElementById('nextBtn').textContent = 'PLAY AGAIN';
+      currentHole = 0; strokes = 0; totalStrokes = 0;
+      palette = palettes[0];
+      resetBall();
+      updateHUD();
+    }
+  });
+
+  // ——— Loop ———
+  function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  resetBall();
+  updateHUD();
+  loop();
+})();
+</script>
+</body>
+</html>
