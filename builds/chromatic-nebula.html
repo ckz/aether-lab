@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chromatic Nebula — Generative Art</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #000;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+  cursor: crosshair;
+}
+canvas { display: block; }
+#ui {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  color: rgba(255,255,255,0.7);
+  font-size: 13px;
+  z-index: 10;
+  pointer-events: none;
+  text-shadow: 0 0 10px rgba(0,0,0,0.8);
+}
+#ui .title {
+  font-size: 18px;
+  font-weight: bold;
+  color: #fff;
+  margin-bottom: 8px;
+  letter-spacing: 3px;
+}
+#ui .info {
+  line-height: 1.6;
+}
+#ui .controls {
+  margin-top: 12px;
+  pointer-events: auto;
+}
+#ui .controls button {
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.3);
+  color: #fff;
+  padding: 6px 14px;
+  margin: 2px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  border-radius: 3px;
+  transition: all 0.2s;
+}
+#ui .controls button:hover {
+  background: rgba(255,255,255,0.25);
+  border-color: rgba(255,255,255,0.6);
+}
+#stats {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  color: rgba(255,255,255,0.5);
+  font-size: 11px;
+  z-index: 10;
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+<div id="ui">
+  <div class="title">✨ CHROMATIC NEBULA</div>
+  <div class="info">
+    Move mouse to attract particles<br>
+    Click to create bursts<br>
+    Press SPACE to pause<br>
+    Press R to reset<br>
+    Press M to toggle mode
+  </div>
+  <div class="controls">
+    <button onclick="reset()">Reset</button>
+    <button onclick="toggleMode()">Toggle Mode</button>
+    <button onclick="saveFrame()">Save Frame</button>
+  </div>
+</div>
+<div id="stats"></div>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy;
+let particles = [];
+let trails = [];
+let mouse = { x: 0, y: 0, active: false };
+let time = 0;
+let paused = false;
+let mode = 0;
+const modeNames = ['Nebula', 'Vortex', 'Bloom'];
+let lastFrame = performance.now();
+let fps = 0;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+class Particle {
+  constructor(x, y, burst = false) {
+    this.x = x || Math.random() * W;
+    this.y = y || Math.random() * H;
+    const angle = Math.random() * Math.PI * 2;
+    const speed = burst ? Math.random() * 6 + 2 : Math.random() * 1.5 + 0.3;
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed;
+    this.life = burst ? 1.0 : Math.random() * 0.8 + 0.2;
+    this.maxLife = this.life;
+    this.size = Math.random() * 2.5 + 0.5;
+    this.hue = (time * 0.3 + Math.random() * 60 + 200) % 360;
+    this.trail = [];
+    this.maxTrail = Math.floor(Math.random() * 20) + 10;
+    this.wander = Math.random() * 0.02 + 0.01;
+  }
+
+  update() {
+    this.trail.push({ x: this.x, y: this.y, life: this.life });
+    if (this.trail.length > this.maxTrail) this.trail.shift();
+
+    if (mode === 0) { // Nebula - flowing noise
+      const angle = this.noise(this.x * 0.003, this.y * 0.003, time * 0.0005) * Math.PI * 4;
+      this.vx += Math.cos(angle) * 0.15;
+      this.vy += Math.sin(angle) * 0.15;
+    } else if (mode === 1) { // Vortex - spiral
+      const dx = this.x - cx;
+      const dy = this.y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx) + Math.PI / 2;
+      const force = Math.min(0.3, 50 / (dist + 50));
+      this.vx += Math.cos(angle) * force;
+      this.vy += Math.sin(angle) * force;
+      this.vx -= dx * 0.0001;
+      this.vy -= dy * 0.0001;
+    } else { // Bloom - organic breathing
+      const dx = this.x - cx;
+      const dy = this.y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const wave = Math.sin(dist * 0.01 - time * 0.002) * 0.3;
+      this.vx += (dx / dist) * wave;
+      this.vy += (dy / dist) * wave;
+      this.vx += Math.sin(time * 0.001 + this.x * 0.01) * 0.05;
+      this.vy += Math.cos(time * 0.001 + this.y * 0.01) * 0.05;
+    }
+
+    // Mouse attraction
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 300) {
+        const force = (300 - dist) / 300 * 0.5;
+        this.vx += (dx / dist) * force;
+        this.vy += (dy / dist) * force;
+      }
+    }
+
+    // Damping
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+
+    // Speed limit
+    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    const maxSpeed = mode === 1 ? 4 : 3;
+    if (speed > maxSpeed) {
+      this.vx = (this.vx / speed) * maxSpeed;
+      this.vy = (this.vy / speed) * maxSpeed;
+    }
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Wrap
+    if (this.x < -50) this.x = W + 50;
+    if (this.x > W + 50) this.x = -50;
+    if (this.y < -50) this.y = H + 50;
+    if (this.y > H + 50) this.y = -50;
+
+    this.life -= 0.001;
+    this.hue += 0.2;
+  }
+
+  noise(x, y, z) {
+    // Simple hash-based noise
+    const n = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453;
+    return n - Math.floor(n);
+  }
+
+  draw() {
+    // Draw trail
+    if (this.trail.length > 1) {
+      for (let i = 0; i < this.trail.length; i++) {
+        const t = this.trail[i];
+        const alpha = (i / this.trail.length) * this.life * 0.5;
+        const size = this.size * (i / this.trail.length);
+        ctx.fillStyle = `hsla(${this.hue}, 80%, 60%, ${alpha})`;
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Draw particle
+    const alpha = this.life;
+    const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size * 3);
+    gradient.addColorStop(0, `hsla(${this.hue}, 90%, 70%, ${alpha})`);
+    gradient.addColorStop(0.5, `hsla(${this.hue + 20}, 80%, 50%, ${alpha * 0.5})`);
+    gradient.addColorStop(1, `hsla(${this.hue + 40}, 70%, 30%, 0)`);
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  get dead() { return this.life <= 0; }
+}
+
+// Initialize
+for (let i = 0; i < 800; i++) {
+  particles.push(new Particle());
+}
+
+// Mouse events
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('click', e => {
+  for (let i = 0; i < 50; i++) {
+    particles.push(new Particle(e.clientX, e.clientY, true));
+  }
+});
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { paused = !paused; e.preventDefault(); }
+  if (e.code === 'KeyR') reset();
+  if (e.code === 'KeyM') toggleMode();
+});
+
+function reset() {
+  particles = [];
+  for (let i = 0; i < 800; i++) {
+    particles.push(new Particle());
+  }
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+}
+
+function toggleMode() {
+  mode = (mode + 1) % 3;
+  document.querySelector('.title').textContent = `✨ ${modeNames[mode].toUpperCase()} — CHROMATIC NEBULA`;
+}
+
+function saveFrame() {
+  const link = document.createElement('a');
+  link.download = `chromatic-nebula-${Date.now()}.png`;
+  link.href = canvas.toDataURL();
+  link.click();
+}
+
+function animate(now) {
+  requestAnimationFrame(animate);
+
+  // FPS
+  fps = 1000 / (now - lastFrame);
+  lastFrame = now;
+
+  if (paused) return;
+
+  time++;
+
+  // Semi-transparent overlay for trails
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Update and draw particles
+  particles = particles.filter(p => !p.dead);
+
+  // Maintain minimum particle count
+  while (particles.length < 800) {
+    particles.push(new Particle());
+  }
+
+  // Add new particles at edges
+  if (Math.random() < 0.3) {
+    const edge = Math.floor(Math.random() * 4);
+    let x, y;
+    if (edge === 0) { x = Math.random() * W; y = -10; }
+    else if (edge === 1) { x = W + 10; y = Math.random() * H; }
+    else if (edge === 2) { x = Math.random() * W; y = H + 10; }
+    else { x = -10; y = Math.random() * H; }
+    particles.push(new Particle(x, y));
+  }
+
+  // Update composite operation for glow
+  ctx.globalCompositeOperation = 'lighter';
+
+  for (const p of particles) {
+    p.update();
+    p.draw();
+  }
+
+  ctx.globalCompositeOperation = 'source-over';
+
+  // Stats
+  document.getElementById('stats').textContent =
+    `Particles: ${particles.length} | Mode: ${modeNames[mode]} | FPS: ${fps.toFixed(0)}`;
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
