@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phonon Lattice — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #08080f;
+    color: #ccc;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    overflow: hidden;
+    height: 100vh;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    pointer-events: none;
+    text-align: center;
+  }
+  #title {
+    font-size: 13px;
+    letter-spacing: 6px;
+    color: #667;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  #hint {
+    font-size: 10px;
+    color: #445;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  #stats {
+    position: fixed;
+    bottom: 16px;
+    left: 20px;
+    font-size: 10px;
+    color: #334;
+    z-index: 10;
+    pointer-events: none;
+    letter-spacing: 1px;
+  }
+  #palette-name {
+    position: fixed;
+    bottom: 16px;
+    right: 20px;
+    font-size: 11px;
+    color: #556;
+    z-index: 10;
+    pointer-events: none;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">✦ Phonon Lattice ✦</div>
+  <div id="hint">Click to emit waves · Drag for continuous · 1-4 modes · P palettes · Space clear</div>
+</div>
+<div id="stats"></div>
+<div id="palette-name"></div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const statsEl = document.getElementById('stats');
+  const paletteEl = document.getElementById('palette-name');
+
+  let W, H, DPR;
+  function resize() {
+    DPR = window.devicePixelRatio || 1;
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // === Config ===
+  const SPACING = 22;
+  let cols, rows, nodes;
+  let sources = [];
+  let mode = 0; // 0=chladni, 1=vortex, 2=standing, 3=rain
+  const modes = ['chladni', 'vortex', 'standing', 'rain'];
+  let paletteIdx = 0;
+
+  const palettes = [
+    { name: 'Cherenkov', colors: ['#0a0a2e','#1a0a4e','#4a2a9e','#7b5eff','#b8a0ff','#e0d0ff'], bg: '#05051a' },
+    { name: 'Ember',     colors: ['#1a0500','#3d1500','#8b3a00','#e07020','#ffaa60','#ffe0c0'], bg: '#0a0300' },
+    { name: 'Biolum',    colors: ['#001a0a','#003020','#006040','#00c878','#60ffa0','#c0ffe0'], bg: '#000a05' },
+    { name: 'Ion',       colors: ['#0a0a1a','#1a2040','#3050a0','#60a0ff','#a0d0ff','#e0f0ff'], bg: '#050510' },
+    { name: 'Rose',      colors: ['#1a050a','#400a20','#a02050','#ff4080','#ffa0c0','#ffe0ee'], bg: '#0a0305' },
+  ];
+
+  function initNodes() {
+    cols = Math.ceil(W / SPACING) + 2;
+    rows = Math.ceil(H / SPACING) + 2;
+    nodes = [];
+    const ox = (W - (cols - 1) * SPACING) / 2;
+    const oy = (H - (rows - 1) * SPACING) / 2;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        nodes.push({
+          x: ox + c * SPACING,
+          y: oy + r * SPACING,
+          baseX: ox + c * SPACING,
+          baseY: oy + r * SPACING,
+          amp: 0,
+          phase: Math.random() * Math.PI * 2,
+          freq: 0.03 + Math.random() * 0.02,
+          vx: 0, vy: 0,
+        });
+      }
+    }
+  }
+  initNodes();
+  window.addEventListener('resize', () => { initNodes(); });
+
+  function addSource(x, y) {
+    sources.push({
+      x, y,
+      strength: 0,
+      birth: performance.now(),
+      life: 4000 + Math.random() * 2000,
+    });
+    if (sources.length > 12) sources.shift();
+  }
+
+  // === Interaction ===
+  let mouseDown = false, mouseX = W/2, mouseY = H/2, mouseMoved = false;
+  canvas.addEventListener('mousedown', e => { mouseDown = true; addSource(e.clientX, e.clientY); });
+  canvas.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; mouseMoved = true; if (mouseDown && Math.random() < 0.08) addSource(e.clientX, e.clientY); });
+  canvas.addEventListener('mouseup', () => mouseDown = false);
+  canvas.addEventListener('mouseleave', () => mouseDown = false);
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); const t = e.touches[0]; addSource(t.clientX, t.clientY); }, {passive:false});
+  canvas.addEventListener('touchmove', e => { e.preventDefault(); const t = e.touches[0]; mouseX = t.clientX; mouseY = t.clientY; if (Math.random() < 0.1) addSource(t.clientX, t.clientY); }, {passive:false});
+
+  document.addEventListener('keydown', e => {
+    if (e.key === ' ' || e.code === 'Space') { sources = []; e.preventDefault(); }
+    if (e.key === 'p' || e.key === 'P') { paletteIdx = (paletteIdx + 1) % palettes.length; }
+    if (['1','2','3','4'].includes(e.key)) { mode = parseInt(e.key) - 1; }
+  });
+
+  // === Physics ===
+  function getAmp(nx, ny, t) {
+    let val = 0;
+    for (const s of sources) {
+      const dx = nx - s.x, dy = ny - s.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const age = t - s.birth;
+      const lifeFrac = age / s.life;
+      if (lifeFrac > 1) continue;
+      const envelope = Math.exp(-lifeFrac * 2.5) * (1 - lifeFrac);
+      const wave = Math.sin(dist * 0.04 - age * 0.008 + s.strength);
+      val += wave * envelope * 80 / (1 + dist * 0.02);
+    }
+    return val;
+  }
+
+  // === Render ===
+  let lastT = performance.now();
+  let frameCount = 0, fps = 0, fpsTimer = 0;
+
+  function frame(now) {
+    const dt = Math.min(now - lastT, 50);
+    lastT = now;
+    frameCount++;
+    fpsTimer += dt;
+    if (fpsTimer > 1000) { fps = Math.round(frameCount * 1000 / fpsTimer); frameCount = 0; fpsTimer = 0; }
+
+    // Decay sources
+    sources = sources.filter(s => now - s.birth < s.life);
+
+    // Update nodes
+    const t = now;
+    const pal = palettes[paletteIdx];
+    const bg = pal.bg;
+
+    // Fade background
+    ctx.fillStyle = bg;
+    ctx.globalAlpha = 0.18;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+
+    // Optional ambient source following mouse gently
+    if (mouseMoved && mode === 1 && Math.random() < 0.03) {
+      addSource(mouseX + (Math.random()-0.5)*80, mouseY + (Math.random()-0.5)*80);
+    }
+
+    const nodeCount = nodes.length;
+    for (let i = 0; i < nodeCount; i++) {
+      const n = nodes[i];
+      let amp = 0;
+
+      if (mode === 0) {
+        // Chladni — standing wave interference
+        amp = getAmp(n.baseX, n.baseY, t);
+        // Add grid resonance
+        amp += Math.sin(n.baseX * 0.03 + t * 0.001) * Math.cos(n.baseY * 0.03 - t * 0.0015) * 15;
+      } else if (mode === 1) {
+        // Vortex — spiral waves from center
+        const cx = W/2, cy = H/2;
+        const dx = n.baseX - cx, dy = n.baseY - cy;
+        const angle = Math.atan2(dy, dx);
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        amp = Math.sin(dist * 0.025 - t * 0.004 + angle * 2) * 30;
+        amp += getAmp(n.baseX, n.baseY, t) * 0.6;
+      } else if (mode === 2) {
+        // Standing — diagonal waves
+        amp = Math.sin((n.baseX + n.baseY) * 0.02 + t * 0.002) * 20;
+        amp += Math.sin((n.baseX - n.baseY) * 0.025 - t * 0.003) * 20;
+        amp += getAmp(n.baseX, n.baseY, t) * 0.7;
+      } else {
+        // Rain — falling wave columns
+        amp = Math.sin(n.baseX * 0.04 + t * 0.003) * 25;
+        amp += Math.cos(n.baseY * 0.05 - t * 0.002) * 15;
+        amp += getAmp(n.baseX, n.baseY, t) * 0.5;
+      }
+
+      // Spring back to grid
+      n.vx += (n.baseX - n.x) * 0.02;
+      n.vy += (n.baseY - n.y) * 0.02;
+      n.x += n.vx;
+      n.y += n.vy;
+      n.vx *= 0.85;
+      n.vy *= 0.85;
+
+      const targetX = n.baseX + Math.sin(t * 0.002 + n.phase) * amp * 0.3;
+      const targetY = n.baseY + Math.cos(t * 0.0025 + n.phase) * amp * 0.3;
+      n.x += (targetX - n.x) * 0.08;
+      n.y += (targetY - n.y) * 0.08;
+
+      n.amp = amp;
+    }
+
+    // Draw connections
+    const maxAmp = 60;
+    ctx.lineWidth = 0.6;
+    for (let i = 0; i < nodeCount; i++) {
+      const n = nodes[i];
+      const a = Math.min(1, Math.abs(n.amp) / maxAmp);
+      if (a < 0.02) continue;
+
+      const ci = Math.min(pal.colors.length - 1, Math.floor((Math.abs(n.amp) / maxAmp) * pal.colors.length));
+      ctx.strokeStyle = pal.colors[ci];
+      ctx.globalAlpha = a * 0.5;
+
+      const c = i % cols;
+      const r = Math.floor(i / cols);
+      // right neighbor
+      if (c < cols - 1) {
+        const j = i + 1;
+        const nb = nodes[j];
+        const avgA = (Math.abs(n.amp) + Math.abs(nb.amp)) / 2 / maxAmp;
+        if (avgA > 0.03) {
+          const ci2 = Math.min(pal.colors.length - 1, Math.floor(avgA * pal.colors.length));
+          ctx.strokeStyle = pal.colors[ci2];
+          ctx.beginPath();
+          ctx.moveTo(n.x, n.y);
+          ctx.lineTo(nb.x, nb.y);
+          ctx.stroke();
+        }
+      }
+      // bottom neighbor
+      if (r < rows - 1) {
+        const j = i + cols;
+        const nb = nodes[j];
+        const avgA = (Math.abs(n.amp) + Math.abs(nb.amp)) / 2 / maxAmp;
+        if (avgA > 0.03) {
+          const ci2 = Math.min(pal.colors.length - 1, Math.floor(avgA * pal.colors.length));
+          ctx.strokeStyle = pal.colors[ci2];
+          ctx.beginPath();
+          ctx.moveTo(n.x, n.y);
+          ctx.lineTo(nb.x, nb.y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Draw nodes
+    for (let i = 0; i < nodeCount; i++) {
+      const n = nodes[i];
+      const a = Math.min(1, Math.abs(n.amp) / maxAmp);
+      if (a < 0.04) continue;
+
+      const ci = Math.min(pal.colors.length - 1, Math.floor(a * (pal.colors.length - 1)));
+      ctx.fillStyle = pal.colors[ci];
+      ctx.globalAlpha = Math.min(1, a * 0.9 + 0.1);
+      const sz = 1 + a * 2.5;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, sz, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Source indicators
+    ctx.globalAlpha = 1;
+    for (const s of sources) {
+      const age = now - s.birth;
+      const lifeFrac = age / s.life;
+      const alpha = Math.exp(-lifeFrac * 2) * 0.5;
+      ctx.strokeStyle = pal.colors[pal.colors.length - 1];
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = 1;
+      const r = 8 + (1 - lifeFrac) * 20;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = 1;
+    statsEl.textContent = `fps ${fps} · nodes ${nodeCount} · sources ${sources.length} · mode ${modes[mode]}`;
+    paletteEl.textContent = pal.name;
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
