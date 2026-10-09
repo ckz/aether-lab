@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Physarum Weave — Slime Mold Simulation</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #ccc;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    display: block;
+    cursor: crosshair;
+    image-rendering: pixelated;
+  }
+  .controls {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    background: rgba(10,10,15,0.85);
+    padding: 8px 14px;
+    border-radius: 10px;
+    border: 1px solid #1a1a2e;
+    backdrop-filter: blur(10px);
+    flex-wrap: wrap;
+    justify-content: center;
+    z-index: 10;
+  }
+  .controls button, .controls label {
+    background: #12121a;
+    border: 1px solid #2a2a3e;
+    color: #aaa;
+    padding: 5px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    font-family: inherit;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .controls button:hover, .controls label:hover {
+    border-color: #555;
+    color: #fff;
+    background: #1a1a2e;
+  }
+  .controls button.active {
+    border-color: #7b68ee;
+    color: #c4b5fd;
+    background: #1a1a2e;
+  }
+  .info {
+    position: fixed;
+    top: 12px;
+    left: 14px;
+    font-size: 11px;
+    color: #555;
+    line-height: 1.6;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .info span { color: #888; }
+  .palette-preview {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 3px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+  <div class="info">
+    <span>FPS: <span id="fps">0</span></span> · 
+    <span>Agents: <span id="agentCount">0</span></span> · 
+    <span>Frames: <span id="frameCount">0</span></span><br>
+    <span>Click to place mold · Scroll to change brush</span>
+  </div>
+  <canvas id="c"></canvas>
+  <div class="controls">
+    <button id="btnClear">Clear</button>
+    <button id="btnReset">New Seed</button>
+    <button id="btnPause">Pause</button>
+    <button id="btnPalette">Palette</button>
+    <button id="btnSave">Save PNG</button>
+    <label>Speed <input type="range" id="sliderSpeed" min="0.5" max="4" step="0.1" value="1.5"></label>
+    <label>Decay <input type="range" id="sliderDecay" min="0.9" max="0.999" step="0.001" value="0.97"></label>
+    <label>Diffuse <input type="range" id="sliderDiffuse" min="0.1" max="0.5" step="0.01" value="0.2"></label>
+    <label>Trail <input type="range" id="sliderTrail" min="1" max="6" step="1" value="3"></label>
+  </div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H, scale = 4;
+let trailMap, nextTrailMap;
+let agents = [];
+let frame = 0;
+let paused = false;
+let lastTime = performance.now();
+let fpsSmooth = 60;
+
+const PALETTES = [
+  { name: 'Mycelium',   colors: [[0,255,120],[0,200,100],[180,255,180],[100,255,200]], bg: [5,12,8] },
+  { name: 'Nebula',     colors: [[180,100,255],[120,80,255],[255,120,200],[100,200,255]], bg: [8,5,15] },
+  { name: 'Ember',      colors: [[255,180,50],[255,120,30],[255,80,20],[255,220,100]], bg: [15,8,5] },
+  { name: 'Aurora',     colors: [[50,255,200],[100,180,255],[150,255,150],[200,255,255]], bg: [5,12,12] },
+  { name: 'Biolum',     colors: [[0,200,255],[0,255,180],[100,255,255],[180,255,220]], bg: [4,10,14] },
+  { name: 'Plasma',     colors: [[255,50,100],[255,150,50],[200,50,255],[255,255,50]], bg: [14,5,10] },
+];
+let paletteIdx = 0;
+let palette = PALETTES[0];
+
+let sensorAngle = Math.PI / 4;
+let sensorDist = 12;
+let turnSpeed = 0.4;
+let moveSpeed = 1.5;
+let decayRate = 0.97;
+let diffuseRate = 0.2;
+let trailWeight = 3;
+let brushSize = 20;
+
+function resize() {
+  W = Math.floor(window.innerWidth / scale);
+  H = Math.floor(window.innerHeight / scale);
+  canvas.width = W;
+  canvas.height = H;
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  initTrails();
+}
+
+function initTrails() {
+  trailMap = new Float32Array(W * H);
+  nextTrailMap = new Float32Array(W * H);
+}
+
+function getTrail(x, y) {
+  if (x < 0 || x >= W || y < 0 || y >= H) return 0;
+  return trailMap[y * W + x];
+}
+
+function setTrail(x, y, v) {
+  if (x < 0 || x >= W || y < 0 || y >= H) return;
+  trailMap[y * W + x] = Math.max(0, Math.min(1, v));
+}
+
+function sense(agent, angleOffset) {
+  const angle = agent.a + angleOffset;
+  const sx = Math.floor(agent.x + Math.cos(angle) * sensorDist);
+  const sy = Math.floor(agent.y + Math.sin(angle) * sensorDist);
+  return getTrail(sx, sy);
+}
+
+function deposit(x, y, amount) {
+  setTrail(x, y, getTrail(x, y) + amount);
+}
+
+function initAgents(count) {
+  agents = [];
+  const cx = W / 2, cy = H / 2;
+  const spread = Math.min(W, H) * 0.3;
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const r = Math.random() * spread;
+    agents.push({
+      x: cx + Math.cos(angle) * r,
+      y: cy + Math.sin(angle) * r,
+      a: Math.random() * Math.PI * 2
+    });
+  }
+}
+
+function addAgentsAt(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    agents.push({
+      x: x + (Math.random() - 0.5) * brushSize * 2,
+      y: y + (Math.random() - 0.5) * brushSize * 2,
+      a: Math.random() * Math.PI * 2
+    });
+  }
+}
+
+function updateAgents() {
+  const speed = moveSpeed;
+  for (let i = 0; i < agents.length; i++) {
+    const agent = agents[i];
+    const f = sense(agent, 0);
+    const fl = sense(agent, -sensorAngle);
+    const fr = sense(agent, sensorAngle);
+
+    if (f > fl && f > fr) {
+      // continue
+    } else if (f < fl && f < fr) {
+      agent.a += (Math.random() - 0.5) * 2 * turnSpeed;
+    } else if (fl < fr) {
+      agent.a += turnSpeed * 0.5;
+    } else if (fr < fl) {
+      agent.a -= turnSpeed * 0.5;
+    }
+
+    agent.x += Math.cos(agent.a) * speed;
+    agent.y += Math.sin(agent.a) * speed;
+
+    // wrap around
+    if (agent.x < 0) agent.x += W;
+    if (agent.x >= W) agent.x -= W;
+    if (agent.y < 0) agent.y += H;
+    if (agent.y >= H) agent.y -= H;
+
+    deposit(Math.floor(agent.x), Math.floor(agent.y), trailWeight);
+  }
+}
+
+function diffuseAndDecay() {
+  const decay = decayRate;
+  const diff = diffuseRate;
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      const idx = y * W + x;
+      const val = trailMap[idx];
+      const neighbors = (
+        trailMap[idx - 1] + trailMap[idx + 1] +
+        trailMap[idx - W] + trailMap[idx + W]
+      ) * 0.25;
+      nextTrailMap[idx] = val + (neighbors - val) * diff;
+      nextTrailMap[idx] *= decay;
+    }
+  }
+  [trailMap, nextTrailMap] = [nextTrailMap, trailMap];
+}
+
+function render() {
+  const imgData = ctx.createImageData(W, H);
+  const data = imgData.data;
+  const colors = palette.colors;
+  const bg = palette.bg;
+
+  for (let i = 0; i < W * H; i++) {
+    const v = trailMap[i];
+    const pi = (v * (colors.length - 1)) | 0;
+    const pf = v * (colors.length - 1) - pi;
+    const c1 = colors[Math.min(pi, colors.length - 1)];
+    const c2 = colors[Math.min(pi + 1, colors.length - 1)];
+
+    const r = bg[0] + (c1[0] + (c2[0] - c1[0]) * pf - bg[0]) * v;
+    const g = bg[1] + (c1[1] + (c2[1] - c1[1]) * pf - bg[1]) * v;
+    const b = bg[2] + (c1[2] + (c2[2] - c1[2]) * pf - bg[2]) * v;
+
+    const j = i * 4;
+    data[j] = Math.min(255, r);
+    data[j + 1] = Math.min(255, g);
+    data[j + 2] = Math.min(255, b);
+    data[j + 3] = 255;
+  }
+  ctx.putImageData(imgData, 0, 0);
+}
+
+function loop() {
+  if (!paused) {
+    updateAgents();
+    diffuseAndDecay();
+    render();
+    frame++;
+  }
+  
+  const now = performance.now();
+  const dt = now - lastTime;
+  if (dt > 500) {
+    fpsSmooth = fpsSmooth * 0.7 + (1000 / Math.max(1, dt)) * 0.3;
+    lastTime = now;
+    document.getElementById('fps').textContent = Math.round(fpsSmooth);
+    document.getElementById('agentCount').textContent = agents.length;
+    document.getElementById('frameCount').textContent = frame;
+  }
+  requestAnimationFrame(loop);
+}
+
+// Controls
+document.getElementById('btnClear').addEventListener('click', () => {
+  initTrails();
+  agents = [];
+});
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  initTrails();
+  initAgents(2000);
+});
+
+document.getElementById('btnPause').addEventListener('click', (e) => {
+  paused = !paused;
+  e.target.textContent = paused ? 'Resume' : 'Pause';
+  e.target.classList.toggle('active', paused);
+});
+
+document.getElementById('btnPalette').addEventListener('click', () => {
+  paletteIdx = (paletteIdx + 1) % PALETTES.length;
+  palette = PALETTES[paletteIdx];
+  document.getElementById('btnPalette').textContent = palette.name;
+});
+
+document.getElementById('btnSave').addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = 'physarum-weave.png';
+  link.href = canvas.toDataURL();
+  link.click();
+});
+
+document.getElementById('sliderSpeed').addEventListener('input', (e) => { moveSpeed = parseFloat(e.target.value); });
+document.getElementById('sliderDecay').addEventListener('input', (e) => { decayRate = parseFloat(e.target.value); });
+document.getElementById('sliderDiffuse').addEventListener('input', (e) => { diffuseRate = parseFloat(e.target.value); });
+document.getElementById('sliderTrail').addEventListener('input', (e) => { trailWeight = parseFloat(e.target.value); });
+
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / scale;
+  const y = (e.clientY - rect.top) / scale;
+  addAgentsAt(x, y, 300);
+});
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  brushSize = Math.max(5, Math.min(80, brushSize + (e.deltaY > 0 ? -5 : 5)));
+});
+
+// Init
+resize();
+initTrails();
+initAgents(2000);
+document.getElementById('btnPalette').textContent = palette.name;
+window.addEventListener('resize', () => {
+  resize();
+  if (agents.length === 0) initAgents(2000);
+});
+loop();
+</script>
+</body>
+</html>
