@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cipher Lab — Quick Encode / Decode</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0b0d17; --panel: #131625; --panel-2: #1a1d30; --border: #252840;
+    --accent: #00e5ff; --accent-2: #a855f7; --accent-3: #34d399;
+    --text: #e2e8f0; --muted: #64748b; --error: #f87171;
+  }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    min-height: 100vh; padding: 2rem;
+    background-image: radial-gradient(circle at 50% 0%, #1a1a3e 0%, var(--bg) 70%);
+  }
+  h1 {
+    text-align: center; font-size: 1.8rem; font-weight: 300;
+    letter-spacing: 0.3em; color: var(--accent);
+    text-shadow: 0 0 20px rgba(0, 229, 255, 0.3);
+    margin-bottom: 0.3rem;
+  }
+  .subtitle {
+    text-align: center; color: var(--muted); font-size: 0.75rem;
+    letter-spacing: 0.15em; margin-bottom: 2rem;
+  }
+  .container {
+    max-width: 1100px; margin: 0 auto;
+    display: grid; grid-template-columns: 260px 1fr; gap: 1.5rem;
+  }
+  @media (max-width: 760px) {
+    .container { grid-template-columns: 1fr; }
+  }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.2rem;
+  }
+  .panel-title {
+    font-size: 0.65rem; letter-spacing: 0.2em; color: var(--muted);
+    text-transform: uppercase; margin-bottom: 1rem; padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .cipher-list { list-style: none; }
+  .cipher-list li {
+    padding: 0.55rem 0.8rem; margin-bottom: 0.3rem;
+    border-radius: 8px; cursor: pointer;
+    font-size: 0.8rem; letter-spacing: 0.05em;
+    color: var(--muted); transition: all 0.15s;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .cipher-list li:hover { background: var(--panel-2); color: var(--text); }
+  .cipher-list li.active {
+    background: linear-gradient(135deg, rgba(0,229,255,0.1), rgba(168,85,247,0.1));
+    color: var(--accent); border: 1px solid rgba(0,229,255,0.3);
+  }
+  .cipher-tag {
+    font-size: 0.6rem; padding: 2px 6px; border-radius: 4px;
+    background: var(--panel-2); color: var(--muted); letter-spacing: 0.1em;
+  }
+  .cipher-list li.active .cipher-tag { background: rgba(0,229,255,0.15); color: var(--accent); }
+  .main-area { display: flex; flex-direction: column; gap: 1rem; }
+  .cipher-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.8rem 1.2rem; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 12px;
+  }
+  .cipher-name {
+    font-size: 1.1rem; color: var(--accent);
+    letter-spacing: 0.15em;
+  }
+  .cipher-desc { font-size: 0.75rem; color: var(--muted); }
+  .io-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;
+  }
+  @media (max-width: 600px) { .io-grid { grid-template-columns: 1fr; } }
+  .io-box { display: flex; flex-direction: column; }
+  .io-label {
+    font-size: 0.65rem; letter-spacing: 0.2em; color: var(--muted);
+    margin-bottom: 0.5rem; display: flex; justify-content: space-between;
+  }
+  textarea {
+    flex: 1; min-height: 180px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 1rem; color: var(--text);
+    font-family: inherit; font-size: 0.85rem; line-height: 1.6;
+    resize: vertical; outline: none;
+    transition: border-color 0.15s;
+  }
+  textarea:focus { border-color: var(--accent); }
+  textarea::placeholder { color: #3a3d52; }
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 0.6rem;
+    align-items: center;
+  }
+  .btn {
+    padding: 0.6rem 1.2rem; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); cursor: pointer;
+    font-family: inherit; font-size: 0.75rem; letter-spacing: 0.1em;
+    transition: all 0.15s;
+  }
+  .btn:hover { background: var(--panel-2); border-color: var(--accent); color: var(--accent); }
+  .btn.primary {
+    background: linear-gradient(135deg, rgba(0,229,255,0.15), rgba(168,85,247,0.15));
+    border-color: var(--accent); color: var(--accent);
+  }
+  .btn.primary:hover {
+    background: linear-gradient(135deg, rgba(0,229,255,0.3), rgba(168,85,247,0.3));
+  }
+  .options { display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap; }
+  .option-group {
+    display: flex; align-items: center; gap: 0.4rem;
+    font-size: 0.75rem; color: var(--muted);
+  }
+  .option-group label { letter-spacing: 0.1em; }
+  input[type="number"], input[type="text"] {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.4rem 0.6rem; color: var(--text);
+    font-family: inherit; font-size: 0.8rem; width: 60px; outline: none;
+  }
+  input[type="number"]:focus, input[type="text"]:focus { border-color: var(--accent); }
+  input[type="range"] {
+    -webkit-appearance: none; height: 4px; background: var(--border);
+    border-radius: 2px; outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px;
+    border-radius: 50%; background: var(--accent); cursor: pointer;
+  }
+  .stats {
+    display: flex; gap: 1.5rem; font-size: 0.7rem; color: var(--muted);
+    padding: 0.5rem 0;
+  }
+  .stat span { color: var(--accent); }
+  .copy-toast {
+    position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%);
+    background: var(--accent); color: var(--bg); padding: 0.6rem 1.4rem;
+    border-radius: 8px; font-size: 0.8rem; letter-spacing: 0.1em;
+    opacity: 0; transition: opacity 0.3s; pointer-events: none;
+  }
+  .copy-toast.show { opacity: 1; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 0.65rem; background: rgba(168,85,247,0.15); color: var(--accent-2);
+    letter-spacing: 0.1em;
+  }
+  .footer {
+    text-align: center; margin-top: 2rem; color: var(--muted);
+    font-size: 0.7rem; letter-spacing: 0.1em;
+  }
+</style>
+</head>
+<body>
+  <h1>CIPHER LAB</h1>
+  <p class="subtitle">QUICK ENCODE · DECODE · EXPLORE</p>
+
+  <div class="container">
+    <div class="panel">
+      <div class="panel-title">Ciphers</div>
+      <ul class="cipher-list" id="cipherList"></ul>
+    </div>
+
+    <div class="main-area">
+      <div class="cipher-header">
+        <div>
+          <div class="cipher-name" id="cipherName">—</div>
+          <div class="cipher-desc" id="cipherDesc">Select a cipher</div>
+        </div>
+        <span class="badge" id="cipherType">—</span>
+      </div>
+
+      <div class="io-grid">
+        <div class="io-box">
+          <div class="io-label">
+            <span>INPUT</span>
+            <button class="btn" onclick="clearInput()">Clear</button>
+          </div>
+          <textarea id="input" placeholder="Type or paste your text here..."></textarea>
+        </div>
+        <div class="io-box">
+          <div class="io-label">
+            <span>OUTPUT</span>
+            <button class="btn" onclick="copyOutput()">Copy</button>
+          </div>
+          <textarea id="output" readonly placeholder="Result will appear here..."></textarea>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="btn primary" onclick="process()">Process →</button>
+        <button class="btn" onclick="swap()">⇄ Swap</button>
+        <div class="options" id="options"></div>
+      </div>
+
+      <div class="stats" id="stats"></div>
+    </div>
+  </div>
+
+  <div class="copy-toast" id="toast">Copied!</div>
+  <div class="footer">CIPHER LAB · ALL PROCESSING LOCAL · ZERO DEPENDENCIES</div>
+
+<script>
+const ciphers = [
+  {
+    id: 'base64', name: 'Base64', type: 'Encoding',
+    desc: 'Standard base64 / base64url encoding',
+    options: () => `
+      <div class="option-group">
+        <label>Variant:</label>
+        <select id="base64Variant" style="background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:0.3rem;font-family:inherit;font-size:0.75rem;">
+          <option value="std">Standard</option>
+          <option value="url">URL-safe</option>
+        </select>
+      </div>
+    `,
+    encode: (t, opts) => {
+      const variant = document.getElementById('base64Variant')?.value || 'std';
+      const bytes = new TextEncoder().encode(t);
+      let bin = '';
+      bytes.forEach(b => bin += b.toString(2).padStart(8, '0'));
+      let b64 = '';
+      for (let i = 0; i < bin.length; i += 6) {
+        const six = (bin.substring(i, i + 6) + '000000').substring(0, 6);
+        b64 += 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'[parseInt(six, 2)];
+      }
+      while (b64.length % 4) b64 += '=';
+      if (variant === 'url') b64 = b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      return b64;
+    },
+    decode: (t, opts) => {
+      const variant = document.getElementById('base64Variant')?.value || 'std';
+      let s = t.replace(/\s/g, '');
+      if (variant === 'url') { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; }
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(s)) return '⚠ Invalid Base64';
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+      let bin = '';
+      for (const c of s) {
+        if (c === '=') { bin += '======'; continue; }
+        const idx = chars.indexOf(c);
+        if (idx < 0) return '⚠ Invalid character';
+        bin += idx.toString(2).padStart(6, '0');
+      }
+      let bytes = [];
+      for (let i = 0; i < bin.length; i += 8) {
+        const byte = bin.substring(i, i + 8);
+        if (byte.length < 8) break;
+        bytes.push(parseInt(byte, 2));
+      }
+      return new TextDecoder().decode(new Uint8Array(bytes));
+    }
+  },
+  {
+    id: 'hex', name: 'Hex', type: 'Encoding',
+    desc: 'Hexadecimal encode / decode',
+    encode: (t) => new TextEncoder().encode(t).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' '),
+    decode: (t) => {
+      const bytes = t.replace(/\s/g, '').match(/.{1,2}/g);
+      if (!bytes) return '⚠ Invalid hex';
+      const arr = bytes.map(b => parseInt(b, 16));
+      if (arr.some(isNaN)) return '⚠ Invalid hex characters';
+      return new TextDecoder().decode(new Uint8Array(arr));
+    }
+  },
+  {
+    id: 'binary', name: 'Binary', type: 'Encoding',
+    desc: 'Binary string encode / decode',
+    options: () => `
+      <div class="option-group">
+        <label>Separator:</label>
+        <select id="binSep" style="background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:0.3rem;font-family:inherit;font-size:0.75rem;">
+          <option value=" ">Space</option>
+          <option value="">None</option>
+        </select>
+      </div>
+    `,
+    encode: (t) => {
+      const sep = document.getElementById('binSep')?.value || ' ';
+      return new TextEncoder().encode(t).map(b => b.toString(2).padStart(8, '0')).join(sep);
+    },
+    decode: (t) => {
+      const bytes = t.replace(/[^01]/g, '').match(/.{1,8}/g);
+      if (!bytes) return '⚠ Invalid binary';
+      return new TextDecoder().decode(new Uint8Array(bytes.map(b => parseInt(b, 2))));
+    }
+  },
+  {
+    id: 'rot13', name: 'ROT13', type: 'Cipher',
+    desc: 'Classic letter substitution (shift 13). Self-inverse.',
+    encode: (t) => t.replace(/[a-zA-Z]/g, c => {
+      const base = c <= 'Z' ? 65 : 97;
+      return String.fromCharCode((c.charCodeAt(0) - base + 13) % 26 + base);
+    }),
+    decode: (t) => t.replace(/[a-zA-Z]/g, c => {
+      const base = c <= 'Z' ? 65 : 97;
+      return String.fromCharCode((c.charCodeAt(0) - base + 13) % 26 + base);
+    })
+  },
+  {
+    id: 'caesar', name: 'Caesar', type: 'Cipher',
+    desc: 'Shift cipher with adjustable rotation',
+    options: () => `
+      <div class="option-group">
+        <label>Shift:</label>
+        <input type="number" id="caesarShift" value="3" min="0" max="25">
+      </div>
+    `,
+    encode: (t) => {
+      const shift = (parseInt(document.getElementById('caesarShift')?.value) || 3) % 26;
+      return t.replace(/[a-zA-Z]/g, c => {
+        const base = c <= 'Z' ? 65 : 97;
+        return String.fromCharCode((c.charCodeAt(0) - base + shift) % 26 + base);
+      });
+    },
+    decode: (t) => {
+      const shift = (parseInt(document.getElementById('caesarShift')?.value) || 3) % 26;
+      return t.replace(/[a-zA-Z]/g, c => {
+        const base = c <= 'Z' ? 65 : 97;
+        return String.fromCharCode((c.charCodeAt(0) - base - shift + 26) % 26 + base);
+      });
+    }
+  },
+  {
+    id: 'atbash', name: 'Atbash', type: 'Cipher',
+    desc: 'Ancient Hebrew cipher — A↔Z, B↔Y (self-inverse)',
+    encode: (t) => t.replace(/[a-zA-Z]/g, c => {
+      const base = c <= 'Z' ? 65 : 97;
+      return String.fromCharCode(25 - (c.charCodeAt(0) - base) + base);
+    }),
+    decode: (t) => t.replace(/[a-zA-Z]/g, c => {
+      const base = c <= 'Z' ? 65 : 97;
+      return String.fromCharCode(25 - (c.charCodeAt(0) - base) + base);
+    })
+  },
+  {
+    id: 'morse', name: 'Morse', type: 'Cipher',
+    desc: 'International Morse code · ·− / −··· / separated',
+    MORSE: { 'A':'.-','B':'-...','C':'-.-.','D':'-..','E':'.','F':'..-.','G':'--.','H':'....','I':'..','J':'.---','K':'-.-','L':'.-..','M':'--','N':'-.','O':'---','P':'.--.','Q':'--.-','R':'.-.','S':'...','T':'-','U':'..-','V':'...-','W':'.--','X':'-.--','Y':'-.--','Z':'--..','0':'-----','1':'.----','2':'..---','3':'...--','4':'....-','5':'.....','6':'-....','7':'--...','8':'---..','9':'----.',' ':'/' },
+    REVERSE: null,
+    encode: (t) => {
+      const m = ciphers.find(c => c.id === 'morse').MORSE;
+      return t.toUpperCase().split('').map(c => m[c] || c).join(' ');
+    },
+    decode: (t) => {
+      const m = {};
+      const MORSE_MAP = ciphers.find(c => c.id === 'morse').MORSE;
+      for (const [k, v] of Object.entries(MORSE_MAP)) m[v] = k;
+      return t.split(' ').map(s => m[s] || (s ? '?' : '')).join('');
+    }
+  },
+  {
+    id: 'url', name: 'URL Encode', type: 'Encoding',
+    desc: 'Percent-encode / decode URI components',
+    encode: (t) => encodeURIComponent(t),
+    decode: (t) => { try { return decodeURIComponent(t); } catch { return '⚠ Invalid URL encoding'; } }
+  },
+  {
+    id: 'reverse', name: 'Reverse', type: 'Transform',
+    desc: 'Reverse text (palindrome tester)',
+    encode: (t) => [...t].reverse().join(''),
+    decode: (t) => [...t].reverse().join('')
+  },
+  {
+    id: 'rot47', name: 'ROT47', type: 'Cipher',
+    desc: 'Shift all printable ASCII by 47. Self-inverse.',
+    encode: (t) => t.replace(/[\x20-\x7E]/g, c => String.fromCharCode(33 + ((c.charCodeAt(0) - 33 + 47) % 94))),
+    decode: (t) => t.replace(/[\x20-\x7E]/g, c => String.fromCharCode(33 + ((c.charCodeAt(0) - 33 + 47) % 94)))
+  },
+  {
+    id: 'leet', name: 'Leet Speak', type: 'Transform',
+    desc: 'Hacker speak — encode or decode',
+    LEET: {'A':'4','E':'3','I':'1','O':'0','S':'5','T':'7','B':'8','G':'6'},
+    REVERSE_LEET: {'4':'A','3':'E','1':'I','0':'O','5':'S','7':'T','8':'B','6':'G'},
+    encode: (t) => t.toUpperCase().replace(/[AEIOSTBG]/g, c => ciphers.find(x => x.id === 'leet').LEET[c] || c),
+    decode: (t) => t.replace(/[43105786]/g, c => ciphers.find(x => x.id === 'leet').REVERSE_LEET[c] || c)
+  },
+  {
+    id: 'pig', name: 'Pig Latin', type: 'Cipher',
+    desc: 'Classic playful word obfuscation',
+    encode: (t) => t.replace(/\b([^aeiouAEIOU\s]*)([aeiouAEIOU\w]*)\b/g, (_, c, v) => (v ? v + c + 'ay' : c + 'ay')),
+    decode: (t) => {
+      return t.replace(/\b(\w+?)(ay)\b/g, (_, word, _2) => {
+        if (word.length <= 2) return word;
+        return word.slice(-1) === 'w' ? word.slice(0, -2) : word.slice(-1) + word.slice(0, -3);
+      });
+    }
+  },
+  {
+    id: 'xor', name: 'XOR Cipher', type: 'Cipher',
+    desc: 'Single-byte XOR — simplest stream cipher',
+    options: () => `
+      <div class="option-group">
+        <label>Key (hex):</label>
+        <input type="text" id="xorKey" value="42" placeholder="hex" style="width:70px;" maxlength="2">
+      </div>
+    `,
+    encode: (t) => {
+      const key = parseInt(document.getElementById('xorKey')?.value || '42', 16);
+      if (isNaN(key)) return '⚠ Invalid hex key';
+      return [...new TextEncoder().encode(t)].map(b => b ^ key).map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+    },
+    decode: (t) => {
+      const key = parseInt(document.getElementById('xorKey')?.value || '42', 16);
+      if (isNaN(key)) return '⚠ Invalid hex key';
+      const bytes = t.replace(/\s/g, '').match(/.{1,2}/g);
+      if (!bytes) return '⚠ Invalid hex input';
+      const arr = bytes.map(b => { const v = parseInt(b, 16); if (isNaN(v)) return 0; return v ^ key; });
+      return new TextDecoder().decode(new Uint8Array(arr));
+    }
+  }
+];
+
+let currentCipher = ciphers[0];
+
+function buildList() {
+  const list = document.getElementById('cipherList');
+  list.innerHTML = '';
+  ciphers.forEach((c, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span>${c.name}</span><span class="cipher-tag">${c.type}</span>`;
+    li.onclick = () => selectCipher(i);
+    if (i === 0) li.classList.add('active');
+    list.appendChild(li);
+  });
+}
+
+function selectCipher(i) {
+  currentCipher = ciphers[i];
+  document.querySelectorAll('.cipher-list li').forEach((li, idx) => {
+    li.classList.toggle('active', idx === i);
+  });
+  document.getElementById('cipherName').textContent = currentCipher.name;
+  document.getElementById('cipherDesc').textContent = currentCipher.desc;
+  document.getElementById('cipherType').textContent = currentCipher.type;
+  const opts = document.getElementById('options');
+  opts.innerHTML = currentCipher.options ? currentCipher.options() : '<span style="font-size:0.7rem;color:var(--muted);">No options</span>';
+  process();
+}
+
+function process() {
+  const input = document.getElementById('input').value;
+  const mode = document.getElementById('inputMode')?.value || 'encode';
+  const fn = mode === 'decode' ? 'decode' : 'encode';
+  try {
+    const t0 = performance.now();
+    const result = currentCipher[fn](input);
+    const elapsed = (performance.now() - t0).toFixed(2);
+    document.getElementById('output').value = result || '';
+    const chars = input.length;
+    const outLen = result?.length || 0;
+    document.getElementById('stats').innerHTML = `
+      <div class="stat">Chars: <span>${chars}</span></div>
+      <div class="stat">Output: <span>${outLen}</span></div>
+      <div class="stat">Ratio: <span>${chars ? (outLen / chars).toFixed(2) : '—'}×</span></div>
+      <div class="stat">Time: <span>${elapsed}ms</span></div>
+    `;
+  } catch (e) {
+    document.getElementById('output').value = '⚠ Error: ' + e.message;
+  }
+}
+
+function swap() {
+  const inp = document.getElementById('input');
+  const out = document.getElementById('output');
+  const tmp = inp.value;
+  inp.value = out.value;
+  out.value = tmp;
+  const modeEl = document.getElementById('inputMode');
+  if (modeEl) modeEl.value = modeEl.value === 'encode' ? 'decode' : 'encode';
+  process();
+}
+
+function clearInput() {
+  document.getElementById('input').value = '';
+  document.getElementById('input').focus();
+}
+
+function copyOutput() {
+  const out = document.getElementById('output');
+  if (!out.value) return;
+  navigator.clipboard.writeText(out.value).then(() => {
+    const toast = document.getElementById('toast');
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 1500);
+  });
+}
+
+document.getElementById('input').addEventListener('input', process);
+
+// Add mode toggle in options
+const origOptions = ciphers[0].options;
+buildList();
+selectCipher(0);
+</script>
+</body>
+</html>
