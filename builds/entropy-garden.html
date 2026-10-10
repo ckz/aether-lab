@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Entropy Garden — Nurture the Dying Universe</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+    user-select: none;
+  }
+  canvas { display: block; }
+
+  #hud {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .hud-panel {
+    background: rgba(0,0,0,0.6);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: #aaa;
+    font-size: 12px;
+    line-height: 1.8;
+    backdrop-filter: blur(4px);
+  }
+
+  .hud-panel .label {
+    color: #666;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+
+  .hud-panel .value {
+    color: #fff;
+    font-size: 16px;
+    font-weight: bold;
+  }
+
+  #title-panel {
+    text-align: center;
+  }
+
+  #title-panel h1 {
+    font-size: 18px;
+    color: #fff;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  #title-panel .subtitle {
+    font-size: 10px;
+    color: #555;
+    letter-spacing: 2px;
+  }
+
+  #stats-panel {
+    text-align: right;
+  }
+
+  #controls-panel {
+    text-align: left;
+  }
+
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .stat-row .val {
+    color: #0af;
+    font-weight: bold;
+  }
+
+  .palette-indicator {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+
+  #message {
+    position: fixed;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.7);
+    font-size: 14px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 10;
+    transition: opacity 2s;
+    text-align: center;
+  }
+
+  #intro-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  #intro-overlay h1 {
+    font-size: 36px;
+    color: #fff;
+    letter-spacing: 8px;
+    text-transform: uppercase;
+    font-weight: 300;
+  }
+
+  #intro-overlay .desc {
+    color: #777;
+    font-size: 14px;
+    max-width: 400px;
+    text-align: center;
+    line-height: 1.8;
+    letter-spacing: 1px;
+  }
+
+  #intro-overlay .start-btn {
+    margin-top: 20px;
+    padding: 14px 40px;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.3);
+    color: #fff;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.3s;
+  }
+
+  #intro-overlay .start-btn:hover {
+    border-color: #0af;
+    color: #0af;
+    box-shadow: 0 0 20px rgba(0,170,255,0.2);
+  }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div id="intro-overlay">
+  <h1>Entropy Garden</h1>
+  <div class="desc">
+    You tend a dying universe.<br>
+    Click to plant stars.<br>
+    Watch them bloom into galaxies.<br>
+    Entropy always wins. Make it beautiful.
+  </div>
+  <button class="start-btn" onclick="startGame()">Enter the Void</button>
+</div>
+
+<div id="hud" class="hidden">
+  <div class="hud-panel" id="title-panel">
+    <h1>Entropy Garden</h1>
+    <div class="subtitle">nurture the dying universe</div>
+  </div>
+  <div class="hud-panel" id="controls-panel">
+    <div class="label">Controls</div>
+    <div>Click — plant a star</div>
+    <div>Shift+Click — supernova burst</div>
+    <div>Keys 1-5 — palette</div>
+    <div>Space — pause/resume</div>
+    <div>C — clear garden</div>
+    <div>S — save image</div>
+  </div>
+  <div class="hud-panel" id="stats-panel">
+    <div class="label">Universe State</div>
+    <div class="stat-row"><span>Stars:</span><span class="val" id="stat-stars">0</span></div>
+    <div class="stat-row"><span>Galaxies:</span><span class="val" id="stat-galaxies">0</span></div>
+    <div class="stat-row"><span>Supernovae:</span><span class="val" id="stat-supernovae">0</span></div>
+    <div class="stat-row"><span>Entropy:</span><span class="val" id="stat-entropy">0.00</span></div>
+    <div class="stat-row"><span>Energy:</span><span class="val" id="stat-energy">∞</span></div>
+  </div>
+</div>
+
+<div id="message"></div>
+<canvas id="canvas"></canvas>
+
+<script>
+// ===== ENTROPY GARDEN =====
+// A meditative cosmic garden where you plant stars and watch entropy unfold
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ===== PALETTES =====
+const PALETTES = [
+  { name: 'Nebula',   colors: ['#0af', '#60f', '#f0f', '#0ff', '#88f'] },
+  { name: 'Ember',    colors: ['#f80', '#f20', '#fc0', '#f64', '#fa8'] },
+  { name: 'Aurora',   colors: ['#0f8', '#0fa', '#8f8', '#0ff', '#6f6'] },
+  { name: 'Void',     colors: ['#f0f', '#f6f', '#fcf', '#f9f', '#e0e'] },
+  { name: 'Gold',     colors: ['#fc0', '#f80', '#fa0', '#f96', '#dd0'] },
+];
+let currentPalette = 0;
+
+function palColor(i) {
+  const p = PALETTES[currentPalette].colors;
+  return p[i % p.length];
+}
+
+function randomColor() {
+  return palColor(Math.floor(Math.random() * 5));
+}
+
+// ===== STATE =====
+let stars = [];
+let galaxies = [];
+let supernovae = [];
+let particles = [];
+let bgStars = [];
+let mouse = { x: W/2, y: H/2, active: false };
+let entropy = 0;
+let totalSupernovae = 0;
+let paused = false;
+let time = 0;
+let messageTimeout = null;
+
+// ===== BACKGROUND STARS =====
+function initBgStars() {
+  bgStars = [];
+  for (let i = 0; i < 300; i++) {
+    bgStars.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      size: Math.random() * 1.5 + 0.3,
+      twinkle: Math.random() * Math.PI * 2,
+      twinkleSpeed: Math.random() * 0.02 + 0.005,
+      brightness: Math.random() * 0.5 + 0.3,
+    });
+  }
+}
+initBgStars();
+
+// ===== STAR CLASS =====
+class Star {
+  constructor(x, y, generation = 0) {
+    this.x = x;
+    this.y = y;
+    this.generation = generation;
+    this.energy = 1.0;
+    this.maxEnergy = 0.3 + Math.random() * 0.7;
+    this.energy = this.maxEnergy;
+    this.lifespan = 600 + Math.random() * 1200; // frames
+    this.age = 0;
+    this.size = 0;
+    this.targetSize = 2 + Math.random() * 4;
+    this.color = randomColor();
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    this.pulseSpeed = 0.02 + Math.random() * 0.03;
+    this.orbiting = [];
+    this.galaxy = null;
+    this.decayRate = 0.0003 + Math.random() * 0.0005;
+    this.birthFlash = 1.0;
+    // if generation > 0, it's a child star from a supernova — smaller, faster burning
+    if (generation > 0) {
+      this.lifespan *= 0.4;
+      this.targetSize *= 0.7;
+      this.decayRate *= 2.5;
+    }
+  }
+
+  update() {
+    this.age++;
+    this.pulsePhase += this.pulseSpeed;
+    this.energy -= this.decayRate;
+    this.size += (this.targetSize - this.size) * 0.05;
+    this.birthFlash *= 0.95;
+
+    // Orbital particles
+    for (let i = this.orbiting.length - 1; i >= 0; i--) {
+      const o = this.orbiting[i];
+      o.angle += o.speed;
+      o.life--;
+      if (o.life <= 0) this.orbiting.splice(i, 1);
+    }
+
+    // Spawn orbiting particles occasionally
+    if (this.energy > 0.3 && Math.random() < 0.02 && this.orbiting.length < 8) {
+      this.orbiting.push({
+        angle: Math.random() * Math.PI * 2,
+        radius: this.size + 5 + Math.random() * 20,
+        speed: (Math.random() - 0.5) * 0.03,
+        life: 60 + Math.random() * 120,
+        maxLife: 180,
+        color: this.color,
+      });
+    }
+
+    if (this.energy <= 0) {
+      this.supernova();
+      return false;
+    }
+    return true;
+  }
+
+  draw() {
+    const alpha = Math.min(1, this.energy * 1.5);
+    const pulse = 1 + Math.sin(this.pulsePhase) * 0.2;
+    const s = this.size * pulse;
+
+    // Birth flash
+    if (this.birthFlash > 0.1) {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, s * 8 * this.birthFlash, 0, Math.PI * 2);
+      ctx.fillStyle = this.color + hexAlpha(this.birthFlash * 0.3);
+      ctx.fill();
+    }
+
+    // Core glow
+    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, s * 4);
+    grad.addColorStop(0, this.color + hexAlpha(alpha * 0.8));
+    grad.addColorStop(0.3, this.color + hexAlpha(alpha * 0.3));
+    grad.addColorStop(1, this.color + '00');
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, s * 4, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Bright core
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, s, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${alpha * 0.9})`;
+    ctx.fill();
+
+    // Orbiting particles
+    for (const o of this.orbiting) {
+      const ox = this.x + Math.cos(o.angle) * o.radius;
+      const oy = this.y + Math.sin(o.angle) * o.radius;
+      const oa = (o.life / o.maxLife) * alpha;
+      ctx.beginPath();
+      ctx.arc(ox, oy, 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = o.color + hexAlpha(oa * 0.6);
+      ctx.fill();
+    }
+  }
+
+  supernova() {
+    supernovae.push(new Supernova(this.x, this.y, this.color, this.generation));
+    totalSupernovae++;
+    entropy += 0.5;
+
+    // Spawn child stars
+    const childCount = 2 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < childCount; i++) {
+      const angle = (Math.PI * 2 / childCount) * i + Math.random() * 0.5;
+      const dist = 30 + Math.random() * 80;
+      const sx = this.x + Math.cos(angle) * dist;
+      const sy = this.y + Math.sin(angle) * dist;
+      const child = new Star(sx, sy, this.generation + 1);
+      child.energy = 0.5 + Math.random() * 0.5;
+      stars.push(child);
+    }
+
+    // Explosion particles
+    for (let i = 0; i < 40; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const speed = 1 + Math.random() * 5;
+      particles.push(new Particle(
+        this.x, this.y,
+        Math.cos(a) * speed, Math.sin(a) * speed,
+        this.color,
+        40 + Math.random() * 60,
+        1 + Math.random() * 3
+      ));
+    }
+
+    showMessage('✦ supernova — seeds scattered ✦');
+  }
+}
+
+// ===== SUPERNOVA CLASS =====
+class Supernova {
+  constructor(x, y, color, generation) {
+    this.x = x;
+    this.y = y;
+    this.color = color;
+    this.life = 1.0;
+    this.maxRadius = generation === 0 ? 150 : 80;
+    this.rings = [];
+    // Create expanding rings
+    for (let i = 0; i < 3; i++) {
+      this.rings.push({
+        radius: 0,
+        maxRadius: this.maxRadius * (0.6 + i * 0.25),
+        speed: 2 + i * 0.8,
+        alpha: 1 - i * 0.25,
+      });
+    }
+  }
+
+  update() {
+    this.life -= 0.015;
+    let allDone = true;
+    for (const ring of this.rings) {
+      ring.radius += ring.speed;
+      ring.alpha -= 0.008;
+      if (ring.radius < ring.maxRadius) allDone = false;
+    }
+    return this.life > 0 && !allDone;
+  }
+
+  draw() {
+    for (const ring of this.rings) {
+      if (ring.alpha <= 0) continue;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, ring.radius, 0, Math.PI * 2);
+      ctx.strokeStyle = this.color + hexAlpha(ring.alpha * 0.5);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // Flash core
+    if (this.life > 0.5) {
+      const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, 60 * this.life);
+      grad.addColorStop(0, `rgba(255,255,255,${this.life * 0.8})`);
+      grad.addColorStop(0.5, this.color + hexAlpha(this.life * 0.3));
+      grad.addColorStop(1, this.color + '00');
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, 60 * this.life, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+  }
+}
+
+// ===== PARTICLE CLASS =====
+class Particle {
+  constructor(x, y, vx, vy, color, life, size) {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.color = color;
+    this.life = life;
+    this.maxLife = life;
+    this.size = size || 2;
+  }
+
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+    this.life--;
+    return this.life > 0;
+  }
+
+  draw() {
+    const alpha = this.life / this.maxLife;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * alpha, 0, Math.PI * 2);
+    ctx.fillStyle = this.color + hexAlpha(alpha * 0.7);
+    ctx.fill();
+  }
+}
+
+// ===== GALAXY CLASS =====
+class Galaxy {
+  constructor(cx, cy, stars_list) {
+    this.cx = cx;
+    this.cy = cy;
+    this.members = stars_list;
+    this.rotation = Math.random() * Math.PI * 2;
+    this.rotSpeed = (Math.random() - 0.5) * 0.003;
+    this.spiralArms = 2 + Math.floor(Math.random() * 3);
+    this.color = stars_list[0]?.color || '#0af';
+    this.birth = time;
+    this.alive = true;
+  }
+
+  update() {
+    this.rotation += this.rotSpeed;
+    let aliveCount = 0;
+    for (const s of this.members) {
+      if (s.energy > 0) {
+        aliveCount++;
+        // Subtle orbital drift
+        const dx = s.x - this.cx;
+        const dy = s.y - this.cy;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        const orbitalAngle = Math.atan2(dy, dx) + this.rotSpeed * (100 / (dist + 50));
+        s.x = this.cx + Math.cos(orbitalAngle) * dist;
+        s.y = this.cy + Math.sin(orbitalAngle) * dist;
+      }
+    }
+    if (aliveCount < 2) this.alive = false;
+    return this.alive;
+  }
+
+  draw() {
+    const age = (time - this.birth) * 0.01;
+    const alpha = Math.min(0.15, age * 0.02);
+
+    // Draw spiral arms
+    for (let arm = 0; arm < this.spiralArms; arm++) {
+      const armAngle = (Math.PI * 2 / this.spiralArms) * arm + this.rotation;
+      ctx.beginPath();
+      for (let r = 0; r < 120; r += 2) {
+        const spiralAngle = armAngle + r * 0.02;
+        const px = this.cx + Math.cos(spiralAngle) * r;
+        const py = this.cy + Math.sin(spiralAngle) * r * 0.5;
+        if (r === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.strokeStyle = this.color + hexAlpha(alpha);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Central glow
+    const grad = ctx.createRadialGradient(this.cx, this.cy, 0, this.cx, this.cy, 40);
+    grad.addColorStop(0, this.color + hexAlpha(alpha * 2));
+    grad.addColorStop(1, this.color + '00');
+    ctx.beginPath();
+    ctx.arc(this.cx, this.cy, 40, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+  }
+}
+
+// ===== UTILS =====
+function hexAlpha(a) {
+  return Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, '0');
+}
+
+function dist(x1, y1, x2, y2) {
+  return Math.sqrt((x1-x2)**2 + (y1-y2)**2);
+}
+
+function showMessage(msg) {
+  const el = document.getElementById('message');
+  el.textContent = msg;
+  el.style.opacity = '1';
+  if (messageTimeout) clearTimeout(messageTimeout);
+  messageTimeout = setTimeout(() => { el.style.opacity = '0'; }, 3000);
+}
+
+// ===== GAME LOGIC =====
+function plantStar(x, y, generation = 0) {
+  const star = new Star(x, y, generation);
+  stars.push(star);
+
+  // Spawn birth particles
+  for (let i = 0; i < 15; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const speed = 0.5 + Math.random() * 2;
+    particles.push(new Particle(
+      x, y,
+      Math.cos(a) * speed, Math.sin(a) * speed,
+      star.color,
+      30 + Math.random() * 30,
+      1 + Math.random() * 2
+    ));
+  }
+
+  // Check for galaxy formation
+  checkGalaxyFormation();
+
+  entropy += 0.01;
+  showMessage('✦ star born ✦');
+}
+
+function checkGalaxyFormation() {
+  // Group nearby stars into galaxies
+  const ungrouped = stars.filter(s => !s.galaxy && s.energy > 0.2);
+  const visited = new Set();
+
+  for (const star of ungrouped) {
+    if (visited.has(star)) continue;
+    const group = [star];
+    visited.add(star);
+
+    // Find nearby stars
+    for (const other of ungrouped) {
+      if (visited.has(other)) continue;
+      const d = dist(star.x, star.y, other.x, other.y);
+      if (d < 150 && group.length < 20) {
+        group.push(other);
+        visited.add(other);
+      }
+    }
+
+    // Create galaxy if 3+ stars nearby
+    if (group.length >= 3) {
+      const cx = group.reduce((s, st) => s + st.x, 0) / group.length;
+      const cy = group.reduce((s, st) => s + st.y, 0) / group.length;
+      const galaxy = new Galaxy(cx, cy, group);
+      galaxies.push(galaxy);
+      for (const s of group) s.galaxy = galaxy;
+      showMessage(`✦ galaxy formed (${group.length} stars) ✦`);
+    }
+  }
+}
+
+function supernovaBurst(x, y) {
+  const star = new Star(x, y, 0);
+  star.energy = 0.15; // Immediate supernova
+  stars.push(star);
+
+  // Big explosion
+  for (let i = 0; i < 60; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 8;
+    particles.push(new Particle(
+      x, y,
+      Math.cos(a) * speed, Math.sin(a) * speed,
+      randomColor(),
+      60 + Math.random() * 80,
+      2 + Math.random() * 3
+    ));
+  }
+  entropy += 0.3;
+  showMessage('✦✦✦ cosmic burst ✦✦✦');
+}
+
+// ===== UPDATE & DRAW =====
+function update() {
+  if (paused) return;
+  time++;
+
+  // Update stars
+  stars = stars.filter(s => s.update());
+
+  // Update supernovae
+  supernovae = supernovae.filter(s => s.update());
+
+  // Update particles
+  particles = particles.filter(p => p.update());
+
+  // Update galaxies
+  galaxies = galaxies.filter(g => g.update());
+
+  // Slowly increase entropy
+  entropy += 0.0001;
+
+  // Ambient drift particles
+  if (Math.random() < 0.1) {
+    particles.push(new Particle(
+      Math.random() * W, Math.random() * H,
+      (Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3,
+      randomColor(),
+      100 + Math.random() * 100,
+      0.5 + Math.random() * 1
+    ));
+  }
+
+  // Mouse attraction particles
+  if (mouse.active && Math.random() < 0.3) {
+    particles.push(new Particle(
+      mouse.x + (Math.random() - 0.5) * 40,
+      mouse.y + (Math.random() - 0.5) * 40,
+      (Math.random() - 0.5) * 0.5,
+      (Math.random() - 0.5) * 0.5,
+      randomColor(),
+      40 + Math.random() * 40,
+      0.5 + Math.random() * 1.5
+    ));
+  }
+
+  updateHUD();
+}
+
+function draw() {
+  // Deep space background
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle nebula backdrop
+  const nebulaGrad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * 0.6);
+  const pc = PALETTES[currentPalette].colors[0];
+  nebulaGrad.addColorStop(0, pc + '08');
+  nebulaGrad.addColorStop(0.5, pc + '03');
+  nebulaGrad.addColorStop(1, '#000000');
+  ctx.fillStyle = nebulaGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Background stars
+  for (const s of bgStars) {
+    s.twinkle += s.twinkleSpeed;
+    const b = s.brightness * (0.7 + Math.sin(s.twinkle) * 0.3);
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${b})`;
+    ctx.fill();
+  }
+
+  // Galaxies (behind everything)
+  for (const g of galaxies) g.draw();
+
+  // Connection filaments between nearby stars
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < stars.length; i++) {
+    if (stars[i].galaxy) continue;
+    for (let j = i + 1; j < stars.length; j++) {
+      if (stars[j].galaxy) continue;
+      const d = dist(stars[i].x, stars[i].y, stars[j].x, stars[j].y);
+      if (d < 200) {
+        const alpha = (1 - d / 200) * 0.1 * Math.min(stars[i].energy, stars[j].energy);
+        ctx.beginPath();
+        ctx.moveTo(stars[i].x, stars[i].y);
+        ctx.lineTo(stars[j].x, stars[j].y);
+        ctx.strokeStyle = stars[i].color + hexAlpha(alpha);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Stars
+  for (const s of stars) s.draw();
+
+  // Supernovae
+  for (const s of supernovae) s.draw();
+
+  // Particles
+  for (const p of particles) p.draw();
+
+  // Entropy overlay (very subtle vignette based on entropy)
+  if (entropy > 1) {
+    const vAlpha = Math.min(0.15, (entropy - 1) * 0.02);
+    const vignette = ctx.createRadialGradient(W/2, H/2, W * 0.3, W/2, H/2, W * 0.7);
+    vignette.addColorStop(0, '#00000000');
+    vignette.addColorStop(1, `rgba(0,0,0,${vAlpha})`);
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+function updateHUD() {
+  document.getElementById('stat-stars').textContent = stars.length;
+  document.getElementById('stat-galaxies').textContent = galaxies.filter(g => g.alive).length;
+  document.getElementById('stat-supernovae').textContent = totalSupernovae;
+  document.getElementById('stat-entropy').textContent = entropy.toFixed(2);
+  document.getElementById('stat-energy').textContent = stars.reduce((s, st) => s + st.energy, 0).toFixed(1);
+}
+
+// ===== GAME LOOP =====
+function gameLoop() {
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+// ===== INPUT =====
+canvas.addEventListener('click', (e) => {
+  if (e.shiftKey) {
+    supernovaBurst(e.clientX, e.clientY);
+  } else {
+    plantStar(e.clientX, e.clientY);
+  }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+
+canvas.addEventListener('mouseleave', () => {
+  mouse.active = false;
+});
+
+document.addEventListener('keydown', (e) => {
+  switch(e.key) {
+    case '1': case '2': case '3': case '4': case '5':
+      currentPalette = parseInt(e.key) - 1;
+      showMessage(`✦ palette: ${PALETTES[currentPalette].name} ✦`);
+      break;
+    case ' ':
+      e.preventDefault();
+      paused = !paused;
+      showMessage(paused ? '❚❚ paused' : '▶ resumed');
+      break;
+    case 'c': case 'C':
+      stars = [];
+      galaxies = [];
+      supernovae = [];
+      particles = [];
+      entropy = Math.max(0, entropy - 1);
+      showMessage('✦ garden cleared ✦');
+      break;
+    case 's': case 'S':
+      saveImage();
+      break;
+  }
+});
+
+function saveImage() {
+  const link = document.createElement('a');
+  link.download = `entropy-garden-${Date.now()}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+  showMessage('✦ image saved ✦');
+}
+
+// ===== START =====
+function startGame() {
+  document.getElementById('intro-overlay').classList.add('hidden');
+  document.getElementById('hud').classList.remove('hidden');
+  showMessage('Click to plant your first star...');
+}
+
+// Seed a few starter stars
+function seedStarterStars() {
+  const cx = W / 2, cy = H / 2;
+  for (let i = 0; i < 5; i++) {
+    const a = (Math.PI * 2 / 5) * i;
+    const d = 100 + Math.random() * 100;
+    const s = new Star(cx + Math.cos(a) * d, cy + Math.sin(a) * d);
+    s.energy = 0.6 + Math.random() * 0.4;
+    stars.push(s);
+  }
+  checkGalaxyFormation();
+}
+
+// Start the loop immediately for the intro background
+seedStarterStars();
+gameLoop();
+</script>
+
+</body>
+</html>
