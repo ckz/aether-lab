@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ethereal Flow Field</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0f; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: 'Courier New', monospace; }
+  #canvas { display: block; cursor: crosshair; }
+  .info { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.4); font-size: 12px; text-align: center; pointer-events: none; z-index: 10; }
+  .controls { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 15px; z-index: 10; }
+  .controls button { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: rgba(255,255,255,0.7); padding: 8px 18px; cursor: pointer; font-family: inherit; font-size: 11px; border-radius: 4px; transition: all 0.3s; }
+  .controls button:hover { background: rgba(255,255,255,0.15); color: white; border-color: rgba(255,255,255,0.3); }
+  .title { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.25); font-size: 13px; letter-spacing: 4px; text-transform: uppercase; pointer-events: none; z-index: 10; }
+</style>
+</head>
+<body>
+<div class="info" id="info">particles: <span id="count">0</span> | fps: <span id="fps">0</span></div>
+<div class="title">Ethereal Flow Field</div>
+<canvas id="canvas"></canvas>
+<div class="controls">
+  <button onclick="resetField()">⟳ Reset</button>
+  <button onclick="togglePause()">❚❚ Pause</button>
+  <button onclick="changePalette()">◐ Palette</button>
+  <button onclick="toggleTrails()"> trails</button>
+</div>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H, particles = [], paused = false, frame = 0, lastTime = performance.now(), fpsVal = 0;
+let paletteIndex = 0;
+const palettes = [
+  { name: 'Aurora', colors: ['#00ff87', '#60efff', '#0061ff', '#a855f7', '#ec4899'] },
+  { name: 'Ember', colors: ['#ff6b35', '#f7931e', '#ffcc02', '#ff4444', '#ff006e'] },
+  { name: 'Ocean', colors: ['#0077b6', '#00b4d8', '#90e0ef', '#48cae4', '#023e8a'] },
+  { name: 'Forest', colors: ['#2d6a4f', '#40916c', '#52b788', '#74c69d', '#95d5b2'] },
+  { name: 'Cosmic', colors: ['#e0aaff', '#c77dff', '#9d4edd', '#7b2cbf', '#5a189a'] },
+  { name: 'Monochrome', colors: ['#ffffff', '#cccccc', '#999999', '#666666', '#333333'] },
+];
+let longTrails = false;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  ctx.fillStyle = 'rgba(10,10,15,1)';
+  ctx.fillRect(0, 0, W, H);
+}
+
+class Particle {
+  constructor(x, y) {
+    this.x = x || Math.random() * W;
+    this.y = y || Math.random() * H;
+    this.vx = 0; this.vy = 0;
+    this.life = Math.random() * 300 + 200;
+    this.maxLife = this.life;
+    this.color = palettes[paletteIndex].colors[Math.floor(Math.random() * palettes[paletteIndex].colors.length)];
+    this.size = Math.random() * 1.5 + 0.5;
+    this.speed = Math.random() * 1.5 + 0.8;
+  }
+  
+  update() {
+    const scale = 0.004;
+    const t = frame * 0.0003;
+    const angle = Math.sin(this.x * scale + t) * Math.cos(this.y * scale + t * 0.7) * Math.PI * 2
+      + Math.sin((this.x + this.y) * scale * 0.5 + t * 1.3) * Math.PI;
+    
+    this.vx += Math.cos(angle) * 0.15;
+    this.vy += Math.sin(angle) * 0.15;
+    this.vx *= 0.96; this.vy *= 0.96;
+    
+    const spd = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    if (spd > this.speed) { this.vx = (this.vx / spd) * this.speed; this.vy = (this.vy / spd) * this.speed; }
+    
+    this.x += this.vx; this.y += this.vy;
+    this.life--;
+    
+    if (this.x < 0 || this.x > W || this.y < 0 || this.y > H || this.life <= 0) {
+      this.x = Math.random() * W; this.y = Math.random() * H;
+      this.vx = 0; this.vy = 0;
+      this.life = Math.random() * 300 + 200; this.maxLife = this.life;
+    }
+  }
+  
+  draw() {
+    const alpha = (this.life / this.maxLife) * 0.6;
+    ctx.fillStyle = this.color;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // velocity tail
+    const tailLen = Math.sqrt(this.vx * this.vx + this.vy * this.vy) * 3;
+    if (tailLen > 1) {
+      ctx.strokeStyle = this.color;
+      ctx.globalAlpha = alpha * 0.3;
+      ctx.lineWidth = this.size * 0.5;
+      ctx.beginPath();
+      ctx.moveTo(this.x, this.y);
+      ctx.lineTo(this.x - this.vx * tailLen * 0.5, this.y - this.vy * tailLen * 0.5);
+      ctx.stroke();
+    }
+  }
+}
+
+function init() {
+  resize();
+  particles = [];
+  for (let i = 0; i < 2000; i++) particles.push(new Particle());
+}
+
+function animate() {
+  if (!paused) {
+    frame++;
+    const fade = longTrails ? 0.008 : 0.03;
+    ctx.fillStyle = `rgba(10,10,15,${fade})`;
+    ctx.fillRect(0, 0, W, H);
+    
+    for (let i = 0; i < particles.length; i++) { particles[i].update(); particles[i].draw(); }
+    
+    // FPS
+    const now = performance.now();
+    if (now - lastTime >= 1000) { fpsVal = Math.round(frame / ((now - lastTime) / 1000)); frame = 0; lastTime = now; }
+    document.getElementById('count').textContent = particles.length;
+    document.getElementById('fps').textContent = fpsVal;
+  }
+  requestAnimationFrame(animate);
+}
+
+function resetField() {
+  ctx.fillStyle = 'rgba(10,10,15,1)'; ctx.fillRect(0, 0, W, H);
+  for (let p of particles) { p.x = Math.random() * W; p.y = Math.random() * H; p.vx = 0; p.vy = 0; p.life = p.maxLife; }
+}
+function togglePause() { paused = !paused; event.target.textContent = paused ? '▶ Play' : '❚❚ Pause'; }
+function changePalette() {
+  paletteIndex = (paletteIndex + 1) % palettes.length;
+  for (let p of particles) { p.color = palettes[paletteIndex].colors[Math.floor(Math.random() * palettes[paletteIndex].colors.length)]; }
+  document.querySelector('.title').textContent = `Ethereal Flow Field — ${palettes[paletteIndex].name}`;
+}
+function toggleTrails() { longTrails = !longTrails; event.target.textContent = longTrails ? 'short trails' : 'long trails'; }
+
+canvas.addEventListener('click', (e) => {
+  for (let i = 0; i < 100; i++) { const p = new Particle(e.clientX, e.clientY); p.life = 400; particles.push(p); }
+  if (particles.length > 4000) particles.splice(0, 100);
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (e.buttons === 1) for (let i = 0; i < 5; i++) { const p = new Particle(e.clientX + (Math.random()-0.5)*20, e.clientY + (Math.random()-0.5)*20); p.life = 200; particles.push(p); }
+  if (particles.length > 4000) particles.splice(0, 5);
+});
+
+window.addEventListener('resize', resize);
+init();
+animate();
+</script>
+</body>
+</html>
