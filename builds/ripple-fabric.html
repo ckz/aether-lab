@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ripple Fabric — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #ccc;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    overflow: hidden;
+    height: 100vh;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  .hud {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-size: 11px;
+    line-height: 1.7;
+    color: #888;
+    z-index: 10;
+    pointer-events: none;
+    min-width: 220px;
+  }
+  .hud .title {
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    letter-spacing: 1px;
+  }
+  .hud kbd {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 10px;
+    color: #aaa;
+  }
+  .hud .controls {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    color: #666;
+    font-size: 10px;
+  }
+  .toast {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px;
+    padding: 8px 18px;
+    font-size: 11px;
+    color: #ccc;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+    z-index: 20;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud">
+  <div class="title">RIPPLE FABRIC</div>
+  <div>
+    <kbd>Click</kbd> send pulse<br>
+    <kbd>Hold</kbd> continuous waves<br>
+    <kbd>Right-click</kbd> shockwave<br>
+    <kbd>Space</kbd> pause / resume<br>
+    <kbd>C</kbd> clear waves<br>
+    <kbd>R</kbd> regenerate<br>
+    <kbd>S</kbd> save PNG<br>
+    <kbd>1-5</kbd> palettes
+  </div>
+  <div class="controls">
+    Mode: <span id="modeLabel">Flow</span> | FPS: <span id="fps">60</span>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, cols, rows, spacing;
+let nodes = [];
+let ripples = [];
+let paused = false;
+let mouse = { x: -999, y: -999, down: false, right: false };
+let palette = 0;
+let time = 0;
+let lastTime = performance.now();
+let fpsArr = [];
+
+const palettes = [
+  { name: 'Aurora',  bg: '#0a0a12', node: [120, 220, 255], thread: [80, 180, 220], ripple: [100, 255, 200], glow: [0, 255, 200] },
+  { name: 'Ember',   bg: '#120a08', node: [255, 160, 60], thread: [220, 120, 40], ripple: [255, 200, 80], glow: [255, 140, 0] },
+  { name: 'Violet',  bg: '#0d0a14', node: [180, 120, 255], thread: [140, 80, 220], ripple: [200, 160, 255], glow: [160, 100, 255] },
+  { name: 'Jade',    bg: '#080f0a', node: [80, 220, 140], thread: [40, 180, 100], ripple: [120, 255, 180], glow: [0, 255, 120] },
+  { name: 'Rose',    bg: '#100a0c', node: [255, 120, 160], thread: [220, 80, 120], ripple: [255, 160, 200], glow: [255, 100, 150] },
+];
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 1500);
+}
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  spacing = Math.max(28, Math.min(50, W / 40));
+  cols = Math.floor(W / spacing) + 2;
+  rows = Math.floor(H / spacing) + 2;
+  initNodes();
+}
+
+function initNodes() {
+  nodes = [];
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      nodes.push({
+        x: i * spacing,
+        y: j * spacing,
+        baseX: i * spacing,
+        baseY: j * spacing,
+        vx: 0,
+        vy: 0,
+        energy: 0,
+        phase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+  ripples = [];
+}
+
+function addRipple(x, y, strength = 1, radius = 0) {
+  ripples.push({
+    x, y,
+    radius: radius || 0,
+    maxRadius: Math.max(W, H) * 0.9,
+    speed: 280 + Math.random() * 120,
+    strength,
+    life: 1,
+  });
+  if (ripples.length > 40) ripples.shift();
+}
+
+function update(dt) {
+  const p = palettes[palette];
+  const springK = 0.08;
+  const damping = 0.94;
+  const maxDisp = 18;
+
+  for (const node of nodes) {
+    let fx = 0, fy = 0;
+    fx += (node.baseX - node.x) * springK;
+    fy += (node.baseY - node.y) * springK;
+
+    for (const r of ripples) {
+      const dx = node.x - r.x;
+      const dy = node.y - r.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const ringDist = Math.abs(dist - r.radius);
+      const ringWidth = 60;
+      if (ringDist < ringWidth) {
+        const influence = (1 - ringDist / ringWidth) * r.strength * r.life;
+        const pushStr = influence * 12;
+        if (dist > 0.1) {
+          fx += (dx / dist) * pushStr;
+          fy += (dy / dist) * pushStr;
+        }
+      }
+    }
+
+    node.vx = (node.vx + fx) * damping;
+    node.vy = (node.vy + fy) * damping;
+    node.x += node.vx * dt;
+    node.y += node.vy * dt;
+
+    const dispX = node.x - node.baseX;
+    const dispY = node.y - node.baseY;
+    const disp = Math.sqrt(dispX * dispX + dispY * dispY);
+    node.energy = Math.min(1, disp / maxDisp);
+  }
+
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    const r = ripples[i];
+    r.radius += r.speed * dt;
+    r.life -= 0.35 * dt;
+    if (r.life <= 0 || r.radius > r.maxRadius) {
+      ripples.splice(i, 1);
+    }
+  }
+}
+
+function draw() {
+  const p = palettes[palette];
+  ctx.fillStyle = p.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  const nodeRgb = `rgb(${p.node[0]|0},${p.node[1]|0},${p.node[2]|0})`;
+  const threadRgb = `rgba(${p.thread[0]|0},${p.thread[1]|0},${p.thread[2]|0},0.25)`;
+  const rippleRgb = `rgb(${p.ripple[0]|0},${p.ripple[1]|0},${p.ripple[2]|0})`;
+  const glowRgb = `rgb(${p.glow[0]|0},${p.glow[1]|0},${p.glow[2]|0})`;
+
+  ctx.lineWidth = 1;
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const idx = j * cols + i;
+      const node = nodes[idx];
+      const e = node.energy;
+      const pulse = 0.5 + 0.5 * Math.sin(time * 2 + node.phase);
+      const alpha = 0.15 + e * 0.7 + pulse * 0.1;
+
+      ctx.strokeStyle = `rgba(${p.thread[0]|0},${p.thread[1]|0},${p.thread[2]|0},${(0.08 + e * 0.18).toFixed(3)})`;
+      ctx.beginPath();
+      if (i < cols - 1) {
+        const right = nodes[idx + 1];
+        ctx.moveTo(node.x, node.y);
+        ctx.lineTo(right.x, right.y);
+      }
+      if (j < rows - 1) {
+        const below = nodes[idx + cols];
+        ctx.moveTo(node.x, node.y);
+        ctx.lineTo(below.x, below.y);
+      }
+      ctx.stroke();
+
+      const size = 1.2 + e * 3.5 + pulse * 0.4;
+      ctx.fillStyle = `rgba(${p.node[0]|0},${p.node[1]|0},${p.node[2]|0},${alpha.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, size, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (e > 0.15) {
+        ctx.fillStyle = `rgba(${p.glow[0]|0},${p.glow[1]|0},${p.glow[2]|0},${(e * 0.35).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, size * 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  for (const r of ripples) {
+    const alpha = r.life * 0.5;
+    ctx.strokeStyle = `rgba(${p.ripple[0]|0},${p.ripple[1]|0},${p.ripple[2]|0},${alpha.toFixed(3)})`;
+    ctx.lineWidth = 1.5 * r.life;
+    ctx.beginPath();
+    ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    if (r.life > 0.3) {
+      ctx.strokeStyle = `rgba(${p.ripple[0]|0},${p.ripple[1]|0},${p.ripple[2]|0},${(alpha * 0.3).toFixed(3)})`;
+      ctx.lineWidth = 4 * r.life;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  ctx.fillStyle = '#fff';
+  ctx.font = '10px monospace';
+  ctx.fillText(`pulses: ${ripples.length}`, 20, H - 20);
+}
+
+function loop(now) {
+  requestAnimationFrame(loop);
+  if (paused) return;
+
+  const rawDt = (now - lastTime) / 1000;
+  lastTime = now;
+  const dt = Math.min(rawDt, 0.05);
+
+  fpsArr.push(1 / Math.max(rawDt, 0.001));
+  if (fpsArr.length > 30) fpsArr.shift();
+  const avgFps = fpsArr.reduce((a, b) => a + b, 0) / fpsArr.length;
+  document.getElementById('fps').textContent = avgFps | 0;
+
+  time += dt;
+
+  if (mouse.down && Math.random() < 0.08) {
+    addRipple(mouse.x, mouse.y, 0.5, 0);
+  }
+
+  update(dt);
+  draw();
+}
+
+window.addEventListener('resize', resize);
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 0) {
+    mouse.down = true;
+    addRipple(e.clientX, e.clientY, 1.2, 0);
+  }
+  if (e.button === 2) {
+    mouse.right = true;
+    addRipple(e.clientX, e.clientY, 3, 0);
+  }
+});
+canvas.addEventListener('mouseup', (e) => {
+  if (e.button === 0) mouse.down = false;
+  if (e.button === 2) mouse.right = false;
+});
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  if (mouse.down && Math.random() < 0.15) {
+    addRipple(e.clientX, e.clientY, 0.6, 0);
+  }
+});
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('mouseleave', () => { mouse.down = false; mouse.right = false; });
+
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    paused = !paused;
+    toast(paused ? 'Paused' : 'Resumed');
+  }
+  if (e.key === 'c' || e.key === 'C') {
+    ripples = [];
+    for (const n of nodes) { n.x = n.baseX; n.y = n.baseY; n.vx = 0; n.vy = 0; n.energy = 0; }
+    toast('Cleared');
+  }
+  if (e.key === 'r' || e.key === 'R') {
+    initNodes();
+    toast('Regenerated');
+  }
+  if (e.key === 's' || e.key === 'S') {
+    const link = document.createElement('a');
+    link.download = `ripple-fabric-${Date.now()}.png`;
+    link.href = canvas.toDataURL();
+    link.click();
+    toast('Saved PNG');
+  }
+  if (e.key >= '1' && e.key <= '5') {
+    palette = parseInt(e.key) - 1;
+    toast(`Palette: ${palettes[palette].name}`);
+  }
+});
+
+resize();
+document.getElementById('modeLabel').textContent = palettes[palette].name;
+lastTime = performance.now();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
