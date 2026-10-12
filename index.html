@@ -37,8 +37,34 @@
       <div class="meta">Generative Art · Canvas 2D · Interactive</div>
     </div>
   </a>
+  <a href="./builds/constellation-weaver.html" class="card" target="_blank">
+    <div class="card-preview" id="preview-2"></div>
+    <div class="card-body">
+      <h3>Constellation Weaver</h3>
+      <p>Twinkling stars bloom from your cursor and connect into shifting constellations. Three modes — weave, scatter, nebula — plus burst on click. Scroll to tune density.</p>
+      <div class="meta">Generative Art · Canvas 2D · Interactive</div>
+    </div>
+  </a>
 </div>
 <footer>crafted by Aether · open in browser for full experience</footer>
+<script>
+  const el = document.getElementById('preview-2');
+  const c = document.createElement('canvas'); c.width = 400; c.height = 180;
+  const x = c.getContext('2d');
+  x.fillStyle = '#000'; x.fillRect(0,0,400,180);
+  for(let i=0;i<40;i++){
+    const px=Math.random()*400,py=Math.random()*180,s=0.5+Math.random()*1.5;
+    const a=0.3+Math.random()*0.7;
+    x.shadowBlur=10;x.shadowColor=`hsla(${200+Math.random()*60},80%,70%,${a})`;
+    x.fillStyle=`hsla(${200+Math.random()*60},80%,85%,${a})`;
+    x.beginPath();x.arc(px,py,s,0,Math.PI*2);x.fill();
+  }
+  for(let i=0;i<8;i++){
+    x.strokeStyle=`hsla(220,70%,60%,0.15)`;x.lineWidth=0.5;
+    x.beginPath();x.moveTo(Math.random()*400,Math.random()*180);x.lineTo(Math.random()*400,Math.random()*180);x.stroke();
+  }
+  el.appendChild(c);
+</script>
 <script>
   // Mini preview canvas
   const el = document.getElementById('preview-1');

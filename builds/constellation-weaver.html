@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Constellation Weaver — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; color: #fff; }
+  canvas { display: block; cursor: crosshair; }
+  .ui { position: fixed; top: 20px; left: 20px; z-index: 10; pointer-events: none; }
+  .ui h1 { font-size: 14px; font-weight: 300; letter-spacing: 4px; text-transform: uppercase; opacity: 0.6; margin-bottom: 6px; }
+  .ui p { font-size: 11px; opacity: 0.35; letter-spacing: 1px; }
+  .controls { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 10; }
+  .controls button { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); padding: 8px 16px; border-radius: 20px; font-size: 11px; letter-spacing: 1px; cursor: pointer; transition: all 0.3s; pointer-events: all; }
+  .controls button:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.25); color: #fff; }
+  .controls button.active { background: rgba(120,180,255,0.15); border-color: rgba(120,180,255,0.4); color: rgba(120,180,255,0.9); }
+  .stats { position: fixed; top: 20px; right: 20px; font-size: 10px; opacity: 0.25; letter-spacing: 1px; text-align: right; z-index: 10; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="ui">
+  <h1>Constellation Weaver</h1>
+  <p>move mouse to weave · click to burst · scroll to shift density</p>
+</div>
+<div class="controls">
+  <button class="active" data-mode="weave">Weave</button>
+  <button data-mode="scatter">Scatter</button>
+  <button data-mode="nebula">Nebula</button>
+  <button id="clearBtn">Clear</button>
+</div>
+<div class="stats" id="stats"></div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resize(); window.addEventListener('resize', resize);
+
+const mouse = { x: W/2, y: H/2, active: false };
+window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; });
+window.addEventListener('mouseleave', () => mouse.active = false);
+window.addEventListener('click', e => spawnBurst(e.clientX, e.clientY, 30));
+window.addEventListener('touchmove', e => { mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY; mouse.active = true; }, {passive:true});
+
+let mode = 'weave';
+let density = 80;
+window.addEventListener('wheel', e => { density = Math.max(20, Math.min(200, density - Math.sign(e.deltaY) * 15)); });
+
+document.querySelectorAll('.controls button[data-mode]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.controls button[data-mode]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    mode = btn.dataset.mode;
+  });
+});
+document.getElementById('clearBtn').addEventListener('click', () => { stars = []; trails = []; });
+
+class Star {
+  constructor(x, y, vx, vy, life) {
+    this.x = x; this.y = y;
+    this.vx = vx || (Math.random() - 0.5) * 0.3;
+    this.vy = vy || (Math.random() - 0.5) * 0.3;
+    this.life = life || 1;
+    this.decay = 0.0003 + Math.random() * 0.0005;
+    this.size = 0.5 + Math.random() * 1.5;
+    this.hue = 200 + Math.random() * 60;
+    this.brightness = 70 + Math.random() * 30;
+    this.twinkleSpeed = 0.02 + Math.random() * 0.03;
+    this.twinkleOffset = Math.random() * Math.PI * 2;
+  }
+  update(time) {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= this.decay;
+    if (mode === 'scatter') {
+      this.vx *= 1.001; this.vy *= 1.001;
+    } else if (mode === 'nebula') {
+      this.vx *= 0.998; this.vy *= 0.998;
+    } else {
+      this.vx *= 0.999; this.vy *= 0.999;
+    }
+    return this.life > 0 && this.x > -50 && this.x < W+50 && this.y > -50 && this.y < H+50;
+  }
+  draw(time) {
+    const twinkle = 0.5 + 0.5 * Math.sin(time * this.twinkleSpeed + this.twinkleOffset);
+    const alpha = this.life * twinkle;
+    const glow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size * 8);
+    glow.addColorStop(0, `hsla(${this.hue}, 80%, ${this.brightness}%, ${alpha})`);
+    glow.addColorStop(0.5, `hsla(${this.hue}, 60%, 50%, ${alpha * 0.3})`);
+    glow.addColorStop(1, `hsla(${this.hue}, 60%, 50%, 0)`);
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `hsla(${this.hue}, 90%, 90%, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+class Trail {
+  constructor(x1, y1, x2, y2, life) {
+    this.x1 = x1; this.y1 = y1; this.x2 = x2; this.y2 = y2;
+    this.life = life || 1;
+    this.decay = 0.004 + Math.random() * 0.006;
+  }
+  update() { this.life -= this.decay; return this.life > 0; }
+  draw() {
+    const alpha = this.life * 0.4;
+    const midX = (this.x1 + this.x2) / 2;
+    const midY = (this.y1 + this.y2) / 2;
+    const dist = Math.hypot(this.x2 - this.x1, this.y2 - this.y1);
+    const brightness = 50 + this.life * 40;
+    const gradient = ctx.createLinearGradient(this.x1, this.y1, this.x2, this.y2);
+    gradient.addColorStop(0, `hsla(210, 80%, ${brightness}%, ${alpha * 0.3})`);
+    gradient.addColorStop(0.5, `hsla(220, 70%, ${brightness + 10}%, ${alpha})`);
+    gradient.addColorStop(1, `hsla(210, 80%, ${brightness}%, ${alpha * 0.3})`);
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = this.life * 1.5;
+    ctx.beginPath();
+    ctx.moveTo(this.x1, this.y1);
+    ctx.lineTo(midX, midY);
+    ctx.lineTo(this.x2, this.y2);
+    ctx.stroke();
+  }
+}
+
+let stars = [];
+let trails = [];
+let lastSpawn = 0;
+let time = 0;
+
+function spawnBurst(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 0.5 + Math.random() * 2;
+    stars.push(new Star(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, 0.8 + Math.random() * 0.2));
+  }
+}
+
+function spawnFromMouse() {
+  if (!mouse.active) return;
+  const count = Math.floor(density / 20);
+  for (let i = 0; i < count; i++) {
+    const ox = (Math.random() - 0.5) * 120;
+    const oy = (Math.random() - 0.5) * 120;
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 0.2 + Math.random() * 0.8;
+    stars.push(new Star(mouse.x + ox, mouse.y + oy, Math.cos(angle) * speed, Math.sin(angle) * speed));
+  }
+  // connect to nearby stars
+  for (let i = stars.length - count; i < stars.length; i++) {
+    for (let j = i + 1; j < Math.min(i + 15, stars.length); j++) {
+      const dx = stars[i].x - stars[j].x;
+      const dy = stars[i].y - stars[j].y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 100 && Math.random() > 0.5) {
+        trails.push(new Trail(stars[i].x, stars[i].y, stars[j].x, stars[j].y));
+      }
+    }
+  }
+}
+
+function update() {
+  time++;
+  if (time - lastSpawn > 3) {
+    if (Math.random() < 0.3) {
+      stars.push(new Star(Math.random() * W, Math.random() * H));
+    }
+    lastSpawn = time;
+  }
+  if (mouse.active) spawnFromMouse();
+  stars = stars.filter(s => s.update(time));
+  trails = trails.filter(t => t.update());
+}
+
+function draw() {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+  ctx.fillRect(0, 0, W, H);
+  trails.forEach(t => t.draw());
+  stars.forEach(s => s.draw(time));
+}
+
+function loop() {
+  update(); draw();
+  document.getElementById('stats').textContent = `stars: ${stars.length} · connections: ${trails.length} · density: ${density}`;
+  requestAnimationFrame(loop);
+}
+
+// seed some initial stars
+for (let i = 0; i < 60; i++) {
+  stars.push(new Star(Math.random() * W, Math.random() * H));
+}
+loop();
+</script>
+</body>
+</html>
