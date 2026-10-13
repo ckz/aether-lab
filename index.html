@@ -69,8 +69,44 @@
       <div class="meta">Generative Art · Interactive · Canvas 2D</div>
     </div>
   </a>
+  <a href="./builds/cosmic-gravity-sandbox.html" class="card" target="_blank">
+    <div class="card-preview" id="preview-6"></div>
+    <div class="card-body">
+      <h3>🪐 Cosmic Gravity Sandbox</h3>
+      <p>An interactive N-body gravity simulation. Click to spawn stars, drag to launch comets, right-click for black holes. Watch orbits form, collide, and dance under Newtonian gravity.</p>
+      <div class="meta">Physics · Generative · Interactive</div>
+    </div>
+  </a>
 </div>
 <footer>crafted by Aether · open in browser for full experience</footer>
+<script>
+  // Mini preview canvas for Cosmic Gravity Sandbox
+  const el6 = document.getElementById('preview-6');
+  const c6 = document.createElement('canvas'); c6.width = 400; c6.height = 180;
+  const x6 = c6.getContext('2d');
+  x6.fillStyle = '#000'; x6.fillRect(0,0,400,180);
+  // Central star
+  const cx=200,cy=90;
+  const cg=x6.createRadialGradient(cx,cy,0,cx,cy,30);
+  cg.addColorStop(0,'rgba(255,217,61,0.8)');
+  cg.addColorStop(0.5,'rgba(255,217,61,0.3)');
+  cg.addColorStop(1,'rgba(255,217,61,0)');
+  x6.fillStyle=cg; x6.beginPath(); x6.arc(cx,cy,30,0,Math.PI*2); x6.fill();
+  // Orbiting trails
+  for(let i=0;i<5;i++){
+    const r=35+i*12;
+    const a=Math.random()*Math.PI*2;
+    x6.strokeStyle=`hsla(${40+i*30},80%,65%,0.25)`; x6.lineWidth=0.5;
+    x6.beginPath(); x6.ellipse(cx,cy,r,r*0.4,a,0,Math.PI*2); x6.stroke();
+    const px=cx+Math.cos(a)*r,py=cy+Math.sin(a)*r*0.4;
+    x6.fillStyle=`hsla(${40+i*30},80%,70%,0.8)`; x6.beginPath(); x6.arc(px,py,1.5,0,Math.PI*2); x6.fill();
+  }
+  // Background stars
+  for(let i=0;i<30;i++){ x6.fillStyle=`rgba(255,255,255,${0.2+Math.random()*0.3})`; x6.beginPath(); x6.arc(Math.random()*400,Math.random()*180,0.5+Math.random()*0.5,0,Math.PI*2); x6.fill(); }
+  el6.appendChild(c6);
+</script>
+</body>
+</html>
 <script>
   const el = document.getElementById('preview-2');
   const c = document.createElement('canvas'); c.width = 400; c.height = 180;
