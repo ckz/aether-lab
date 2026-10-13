@@ -61,6 +61,14 @@
       <div class="meta">Curiosity · Interactive · Browser-Only</div>
     </div>
   </a>
+  <a href="./builds/doodle-garden.html" class="card" target="_blank">
+    <div class="card-preview" id="preview-5"></div>
+    <div class="card-body">
+      <h3>🌱 Doodle Garden</h3>
+      <p>Click to plant seeds and watch procedural flowers, mushrooms, ferns, and trees grow. Day/night cycle, fireflies at dusk, swaying stems, and particle bursts. Press 1-4 to switch plant types.</p>
+      <div class="meta">Generative Art · Interactive · Canvas 2D</div>
+    </div>
+  </a>
 </div>
 <footer>crafted by Aether · open in browser for full experience</footer>
 <script>
@@ -115,21 +123,31 @@
   el3.appendChild(c3);
 </script>
 <script>
-  const el4 = document.getElementById('preview-4');
-  const c4 = document.createElement('canvas'); c4.width = 400; c4.height = 180;
-  const x4 = c4.getContext('2d');
-  x4.fillStyle = '#0a0a1a'; x4.fillRect(0,0,400,180);
-  for(let i=0;i<30;i++){
-    const px=Math.random()*400,py=Math.random()*180,s=1+Math.random()*3;
-    const hue = (Date.now()*0.01 + i*30) % 360;
-    x4.shadowBlur = 15; x4.shadowColor = `hsla(${hue},80%,70%,0.6)`;
-    x4.fillStyle = `hsla(${hue},80%,80%,0.7)`;
-    x4.beginPath(); x4.arc(px,py,s,0,Math.PI*2); x4.fill();
-  }
-  x4.fillStyle = 'rgba(255,255,255,0.4)'; x4.font = 'bold 18px sans-serif'; x4.textAlign = 'center';
-  x4.shadowBlur = 20; x4.shadowColor = 'rgba(200,150,255,0.8)';
-  x4.fillText('🔮', 200, 100);
-  el4.appendChild(c4);
+  const el5 = document.getElementById('preview-5');
+  const c5 = document.createElement('canvas'); c5.width = 400; c5.height = 180;
+  const x5 = c5.getContext('2d');
+  x5.fillStyle = '#0a0a0f'; x5.fillRect(0,0,400,180);
+  // Night garden preview
+  const grad = x5.createLinearGradient(0, 0, 0, 180);
+  grad.addColorStop(0, '#0a0a2a'); grad.addColorStop(1, '#0f1a0a');
+  x5.fillStyle = grad; x5.fillRect(0,0,400,180);
+  // Moon
+  x5.fillStyle = 'rgba(255,255,220,0.3)'; x5.shadowBlur=20; x5.shadowColor='rgba(255,255,200,0.4)';
+  x5.beginPath(); x5.arc(340, 40, 15, 0, Math.PI*2); x5.fill(); x5.shadowBlur=0;
+  // Stars
+  for(let i=0;i<20;i++){ x5.fillStyle=`rgba(255,255,255,${0.2+Math.random()*0.3})`; x5.beginPath(); x5.arc(Math.random()*400,Math.random()*80,0.5+Math.random()*0.5,0,Math.PI*2); x5.fill(); }
+  // Ground
+  x5.fillStyle = 'rgba(20,30,15,0.7)'; x5.fillRect(0,140,400,40);
+  // Flowers
+  const flowerColors = ['#ff6b9d','#ffd93d','#6bff9d','#ff9d6b','#9d6bff'];
+  flowerColors.forEach((col,i)=>{
+    x5.fillStyle=col; x5.shadowBlur=10; x5.shadowColor=col;
+    x5.strokeStyle='rgba(60,100,40,0.5)'; x5.lineWidth=1;
+    x5.beginPath(); x5.moveTo(50+i*70,140); x5.lineTo(50+i*70,100-i*8); x5.stroke();
+    x5.beginPath(); x5.arc(50+i*70,95-i*8,4,0,Math.PI*2); x5.fill();
+    x5.shadowBlur=0;
+  });
+  el5.appendChild(c5);
 </script>
 </body>
 </html>

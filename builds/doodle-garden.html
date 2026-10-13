@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Doodle Garden — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #070710;
+    color: #d0d0d0;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    cursor: crosshair;
+    user-select: none;
+  }
+  canvas { display: block; }
+  .ui {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(10, 10, 20, 0.75);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 50px;
+    padding: 10px 24px;
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    z-index: 10;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+  }
+  .ui .seed-count {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 12px;
+  }
+  .ui .seed-count span {
+    color: #ffd700;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .hint {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(10, 10, 20, 0.6);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 30px;
+    padding: 8px 20px;
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 12px;
+    letter-spacing: 1px;
+    pointer-events: none;
+    transition: opacity 2s ease;
+  }
+  .hint.fade { opacity: 0; }
+</style>
+</head>
+<body>
+<canvas id="garden"></canvas>
+<div class="ui">
+  <div class="seed-count">Seeds: <span id="count">0</span></div>
+  <div style="color: rgba(255,255,255,0.3); font-size: 11px;">click to plant · 1-4 switch type</div>
+</div>
+<div class="hint" id="hint">click anywhere to plant a seed</div>
+
+<script>
+const canvas = document.getElementById('garden');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+let plants = [];
+let particles = [];
+let fireflies = [];
+let seeds = 100;
+const countEl = document.getElementById('count');
+const hintEl = document.getElementById('hint');
+let time = 0;
+let plantType = 0;
+const PLANT_TYPES = ['flower', 'mushroom', 'fern', 'tree'];
+
+// Day/night cycle
+let dayTime = 0.3; // 0-1, starts at early morning
+const DAY_SPEED = 0.00008;
+
+document.addEventListener('keydown', (e) => {
+  if (e.key >= '1' && e.key <= '4') {
+    plantType = parseInt(e.key) - 1;
+  }
+});
+
+document.addEventListener('click', (e) => {
+  // Ignore clicks on UI
+  if (e.target.closest('.ui')) return;
+  
+  if (seeds <= 0) return;
+  
+  seeds--;
+  countEl.textContent = seeds;
+  
+  // Fade hint after first click
+  if (seeds === 99) {
+    hintEl.classList.add('fade');
+  }
+  
+  const plant = createPlant(e.clientX, H - 30, plantType);
+  plants.push(plant);
+  
+  // Spawn some particles
+  for (let i = 0; i < 8; i++) {
+    particles.push({
+      x: e.clientX,
+      y: H - 30,
+      vx: (Math.random() - 0.5) * 2,
+      vy: -Math.random() * 3 - 1,
+      life: 1,
+      color: plant.color,
+      size: Math.random() * 2 + 1
+    });
+  }
+});
+
+function createPlant(x, y, type) {
+  const hueRanges = [
+    [330, 390],  // pink/purple
+    [20, 50],    // orange/gold
+    [80, 140],   // green/yellow-green
+    [150, 200],  // blue/cyan
+    [260, 300],  // purple/violet
+    [0, 20],     // red/coral
+  ];
+  const hue = hueRanges[Math.floor(Math.random() * hueRanges.length)][0] + Math.random() * (hueRanges[Math.floor(Math.random() * hueRanges.length)][1] - hueRanges[Math.floor(Math.random() * hueRanges.length)][0]);
+  const sat = 60 + Math.random() * 30;
+  const light = 50 + Math.random() * 20;
+  const color = `hsl(${hue}, ${sat}%, ${light}%)`;
+  
+  const configs = {
+    flower: {
+      stemHeight: 60 + Math.random() * 80,
+      petalCount: 5 + Math.floor(Math.random() * 4),
+      hasLeaves: Math.random() > 0.3,
+      swayAmount: 0.02 + Math.random() * 0.02
+    },
+    mushroom: {
+      stemHeight: 20 + Math.random() * 30,
+      capSize: 12 + Math.random() * 15,
+      spots: Math.random() > 0.4,
+      swayAmount: 0.005
+    },
+    fern: {
+      height: 40 + Math.random() * 60,
+      fronds: 3 + Math.floor(Math.random() * 3),
+      swayAmount: 0.03 + Math.random() * 0.03
+    },
+    tree: {
+      height: 80 + Math.random() * 100,
+      branches: 3 + Math.floor(Math.random() * 3),
+      swayAmount: 0.005 + Math.random() * 0.01
+    }
+  };
+  
+  return {
+    x, y, type,
+    config: configs[type],
+    color,
+    age: 0,
+    maxAge: 800 + Math.random() * 400,
+    phase: Math.random() * Math.PI * 2,
+    grown: false,
+    growProgress: 0
+  };
+}
+
+function drawSky() {
+  // Day/night sky gradient
+  const dayPhase = dayTime;
+  let topColor, bottomColor, ambient;
+  
+  if (dayPhase < 0.25) { // night to dawn
+    const t = dayPhase / 0.25;
+    topColor = lerpColor([10, 10, 30], [30, 40, 70], t);
+    bottomColor = lerpColor([15, 15, 40], [200, 150, 120], t);
+    ambient = 0.2 + t * 0.3;
+  } else if (dayPhase < 0.5) { // dawn to day
+    const t = (dayPhase - 0.25) / 0.25;
+    topColor = lerpColor([30, 40, 70], [70, 130, 200], t);
+    bottomColor = lerpColor([200, 150, 120], [150, 200, 140], t);
+    ambient = 0.5 + t * 0.3;
+  } else if (dayPhase < 0.75) { // day to dusk
+    const t = (dayPhase - 0.5) / 0.25;
+    topColor = lerpColor([70, 130, 200], [40, 50, 90], t);
+    bottomColor = lerpColor([150, 200, 140], [220, 150, 100], t);
+    ambient = 0.8 - t * 0.3;
+  } else { // dusk to night
+    const t = (dayPhase - 0.75) / 0.25;
+    topColor = lerpColor([40, 50, 90], [10, 10, 30], t);
+    bottomColor = lerpColor([220, 150, 100], [15, 15, 40], t);
+    ambient = 0.5 - t * 0.3;
+  }
+  
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, `rgb(${topColor.join(',')})`);
+  grad.addColorStop(1, `rgb(${bottomColor.join(',')})`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  
+  return ambient;
+}
+
+function lerpColor(a, b, t) {
+  return [
+    Math.round(a[0] + (b[0] - a[0]) * t),
+    Math.round(a[1] + (b[1] - a[1]) * t),
+    Math.round(a[2] + (b[2] - a[2]) * t)
+  ];
+}
+
+function drawGround(ambient) {
+  const groundY = H - 30;
+  const grad = ctx.createLinearGradient(0, groundY - 10, 0, H);
+  grad.addColorStop(0, `rgba(20, 25, 15, 0)`);
+  grad.addColorStop(0.3, `rgba(25, 30, 18, ${0.6 + ambient * 0.4})`);
+  grad.addColorStop(1, `rgba(15, 20, 10, 0.9)`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, groundY - 10, W, H - groundY + 10);
+  
+  // Subtle grass line
+  ctx.strokeStyle = `rgba(40, 80, 30, ${0.2 + ambient * 0.3})`;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, groundY);
+  for (let x = 0; x < W; x += 5) {
+    ctx.lineTo(x, groundY + Math.sin(x * 0.1 + time * 2) * 2);
+  }
+  ctx.stroke();
+}
+
+function drawPlant(p, ambient) {
+  if (p.growProgress < 1) {
+    p.growProgress += 0.015;
+    if (p.growProgress > 1) p.growProgress = 1;
+  }
+  
+  const sway = Math.sin(time * 1.5 + p.phase) * p.config.swayAmount;
+  const growth = easeOutBack(p.growProgress);
+  const alpha = Math.min(1, p.growProgress * 2);
+  
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.globalAlpha = alpha;
+  
+  if (p.type === 'flower') {
+    drawFlower(p, sway, growth, ambient);
+  } else if (p.type === 'mushroom') {
+    drawMushroom(p, sway, growth, ambient);
+  } else if (p.type === 'fern') {
+    drawFern(p, sway, growth, ambient);
+  } else if (p.type === 'tree') {
+    drawTree(p, sway, growth, ambient);
+  }
+  
+  ctx.restore();
+}
+
+function easeOutBack(t) {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+}
+
+function drawFlower(p, sway, growth, ambient) {
+  const h = p.config.stemHeight * growth;
+  
+  // Stem
+  ctx.strokeStyle = `rgba(60, 100, 40, ${0.6 + ambient * 0.4})`;
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(sway * 20, -h * 0.5, sway * 30, -h);
+  ctx.stroke();
+  
+  if (growth < 0.5) return;
+  
+  // Leaves
+  if (p.config.hasLeaves) {
+    ctx.fillStyle = `rgba(50, 90, 35, ${0.7 + ambient * 0.3})`;
+    const leafY = -h * 0.4;
+    ctx.beginPath();
+    ctx.ellipse(-5, leafY, 8 * growth, 3 * growth, -0.3 + sway, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(5, leafY, 8 * growth, 3 * growth, 0.3 + sway, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Petals
+  const petalCount = p.config.petalCount;
+  const petalSize = (8 + Math.random() * 0.1) * growth; // deterministic per plant
+  const headX = sway * 30;
+  const headY = -h;
+  
+  for (let i = 0; i < petalCount; i++) {
+    const angle = (i / petalCount) * Math.PI * 2;
+    const px = headX + Math.cos(angle) * petalSize;
+    const py = headY + Math.sin(angle) * petalSize;
+    
+    ctx.fillStyle = p.color;
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = p.color;
+    ctx.beginPath();
+    ctx.ellipse(px, py, petalSize * 0.6, petalSize * 0.3, angle, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+  
+  // Center
+  ctx.fillStyle = '#ffd700';
+  ctx.shadowBlur = 10;
+  ctx.shadowColor = '#ffd700';
+  ctx.beginPath();
+  ctx.arc(headX, headY, petalSize * 0.35, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+}
+
+function drawMushroom(p, sway, growth, ambient) {
+  const stemH = p.config.stemHeight * growth;
+  const capS = p.config.capSize * growth;
+  
+  // Stem
+  ctx.fillStyle = `rgba(220, 210, 190, ${0.7 + ambient * 0.3})`;
+  ctx.fillRect(-2, -stemH, 4, stemH);
+  
+  if (growth < 0.5) return;
+  
+  // Cap
+  ctx.fillStyle = p.color;
+  ctx.shadowBlur = 12;
+  ctx.shadowColor = p.color;
+  ctx.beginPath();
+  ctx.ellipse(0, -stemH, capS, capS * 0.5, 0, Math.PI, 0);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  
+  // Spots
+  if (p.config.spots) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.beginPath();
+    ctx.arc(-capS * 0.3, -stemH - capS * 0.2, capS * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(capS * 0.2, -stemH - capS * 0.15, capS * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Glow at night
+  if (ambient < 0.4) {
+    const glowAlpha = (0.4 - ambient) * 0.5;
+    ctx.fillStyle = `rgba(200, 255, 200, ${glowAlpha})`;
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = `rgba(150, 255, 150, ${glowAlpha})`;
+    ctx.beginPath();
+    ctx.arc(0, -stemH - capS * 0.3, capS * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+function drawFern(p, sway, growth, ambient) {
+  const h = p.config.height * growth;
+  const fronds = p.config.fronds;
+  
+  ctx.strokeStyle = `rgba(40, 90, 35, ${0.7 + ambient * 0.3})`;
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = 'round';
+  
+  // Main stem
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(sway * 15, -h * 0.5, sway * 20, -h);
+  ctx.stroke();
+  
+  if (growth < 0.4) return;
+  
+  // Fronds
+  for (let f = 0; f < fronds; f++) {
+    const t = f / (fronds - 1);
+    const fy = -h * t;
+    const fx = sway * 20 * t;
+    const side = f % 2 === 0 ? 1 : -1;
+    const len = (15 + t * 20) * growth;
+    
+    ctx.strokeStyle = `rgba(50, 100, 40, ${0.5 + ambient * 0.4})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(fx, fy);
+    ctx.quadraticCurveTo(fx + side * len * 0.5, fy - len * 0.3, fx + side * len, fy - len * 0.5);
+    ctx.stroke();
+    
+    // Leaflets
+    for (let l = 1; l <= 4; l++) {
+      const lt = l / 5;
+      const lx = fx + side * len * lt;
+      const ly = fy - len * 0.3 * lt;
+      ctx.fillStyle = `rgba(60, 120, 45, ${0.4 + ambient * 0.4})`;
+      ctx.beginPath();
+      ctx.ellipse(lx, ly, 4 * growth, 1.5 * growth, side * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+function drawTree(p, sway, growth, ambient) {
+  const h = p.config.height * growth;
+  const branches = p.config.branches;
+  
+  // Trunk
+  ctx.strokeStyle = `rgba(80, 55, 35, ${0.7 + ambient * 0.3})`;
+  ctx.lineWidth = 4 * growth;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(sway * 10, -h * 0.6);
+  ctx.stroke();
+  
+  if (growth < 0.5) return;
+  
+  // Branches
+  ctx.strokeStyle = `rgba(70, 90, 50, ${0.6 + ambient * 0.4})`;
+  ctx.lineWidth = 2 * growth;
+  for (let b = 0; b < branches; b++) {
+    const t = 0.5 + (b / branches) * 0.4;
+    const bx = sway * 10 * t;
+    const by = -h * t;
+    const side = b % 2 === 0 ? 1 : -1;
+    const len = (20 + Math.random() * 15) * growth;
+    
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.quadraticCurveTo(bx + side * len * 0.6, by - len * 0.5, bx + side * len * 0.8, by - len * 0.8);
+    ctx.stroke();
+    
+    // Foliage
+    ctx.fillStyle = p.color;
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = p.color;
+    ctx.beginPath();
+    ctx.arc(bx + side * len * 0.7, by - len * 0.7, 10 * growth, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+  
+  // Crown
+  ctx.fillStyle = p.color;
+  ctx.shadowBlur = 15;
+  ctx.shadowColor = p.color;
+  ctx.beginPath();
+  ctx.arc(sway * 10 * 0.5, -h * 0.5, 15 * growth, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const pt = particles[i];
+    pt.x += pt.vx;
+    pt.y += pt.vy;
+    pt.vy += 0.02; // gravity
+    pt.life -= 0.01;
+    
+    if (pt.life <= 0) {
+      particles.splice(i, 1);
+    }
+  }
+}
+
+function drawParticles() {
+  for (const pt of particles) {
+    ctx.fillStyle = pt.color;
+    ctx.globalAlpha = pt.life;
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = pt.color;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+}
+
+function spawnFireflies(ambient) {
+  if (ambient > 0.4) return;
+  if (Math.random() > 0.02) return;
+  
+  fireflies.push({
+    x: Math.random() * W,
+    y: H - 50 - Math.random() * (H * 0.4),
+    vx: (Math.random() - 0.5) * 0.5,
+    vy: (Math.random() - 0.5) * 0.3,
+    phase: Math.random() * Math.PI * 2,
+    size: 1 + Math.random() * 2
+  });
+  
+  if (fireflies.length > 30) fireflies.shift();
+}
+
+function drawFireflies(ambient) {
+  const glow = Math.max(0, (0.4 - ambient) * 2);
+  for (const f of fireflies) {
+    f.x += f.vx + Math.sin(time * 2 + f.phase) * 0.3;
+    f.y += f.vy + Math.cos(time * 1.5 + f.phase) * 0.2;
+    
+    // Wrap around
+    if (f.x < 0) f.x = W;
+    if (f.x > W) f.x = 0;
+    if (f.y < H - 100) f.y = H - 50;
+    if (f.y > H - 20) f.y = H - 100;
+    
+    const alpha = glow * (0.3 + Math.sin(time * 3 + f.phase) * 0.3 + 0.3);
+    ctx.fillStyle = `rgba(180, 255, 100, ${alpha})`;
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = `rgba(180, 255, 100, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+}
+
+function drawMoon(ambient) {
+  if (ambient > 0.5) return;
+  const alpha = Math.max(0, (0.5 - ambient) * 2);
+  ctx.fillStyle = `rgba(255, 255, 220, ${alpha * 0.9})`;
+  ctx.shadowBlur = 40;
+  ctx.shadowColor = `rgba(255, 255, 200, ${alpha * 0.5})`;
+  ctx.beginPath();
+  ctx.arc(W - 150, 100, 40, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+}
+
+function drawStars(ambient) {
+  if (ambient > 0.3) return;
+  const alpha = Math.max(0, (0.3 - ambient) * 3);
+  ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.6})`;
+  for (let i = 0; i < 50; i++) {
+    const sx = (Math.sin(i * 456.789) * 0.5 + 0.5) * W;
+    const sy = (Math.cos(i * 123.456) * 0.5 + 0.5) * H * 0.5;
+    const twinkle = 0.5 + Math.sin(time * 2 + i) * 0.5;
+    ctx.globalAlpha = alpha * twinkle * 0.5;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 0.5 + Math.random() * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function animate() {
+  time += 0.016;
+  dayTime = (dayTime + DAY_SPEED) % 1;
+  
+  const ambient = drawSky();
+  drawStars(ambient);
+  drawMoon(ambient);
+  drawGround(ambient);
+  
+  // Draw plants sorted by Y for depth
+  plants.sort((a, b) => a.y - b.y);
+  for (const p of plants) {
+    drawPlant(p, ambient);
+  }
+  
+  updateParticles();
+  drawParticles();
+  
+  spawnFireflies(ambient);
+  drawFireflies(ambient);
+  
+  requestAnimationFrame(animate);
+}
+
+animate();
+
+// Add a few starter plants for visual interest
+setTimeout(() => {
+  for (let i = 0; i < 5; i++) {
+    const type = Math.floor(Math.random() * 4);
+    const x = 100 + Math.random() * (W - 200);
+    plants.push(createPlant(x, H - 30, type));
+  }
+}, 100);
+</script>
+</body>
+</html>
