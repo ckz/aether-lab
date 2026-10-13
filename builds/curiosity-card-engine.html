@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Curiosity Card Engine — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: radial-gradient(ellipse at top, #1a1a2e 0%, #0a0a0f 70%);
+    color: #e0e0e0; font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  h1 {
+    font-size: 18px; font-weight: 300; letter-spacing: 6px; text-transform: uppercase;
+    color: rgba(255,255,255,0.6); margin-bottom: 30px;
+  }
+  .card {
+    width: 100%; max-width: 520px;
+    background: linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px; padding: 32px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+    transition: transform 0.3s ease;
+  }
+  .card:hover { transform: translateY(-2px); }
+  .label {
+    font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
+    color: rgba(255,255,255,0.3); margin-bottom: 8px;
+  }
+  .fact {
+    font-size: 18px; line-height: 1.6; color: rgba(255,255,255,0.85);
+    margin-bottom: 24px; font-style: italic;
+  }
+  .challenge {
+    background: rgba(255,255,255,0.03);
+    border-left: 3px solid rgba(120, 200, 255, 0.4);
+    padding: 16px; border-radius: 8px; margin-bottom: 24px;
+  }
+  .challenge .label { color: rgba(120, 200, 255, 0.6); }
+  .challenge p { font-size: 14px; line-height: 1.6; color: rgba(255,255,255,0.7); }
+  .mood {
+    text-align: center; padding: 16px;
+    background: linear-gradient(135deg, rgba(255,100,150,0.05), rgba(100,150,255,0.05));
+    border-radius: 10px; margin-bottom: 24px;
+  }
+  .mood .emoji { font-size: 40px; margin-bottom: 8px; }
+  .mood p { font-size: 13px; color: rgba(255,255,255,0.6); letter-spacing: 1px; }
+  button {
+    width: 100%; padding: 14px; border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.05); color: #fff; font-size: 13px;
+    letter-spacing: 3px; text-transform: uppercase; border-radius: 8px;
+    cursor: pointer; transition: all 0.3s ease; font-family: inherit;
+  }
+  button:hover {
+    background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3);
+    box-shadow: 0 0 30px rgba(120, 200, 255, 0.2);
+  }
+  .footer {
+    margin-top: 30px; font-size: 11px; color: rgba(255,255,255,0.2);
+    letter-spacing: 2px; text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+  <h1>✦ Curiosity Card Engine</h1>
+  <div class="card" id="card">
+    <div class="label">Today's Curious Fact</div>
+    <div class="fact" id="fact">Loading…</div>
+    <div class="challenge">
+      <div class="label">Micro Challenge</div>
+      <p id="challenge">Loading…</p>
+    </div>
+    <div class="mood">
+      <div class="emoji" id="mood-emoji">🔮</div>
+      <p id="mood-text">Loading…</p>
+    </div>
+    <button onclick="drawCard()">Draw Another Card</button>
+  </div>
+  <div class="footer">crafted by Aether · click to explore</div>
+
+<script>
+const FACTS = [
+  "Honey never spoils. Archaeologists have found 3000-year-old honey in Egyptian tombs that was still perfectly edible.",
+  "Octopuses have three hearts, nine brains, and blue blood. Two hearts pump blood to the gills, one to the body.",
+  "There are more possible iterations of a chess game than atoms in the known universe.",
+  "The Internet's total weight is estimated at only a few grams — the mass of the electrons carrying all its data.",
+  "A day on Venus is longer than a year on Venus. It takes 243 Earth days to rotate once, but only 225 to orbit the Sun.",
+  "Tardigrades can survive the vacuum of space, extreme radiation, and temperatures from near absolute zero to 150°C.",
+  "The first computer bug was an actual bug — a moth trapped in a Harvard Mark II computer in 1947.",
+  "Bananas are berries, but strawberries aren't. Botanically, a berry develops from a single flower with one ovary.",
+  "The human brain uses about 20% of the body's energy, despite being only 2% of its weight.",
+  "Light from the Sun takes 8 minutes 20 seconds to reach Earth. If the Sun vanished, we wouldn't know for 8+ minutes.",
+  "Cows have best friends and get stressed when separated. Science confirms what we already suspected.",
+  "There's a parallel universe version of you that's reading this in a slightly different way right now. Probably.",
+  "The shortest war in history lasted 38 minutes — between Britain and Zanzibar on August 27, 1896.",
+  "Trees can communicate through underground fungal networks, sharing nutrients and warning each other of danger.",
+  "The world's oldest known piece of music is a 3,400-year-old Hurrian song from Ugarit, Syria."
+];
+const CHALLENGES = [
+  "Write a 2-line poem about something you see right now.",
+  "Take 3 photos of the same object from wildly different angles.",
+  "Learn and use one new word today. Bonus: teach it to someone.",
+  "Spend 10 minutes exploring a Wikipedia rabbit hole. Report back the weirdest fact.",
+  "Draw a machine that does something impossible. Describe its mechanics.",
+  "Compose a 30-second melody using only sounds you can make with your mouth.",
+  "Read a book in a genre you'd never normally pick. First chapter only is fine.",
+  "Build something with LEGO or blocks. Time limit: 15 minutes.",
+  "Have a conversation with someone about an obscure topic. Let them pick.",
+  "Create a playlist of 5 songs that tell a story. No skipping tracks.",
+  "Make a recipe using only 4 ingredients you already have.",
+  "Solve a puzzle you've never tried before — sudoku, crossword, escape room, anything.",
+  "Write down 10 uses for a random object within 2 minutes.",
+  "Go outside and find something beautiful that you've never noticed before.",
+  "Record a 60-second voice memo explaining your favorite idea to a five-year-old."
+];
+const MOODS = [
+  { emoji: "🔮", text: "Mystical curiosity mode activated" },
+  { emoji: "⚡", text: "High voltage creativity flowing" },
+  { emoji: "🌊", text: "Drifting in deep thought tides" },
+  { emoji: "🔥", text: "Burning with restless energy" },
+  { emoji: "🌱", text: "Growing quiet curiosity" },
+  { emoji: "🌌", text: "Wandering the cosmos of ideas" },
+  { emoji: "🎨", text: "Color-brained and ready to make" },
+  { emoji: "🧩", text: "Pattern-seeking engaged" },
+  { emoji: "💫", text: "Cosmic brainstorm in progress" },
+  { emoji: "🎲", text: "Rolling the dice of inspiration" }
+];
+
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function drawCard() {
+  const card = document.getElementById('card');
+  card.style.opacity = '0';
+  card.style.transform = 'scale(0.95)';
+  setTimeout(() => {
+    document.getElementById('fact').textContent = pick(FACTS);
+    document.getElementById('challenge').textContent = pick(CHALLENGES);
+    const mood = pick(MOODS);
+    document.getElementById('mood-emoji').textContent = mood.emoji;
+    document.getElementById('mood-text').textContent = mood.text;
+    card.style.opacity = '1';
+    card.style.transform = 'scale(1)';
+  }, 300);
+}
+
+drawCard();
+</script>
+</body>
+</html>
