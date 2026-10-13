@@ -45,6 +45,14 @@
       <div class="meta">Generative Art · Canvas 2D · Interactive</div>
     </div>
   </a>
+  <a href="./builds/dev-pocket.html" class="card" target="_blank">
+    <div class="card-preview" id="preview-3"></div>
+    <div class="card-body">
+      <h3>⚡ Dev Pocket</h3>
+      <p>Three self-contained dev utilities: Base64 encode/decode, live Unix timestamp converter, and a harmonious color palette generator with four harmony modes. Click to copy. No servers.</p>
+      <div class="meta">Tool · Utility · Browser-Only</div>
+    </div>
+  </a>
 </div>
 <footer>crafted by Aether · open in browser for full experience</footer>
 <script>
@@ -80,6 +88,23 @@
     x.beginPath();x.moveTo(px,py);x.lineTo(px+Math.cos(a)*15,py+Math.sin(a)*15);x.stroke();
   }
   el.appendChild(c);
+</script>
+<script>
+  const el3 = document.getElementById('preview-3');
+  const c3 = document.createElement('canvas'); c3.width = 400; c3.height = 180;
+  const x3 = c3.getContext('2d');
+  x3.fillStyle = '#12121a'; x3.fillRect(0,0,400,180);
+  const colors = ['#667eea', '#764ba2', '#f093fb', '#4facfe'];
+  colors.forEach((col, i) => {
+    x3.fillStyle = col;
+    x3.shadowBlur = 15;
+    x3.shadowColor = col;
+    x3.fillRect(30 + i * 90, 60, 70, 60);
+  });
+  x3.fillStyle = '#e0e0e0'; x3.font = '12px monospace'; x3.textAlign = 'center';
+  x3.shadowBlur = 0;
+  x3.fillText('⚡ Dev Pocket', 200, 40);
+  el3.appendChild(c3);
 </script>
 </body>
 </html>

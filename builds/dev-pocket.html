@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aether's Dev Pocket</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    min-height: 100vh;
+    padding: 2rem;
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #1a1a2e;
+  }
+  .header h1 {
+    font-size: 1.8rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .header p {
+    color: #666;
+    font-size: 0.85rem;
+    margin-top: 0.3rem;
+  }
+  .tools-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.5rem;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .tool-card {
+    background: #12121a;
+    border: 1px solid #1a1a2e;
+    border-radius: 12px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+  }
+  .tool-card:hover {
+    border-color: #667eea44;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(102, 126, 234, 0.1);
+  }
+  .tool-title {
+    font-size: 1.1rem;
+    color: #667eea;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .tool-icon {
+    font-size: 1.3rem;
+  }
+  label {
+    display: block;
+    color: #888;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.4rem;
+  }
+  textarea, input[type="text"], input[type="number"] {
+    width: 100%;
+    background: #0a0a0f;
+    border: 1px solid #2a2a3e;
+    color: #e0e0e0;
+    padding: 0.6rem;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    resize: vertical;
+    transition: border-color 0.2s;
+  }
+  textarea:focus, input:focus {
+    outline: none;
+    border-color: #667eea;
+  }
+  textarea { min-height: 80px; }
+  button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    margin-top: 0.5rem;
+    margin-right: 0.4rem;
+  }
+  button:hover { opacity: 0.9; }
+  button:active { transform: scale(0.97); }
+  button.secondary {
+    background: #2a2a3e;
+  }
+  .output {
+    margin-top: 0.8rem;
+    padding: 0.6rem;
+    background: #0a0a0f;
+    border: 1px solid #2a2a3e;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    word-break: break-all;
+    min-height: 36px;
+    color: #aaa;
+  }
+  .palette {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.8rem;
+  }
+  .color-swatch {
+    flex: 1;
+    height: 60px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: transform 0.2s;
+    position: relative;
+    border: 2px solid transparent;
+  }
+  .color-swatch:hover {
+    transform: scale(1.05);
+    border-color: #fff;
+  }
+  .color-swatch::after {
+    content: attr(data-hex);
+    position: absolute;
+    bottom: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.65rem;
+    color: white;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    font-family: inherit;
+  }
+  .timestamp-display {
+    font-size: 1.1rem;
+    color: #667eea;
+    margin-top: 0.5rem;
+  }
+  .copy-hint {
+    font-size: 0.7rem;
+    color: #555;
+    margin-top: 0.3rem;
+    font-style: italic;
+  }
+  .footer {
+    text-align: center;
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid #1a1a2e;
+    color: #444;
+    font-size: 0.75rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⚡ Aether's Dev Pocket</h1>
+  <p>Three tiny tools. No dependencies. Just works.</p>
+</div>
+
+<div class="tools-grid">
+
+  <!-- Tool 1: Base64 -->
+  <div class="tool-card">
+    <div class="tool-title"><span class="tool-icon">🔐</span> Base64 Codec</div>
+    <label>Input text</label>
+    <textarea id="base64-input" placeholder="Type or paste anything..."></textarea>
+    <button onclick="base64Encode()">Encode →</button>
+    <button onclick="base64Decode()" class="secondary">← Decode</button>
+    <button onclick="clearBase64()" class="secondary">Clear</button>
+    <div class="output" id="base64-output">Result will appear here...</div>
+    <p class="copy-hint">💡 Click output to copy</p>
+  </div>
+
+  <!-- Tool 2: Timestamp -->
+  <div class="tool-card">
+    <div class="tool-title"><span class="tool-icon">⏱️</span> Unix Timestamp</div>
+    <label>Current timestamp</label>
+    <div class="timestamp-display" id="current-ts">—</div>
+    <label style="margin-top:1rem;">Convert timestamp → datetime</label>
+    <input type="number" id="ts-input" placeholder="e.g. 1728820800">
+    <button onclick="convertTs()">Convert</button>
+    <button onclick="setNow()" class="secondary">Now</button>
+    <div class="output" id="ts-output">—</div>
+  </div>
+
+  <!-- Tool 3: Color Palette -->
+  <div class="tool-card">
+    <div class="tool-title"><span class="tool-icon">🎨</span> Color Palette</div>
+    <label>Generate a harmonious palette</label>
+    <button onclick="generatePalette('analogous')">Analogous</button>
+    <button onclick="generatePalette('complementary')" class="secondary">Complementary</button>
+    <button onclick="generatePalette('triadic')" class="secondary">Triadic</button>
+    <button onclick="generatePalette('random')" class="secondary">Random</button>
+    <div class="palette" id="palette"></div>
+    <p class="copy-hint">💡 Click a color to copy its hex</p>
+  </div>
+
+</div>
+
+<div class="footer">
+  Built by Aether ✨ — No servers, no tracking, no BS. Everything runs in your browser.
+</div>
+
+<script>
+  // Base64
+  function base64Encode() {
+    const input = document.getElementById('base64-input').value;
+    try {
+      const encoded = btoa(unescape(encodeURIComponent(input)));
+      showOutput('base64-output', encoded);
+    } catch (e) {
+      showOutput('base64-output', 'Error: ' + e.message);
+    }
+  }
+  function base64Decode() {
+    const input = document.getElementById('base64-input').value;
+    try {
+      const decoded = decodeURIComponent(escape(atob(input)));
+      showOutput('base64-output', decoded);
+    } catch (e) {
+      showOutput('base64-output', 'Error: Invalid Base64');
+    }
+  }
+  function clearBase64() {
+    document.getElementById('base64-input').value = '';
+    document.getElementById('base64-output').textContent = 'Result will appear here...';
+  }
+  function showOutput(id, text) {
+    const el = document.getElementById(id);
+    el.textContent = text;
+    el.style.color = '#e0e0e0';
+    el.style.cursor = 'pointer';
+    el.onclick = () => {
+      navigator.clipboard.writeText(text);
+      el.textContent = '✓ Copied!';
+      setTimeout(() => { el.textContent = text; }, 1500);
+    };
+  }
+
+  // Timestamp
+  function updateNow() {
+    document.getElementById('current-ts').textContent = Math.floor(Date.now() / 1000);
+  }
+  setInterval(updateNow, 1000);
+  updateNow();
+  function setNow() {
+    document.getElementById('ts-input').value = Math.floor(Date.now() / 1000);
+    convertTs();
+  }
+  function convertTs() {
+    const ts = parseInt(document.getElementById('ts-input').value);
+    if (isNaN(ts)) {
+      document.getElementById('ts-output').textContent = 'Enter a valid timestamp';
+      return;
+    }
+    const date = new Date(ts * 1000);
+    document.getElementById('ts-output').textContent = date.toLocaleString() + ' (UTC: ' + date.toUTCString() + ')';
+  }
+
+  // Color Palette
+  function hslToHex(h, s, l) {
+    l /= 100;
+    const a = s * Math.min(l, 1 - l) / 100;
+    const f = n => {
+      const k = (n + h / 30) % 12;
+      const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+      return Math.round(255 * color).toString(16).padStart(2, '0');
+    };
+    return `#${f(0)}${f(8)}${f(4)}`;
+  }
+  function generatePalette(type) {
+    let colors = [];
+    let baseHue = Math.random() * 360;
+    switch(type) {
+      case 'analogous':
+        for (let i = 0; i < 5; i++) colors.push(hslToHex(baseHue + i * 15, 70, 55));
+        break;
+      case 'complementary':
+        colors.push(hslToHex(baseHue, 70, 55));
+        colors.push(hslToHex(baseHue + 180, 70, 55));
+        for (let i = 0; i < 3; i++) colors.push(hslToHex(baseHue + i * 10, 60, 50 + i * 10));
+        break;
+      case 'triadic':
+        colors.push(hslToHex(baseHue, 70, 55));
+        colors.push(hslToHex(baseHue + 120, 70, 55));
+        colors.push(hslToHex(baseHue + 240, 70, 55));
+        for (let i = 0; i < 2; i++) colors.push(hslToHex(baseHue + i * 5, 60, 50 + i * 10));
+        break;
+      case 'random':
+        for (let i = 0; i < 5; i++) colors.push(hslToHex(Math.random() * 360, 60 + Math.random() * 30, 45 + Math.random() * 25));
+        break;
+    }
+    const paletteEl = document.getElementById('palette');
+    paletteEl.innerHTML = '';
+    colors.forEach(hex => {
+      const swatch = document.createElement('div');
+      swatch.className = 'color-swatch';
+      swatch.style.backgroundColor = hex;
+      swatch.setAttribute('data-hex', hex);
+      swatch.onclick = () => {
+        navigator.clipboard.writeText(hex);
+        swatch.style.borderColor = '#fff';
+        setTimeout(() => swatch.style.borderColor = 'transparent', 1500);
+      };
+      paletteEl.appendChild(swatch);
+    });
+  }
+  // Initial palette
+  generatePalette('analogous');
+</script>
+
+</body>
+</html>
