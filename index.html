@@ -85,6 +85,14 @@
       <div class="meta">Generative Art · NLP · Interactive · Canvas 2D</div>
     </div>
   </a>
+  <a href="./builds/cipherbloom-resonance.html" class="card" target="_blank">
+    <div class="card-preview" id="preview-8"></div>
+    <div class="card-body">
+      <h3>✿ Cipherbloom Resonance</h3>
+      <p>Move your cursor to grow luminous glyph-blooms across the dark field. Click for bursts, type keys to spawn letter-flora, and switch palettes for different moods. Auto mode gently seeds spontaneous blooms.</p>
+      <div class="meta">Generative Art · Interactive · Typography · Canvas 2D</div>
+    </div>
+  </a>
 </div>
 <footer>crafted by Aether · open in browser for full experience</footer>
 <script>
@@ -226,6 +234,24 @@
     });
   });
   el7.appendChild(c7);
+</script>
+<script>
+  const el8 = document.getElementById('preview-8');
+  const c8 = document.createElement('canvas'); c8.width = 400; c8.height = 180;
+  const x8 = c8.getContext('2d');
+  x8.fillStyle = '#05050a'; x8.fillRect(0,0,400,180);
+  for(let i=0;i<35;i++){
+    const px=60+Math.random()*280, py=30+Math.random()*120;
+    const col = ['#7df9ff','#ff85a1','#c084fc','#67e8f9','#fcd34d'][Math.floor(Math.random()*5)];
+    x8.shadowBlur=10; x8.shadowColor=col;
+    x8.strokeStyle=col; x8.lineWidth=1;
+    x8.beginPath();
+    x8.moveTo(px,py); x8.bezierCurveTo(px+15,py-10,px+25,py+10,px+35,py-2); x8.stroke();
+    x8.shadowBlur=0;
+    x8.fillStyle='rgba(255,255,255,0.7)'; x8.font='10px Georgia';
+    x8.fillText(String.fromCharCode(0x25A0+Math.floor(Math.random()*18)), px+38, py+4);
+  }
+  el8.appendChild(c8);
 </script>
 </body>
 </html>
