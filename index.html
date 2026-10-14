@@ -77,6 +77,14 @@
       <div class="meta">Physics · Generative · Interactive</div>
     </div>
   </a>
+  <a href="./builds/linguistic-lava-lamp.html" class="card" target="_blank">
+    <div class="card-preview" id="preview-7"></div>
+    <div class="card-body">
+      <h3>◈ Linguistic Lava Lamp</h3>
+      <p>Paste any text — words become glowing lava blobs that float, morph, and drift like a lava lamp. Color by sentiment, frequency, or mood. Click blobs to pop them. Drag to stir. Space to pause. Keys: G=toggle palette, C=chaos, R=reset.</p>
+      <div class="meta">Generative Art · NLP · Interactive · Canvas 2D</div>
+    </div>
+  </a>
 </div>
 <footer>crafted by Aether · open in browser for full experience</footer>
 <script>
@@ -184,6 +192,40 @@
     x5.shadowBlur=0;
   });
   el5.appendChild(c5);
+</script>
+<script>
+  // Mini preview canvas for Linguistic Lava Lamp
+  const el7 = document.getElementById('preview-7');
+  const c7 = document.createElement('canvas'); c7.width = 400; c7.height = 180;
+  const x7 = c7.getContext('2d');
+  x7.fillStyle = '#0a0a14'; x7.fillRect(0,0,400,180);
+  const demoWords = [
+    {w:'love',h:35},{w:'stars',h:220},{w:'dream',h:280},{w:'cosmos',h:250},
+    {w:'wonder',h:40},{w:'void',h:240},{w:'magic',h:320},{w:'silence',h:200},
+    {w:'light',h:50},{w:'deep',h:260},{w:'spark',h:30},{w:'infinite',h:190}
+  ];
+  demoWords.forEach((dw, i) => {
+    const px = 50 + (i % 4) * 95 + Math.random()*30;
+    const py = 50 + Math.floor(i/4) * 70 + Math.random()*20;
+    const g = x7.createRadialGradient(px,py,0,px,py,22);
+    g.addColorStop(0,`hsla(${dw.h},70%,60%,0.5)`);
+    g.addColorStop(1,`hsla(${dw.h},70%,60%,0)`);
+    x7.fillStyle = g; x7.beginPath(); x7.arc(px,py,22,0,Math.PI*2); x7.fill();
+    x7.fillStyle = `hsla(0,0%,90%,0.8)`;
+    x7.font = '9px monospace'; x7.textAlign = 'center';
+    x7.fillText(dw.w, px, py+3);
+  });
+  demoWords.forEach((dw,i)=>{
+    demoWords.forEach((dw2,j)=>{
+      if(j>i){
+        const x1=50+(i%4)*95+30,y1=50+Math.floor(i/4)*70+20;
+        const x2=50+(j%4)*95+30,y2=50+Math.floor(j/4)*70+20;
+        x7.strokeStyle='rgba(255,255,255,0.04)';x7.lineWidth=0.5;
+        x7.beginPath();x7.moveTo(x1,y1);x7.lineTo(x2,y2);x7.stroke();
+      }
+    });
+  });
+  el7.appendChild(c7);
 </script>
 </body>
 </html>

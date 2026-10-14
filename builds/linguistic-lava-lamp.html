@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linguistic Lava Lamp</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #e0e0e0;
+    height: 100vh;
+    cursor: crosshair;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0; left: 0;
+    z-index: 1;
+  }
+  #ui {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 10;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    opacity: 0.7;
+    pointer-events: none;
+    text-shadow: 0 0 6px #000;
+  }
+  #ui h1 {
+    font-size: 14px;
+    font-weight: normal;
+    margin-bottom: 6px;
+    opacity: 0.9;
+    letter-spacing: 1px;
+  }
+  #ui p { margin: 2px 0; opacity: 0.5; }
+  #input-area {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  #text-input {
+    background: rgba(20, 20, 35, 0.85);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #e0e0e0;
+    padding: 10px 16px;
+    border-radius: 24px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    width: 420px;
+    outline: none;
+    backdrop-filter: blur(10px);
+    transition: border-color 0.3s;
+  }
+  #text-input:focus { border-color: rgba(255,255,255,0.4); }
+  #text-input::placeholder { color: rgba(255,255,255,0.25); }
+  #mode-btn {
+    background: rgba(20, 20, 35, 0.85);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #aaa;
+    padding: 10px 14px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 16px;
+    backdrop-filter: blur(10px);
+    transition: all 0.3s;
+    width: 40px; height: 40px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #mode-btn:hover { border-color: rgba(255,255,255,0.4); color: #fff; }
+  #stats {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10;
+    font-size: 10px;
+    opacity: 0.4;
+    text-align: right;
+    text-shadow: 0 0 6px #000;
+  }
+  #tooltip {
+    position: fixed;
+    z-index: 20;
+    background: rgba(10, 10, 20, 0.92);
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    backdrop-filter: blur(8px);
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>◈ LINGUISTIC LAVA LAMP ◈</h1>
+  <p>paste text below — words become lava</p>
+  <p>click lava to pop · drag to stir · space = pause</p>
+</div>
+<div id="stats"></div>
+<div id="tooltip"></div>
+<div id="input-area">
+  <input id="text-input" type="text" placeholder="Paste or type text to animate…" />
+  <button id="mode-btn" title="Toggle color mode">🎨</button>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+const stats = document.getElementById('stats');
+const input = document.getElementById('text-input');
+const modeBtn = document.getElementById('mode-btn');
+
+let W, H, DPR;
+function resize() {
+  DPR = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ---- Text Analysis ----
+const STOP_WORDS = new Set([
+  'the','a','an','and','or','but','in','on','at','to','for','of','with','by',
+  'from','is','it','was','are','were','be','been','have','has','had','do','does',
+  'did','will','would','could','should','may','might','shall','can','need','dare',
+  'ought','used','that','this','these','those','i','me','my','we','our','you','your',
+  'he','she','they','them','his','her','its','their','what','which','who','whom',
+  'when','where','why','how','all','each','every','both','few','more','most','other',
+  'some','such','no','not','only','same','so','than','too','very','just','because',
+  'as','until','while','if','then','else','about','above','after','again','also',
+  'am','being','into','over','under','between','through','during','before','after',
+  'here','there','up','down','out','off','once','here','there','get','got','like',
+  'say','said','said','make','made','know','take','come','want','look','use','find',
+  'give','tell','work','call','try','ask','put','mean','keep','let','begin','seem',
+  'help','show','hear','play','run','live','believe','happen','bring','become','leave',
+  'put','mean','keep','let','begin','seem','help','show','hear','play','run','live',
+  'really','thing','things','much','many','well','even','still','already','yet',
+  'going','done','coming','new','way','ways','something','anything','everything',
+  'nothing','somebody','anybody','everybody','nobody','someone','anyone'
+]);
+
+function analyzeText(text) {
+  const words = text.toLowerCase()
+    .replace(/[^a-z\s'-]/g, '')
+    .split(/\s+/)
+    .filter(w => w.length > 1 && !STOP_WORDS.has(w) && /^[a-z]+/.test(w));
+  
+  const freq = {};
+  words.forEach(w => { freq[w] = (freq[w] || 0) + 1; });
+  
+  // Sentiment scoring (simplified)
+  const positive = new Set([
+    'love','beautiful','amazing','wonderful','great','good','happy','joy','bright',
+    'light','warm','sweet','gentle','kind','hope','dream','peace','calm','alive',
+    'free','true','real','strong','brave','bright','golden','sun','star','sky',
+    'dance','sing','laugh','smile','embrace','bloom','grow','rise','soar','fly',
+    'friend','family','heart','soul','grace','magic','miracle','treasure','gift',
+    'celebrate','inspire','spark','glow','radiant','bliss','paradise','paradise'
+  ]);
+  const negative = new Set([
+    'dark','cold','dead','lost','pain','hurt','fear','shadow','black','fall',
+    'broken','cry','tears','gone','end','die','death','sad','wrong','bad','evil',
+    'hate','destroy','ruin','bleed','scream','agon','despair','void','empty','fail',
+    'fade','crush','wound','abandon','betray','regret','suffer','chains','prison'
+  ]);
+  
+  const entries = Object.entries(freq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 60);
+  
+  const maxFreq = entries.length ? entries[0][1] : 1;
+  
+  return entries.map(([word, count]) => {
+    let sentiment = 0;
+    if (positive.has(word)) sentiment = 1;
+    else if (negative.has(word)) sentiment = -1;
+    
+    return {
+      word,
+      count,
+      size: 0.4 + (count / maxFreq) * 1.6,
+      sentiment,
+      hue: sentiment > 0 ? [40, 90]   : sentiment < 0 ? [220, 280] : [0, 360]
+    };
+  });
+}
+
+// ---- Lava Blob ----
+class Blob {
+  constructor(wordData, x, y) {
+    this.word = wordData.word;
+    this.count = wordData.count;
+    this.baseSize = wordData.size;
+    this.size = 14 + wordData.size * 28;
+    this.sentiment = wordData.sentiment;
+    this.hueRange = wordData.hue;
+    
+    this.x = x ?? Math.random() * W;
+    this.y = y ?? H + Math.random() * 100;
+    this.targetY = 30 + Math.random() * (H - 100);
+    this.vx = (Math.random() - 0.5) * 0.4;
+    this.vy = -(0.3 + Math.random() * 0.8);
+    this.hue = this.hueRange[0] + Math.random() * (this.hueRange[1] - this.hueRange[0]);
+    this.saturation = 55 + Math.random() * 30;
+    this.lightness = 50 + Math.random() * 20;
+    this.alpha = 0.7 + Math.random() * 0.3;
+    this.wobblePhase = Math.random() * Math.PI * 2;
+    this.wobbleSpeed = 0.005 + Math.random() * 0.02;
+    this.wobbleAmp = 0.3 + Math.random() * 0.7;
+    this.life = 1;
+    this.rising = true;
+    this.floatPhase = Math.random() * Math.PI * 2;
+    this.buoyancy = 0.015 + Math.random() * 0.04;
+    this.neighbors = [];
+    this.popping = false;
+    this.popScale = 1;
+    this.trail = [];
+  }
+  
+  update(dt, mouse, paused) {
+    if (this.popping) {
+      this.popScale *= 0.92;
+      this.alpha *= 0.93;
+      return this.popScale > 0.01;
+    }
+    
+    if (paused) return true;
+    
+    this.wobblePhase += this.wobbleSpeed * dt;
+    this.floatPhase += 0.008 * dt;
+    
+    // Buoyancy — rise toward target zone
+    const distToTarget = this.targetY - this.y;
+    this.vy += distToTarget * 0.00003 * dt;
+    this.vy += this.buoyancy * 0.02 * dt;
+    this.vy = Math.max(-1.8, Math.min(0.8, this.vy));
+    
+    // Wobble
+    this.vx += Math.sin(this.wobblePhase) * this.wobbleAmp * 0.015 * dt;
+    this.vx += Math.cos(this.floatPhase * 0.7) * 0.02 * dt;
+    this.vx *= 0.985;
+    this.vy *= 0.993;
+    
+    // Mouse repulsion
+    if (mouse.x !== null) {
+      const dx = this.x - mouse.x;
+      const dy = this.y - mouse.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < 140) {
+        const force = (140 - dist) / 140 * 2.5;
+        this.vx += (dx / dist) * force * 0.3;
+        this.vy += (dy / dist) * force * 0.3;
+      }
+    }
+    
+    // Blob-to-blob soft repulsion (sample a few)
+    for (let i = 0; i < Math.min(5, blobs.length); i++) {
+      const other = blobs[i];
+      if (other === this || other.popping) continue;
+      const dx = this.x - other.x;
+      const dy = this.y - other.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const minDist = this.size + other.size + 6;
+      if (dist < minDist && dist > 0) {
+        const force = (minDist - dist) / minDist * 0.15;
+        this.vx += (dx / dist) * force;
+        this.vy += (dy / dist) * force;
+      }
+    }
+    
+    this.x += this.vx * dt * 0.5;
+    this.y += this.vy * dt * 0.5;
+    
+    // Soft bounds
+    const margin = this.size + 10;
+    if (this.x < margin) this.vx += 0.1;
+    if (this.x > W - margin) this.vx -= 0.1;
+    if (this.y < 20) this.vy += 0.05;
+    if (this.y > H - 20) this.vy -= 0.05;
+    
+    // Trail
+    if (Math.abs(this.vx) + Math.abs(this.vy) > 0.5) {
+      this.trail.push({ x: this.x, y: this.y, a: 0.4 });
+      if (this.trail.length > 8) this.trail.shift();
+    }
+    this.trail.forEach(t => t.a *= 0.88);
+    this.trail = this.trail.filter(t => t.a > 0.01);
+    
+    return true;
+  }
+  
+  draw() {
+    // Trail
+    this.trail.forEach((t, i) => {
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, this.size * 0.2 * t.a, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${this.hue}, ${this.saturation}%, ${this.lightness}%, ${t.a * 0.3})`;
+      ctx.fill();
+    });
+    
+    const alpha = this.alpha * this.popScale;
+    if (alpha < 0.01) return;
+    
+    const s = this.size * this.popScale;
+    
+    // Glow layers
+    for (let g = 3; g >= 1; g--) {
+      const glow = s * (1 + g * 0.6);
+      const grad = ctx.createRadialGradient(this.x, this.y, s*0.1, this.x, this.y, glow);
+      grad.addColorStop(0, `hsla(${this.hue}, ${this.saturation}%, ${this.lightness}%, ${alpha * 0.08})`);
+      grad.addColorStop(1, `hsla(${this.hue}, ${this.saturation}%, ${this.lightness}%, 0)`);
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, glow, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+    
+    // Blob body
+    ctx.beginPath();
+    const wobbleX = Math.sin(this.wobblePhase) * s * 0.08;
+    const wobbleY = Math.cos(this.wobblePhase * 1.3) * s * 0.08;
+    const cx = this.x + wobbleX;
+    const cy = this.y + wobbleY;
+    
+    // Organic blob shape
+    const points = 12;
+    for (let i = 0; i <= points; i++) {
+      const angle = (i / points) * Math.PI * 2;
+      const noise = Math.sin(angle * 3 + this.wobblePhase * 2) * s * 0.08
+                  + Math.cos(angle * 5 - this.wobblePhase) * s * 0.04;
+      const r = s * 0.65 + noise;
+      const px = cx + Math.cos(angle) * r;
+      const py = cy + Math.sin(angle) * r;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    
+    const bodyGrad = ctx.createRadialGradient(cx - s*0.2, cy - s*0.2, 0, cx, cy, s*0.7);
+    bodyGrad.addColorStop(0, `hsla(${this.hue}, ${this.saturation-10}%, ${this.lightness+20}%, ${alpha * 0.9})`);
+    bodyGrad.addColorStop(0.5, `hsla(${this.hue}, ${this.saturation}%, ${this.lightness}%, ${alpha * 0.7})`);
+    bodyGrad.addColorStop(1, `hsla(${this.hue + 20}, ${this.saturation+10}%, ${this.lightness-15}%, ${alpha * 0.4})`);
+    ctx.fillStyle = bodyGrad;
+    ctx.fill();
+    
+    // Inner specular
+    ctx.beginPath();
+    ctx.arc(cx - s*0.2, cy - s*0.25, s * 0.22, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${this.hue}, 20%, 90%, ${alpha * 0.4})`;
+    ctx.fill();
+    
+    // Word label
+    const fontSize = Math.max(9, Math.min(15, this.size * 0.55));
+    ctx.font = `${fontSize}px 'Courier New', monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = `hsla(0, 0%, 100%, ${alpha * 0.9})`;
+    ctx.shadowColor = `hsla(${this.hue}, 80%, 20%, ${alpha * 0.8})`;
+    ctx.shadowBlur = 4;
+    ctx.fillText(this.word, cx, cy);
+    ctx.shadowBlur = 0;
+    
+    // Frequency badge
+    if (this.count > 1) {
+      ctx.font = `${fontSize * 0.65}px 'Courier New', monospace`;
+      ctx.fillStyle = `hsla(${this.hue}, 40%, 75%, ${alpha * 0.7})`;
+      ctx.fillText(`×${this.count}`, cx, cy + fontSize * 0.85);
+    }
+  }
+  
+  hit(mx, my) {
+    const dx = this.x - mx;
+    const dy = this.y - my;
+    return Math.sqrt(dx*dx + dy*dy) < this.size * 0.8;
+  }
+  
+  pop() {
+    if (!this.popping) {
+      this.popping = true;
+      // Spawn burst particles
+      for (let i = 0; i < 10; i++) {
+        particles.push(new Particle(this.x, this.y, this.hue));
+      }
+    }
+  }
+}
+
+// ---- Particle ----
+class Particle {
+  constructor(x, y, hue) {
+    this.x = x; this.y = y;
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 4;
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed;
+    this.life = 1;
+    this.hue = hue + (Math.random() - 0.5) * 30;
+    this.size = 1 + Math.random() * 3;
+  }
+  update(dt) {
+    this.x += this.vx * dt * 0.3;
+    this.y += this.vy * dt * 0.3;
+    this.vx *= 0.97;
+    this.vy *= 0.97;
+    this.life *= 0.96;
+    return this.life > 0.02;
+  }
+  draw() {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${this.hue}, 80%, 65%, ${this.life * 0.8})`;
+    ctx.fill();
+  }
+}
+
+// ---- State ----
+let blobs = [];
+let particles = [];
+let wordData = [];
+let paused = false;
+let mouse = { x: null, y: null, down: false };
+let dragging = null;
+let frame = 0;
+let lastTime = performance.now();
+let colorMode = 0;
+const colorModes = ['sentiment', 'frequency', 'rainbow', 'ocean', 'fire'];
+const colorModeLabels = { sentiment: '🎭 Sentiment', frequency: '📊 Frequency', rainbow: '🌈 Rainbow', ocean: '🌊 Ocean', fire: '🔥 Fire' };
+
+// ---- Initial demo text ----
+const demoText = `
+In the beginning the universe was created. This has made a lot of people very angry 
+and been widely regarded as a bad move. The impossible often has a kind of integrity 
+to it which the merely improbable lacks. How often have we spoken to the stars? 
+They shine in silence. We imagine wonder in the darkness. Space is big. You just won't 
+believe how vastly hugely mind-bogglingly big it is. I mean you may think it's a long 
+way down the road to the chemist's, but that's just peanuts to space. Don't panic. 
+The best way to predict the future is to invent it. Life finds a way. We are made of 
+starstuff. Somewhere, something incredible is waiting to be known. The cosmos is within 
+us. We are a way for the universe to know itself. Look again at that dot. That's here. 
+That's home. That's us. On it everyone you love, everyone you know, everyone you ever 
+heard of, every human being who ever was, lived out their lives. Our planet is a lonely 
+speck in the great enveloping cosmic dark. In our obscurity, in all this vastness, 
+there is no hint that help will come from somewhere to save us from ourselves. The earth 
+is blue and nobody can do anything. Imagination is more important than knowledge. 
+Curiosity is the engine of achievement. The important thing is not to stop questioning. 
+Never give up on what you really want to do. The universe is under no obligation to 
+make sense to you. Logic will get you from A to Z; imagination will get you everywhere. 
+Two possibilities exist: either we are alone in the universe or we are not. Both are 
+equally terrifying. We are all in the gutter, but some of us are looking at the stars. 
+The nitrogen in our DNA, the calcium in our teeth, the iron in our blood, the carbon in 
+our apple pies were made in the interiors of collapsing stars. We are made of cosmic 
+material, thinking about the cosmos.
+`.trim();
+
+function spawnBlobs(text, cx, cy) {
+  const analyzed = analyzeText(text);
+  wordData = analyzed;
+  if (!analyzed.length) return;
+  
+  const count = Math.min(analyzed.length, 45);
+  const spreadX = Math.min(300, W * 0.5);
+  
+  for (let i = 0; i < count; i++) {
+    const x = cx + (Math.random() - 0.5) * spreadX;
+    const y = cy + (Math.random() - 0.5) * 120;
+    const blob = new Blob(analyzed[i], x, y);
+    blob.delay = i * 30;
+    pendingBlobs.push(blob);
+  }
+}
+
+let pendingBlobs = [];
+let spawnTimer = 0;
+
+function initFromText(text) {
+  blobs = [];
+  particles = [];
+  pendingBlobs = [];
+  spawnBlobs(text, W/2, H/2);
+}
+
+initFromText(demoText);
+
+// ---- Color assignment ----
+function assignColors() {
+  const freqWords = wordData.slice().sort((a,b) => a.count - b.count);
+  const freqHues = [];
+  for (let i = 0; i < freqWords.length; i++) {
+    const t = i / Math.max(1, freqWords.length - 1);
+    switch(colorMode) {
+      case 'sentiment': freqHues.push(freqWords[i].word); break;
+      case 'frequency': freqHues.push(200 + t * 140); break;
+      case 'rainbow': freqHues.push(t * 360); break;
+      case 'ocean': freqHues.push(180 + t * 60); break;
+      case 'fire': freqHues.push(t * 60); break;
+      default: freqHues.push(t * 360);
+    }
+  }
+  
+  blobs.forEach(blob => {
+    const idx = wordData.findIndex(w => w.word === blob.word);
+    const fwIdx = freqWords.findIndex(w => w.word === blob.word);
+    if (colorMode === 'sentiment') {
+      blob.hue = blob.sentiment > 0 ? 35 + Math.random()*20
+               : blob.sentiment < 0 ? 240 + Math.random()*30
+               : 170 + Math.random()*60;
+    } else {
+      blob.hue = freqHues[fwIdx >= 0 ? fwIdx : idx] ?? Math.random() * 360;
+    }
+    blob.saturation = colorMode === 'fire' ? 90 : 65;
+    blob.lightness = colorMode === 'fire' ? 55 : 55;
+  });
+}
+
+// ---- Mouse ----
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  if (dragging) {
+    dragging.x += (e.movementX) * 1.5;
+    dragging.y += (e.movementY) * 1.5;
+  }
+  // Tooltip
+  let hit = null;
+  for (let i = blobs.length - 1; i >= 0; i--) {
+    if (blobs[i].hit(e.clientX, e.clientY)) { hit = blobs[i]; break; }
+  }
+  if (hit) {
+    tooltip.style.opacity = '1';
+    tooltip.style.left = (e.clientX + 14) + 'px';
+    tooltip.style.top = (e.clientY - 30) + 'px';
+    const sentEmoji = hit.sentiment > 0 ? '✦' : hit.sentiment < 0 ? '◈' : '○';
+    tooltip.textContent = `${sentEmoji} "${hit.word}" — appears ${hit.count}×`;
+  } else {
+    tooltip.style.opacity = '0';
+  }
+});
+
+canvas.addEventListener('mousedown', e => {
+  mouse.down = true;
+  if (e.button === 0) {
+    for (let i = blobs.length - 1; i >= 0; i--) {
+      if (blobs[i].hit(e.clientX, e.clientY)) {
+        dragging = blobs[i];
+        return;
+      }
+    }
+  }
+});
+
+canvas.addEventListener('mouseup', e => {
+  mouse.down = false;
+  if (dragging) {
+    // If barely moved, pop it
+    dragging = null;
+  }
+});
+
+canvas.addEventListener('click', e => {
+  for (let i = blobs.length - 1; i >= 0; i--) {
+    if (blobs[i].hit(e.clientX, e.clientY)) {
+      blobs[i].pop();
+      return;
+    }
+  }
+  // Click empty space = spawn bubble
+  for (let i = 0; i < 6; i++) {
+    particles.push(new Particle(e.clientX, e.clientY, Math.random() * 360));
+  }
+});
+
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// ---- Keyboard ----
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); paused = !paused; }
+  if (e.code === 'KeyC') {
+    blobs.forEach(b => {
+      if (!b.popping) {
+        b.vx += (Math.random()-0.5) * 4;
+        b.vy += (Math.random()-0.5) * 4;
+      }
+    });
+  }
+  if (e.code === 'KeyG') {
+    colorMode = (colorMode + 1) % colorModes.length;
+    assignColors();
+  }
+  if (e.code === 'KeyR') {
+    initFromText(input.value || demoText);
+  }
+  if (e.code === 'KeyF') {
+    input.focus();
+  }
+});
+
+// ---- Input ----
+let inputDebounce;
+input.addEventListener('input', () => {
+  clearTimeout(inputDebounce);
+  inputDebounce = setTimeout(() => {
+    if (input.value.trim().length > 2) {
+      initFromText(input.value);
+    }
+  }, 600);
+});
+
+input.addEventListener('keydown', e => {
+  if (e.code === 'Enter') {
+    clearTimeout(inputDebounce);
+    if (input.value.trim().length > 2) initFromText(input.value);
+  }
+});
+
+modeBtn.addEventListener('click', () => {
+  colorMode = (colorMode + 1) % colorModes.length;
+  assignColors();
+  modeBtn.textContent = ['🎭','📊','🌈','🌊','🔥'][colorMode];
+  modeBtn.title = colorModeLabels[colorModes[colorMode]];
+});
+
+// ---- Background connections ----
+function drawBackground() {
+  // Subtle gradient background
+  const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.7);
+  grad.addColorStop(0, '#0f0f1a');
+  grad.addColorStop(0.5, '#0a0a14');
+  grad.addColorStop(1, '#050510');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Faint connections between nearby blobs
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < blobs.length; i++) {
+    if (blobs[i].popping) continue;
+    for (let j = i + 1; j < blobs.length; j++) {
+      if (blobs[j].popping) continue;
+      const dx = blobs[i].x - blobs[j].x;
+      const dy = blobs[i].y - blobs[j].y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const maxDist = 180;
+      if (dist < maxDist) {
+        const alpha = (1 - dist/maxDist) * 0.06;
+        const hue = (blobs[i].hue + blobs[j].hue) / 2;
+        ctx.beginPath();
+        ctx.moveTo(blobs[i].x, blobs[i].y);
+        ctx.lineTo(blobs[j].x, blobs[j].y);
+        ctx.strokeStyle = `hsla(${hue}, 50%, 50%, ${alpha})`;
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+// ---- Main Loop ----
+function loop(now) {
+  const rawDt = now - lastTime;
+  const dt = Math.min(rawDt / 16.67, 3); // normalize to ~60fps
+  lastTime = now;
+  frame++;
+  
+  // Spawn pending
+  spawnTimer += rawDt;
+  if (pendingBlobs.length > 0 && spawnTimer > 25) {
+    spawnTimer = 0;
+    const b = pendingBlobs.shift();
+    b.delay = 0;
+    blobs.push(b);
+  }
+  
+  // Update
+  if (!paused) {
+    blobs = blobs.filter(b => b.update(dt, mouse, paused));
+    particles = particles.filter(p => p.update(dt));
+  }
+  
+  // Draw
+  drawBackground();
+  blobs.forEach(b => b.draw());
+  particles.forEach(p => p.draw());
+  
+  // Stats
+  if (frame % 30 === 0) {
+    const unique = blobs.length;
+    const total = blobs.reduce((s,b) => s + b.count, 0);
+    stats.innerHTML = `
+      words: ${unique}<br>
+      total: ${total}<br>
+      mode: ${colorModeLabels[colorModes[colorMode]]}<br>
+      ${paused ? '⏸ PAUSED' : ''}
+    `;
+  }
+  
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
