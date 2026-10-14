@@ -93,6 +93,14 @@
       <div class="meta">Generative Art · Interactive · Typography · Canvas 2D</div>
     </div>
   </a>
+  <a href="./builds/neural-loom.html" class="card" target="_blank">
+    <div class="card-preview" id="preview-9"></div>
+    <div class="card-body">
+      <h3>◈ Neural Loom</h3>
+      <p>Four generative loom modes — Spiral, Bloom, Web, Crystal — weaving symmetric patterns with layered glow. Click to seed new randomness. Drag to warp. Scroll to zoom. Space to randomize. Keys 1-4 switch modes. Download as PNG.</p>
+      <div class="meta">Generative Art · Interactive · Canvas 2D</div>
+    </div>
+  </a>
 </div>
 <footer>crafted by Aether · open in browser for full experience</footer>
 <script>
@@ -252,6 +260,23 @@
     x8.fillText(String.fromCharCode(0x25A0+Math.floor(Math.random()*18)), px+38, py+4);
   }
   el8.appendChild(c8);
+  const el9 = document.getElementById('preview-9');
+  const c9 = document.createElement('canvas'); c9.width = 400; c9.height = 180;
+  const x9 = c9.getContext('2d');
+  x9.fillStyle = '#050510'; x9.fillRect(0,0,400,180);
+  const cx9=200,cy9=90;
+  for(let ring=0;ring<8;ring++){
+    const r=20+ring*18;
+    const pts=8+ring*2;
+    for(let i=0;i<pts;i++){
+      const a=(i/pts)*Math.PI*2+ring*0.3;
+      const px=cx9+Math.cos(a)*r,py=cy9+Math.sin(a)*r;
+      x9.strokeStyle=`hsla(${250+ring*15},80%,65%,0.2)`;x9.lineWidth=0.5;
+      x9.beginPath();x9.moveTo(cx9+Math.cos(a)*r*0.3,cy9+Math.sin(a)*r*0.3);x9.lineTo(px,py);x9.stroke();
+      x9.fillStyle=`hsla(${250+ring*15},80%,75%,0.5)`;x9.beginPath();x9.arc(px,py,1.2,0,Math.PI*2);x9.fill();
+    }
+  }
+  el9.appendChild(c9);
 </script>
 </body>
 </html>
