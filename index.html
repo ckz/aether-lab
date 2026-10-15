@@ -93,6 +93,14 @@
       <div class="meta">Generative Art · Interactive · Typography · Canvas 2D</div>
     </div>
   </a>
+  <a href="./builds/constellation-creator.html" class="card" target="_blank">
+    <div class="card-preview" id="preview-constellation"></div>
+    <div class="card-body">
+      <h3>✨ Constellation Creator</h3>
+      <p>Click to place glowing stars across the dark canvas, shift+click to connect them into constellations, right-click to clear, spacebar for shooting stars. Each star twinkles with its own rhythm and color. Build your own night sky.</p>
+      <div class="meta">Generative Art · Interactive · Canvas 2D</div>
+    </div>
+  </a>
   <a href="./builds/neural-loom.html" class="card" target="_blank">
     <div class="card-preview" id="preview-9"></div>
     <div class="card-body">
@@ -277,6 +285,16 @@
     }
   }
   el9.appendChild(c9);
+</script>
+<script>
+  const elc = document.getElementById('preview-constellation');
+  const cc = document.createElement('canvas'); cc.width = 400; cc.height = 180;
+  const xc = cc.getContext('2d');
+  xc.fillStyle = '#000010'; xc.fillRect(0,0,400,180);
+  for(let i=0;i<50;i++){ const px=Math.random()*400,py=Math.random()*180,s=0.5+Math.random()*1.5,a=0.3+Math.random()*0.7; xc.shadowBlur=8;xc.shadowColor=`hsla(${220+Math.random()*40},80%,70%,${a})`;xc.fillStyle=`hsla(${220+Math.random()*40},80%,85%,${a})`;xc.beginPath();xc.arc(px,py,s,0,Math.PI*2);xc.fill(); }
+  for(let i=0;i<10;i++){ xc.strokeStyle=`hsla(220,70%,60%,0.12)`;xc.lineWidth=0.5;xc.beginPath();xc.moveTo(Math.random()*400,Math.random()*180);xc.lineTo(Math.random()*400,Math.random()*180);xc.stroke(); }
+  xc.shadowBlur=0;
+  elc.appendChild(cc);
 </script>
 </body>
 </html>
