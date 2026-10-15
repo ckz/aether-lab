@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Liquid Chromatic — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; cursor: crosshair; font-family: 'Courier New', monospace; }
+  canvas { display: block; }
+  .info {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.35); font-size: 11px; letter-spacing: 2px;
+    text-align: center; pointer-events: none; z-index: 10;
+    text-shadow: 0 0 10px rgba(0,0,0,0.8);
+  }
+  .title {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font-size: 13px; letter-spacing: 6px;
+    text-transform: uppercase; pointer-events: none; z-index: 10;
+    text-shadow: 0 0 20px rgba(0,0,0,0.9);
+  }
+</style>
+</head>
+<body>
+<div class="title">◆ Liquid Chromatic ◆</div>
+<canvas id="c"></canvas>
+<div class="info">MOVE MOUSE · CLICK TO SPLASH · SCROLL TO MORPH · SPACE TO PAUSE · 1-4 PALETTES · R RESET</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// — State —
+let paused = false;
+let time = 0;
+let mouseX = W / 2, mouseY = H / 2;
+let targetMouseX = mouseX, targetMouseY = mouseY;
+let paletteIdx = 0;
+let splashes = [];
+
+// — Color Palettes —
+const palettes = [
+  { name: 'Aurora',  colors: ['#ff006e','#fb5607','#ffbe0b','#8338ec','#3a86ff','#06d6a0'] },
+  { name: 'Inferno', colors: ['#ff0000','#ff4d00','#ff9500','#ffcc00','#ffe066','#fff5cc'] },
+  { name: 'Ocean',   colors: ['#023e8a','#0077b6','#0096c7','#00b4d8','#48cae4','#90e0ef'] },
+  { name: 'Void',    colors: ['#240046','#3c096c','#5a189a','#7b2cbf','#9d4edd','#c77dff'] }
+];
+
+function getPaletteColor(t) {
+  const pal = palettes[paletteIdx].colors;
+  const idx = t * (pal.length - 1);
+  const i = Math.floor(idx);
+  const f = idx - i;
+  if (i >= pal.length - 1) return pal[pal.length - 1];
+  return lerpColor(pal[i], pal[Math.min(i+1, pal.length-1)], f);
+}
+
+function lerpColor(a, b, t) {
+  const ar = parseInt(a.slice(1,3),16), ag = parseInt(a.slice(3,5),16), ab = parseInt(a.slice(5,7),16);
+  const br = parseInt(b.slice(1,3),16), bg = parseInt(b.slice(3,5),16), bb = parseInt(b.slice(5,7),16);
+  const r = Math.round(ar + (br-ar)*t);
+  const g = Math.round(ag + (bg-ag)*t);
+  const bl = Math.round(ab + (bb-ab)*t);
+  return `rgb(${r},${g},${bl})`;
+}
+
+// — Liquid Blobs —
+class Blob {
+  constructor(x, y, radius, colorT, speed) {
+    this.x = x || Math.random() * W;
+    this.y = y || Math.random() * H;
+    this.baseX = this.x;
+    this.baseY = this.y;
+    this.radius = radius || 80 + Math.random() * 150;
+    this.colorT = colorT || Math.random();
+    this.speed = speed || 0.3 + Math.random() * 0.7;
+    this.angle = Math.random() * Math.PI * 2;
+    this.angleSpeed = (Math.random() - 0.5) * 0.01;
+    this.drift = 30 + Math.random() * 80;
+    this.phase = Math.random() * Math.PI * 2;
+  }
+
+  update(t, mx, my) {
+    // Organic wandering
+    this.angle += this.angleSpeed;
+    const wanderX = Math.cos(this.angle) * this.drift * 0.3 + Math.sin(t * 0.5 + this.phase) * this.drift * 0.5;
+    const wanderY = Math.sin(this.angle + 1.3) * this.drift * 0.3 + Math.cos(t * 0.4 + this.phase) * this.drift * 0.5;
+
+    // Mouse attraction
+    const dx = mx - this.x;
+    const dy = my - this.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    const influence = Math.max(0, 1 - dist / 400);
+    const attractX = dx * influence * 0.15;
+    const attractY = dy * influence * 0.15;
+
+    this.x = this.baseX + wanderX + attractX;
+    this.y = this.baseY + wanderY + attractY;
+
+    // Breathing
+    this.currentRadius = this.radius + Math.sin(t * 2 + this.phase) * this.radius * 0.2;
+  }
+
+  draw(ctx) {
+    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.currentRadius);
+    const col = getPaletteColor(this.colorT);
+    grad.addColorStop(0, col);
+    grad.addColorStop(0.5, col.replace('rgb', 'rgba').replace(')', ',0.4)'));
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.currentRadius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// — Splash particles —
+class Splash {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.vx = (Math.random() - 0.5) * 8;
+    this.vy = (Math.random() - 0.5) * 8;
+    this.radius = 10 + Math.random() * 40;
+    this.life = 1;
+    this.decay = 0.015 + Math.random() * 0.02;
+    this.colorT = Math.random();
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vx *= 0.97;
+    this.vy *= 0.97;
+    this.life -= this.decay;
+    this.radius *= 1.02;
+  }
+  draw(ctx) {
+    if (this.life <= 0) return;
+    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius);
+    const col = getPaletteColor(this.colorT);
+    grad.addColorStop(0, col.replace('rgb', 'rgba').replace(')', `,${this.life * 0.6})`));
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// — Initialize blobs —
+let blobs = [];
+function initBlobs() {
+  blobs = [];
+  const count = 12 + Math.floor(Math.random() * 8);
+  for (let i = 0; i < count; i++) {
+    blobs.push(new Blob(
+      Math.random() * W,
+      Math.random() * H,
+      80 + Math.random() * 180,
+      i / count,
+      0.3 + Math.random() * 0.7
+    ));
+  }
+}
+initBlobs();
+
+// — Noise helper —
+function noise(x, y, t) {
+  return Math.sin(x * 0.01 + t) * Math.cos(y * 0.012 + t * 0.8) +
+         Math.sin(x * 0.02 - t * 0.6) * Math.sin(y * 0.018 + t * 0.5) +
+         Math.cos((x + y) * 0.008 + t * 0.4);
+}
+
+// — Mouse —
+window.addEventListener('mousemove', e => {
+  targetMouseX = e.clientX;
+  targetMouseY = e.clientY;
+});
+
+window.addEventListener('click', e => {
+  // Spawn splash burst
+  const count = 8 + Math.floor(Math.random() * 8);
+  for (let i = 0; i < count; i++) {
+    splashes.push(new Splash(e.clientX, e.clientY));
+  }
+});
+
+window.addEventListener('wheel', e => {
+  // Morph palette slightly
+  paletteIdx = (paletteIdx + Math.sign(e.deltaY) * 0.1 + palettes.length) % palettes.length;
+  paletteIdx = Math.floor(paletteIdx) % palettes.length;
+});
+
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') { paused = !paused; e.preventDefault(); }
+  if (e.code === 'Digit1') paletteIdx = 0;
+  if (e.code === 'Digit2') paletteIdx = 1;
+  if (e.code === 'Digit3') paletteIdx = 2;
+  if (e.code === 'Digit4') paletteIdx = 3;
+  if (e.code === 'KeyR') initBlobs();
+});
+
+// Touch support
+window.addEventListener('touchmove', e => {
+  if (e.touches.length > 0) {
+    targetMouseX = e.touches[0].clientX;
+    targetMouseY = e.touches[0].clientY;
+  }
+});
+window.addEventListener('touchstart', e => {
+  if (e.touches.length > 0) {
+    targetMouseX = e.touches[0].clientX;
+    targetMouseY = e.touches[0].clientY;
+    const count = 8 + Math.floor(Math.random() * 8);
+    for (let i = 0; i < count; i++) {
+      splashes.push(new Splash(e.touches[0].clientX, e.touches[0].clientY));
+    }
+  }
+});
+
+// — Render loop —
+function render() {
+  if (!paused) {
+    time += 0.016;
+  }
+
+  // Smooth mouse
+  mouseX += (targetMouseX - mouseX) * 0.08;
+  mouseY += (targetMouseY - mouseY) * 0.08;
+
+  // Dark fade for trail effect
+  ctx.fillStyle = 'rgba(0,0,0,0.08)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Composite mode for color mixing
+  ctx.globalCompositeOperation = 'screen';
+
+  // Update & draw blobs
+  blobs.forEach(blob => {
+    if (!paused) blob.update(time, mouseX, mouseY);
+    blob.draw(ctx);
+  });
+
+  // Update & draw splashes
+  splashes = splashes.filter(s => s.life > 0);
+  splashes.forEach(s => {
+    if (!paused) s.update();
+    s.draw(ctx);
+  });
+
+  // Subtle noise overlay
+  ctx.globalCompositeOperation = 'overlay';
+  const imageData = ctx.getImageData(0, 0, W, H);
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 16) {
+    const n = noise((i/4) % W, Math.floor((i/4) / W), time) * 15;
+    data[i] = Math.min(255, data[i] + n);
+    data[i+1] = Math.min(255, data[i+1] + n);
+    data[i+2] = Math.min(255, data[i+2] + n);
+  }
+  ctx.putImageData(imageData, 0, 0);
+
+  ctx.globalCompositeOperation = 'source-over';
+
+  requestAnimationFrame(render);
+}
+
+render();
+</script>
+</body>
+</html>
