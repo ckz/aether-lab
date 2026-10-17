@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Magnetic Typography Studio</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  body {
+    background: #0a0a0f;
+    color: #e8e8f0;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    cursor: crosshair;
+  }
+  
+  #canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 1;
+  }
+  
+  .tile {
+    position: absolute;
+    padding: 10px 16px;
+    background: rgba(20, 20, 40, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    color: #fff;
+    font-size: 18px;
+    font-family: 'Courier New', monospace;
+    cursor: grab;
+    user-select: none;
+    z-index: 10;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+    backdrop-filter: blur(4px);
+    letter-spacing: 1px;
+  }
+  
+  .tile:hover {
+    border-color: rgba(255, 255, 255, 0.5);
+    box-shadow: 0 0 20px rgba(120, 180, 255, 0.4);
+    transform: scale(1.08);
+  }
+  
+  .tile.dragging {
+    cursor: grabbing;
+    opacity: 0.9;
+    z-index: 1000;
+    transform: scale(1.15) rotate(-2deg);
+    box-shadow: 0 8px 32px rgba(120, 180, 255, 0.6);
+    transition: none;
+  }
+  
+  .tile.magnetized {
+    border-color: rgba(180, 255, 180, 0.7);
+    box-shadow: 0 0 15px rgba(180, 255, 180, 0.5);
+  }
+  
+  .tile.word-start {
+    border-color: rgba(255, 220, 100, 0.8);
+    box-shadow: 0 0 12px rgba(255, 220, 100, 0.4);
+  }
+  
+  .controls {
+    position: fixed;
+    top: 20px; left: 20px;
+    z-index: 100;
+    background: rgba(10, 10, 20, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    padding: 16px 20px;
+    backdrop-filter: blur(10px);
+    max-width: 320px;
+  }
+  
+  .controls h1 {
+    font-size: 14px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    color: #a0d0ff;
+  }
+  
+  .controls p {
+    font-size: 11px;
+    line-height: 1.6;
+    color: #888;
+    margin-bottom: 12px;
+  }
+  
+  .controls button {
+    background: rgba(60, 60, 100, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #e0e0f0;
+    padding: 6px 12px;
+    margin: 4px 4px 4px 0;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+  }
+  
+  .controls button:hover {
+    background: rgba(100, 140, 220, 0.6);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-1px);
+  }
+  
+  .stats {
+    position: fixed;
+    top: 20px; right: 20px;
+    z-index: 100;
+    background: rgba(10, 10, 20, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 11px;
+    color: #666;
+    backdrop-filter: blur(10px);
+    text-align: right;
+  }
+  
+  .stats .count { color: #a0d0ff; font-weight: bold; }
+  
+  .word-pop {
+    position: absolute;
+    font-size: 11px;
+    color: rgba(180, 255, 180, 0.9);
+    pointer-events: none;
+    z-index: 500;
+    text-shadow: 0 0 8px rgba(180, 255, 180, 0.6);
+    font-family: 'Courier New', monospace;
+    animation: popUp 1.5s ease-out forwards;
+  }
+  
+  @keyframes popUp {
+    0% { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(-40px) scale(1.3); }
+  }
+  
+  .trail {
+    position: absolute;
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: rgba(120, 180, 255, 0.6);
+    pointer-events: none;
+    z-index: 5;
+    box-shadow: 0 0 6px rgba(120, 180, 255, 0.8);
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div class="controls">
+  <h1>✦ Magnetic Typography Studio</h1>
+  <p>Drag letter tiles. Watch them magnetize and cluster into emergent words. Click to add more.</p>
+  <button onclick="addWord('quantum echo')">+ quantum echo</button>
+  <button onclick="addWord('void pulse')">+ void pulse</button>
+  <button onclick="addWord('stellar drift')">+ stellar drift</button>
+  <button onclick="addWord('neon thought')">+ neon thought</button>
+  <button onclick="addWord('dark matter')">+ dark matter</button>
+  <button onclick="shuffleTiles()">⇄ shuffle</button>
+  <button onclick="clearAll()">✕ clear</button>
+</div>
+
+<div class="stats">
+  <div>Tiles: <span class="count" id="tileCount">0</span></div>
+  <div>Words: <span class="count" id="wordCount">0</span></div>
+  <div>Magnetized: <span class="count" id="magCount">0</span></div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W = canvas.width = window.innerWidth;
+let H = canvas.height = window.innerHeight;
+
+window.addEventListener('resize', () => {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+});
+
+let tiles = [];
+let dragging = null;
+let dragOffsetX = 0, dragOffsetY = 0;
+let mouseX = W/2, mouseY = H/2;
+let wordCount = 0;
+let magnetizedCount = 0;
+
+const colors = [
+  { bg: 'rgba(40, 30, 80, 0.85)', border: 'rgba(180, 140, 255, 0.5)', glow: 'rgba(180, 140, 255, 0.4)' },
+  { bg: 'rgba(30, 50, 80, 0.85)', border: 'rgba(100, 180, 255, 0.5)', glow: 'rgba(100, 180, 255, 0.4)' },
+  { bg: 'rgba(50, 30, 40, 0.85)', border: 'rgba(255, 140, 160, 0.5)', glow: 'rgba(255, 140, 160, 0.4)' },
+  { bg: 'rgba(30, 60, 50, 0.85)', border: 'rgba(140, 255, 180, 0.5)', glow: 'rgba(140, 255, 180, 0.4)' },
+  { bg: 'rgba(60, 50, 30, 0.85)', border: 'rgba(255, 200, 100, 0.5)', glow: 'rgba(255, 200, 100, 0.4)' },
+  { bg: 'rgba(40, 40, 60, 0.85)', border: 'rgba(200, 200, 255, 0.5)', glow: 'rgba(200, 200, 255, 0.4)' }
+];
+
+function createTile(letter, x, y, colorIdx) {
+  const color = colors[colorIdx % colors.length];
+  const tile = document.createElement('div');
+  tile.className = 'tile';
+  tile.textContent = letter;
+  tile.style.left = x + 'px';
+  tile.style.top = y + 'px';
+  tile.style.background = color.bg;
+  tile.style.borderColor = color.border;
+  
+  const tileData = {
+    el: tile,
+    x: x,
+    y: y,
+    vx: 0, vy: 0,
+    letter: letter,
+    wordStart: letter === letter.toUpperCase() && letter.length === 1,
+    magnetized: false,
+    targetX: null, targetY: null,
+    hue: colorIdx
+  };
+  
+  tile.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    dragging = tileData;
+    dragOffsetX = e.clientX - tileData.x;
+    dragOffsetY = e.clientY - tileData.y;
+    tile.classList.add('dragging');
+  });
+  
+  document.body.appendChild(tile);
+  tiles.push(tileData);
+  updateStats();
+  return tileData;
+}
+
+function addWord(phrase) {
+  const words = phrase.split(' ');
+  let startX = 100 + Math.random() * (W - 300);
+  let startY = 100 + Math.random() * (H - 300);
+  
+  words.forEach((word, wi) => {
+    const letters = word.split('');
+    letters.forEach((letter, li) => {
+      setTimeout(() => {
+        const x = startX + wi * 120 + li * 50 + Math.random() * 30;
+        const y = startY + Math.random() * 60;
+        const colorIdx = (wi + word.length + Math.floor(Math.random() * 3)) % colors.length;
+        createTile(letter, x, y, colorIdx);
+      }, (wi * letters.length + li) * 80);
+    });
+  });
+}
+
+function shuffleTiles() {
+  tiles.forEach(tile => {
+    tile.x = Math.random() * (W - 100);
+    tile.y = Math.random() * (H - 100);
+    tile.vx = (Math.random() - 0.5) * 20;
+    tile.vy = (Math.random() - 0.5) * 20;
+    tile.magnetized = false;
+    tile.el.classList.remove('magnetized', 'word-start');
+  });
+  animateBurst();
+}
+
+function clearAll() {
+  tiles.forEach(t => t.el.remove());
+  tiles = [];
+  wordCount = 0;
+  magnetizedCount = 0;
+  updateStats();
+}
+
+function updateStats() {
+  document.getElementById('tileCount').textContent = tiles.length;
+  document.getElementById('wordCount').textContent = wordCount;
+  document.getElementById('magCount').textContent = magnetizedCount;
+}
+
+function showWordPop(x, y, text) {
+  const pop = document.createElement('div');
+  pop.className = 'word-pop';
+  pop.textContent = text;
+  pop.style.left = x + 'px';
+  pop.style.top = y + 'px';
+  document.body.appendChild(pop);
+  setTimeout(() => pop.remove(), 1500);
+}
+
+function findNearbyTiles(tile, threshold = 80) {
+  return tiles.filter(t => {
+    if (t === tile) return false;
+    const dx = t.x - tile.x;
+    const dy = t.y - tile.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    return dist < threshold && dist > 5;
+  });
+}
+
+function attemptWordFormation() {
+  const visited = new Set();
+  
+  tiles.forEach(tile => {
+    if (visited.has(tile) || !tile.wordStart) return;
+    visited.add(tile);
+    
+    const wordLetters = [tile.letter];
+    const wordTiles = [tile];
+    
+    let current = tile;
+    let found = true;
+    while (found) {
+      found = false;
+      const neighbors = findNearbyTiles(current, 60);
+      for (let neighbor of neighbors) {
+        if (visited.has(neighbor)) continue;
+        const dx = neighbor.x - current.x;
+        const dy = neighbor.y - current.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 50) {
+          visited.add(neighbor);
+          wordLetters.push(neighbor.letter);
+          wordTiles.push(neighbor);
+          current = neighbor;
+          found = true;
+          break;
+        }
+      }
+    }
+    
+    if (wordLetters.length >= 2) {
+      const word = wordLetters.join('');
+      wordTiles.forEach(t => {
+        t.magnetized = true;
+        t.el.classList.add('magnetized');
+        if (t === tile) t.el.classList.add('word-start');
+      });
+      magnetizedCount = tiles.filter(t => t.magnetized).length;
+      
+      if (wordTiles.length >= 3) {
+        const avgX = wordTiles.reduce((s, t) => s + t.x, 0) / wordTiles.length;
+        const avgY = wordTiles.reduce((s, t) => s + t.y, 0) / wordTiles.length;
+        showWordPop(avgX, avgY - 20, word);
+        wordCount++;
+      }
+      updateStats();
+    }
+  });
+}
+
+function animateBurst() {
+  tiles.forEach(t => {
+    t.vx += (Math.random() - 0.5) * 30;
+    t.vy += (Math.random() - 0.5) * 30;
+  });
+}
+
+document.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  
+  if (dragging) {
+    dragging.x = e.clientX - dragOffsetX;
+    dragging.y = e.clientY - dragOffsetY;
+    dragging.vx = 0; dragging.vy = 0;
+    dragging.magnetized = false;
+    dragging.el.classList.remove('magnetized', 'word-start');
+    magnetizedCount = tiles.filter(t => t.magnetized).length;
+    updateStats();
+  }
+});
+
+document.addEventListener('mouseup', () => {
+  if (dragging) {
+    dragging.el.classList.remove('dragging');
+    dragging = null;
+    setTimeout(attemptWordFormation, 300);
+  }
+});
+
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('tile')) return;
+  if (e.target.closest('.controls')) return;
+  
+  const letters = 'abcdefghijklmnopqrstuvwxyz'.split('');
+  const letter = letters[Math.floor(Math.random() * letters.length)];
+  const colorIdx = Math.floor(Math.random() * colors.length);
+  createTile(letter, e.clientX - 20, e.clientY - 20, colorIdx);
+  
+  setTimeout(attemptWordFormation, 400);
+});
+
+function drawBackground() {
+  ctx.fillStyle = 'rgba(10, 10, 20, 0.15)';
+  ctx.fillRect(0, 0, W, H);
+  
+  if (tiles.length > 0) {
+    tiles.forEach(tile => {
+      if (tile.magnetized) {
+        tiles.forEach(other => {
+          if (other === tile || !other.magnetized) return;
+          const dx = other.x - tile.x;
+          const dy = other.y - tile.y;
+          const dist = Math.sqrt(dx*dx + dy*dy);
+          if (dist < 100) {
+            const alpha = (1 - dist/100) * 0.15;
+            ctx.strokeStyle = `rgba(180, 255, 180, ${alpha})`;
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(tile.x + 20, tile.y + 20);
+            ctx.lineTo(other.x + 20, other.y + 20);
+            ctx.stroke();
+          }
+        });
+      }
+    });
+      }
+}
+
+function update() {
+  tiles.forEach(tile => {
+    if (tile === dragging) return;
+    
+    if (!tile.magnetized) {
+      tile.vx *= 0.92;
+      tile.vy *= 0.92;
+      tile.x += tile.vx;
+      tile.y += tile.vy;
+    }
+    
+    const dx = mouseX - tile.x;
+    const dy = mouseY - tile.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < 150 && dist > 0) {
+      const force = (150 - dist) / 150 * 0.3;
+      tile.vx += (dx / dist) * force;
+      tile.vy += (dy / dist) * force;
+    }
+    
+    tile.x += tile.vx * 0.1;
+    tile.y += tile.vy * 0.1;
+    
+    tile.x = Math.max(0, Math.min(W - 50, tile.x));
+    tile.y = Math.max(0, Math.min(H - 50, tile.y));
+    
+    tile.el.style.left = tile.x + 'px';
+    tile.el.style.top = tile.y + 'px';
+  });
+  
+  drawBackground();
+  requestAnimationFrame(update);
+}
+
+addWord('magnetic poetry');
+addWord('silent code');
+addWord('echo dream');
+
+setTimeout(() => update(), 100);
+</script>
+</body>
+</html>
