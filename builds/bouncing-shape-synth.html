@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bouncing Shape Synth — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a14;
+    color: #ccc;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    user-select: none;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0; left: 0;
+    z-index: 1;
+  }
+  #ui {
+    position: fixed;
+    z-index: 10;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    background: rgba(10, 10, 20, 0.85);
+    padding: 10px 20px;
+    border-radius: 40px;
+    border: 1px solid rgba(120, 100, 200, 0.3);
+    backdrop-filter: blur(10px);
+  }
+  #ui button {
+    background: rgba(120, 100, 200, 0.2);
+    border: 1px solid rgba(160, 140, 240, 0.4);
+    color: #c4a0ff;
+    padding: 8px 14px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    transition: all 0.2s;
+  }
+  #ui button:hover {
+    background: rgba(160, 140, 240, 0.35);
+    border-color: rgba(200, 180, 255, 0.7);
+  }
+  #ui button.active {
+    background: rgba(160, 140, 240, 0.4);
+    border-color: #c4a0ff;
+    box-shadow: 0 0 12px rgba(160, 140, 240, 0.4);
+  }
+  #stats {
+    color: #666;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+    padding: 0 8px;
+    border-left: 1px solid rgba(120, 100, 200, 0.2);
+    border-right: 1px solid rgba(120, 100, 200, 0.2);
+  }
+  #hint {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    color: #444;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    pointer-events: none;
+    transition: opacity 2s;
+  }
+</style>
+</head>
+<body>
+  <div id="ui">
+    <button id="modeToggle">◈ auto-spawn: ON</button>
+    <button id="gravityToggle">⊕ gravity: OFF</button>
+    <button id="clearBtn">✕ clear</button>
+    <button id="muteBtn">♪ sound: ON</button>
+    <div id="stats">0 shapes</div>
+  </div>
+  <div id="hint">click to spawn shapes · they make music when they collide</div>
+  <canvas id="c"></canvas>
+
+<script>
+// ─── Setup ───────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Audio engine (Web Audio API) ─────────────────────────────────────────────
+let audioCtx = null;
+let muted = false;
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+const SCALES = {
+  pentatonic: [261.6, 293.7, 329.6, 392.0, 440.0, 523.3, 587.3, 659.3, 784.0, 880.0],
+  minor:     [261.6, 293.7, 311.1, 349.2, 392.0, 415.3, 466.2, 523.3, 587.3, 622.3],
+  major:     [261.6, 293.7, 329.6, 349.2, 392.0, 440.0, 493.9, 523.3, 587.3, 659.3],
+  ambient:   [130.8, 164.8, 196.0, 220.0, 261.6, 329.6, 392.0, 440.0, 523.3, 659.3]
+};
+let currentScale = 'pentatonic';
+
+function playTone(freq, volume = 0.08) {
+  if (!audioCtx || muted) return;
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  const filter = audioCtx.createBiquadFilter();
+
+  osc.type = ['sine', 'triangle', 'sine', 'triangle'][Math.floor(Math.random() * 4)];
+  osc.frequency.setValueAtTime(freq, now);
+
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(2000 + Math.random() * 4000, now);
+  filter.Q.setValueAtTime(1 + Math.random() * 3, now);
+
+  gain.gain.setValueAtTime(volume, now);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.8);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.8);
+}
+
+function playCollision(v1, v2) {
+  const avgSpeed = (Math.hypot(v1.vx, v1.vy) + Math.hypot(v2.vx, v2.vy)) / 2;
+  const freqIdx = Math.min(Math.floor(avgSpeed / 3), SCALES[currentScale].length - 1);
+  const freq = SCALES[currentScale][freqIdx];
+  const vol = Math.min(0.04 + avgSpeed * 0.015, 0.15);
+  playTone(freq, vol);
+  // Harmony: subtle second tone
+  if (freqIdx + 2 < SCALES[currentScale].length && Math.random() > 0.5) {
+    setTimeout(() => playTone(SCALES[currentScale][freqIdx + 2], vol * 0.5), 60);
+  }
+}
+
+function playWallHit(shape) {
+  const speed = Math.hypot(shape.vx, shape.vy);
+  const freqIdx = Math.min(Math.floor(speed / 2.5), SCALES[currentScale].length - 1);
+  const freq = SCALES[currentScale][freqIdx];
+  playTone(freq * 0.75, 0.03);
+}
+
+// ─── Shapes ──────────────────────────────────────────────────────────────────
+const COLORS = [
+  { fill: 'rgba(196,160,255,', glow: '#c4a0ff', name: 'violet' },
+  { fill: 'rgba(100,200,255,', glow: '#64c8ff', name: 'cyan' },
+  { fill: 'rgba(255,140,180,', glow: '#ff8cb4', name: 'rose' },
+  { fill: 'rgba(140,255,200,', glow: '#8cffc8', name: 'mint' },
+  { fill: 'rgba(255,200,100,', glow: '#ffc864', name: 'gold' },
+  { fill: 'rgba(255,120,100,', glow: '#ff7864', name: 'coral' },
+  { fill: 'rgba(180,140,255,', glow: '#b48cff', name: 'lavender' },
+  { fill: 'rgba(100,255,220,', glow: '#64ffdc', name: 'aqua' }
+];
+
+const SHAPES = ['circle', 'triangle', 'square', 'diamond', 'hexagon', 'star'];
+
+class Shape {
+  constructor(x, y, vx, vy, size, colorIdx, shapeType) {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.size = size || 15 + Math.random() * 25;
+    this.color = COLORS[colorIdx % COLORS.length];
+    this.shape = shapeType || SHAPES[Math.floor(Math.random() * SHAPES.length)];
+    this.rotation = Math.random() * Math.PI * 2;
+    this.rotSpeed = (Math.random() - 0.5) * 0.04;
+    this.life = 1;
+    this.trail = [];
+    this.mass = this.size * this.size;
+    this.cooldown = 0;
+  }
+
+  update(gravity) {
+    if (gravity) {
+      this.vy += 0.15;
+    }
+    // Friction
+    this.vx *= 0.999;
+    this.vy *= 0.999;
+
+    this.x += this.vx;
+    this.y += this.vy;
+    this.rotation += this.rotSpeed;
+
+    // Trail
+    this.trail.push({ x: this.x, y: this.y, life: 1 });
+    if (this.trail.length > 12) this.trail.shift();
+    this.trail.forEach(t => t.life *= 0.88);
+
+    // Wall collisions
+    const damping = 0.85;
+    if (this.x - this.size < 0) {
+      this.x = this.size;
+      this.vx = -this.vx * damping;
+      if (Math.abs(this.vx) > 0.5) playWallHit(this);
+    }
+    if (this.x + this.size > W) {
+      this.x = W - this.size;
+      this.vx = -this.vx * damping;
+      if (Math.abs(this.vx) > 0.5) playWallHit(this);
+    }
+    if (this.y - this.size < 0) {
+      this.y = this.size;
+      this.vy = -this.vy * damping;
+      if (Math.abs(this.vy) > 0.5) playWallHit(this);
+    }
+    if (this.y + this.size > H) {
+      this.y = H - this.size;
+      this.vy = -this.vy * damping;
+      if (Math.abs(this.vy) > 0.5) playWallHit(this);
+    }
+
+    if (this.cooldown > 0) this.cooldown--;
+  }
+
+  draw(ctx) {
+    // Trail
+    if (this.trail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(this.trail[0].x, this.trail[0].y);
+      for (let i = 1; i < this.trail.length; i++) {
+        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+      }
+      ctx.strokeStyle = this.color.fill + '0.15)';
+      ctx.lineWidth = this.size * 0.3;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+
+    // Glow
+    const glowRadius = this.size * 2.5;
+    const glow = ctx.createRadialGradient(this.x, this.y, this.size * 0.3, this.x, this.y, glowRadius);
+    glow.addColorStop(0, this.color.fill + '0.3)');
+    glow.addColorStop(1, this.color.fill + '0)');
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, glowRadius, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
+    ctx.fill();
+
+    // Shape
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation);
+    ctx.beginPath();
+    this.drawShape(ctx);
+    ctx.fillStyle = this.color.fill + '0.85)';
+    ctx.fill();
+    ctx.strokeStyle = this.color.glow;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  drawShape(ctx) {
+    const s = this.size;
+    switch (this.shape) {
+      case 'circle':
+        ctx.arc(0, 0, s, 0, Math.PI * 2);
+        break;
+      case 'triangle':
+        this.polygon(ctx, 3, s);
+        break;
+      case 'square':
+        this.polygon(ctx, 4, s);
+        break;
+      case 'diamond':
+        ctx.moveTo(0, -s);
+        ctx.lineTo(s * 0.7, 0);
+        ctx.lineTo(0, s);
+        ctx.lineTo(-s * 0.7, 0);
+        ctx.closePath();
+        break;
+      case 'hexagon':
+        this.polygon(ctx, 6, s);
+        break;
+      case 'star':
+        this.star(ctx, 5, s, s * 0.45);
+        break;
+    }
+  }
+
+  polygon(ctx, sides, r) {
+    const step = (Math.PI * 2) / sides;
+    const start = -Math.PI / 2;
+    ctx.moveTo(Math.cos(start) * r, Math.sin(start) * r);
+    for (let i = 1; i <= sides; i++) {
+      ctx.lineTo(Math.cos(start + step * i) * r, Math.sin(start + step * i) * r);
+    }
+    ctx.closePath();
+  }
+
+  star(ctx, points, outer, inner) {
+    const step = Math.PI / points;
+    const start = -Math.PI / 2;
+    for (let i = 0; i < points * 2; i++) {
+      const r = i % 2 === 0 ? outer : inner;
+      const angle = start + step * i;
+      if (i === 0) ctx.moveTo(Math.cos(angle) * r, Math.sin(angle) * r);
+      else ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r);
+    }
+    ctx.closePath();
+  }
+}
+
+// ─── Physics ─────────────────────────────────────────────────────────────────
+function checkCollision(a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const dist = Math.hypot(dx, dy);
+  const minDist = a.size + b.size;
+
+  if (dist < minDist && dist > 0) {
+    // Normal
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    // Relative velocity
+    const dvx = a.vx - b.vx;
+    const dvy = a.vy - b.vy;
+    const dvn = dvx * nx + dvy * ny;
+
+    if (dvn > 0) {
+      const m1 = a.mass;
+      const m2 = b.mass;
+      const impulse = (2 * dvn) / (m1 + m2);
+
+      a.vx -= impulse * m2 * nx * 0.95;
+      a.vy -= impulse * m2 * ny * 0.95;
+      b.vx += impulse * m1 * nx * 0.95;
+      b.vy += impulse * m1 * ny * 0.95;
+
+      // Separate shapes
+      const overlap = (minDist - dist) / 2;
+      a.x -= overlap * nx;
+      a.y -= overlap * ny;
+      b.x += overlap * nx;
+      b.y += overlap * ny;
+
+      // Sound
+      if (a.cooldown <= 0 && b.cooldown <= 0) {
+        playCollision(a, b);
+        a.cooldown = 8;
+        b.cooldown = 8;
+      }
+    }
+  }
+}
+
+// ─── State ───────────────────────────────────────────────────────────────────
+let shapes = [];
+let autoSpawn = true;
+let gravity = false;
+let spawnTimer = 0;
+let colorIdx = 0;
+let mouseX = 0, mouseY = 0;
+let mouseDown = false;
+
+// ─── Interaction ─────────────────────────────────────────────────────────────
+function spawnAt(x, y, vx, vy) {
+  const vx_ = vx || (Math.random() - 0.5) * 6;
+  const vy_ = vy || (Math.random() - 0.5) * 6;
+  const size = 12 + Math.random() * 28;
+  const shape = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+  shapes.push(new Shape(x, y, vx_, vy_, size, colorIdx, shape));
+  colorIdx++;
+  updateStats();
+}
+
+canvas.addEventListener('mousedown', (e) => {
+  mouseDown = true;
+  initAudio();
+  for (let i = 0; i < 3; i++) {
+    spawnAt(
+      e.clientX + (Math.random() - 0.5) * 40,
+      e.clientY + (Math.random() - 0.5) * 40,
+      (Math.random() - 0.5) * 8,
+      (Math.random() - 0.5) * 8
+    );
+  }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  if (mouseDown && shapes.length < 200) {
+    spawnAt(
+      mouseX + (Math.random() - 0.5) * 30,
+      mouseY + (Math.random() - 0.5) * 30,
+      (Math.random() - 0.5) * 4,
+      (Math.random() - 0.5) * 4
+    );
+  }
+});
+
+canvas.addEventListener('mouseup', () => mouseDown = false);
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  initAudio();
+  const t = e.touches[0];
+  for (let i = 0; i < 3; i++) {
+    spawnAt(
+      t.clientX + (Math.random() - 0.5) * 40,
+      t.clientY + (Math.random() - 0.5) * 40,
+      (Math.random() - 0.5) * 8,
+      (Math.random() - 0.5) * 8
+    );
+  }
+}, { passive: false });
+
+// ─── Buttons ─────────────────────────────────────────────────────────────────
+const modeBtn = document.getElementById('modeToggle');
+const gravBtn = document.getElementById('gravityToggle');
+const clearBtn = document.getElementById('clearBtn');
+const muteBtn = document.getElementById('muteBtn');
+const statsEl = document.getElementById('stats');
+
+modeBtn.addEventListener('click', () => {
+  autoSpawn = !autoSpawn;
+  modeBtn.textContent = `◈ auto-spawn: ${autoSpawn ? 'ON' : 'OFF'}`;
+  modeBtn.classList.toggle('active', autoSpawn);
+});
+modeBtn.classList.add('active');
+
+gravBtn.addEventListener('click', () => {
+  gravity = !gravity;
+  gravBtn.textContent = `⊕ gravity: ${gravity ? 'ON' : 'OFF'}`;
+  gravBtn.classList.toggle('active', gravity);
+});
+
+clearBtn.addEventListener('click', () => {
+  shapes = [];
+  colorIdx = 0;
+  updateStats();
+});
+
+muteBtn.addEventListener('click', () => {
+  muted = !muted;
+  muteBtn.textContent = `♪ sound: ${muted ? 'OFF' : 'ON'}`;
+  muteBtn.classList.toggle('active', !muted);
+});
+muteBtn.classList.add('active');
+
+function updateStats() {
+  statsEl.textContent = `${shapes.length} shape${shapes.length !== 1 ? 's' : ''}`;
+}
+
+// ─── Scale switcher on key press ──────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  const keys = Object.keys(SCALES);
+  const idx = keys.indexOf(currentScale);
+  if (e.key >= '1' && e.key <= '4') {
+    currentScale = keys[parseInt(e.key) - 1];
+    console.log(`Scale: ${currentScale}`);
+  }
+  if (e.key === 'g') gravBtn.click();
+  if (e.key === 'm') muteBtn.click();
+  if (e.key === ' ') { e.preventDefault(); modeBtn.click(); }
+});
+
+// ─── Render ──────────────────────────────────────────────────────────────────
+let lastTime = performance.now();
+let bgHue = 0;
+
+function animate(time) {
+  const dt = Math.min(time - lastTime, 32);
+  lastTime = time;
+
+  // Fade trail background
+  ctx.fillStyle = 'rgba(10, 10, 20, 0.18)';
+  ctx.fillRect(0, 0, W, H);
+
+  bgHue = (bgHue + 0.05) % 360;
+
+  // Auto spawn
+  if (autoSpawn && shapes.length < 80) {
+    spawnTimer += dt;
+    if (spawnTimer > 400) {
+      spawnTimer = 0;
+      const edge = Math.floor(Math.random() * 4);
+      let x, y, vx, vy;
+      const speed = 1.5 + Math.random() * 3;
+      if (edge === 0) { x = Math.random() * W; y = 0; vx = (Math.random() - 0.5) * speed; vy = Math.random() * speed; }
+      else if (edge === 1) { x = W; y = Math.random() * H; vx = -Math.random() * speed; vy = (Math.random() - 0.5) * speed; }
+      else if (edge === 2) { x = Math.random() * W; y = H; vx = (Math.random() - 0.5) * speed; vy = -Math.random() * speed; }
+      else { x = 0; y = Math.random() * H; vx = Math.random() * speed; vy = (Math.random() - 0.5) * speed; }
+      spawnAt(x, y, vx, vy);
+    }
+  }
+
+  // Update & collisions
+  for (let i = 0; i < shapes.length; i++) {
+    shapes[i].update(gravity);
+    for (let j = i + 1; j < shapes.length; j++) {
+      checkCollision(shapes[i], shapes[j]);
+    }
+  }
+
+  // Draw
+  shapes.forEach(s => s.draw(ctx));
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(100, 80, 160, 0.03)';
+  ctx.lineWidth = 1;
+  const gridSize = 60;
+  for (let x = 0; x < W; x += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+  for (let y = 0; y < H; y += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+
+  // Fade hint after 8 seconds
+  setTimeout(() => {
+    const hint = document.getElementById('hint');
+    if (hint) hint.style.opacity = '0';
+  }, 8000);
+
+  requestAnimationFrame(animate);
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+// Spawn a few initial shapes
+setTimeout(() => {
+  initAudio();
+  for (let i = 0; i < 8; i++) {
+    spawnAt(
+      W * 0.2 + Math.random() * W * 0.6,
+      H * 0.2 + Math.random() * H * 0.6,
+      (Math.random() - 0.5) * 5,
+      (Math.random() - 0.5) * 5
+    );
+  }
+}, 300);
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
