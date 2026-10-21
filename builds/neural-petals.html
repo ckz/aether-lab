@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neural Petals — Generative Botany</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  .overlay {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    color: rgba(200, 180, 255, 0.8);
+    font-size: 12px;
+    pointer-events: none;
+    z-index: 10;
+    line-height: 1.6;
+  }
+  .overlay .title {
+    font-size: 18px;
+    color: #c4a0ff;
+    margin-bottom: 8px;
+    font-weight: bold;
+  }
+  .controls {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    color: rgba(200, 180, 255, 0.6);
+    font-size: 11px;
+    pointer-events: none;
+    z-index: 10;
+    line-height: 1.6;
+  }
+  .palette-indicator {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    color: rgba(200, 180, 255, 0.6);
+    font-size: 11px;
+    pointer-events: none;
+    z-index: 10;
+    text-align: right;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+  <div class="overlay">
+    <div class="title">✿ Neural Petals</div>
+    <div>Generative botany · Fibonacci blooms</div>
+  </div>
+  <div class="controls">
+    [click] plant seed · [drag] wind · [space] toggle season<br>
+    [1-4] palette · [r] reset · [s] save frame
+  </div>
+  <div class="palette-indicator" id="paletteInfo">
+    Palette: Spring
+  </div>
+  <canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Config ---
+const PALETTES = {
+  spring: {
+    name: 'Spring',
+    bg: ['#0a0a12', '#12101a'],
+    petals: ['#ffb7c5', '#ffd1dc', '#ffffff', '#ffe4e1', '#f8c8dc'],
+    centers: ['#ffeb3b', '#ffc107', '#ff9800'],
+    stems: ['#2d5a27', '#3e7a34', '#4a8a40'],
+    particles: ['rgba(255,183,197,0.6)', 'rgba(255,255,255,0.4)']
+  },
+  autumn: {
+    name: 'Autumn',
+    bg: ['#120e0a', '#1a1410'],
+    petals: ['#e87d3e', '#f4a460', '#daa520', '#cd853f', '#d2691e'],
+    centers: ['#8b4513', '#a0522d', '#d2691e'],
+    stems: ['#3d2b1f', '#4a3728', '#5c4033'],
+    particles: ['rgba(232,125,62,0.6)', 'rgba(244,164,96,0.4)']
+  },
+  cosmic: {
+    name: 'Cosmic',
+    bg: ['#050510', '#0a0a1e'],
+    petals: ['#9c27b0', '#e91e63', '#7c4dff', '#448aff', '#18ffff'],
+    centers: ['#ffeb3b', '#ffffff', '#00e5ff'],
+    stems: ['#1a237e', '#283593', '#303f9f'],
+    particles: ['rgba(156,39,176,0.6)', 'rgba(233,30,99,0.4)']
+  },
+  arctic: {
+    name: 'Arctic',
+    bg: ['#0a1015', '#0f1a22'],
+    petals: ['#e3f2fd', '#bbdefb', '#ffffff', '#b3e5fc', '#c5cae9'],
+    centers: ['#00bcd4', '#4dd0e1', '#80deea'],
+    stems: ['#1b5e20', '#2e7d32', '#388e3c'],
+    particles: ['rgba(179,229,252,0.6)', 'rgba(255,255,255,0.4)']
+  }
+};
+
+let currentPalette = 'spring';
+let palette = PALETTES.spring;
+let seasonMode = false;
+let seasonTransition = 0;
+
+function cyclePalette() {
+  const keys = Object.keys(PALETTES);
+  let idx = keys.indexOf(currentPalette);
+  idx = (idx + 1) % keys.length;
+  currentPalette = keys[idx];
+  palette = PALETTES[currentPalette];
+  document.getElementById('paletteInfo').textContent = `Palette: ${palette.name}`;
+}
+
+// --- Math helpers ---
+function rand(min, max) { return Math.random() * (max - min) + min; }
+function randInt(min, max) { return Math.floor(rand(min, max)); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function dist(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
+
+// Phyllotaxis angle (golden ratio)
+const PHI = (1 + Math.sqrt(5)) / 2;
+const PHI_ANGLE = 2 * Math.PI / PHI;
+
+// --- Flower class ---
+class Flower {
+  constructor(x, y, maxSize) {
+    this.x = x;
+    this.y = y;
+    this.maxSize = maxSize || rand(40, 100);
+    this.size = 0;
+    this.growthSpeed = rand(0.3, 0.8);
+    this.stemHeight = 0;
+    this.maxStemHeight = rand(80, 200);
+    this.angle = rand(-0.3, 0.3);
+    this.swayOffset = rand(0, Math.PI * 2);
+    this.swaySpeed = rand(0.5, 1.2);
+    this.petalCount = randInt(5, 9);
+    this.petalLayers = randInt(1, 3);
+    this.rotation = rand(0, Math.PI * 2);
+    this.rotSpeed = rand(-0.005, 0.005);
+    this.colorIdx = randInt(0, palette.petals.length);
+    this.centerColor = palette.centers[randInt(0, palette.centers.length)];
+    this.bloomed = false;
+    this.bloomTime = 0;
+    this.lifespan = rand(600, 1200);
+    this.age = 0;
+    this.wind = 0;
+    this.seedCount = randInt(8, 20);
+    this.branchAngle = rand(-0.5, 0.5);
+  }
+
+  update(wind, time) {
+    this.wind = wind;
+    if (this.size < this.maxSize) {
+      this.size += this.growthSpeed * (1 - this.size / this.maxSize) * 2;
+    } else if (!this.bloomed) {
+      this.bloomed = true;
+      this.bloomTime = time;
+    }
+    this.stemHeight = Math.min(this.stemHeight + this.growthSpeed * 0.7, this.maxStemHeight);
+    this.rotation += this.rotSpeed;
+    this.age++;
+  }
+
+  draw(ctx, time) {
+    const sway = Math.sin(time * this.swaySpeed + this.swayOffset) * 15 + this.wind * 30;
+    const stemX = this.x + sway * (this.stemHeight / this.maxStemHeight);
+    const stemY = this.y - this.stemHeight;
+
+    // Draw stem with subtle curve
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y);
+    const cpX = this.x + sway * 0.5;
+    const cpY = this.y - this.stemHeight * 0.5;
+    ctx.quadraticCurveTo(cpX, cpY, stemX, stemY);
+    ctx.strokeStyle = palette.stems[randInt(0, palette.stems.length)];
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    if (this.size < 1) return;
+
+    // Draw petals
+    ctx.save();
+    ctx.translate(stemX, stemY);
+    ctx.rotate(this.rotation);
+
+    const petalSize = this.size;
+    for (let layer = 0; layer < this.petalLayers; layer++) {
+      const layerSize = petalSize * (1 - layer * 0.3);
+      const layerAngle = layer * PHI_ANGLE;
+      for (let i = 0; i < this.petalCount; i++) {
+        const angle = layerAngle + (i / this.petalCount) * Math.PI * 2;
+        const px = Math.cos(angle) * layerSize * 0.3;
+        const py = Math.sin(angle) * layerSize * 0.3;
+
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(angle + Math.PI / 2);
+
+        // Petal shape
+        const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, layerSize * 0.5);
+        const petalColor = palette.petals[(this.colorIdx + i) % palette.petals.length];
+        gradient.addColorStop(0, petalColor);
+        gradient.addColorStop(0.6, petalColor);
+        gradient.addColorStop(1, 'rgba(0,0,0,0)');
+
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, layerSize * 0.5, layerSize * 0.25, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+      }
+    }
+
+    // Center
+    const centerGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, petalSize * 0.2);
+    centerGrad.addColorStop(0, this.centerColor);
+    centerGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = centerGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, petalSize * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Seed dots in center
+    for (let i = 0; i < this.seedCount; i++) {
+      const seedAngle = (i / this.seedCount) * Math.PI * 2 + this.rotation;
+      const seedR = petalSize * 0.12;
+      const sx = Math.cos(seedAngle) * seedR;
+      const sy = Math.sin(seedAngle) * seedR;
+      ctx.fillStyle = palette.centers[0];
+      ctx.beginPath();
+      ctx.arc(sx, sy, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  isDead(time) {
+    return this.bloomed && (time - this.bloomTime) > this.lifespan;
+  }
+}
+
+// --- Particle class (pollen) ---
+class Particle {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.vx = rand(-0.5, 0.5);
+    this.vy = rand(-1, -0.2);
+    this.life = rand(100, 300);
+    this.maxLife = this.life;
+    this.size = rand(1, 3);
+    this.color = palette.particles[randInt(0, palette.particles.length)];
+  }
+
+  update() {
+    this.x += this.vx + Math.sin(this.life * 0.05) * 0.2;
+    this.y += this.vy;
+    this.life--;
+  }
+
+  draw(ctx) {
+    const alpha = this.life / this.maxLife;
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// --- State ---
+let flowers = [];
+let particles = [];
+let mouseX = W / 2;
+let mouseY = H / 2;
+let mouseDown = false;
+let wind = 0;
+let time = 0;
+let lastPlantTime = 0;
+
+// Initialize with some flowers
+function init() {
+  flowers = [];
+  particles = [];
+  for (let i = 0; i < 8; i++) {
+    const x = rand(W * 0.1, W * 0.9);
+    const y = rand(H * 0.5, H * 0.9);
+    const f = new Flower(x, y);
+    f.size = rand(20, f.maxSize * 0.5);
+    f.stemHeight = rand(20, f.maxStemHeight * 0.5);
+    flowers.push(f);
+  }
+}
+init();
+
+// --- Events ---
+canvas.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+});
+
+canvas.addEventListener('mousedown', (e) => {
+  mouseDown = true;
+  plantSeed(e.clientX, e.clientY);
+});
+
+canvas.addEventListener('mouseup', () => {
+  mouseDown = false;
+});
+
+canvas.addEventListener('keydown', (e) => {
+  if (e.key === ' ') {
+    seasonMode = !seasonMode;
+    e.preventDefault();
+  } else if (e.key >= '1' && e.key <= '4') {
+    const keys = Object.keys(PALETTES);
+    const idx = parseInt(e.key) - 1;
+    if (idx < keys.length) {
+      currentPalette = keys[idx];
+      palette = PALETTES[currentPalette];
+      document.getElementById('paletteInfo').textContent = `Palette: ${palette.name}`;
+    }
+  } else if (e.key === 'r' || e.key === 'R') {
+    init();
+  } else if (e.key === 's' || e.key === 'S') {
+    const link = document.createElement('a');
+    link.download = `neural-petals-${Date.now()}.png`;
+    link.href = canvas.toDataURL();
+    link.click();
+  }
+});
+
+function plantSeed(x, y) {
+  const f = new Flower(x, y);
+  flowers.push(f);
+  // Spawn pollen burst
+  for (let i = 0; i < 15; i++) {
+    particles.push(new Particle(x, y));
+  }
+}
+
+// --- Draw background ---
+function drawBackground() {
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+  bgGrad.addColorStop(0, palette.bg[0]);
+  bgGrad.addColorStop(1, palette.bg[1]);
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle vignette
+  const vignette = ctx.createRadialGradient(W/2, H/2, H * 0.3, W/2, H/2, H * 0.8);
+  vignette.addColorStop(0, 'rgba(0,0,0,0)');
+  vignette.addColorStop(1, 'rgba(0,0,0,0.4)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, W, H);
+
+  // Ground gradient
+  const groundGrad = ctx.createLinearGradient(0, H * 0.7, 0, H);
+  groundGrad.addColorStop(0, 'rgba(10,10,15,0)');
+  groundGrad.addColorStop(1, 'rgba(10,10,15,0.8)');
+  ctx.fillStyle = groundGrad;
+  ctx.fillRect(0, H * 0.7, W, H * 0.3);
+}
+
+// --- Animation loop ---
+function animate() {
+  time++;
+
+  // Calculate wind from mouse movement
+  if (mouseDown) {
+    wind = (mouseX - W/2) / W * 2;
+  } else {
+    wind *= 0.95;
+  }
+
+  // Seasonal wind variation
+  if (seasonMode) {
+    wind += Math.sin(time * 0.01) * 0.3;
+  }
+
+  drawBackground();
+
+  // Update and draw flowers (sorted by Y for depth)
+  flowers.sort((a, b) => a.y - b.y);
+  flowers.forEach(flower => {
+    flower.update(wind, time);
+    flower.draw(ctx, time);
+  });
+
+  // Randomly spawn pollen from blooming flowers
+  if (time % 30 === 0) {
+    flowers.forEach(flower => {
+      if (flower.bloomed && Math.random() < 0.3) {
+        particles.push(new Particle(
+          flower.x + Math.sin(time * 0.05) * 20,
+          flower.y - flower.stemHeight
+        ));
+      }
+    });
+  }
+
+  // Update and draw particles
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => {
+    p.update();
+    p.draw(ctx);
+  });
+
+  // Auto-plant occasionally
+  if (time - lastPlantTime > 180 && flowers.length < 25 && Math.random() < 0.02) {
+    const x = rand(W * 0.1, W * 0.9);
+    const y = rand(H * 0.5, H * 0.9);
+    flowers.push(new Flower(x, y));
+    lastPlantTime = time;
+  }
+
+  // Remove dead flowers
+  flowers = flowers.filter(f => !f.isDead(time));
+
+  // Occasionally spawn new flowers if garden is sparse
+  if (flowers.length < 5 && time % 120 === 0) {
+    const x = rand(W * 0.1, W * 0.9);
+    const y = rand(H * 0.5, H * 0.9);
+    flowers.push(new Flower(x, y));
+  }
+
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>
