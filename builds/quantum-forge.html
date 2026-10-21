@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quantum Forge — Particle Physics Playground</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+  canvas { display: block; }
+
+  #hud {
+    position: fixed; top: 16px; left: 16px;
+    background: rgba(8, 8, 20, 0.82);
+    border: 1px solid rgba(100, 140, 255, 0.2);
+    border-radius: 8px; padding: 12px 16px;
+    font-family: 'Courier New', monospace; font-size: 11px;
+    color: #5577cc; pointer-events: none; z-index: 10;
+    backdrop-filter: blur(6px); line-height: 1.7;
+    min-width: 210px;
+  }
+  #hud .row { display: flex; justify-content: space-between; }
+  #hud .val { color: #99bbff; font-weight: bold; }
+  #hud .title { color: #3355aa; font-size: 10px; margin-bottom: 6px; letter-spacing: 2px; }
+  #hud .sep { border-top: 1px solid rgba(100,140,255,0.12); margin: 6px 0; }
+
+  #pcount { position: fixed; top: 16px; right: 16px; font-family: 'Courier New', monospace;
+    font-size: 11px; color: #3355aa; background: rgba(8,8,20,0.82);
+    border: 1px solid rgba(100,140,255,0.2); border-radius: 8px;
+    padding: 8px 14px; pointer-events: none; z-index: 10; }
+
+  #msg {
+    position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+    background: rgba(8, 8, 20, 0.88); border: 1px solid rgba(100,140,255,0.3);
+    border-radius: 20px; padding: 9px 20px;
+    font-family: 'Courier New', monospace; font-size: 11px; color: #7799dd;
+    pointer-events: none; z-index: 10; opacity: 0; transition: opacity 0.35s;
+    white-space: nowrap;
+  }
+
+  #menu {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    background: rgba(8, 8, 20, 0.97); border: 1px solid rgba(100,140,255,0.3);
+    border-radius: 12px; padding: 28px 32px; z-index: 100;
+    font-family: 'Courier New', monospace; min-width: 380px;
+    backdrop-filter: blur(12px); display: none;
+  }
+  #menu .mt { color: #7799dd; font-size: 15px; margin-bottom: 18px; letter-spacing: 3px; }
+  .mrow { display: flex; align-items: center; padding: 7px 8px; border-radius: 5px; cursor: pointer; transition: background 0.15s; }
+  .mrow:hover { background: rgba(80,110,220,0.1); }
+  .mrow.active { background: rgba(80,110,220,0.18); border: 1px solid rgba(80,110,220,0.3); }
+  .mkey { color: #4466aa; font-size: 11px; width: 26px; flex-shrink: 0; }
+  .mname { color: #99bbff; font-size: 13px; flex: 1; }
+  .mdesc { color: #334466; font-size: 10px; flex: 2; }
+  .msep { border-top: 1px solid rgba(100,140,255,0.1); margin: 8px 0; }
+
+  #palette-ui {
+    position: fixed; bottom: 16px; right: 16px;
+    display: flex; gap: 6px; z-index: 10;
+  }
+  .pchip {
+    width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
+    border: 2px solid transparent; transition: border-color 0.2s, transform 0.2s;
+    opacity: 0.55;
+  }
+  .pchip:hover { opacity: 1; transform: scale(1.2); }
+  .pchip.active { border-color: #fff; opacity: 1; }
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div class="title">◈ QUANTUM FORGE ◈</div>
+  <div class="row"><span>PARTICLES</span><span class="val" id="h-particles">0</span></div>
+  <div class="row"><span>ENTROPY</span><span class="val" id="h-entropy">0.000</span></div>
+  <div class="row"><span>EXPLOSIONS</span><span class="val" id="h-explosions">0</span></div>
+  <div class="row"><span>BLACK HOLES</span><span class="val" id="h-bh">0</span></div>
+  <div class="row"><span>WORMHOLES</span><span class="val" id="h-wh">0</span></div>
+  <div class="sep"></div>
+  <div class="row"><span>FPS</span><span class="val" id="h-fps">60</span></div>
+  <div class="row"><span>MODE</span><span class="val" id="h-mode">ATTRACT</span></div>
+</div>
+
+<div id="pcount"><span id="pc">0</span> particles</div>
+<div id="msg"></div>
+
+<div id="menu">
+  <div class="mt">◈ PARTICLE TYPE</div>
+  <div class="mrow active" data-mode="attract"><span class="mkey">1</span><span class="mname">Attract</span><span class="mdesc">Magnetic gravity</span></div>
+  <div class="mrow" data-mode="repel"><span class="mkey">2</span><span class="mname">Repel</span><span class="mdesc">Explosive force</span></div>
+  <div class="mrow" data-mode="vortex"><span class="mkey">3</span><span class="mname">Vortex</span><span class="mdesc">Orbital swirl</span></div>
+  <div class="mrow" data-mode="wander"><span class="mkey">4</span><span class="mname">Wander</span><span class="mdesc">Free drift</span></div>
+  <div class="mrow" data-mode="pulse"><span class="mkey">5</span><span class="mname">Pulse</span><span class="mdesc">Rhythmic burst</span></div>
+  <div class="msep"></div>
+  <div class="mrow" data-mode="blackhole"><span class="mkey">B</span><span class="mname">Black Hole</span><span class="mdesc">Singularity (mass)</span></div>
+  <div class="mrow" data-mode="wormhole"><span class="mkey">W</span><span class="mname">Wormhole</span><span class="mdesc">Pair link</span></div>
+  <div class="msep"></div>
+  <div class="mrow" data-action="clear"><span class="mkey">C</span><span class="mname">Clear</span><span class="mdesc">Remove all particles</span></div>
+  <div class="mrow" data-action="shockwave"><span class="mkey">S</span><span class="mname">Shockwave</span><span class="mdesc">Global burst</span></div>
+  <div class="mrow" data-action="pause"><span class="mkey">P</span><span class="mname">Pause / Resume</span><span class="mdesc">Toggle sim</span></div>
+  <div class="msep"></div>
+  <div style="font-size:10px;color:#223355;text-align:center;">CLICK canvas · DRAG to spawn · M to menu</div>
+</div>
+
+<div id="palette-ui"></div>
+
+<script>
+// ─── Setup ────────────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W = canvas.width = window.innerWidth;
+let H = canvas.height = window.innerHeight;
+
+// ─── Utils ───────────────────────────────────────────────────────────────────
+const rand = (a, b) => a + Math.random() * (b - a);
+const lerp = (a, b, t) => a + (b - a) * t;
+const dist = (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1);
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function hsl(h, s, l, a = 1) {
+  return `hsla(${((h % 360) + 360) % 360}, ${s}%, ${l}%, ${a})`;
+}
+
+// ─── Palettes ────────────────────────────────────────────────────────────────
+const PALETTES = [
+  { name: 'Cosmic',   hues: [200, 220, 260, 280, 300], label: '1' },
+  { name: 'Inferno',  hues: [0, 15, 30, 45, 55],       label: '2' },
+  { name: 'Toxicity', hues: [80, 120, 150, 180, 200],  label: '3' },
+  { name: 'Aurora',   hues: [100, 150, 200, 260, 320], label: '4' },
+  { name: 'Monochrome', hues: [0, 0, 0, 0, 0],        label: '5' },
+];
+let paletteIdx = 0;
+
+function particleHue() {
+  const p = PALETTES[paletteIdx];
+  return p.hues[Math.floor(Math.random() * p.hues.length)] + rand(-15, 15);
+}
+
+// ─── Universe State ──────────────────────────────────────────────────────────
+let mouse = { x: W / 2, y: H / 2, down: false, vx: 0, vy: 0, px: W / 2, py: H / 2 };
+let mode = 'attract';
+let paused = false;
+let slowMo = false;
+let frame = 0;
+let explosions = 0, bhCount = 0, whCount = 0;
+
+const particles = [];
+const blackHoles = [];
+const wormholes = [];
+const shockwaves = [];
+const stars = [];
+
+// ─── Stars ───────────────────────────────────────────────────────────────────
+for (let i = 0; i < 200; i++) {
+  stars.push({ x: Math.random() * W, y: Math.random() * H, r: rand(0.2, 1.2), tw: rand(0, Math.PI * 2) });
+}
+
+// ─── Classes ─────────────────────────────────────────────────────────────────
+class Particle {
+  constructor(x, y, opts = {}) {
+    this.x = x; this.y = y;
+    this.vx = opts.vx || rand(-1.5, 1.5);
+    this.vy = opts.vy || rand(-1.5, 1.5);
+    this.ax = 0; this.ay = 0;
+    this.r = opts.r || rand(1.5, 4);
+    this.mass = opts.mass || this.r * 0.8;
+    this.hue = opts.hue || particleHue();
+    this.life = opts.life || rand(280, 900);
+    this.maxLife = this.life;
+    this.type = opts.type || mode;
+    this.history = [];
+    this.maxHist = opts.trail || 24;
+    this.paired = opts.paired || null;
+    this.phase = rand(0, Math.PI * 2);
+    this.freq = rand(0.02, 0.06);
+  }
+
+  update(dt) {
+    if (paused) return;
+    this.phase += this.freq;
+    const speed = slowMo ? dt * 0.35 : dt;
+
+    // Black hole gravity
+    for (const bh of blackHoles) {
+      const d = Math.max(dist(this.x, this.y, bh.x, bh.y), 20);
+      const f = (bh.mass * 55) / (d * d);
+      const ang = Math.atan2(bh.y - this.y, bh.x - this.x);
+      this.ax += Math.cos(ang) * f;
+      this.ay += Math.sin(ang) * f;
+      if (d < bh.r * 2.5) { this.life -= 2.5; bh.mass += this.mass * 0.025; }
+    }
+
+    // Wormhole
+    for (const wh of wormholes) {
+      if (wh.pair) {
+        const d = dist(this.x, this.y, wh.x, wh.y);
+        if (d < 70) {
+          this.x = wh.pair.x + rand(-12, 12);
+          this.y = wh.pair.y + rand(-12, 12);
+          this.vx = rand(-4, 4); this.vy = rand(-4, 4);
+          this.hue = (this.hue + 90) % 360;
+        }
+      }
+    }
+
+    // Behavior
+    if (this.type === 'attract' && mouse.down) {
+      const d = Math.max(dist(this.x, this.y, mouse.x, mouse.y), 25);
+      const f = 900 / (d * d);
+      const a = Math.atan2(mouse.y - this.y, mouse.x - this.x);
+      this.ax += Math.cos(a) * f; this.ay += Math.sin(a) * f;
+    } else if (this.type === 'repel' && mouse.down) {
+      const d = Math.max(dist(this.x, this.y, mouse.x, mouse.y), 25);
+      const f = 1200 / (d * d);
+      const a = Math.atan2(this.y - mouse.y, this.x - mouse.x);
+      this.ax += Math.cos(a) * f; this.ay += Math.sin(a) * f;
+    } else if (this.type === 'vortex') {
+      const d = Math.max(dist(this.x, this.y, mouse.x, mouse.y), 30);
+      const f = 700 / (d * d);
+      const a = Math.atan2(this.y - mouse.y, this.x - mouse.x) + Math.PI * 0.52;
+      this.ax += Math.cos(a) * f; this.ay += Math.sin(a) * f;
+    } else if (this.type === 'wander') {
+      this.ax += Math.sin(this.phase * 0.7) * 0.04;
+      this.ay += Math.cos(this.phase * 0.6) * 0.04;
+    } else if (this.type === 'pulse') {
+      const d = Math.max(dist(this.x, this.y, mouse.x, mouse.y), 30);
+      const pulse = Math.sin(frame * 0.04 + this.phase) * 0.5 + 0.5;
+      const f = (pulse * 800) / (d * d);
+      const a = Math.atan2(mouse.y - this.y, mouse.x - this.x);
+      this.ax += Math.cos(a) * f * 0.6; this.ay += Math.sin(a) * f * 0.6;
+    }
+
+    this.vx = clamp((this.vx + this.ax) * 0.992, -9, 9);
+    this.vy = clamp((this.vy + this.ay) * 0.992, -9, 9);
+    this.x += this.vx * speed; this.y += this.vy * speed;
+    this.ax = 0; this.ay = 0;
+
+    this.history.push({ x: this.x, y: this.y });
+    if (this.history.length > this.maxHist) this.history.shift();
+
+    this.life -= dt * 0.28;
+    this.r = Math.max(0.4, this.r * 0.9993);
+
+    // Bounce
+    if (this.x < 0) { this.x = 0; this.vx *= -0.7; }
+    if (this.x > W) { this.x = W; this.vx *= -0.7; }
+    if (this.y < 0) { this.y = 0; this.vy *= -0.7; }
+    if (this.y > H) { this.y = H; this.vy *= -0.7; }
+  }
+
+  draw() {
+    const lifeR = Math.pow(this.life / this.maxLife, 0.6);
+    const glow = 0.4 + lifeR * 0.6;
+
+    // Trail
+    if (this.history.length > 2) {
+      ctx.beginPath();
+      ctx.moveTo(this.history[0].x, this.history[0].y);
+      for (let i = 1; i < this.history.length; i++) {
+        ctx.lineTo(this.history[i].x, this.history[i].y);
+      }
+      ctx.strokeStyle = hsl(this.hue, 90, 60, lifeR * 0.22);
+      ctx.lineWidth = this.r * 0.55;
+      ctx.stroke();
+    }
+
+    // Outer glow
+    const gr = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.r * 5);
+    gr.addColorStop(0, hsl(this.hue, 100, 65, glow * 0.55));
+    gr.addColorStop(0.4, hsl(this.hue, 90, 55, glow * 0.15));
+    gr.addColorStop(1, hsl(this.hue, 80, 50, 0));
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r * 5, 0, Math.PI * 2);
+    ctx.fillStyle = gr;
+    ctx.fill();
+
+    // Core
+    const cg = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.r);
+    cg.addColorStop(0, hsl(this.hue, 40, 97, lifeR));
+    cg.addColorStop(0.45, hsl(this.hue, 100, 65, lifeR * 0.95));
+    cg.addColorStop(1, hsl(this.hue, 100, 50, 0));
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.fillStyle = cg;
+    ctx.fill();
+  }
+}
+
+class BlackHole {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.mass = 60; this.r = 18;
+    this.hue = 0; this.life = 9999;
+    this.phase = 0;
+  }
+  update() {
+    this.phase += 0.03;
+    this.r = 18 + Math.sin(this.phase) * 3;
+    this.mass *= 1.001;
+  }
+  draw() {
+    // Accretion disk
+    const dGrad = ctx.createRadialGradient(this.x, this.y, this.r * 0.3, this.x, this.y, this.r * 7);
+    dGrad.addColorStop(0, 'rgba(0,0,0,1)');
+    dGrad.addColorStop(0.18, 'rgba(0,0,0,1)');
+    dGrad.addColorStop(0.24, hsl(25, 100, 60, 0.95));
+    dGrad.addColorStop(0.36, hsl(15, 100, 45, 0.5));
+    dGrad.addColorStop(0.52, hsl(280, 80, 30, 0.18));
+    dGrad.addColorStop(0.72, hsl(220, 60, 20, 0.05));
+    dGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r * 7, 0, Math.PI * 2);
+    ctx.fillStyle = dGrad;
+    ctx.fill();
+
+    // Event horizon
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,1)';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.strokeStyle = hsl(25, 100, 65, 0.7);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Photon ring
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r + 3 + Math.sin(this.phase * 2) * 1.5, 0, Math.PI * 2);
+    ctx.strokeStyle = hsl(40, 100, 75, 0.35);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+}
+
+class Wormhole {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.pair = null; this.r = 14; this.phase = 0;
+    this.hue = rand(160, 260); this.life = 800;
+  }
+  update() {
+    this.phase += 0.05;
+    this.life -= 0.4;
+  }
+  draw() {
+    const a = 0.5 + Math.sin(this.phase) * 0.3;
+    const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.r * 3);
+    g.addColorStop(0, hsl(this.hue, 100, 80, a));
+    g.addColorStop(0.4, hsl(this.hue + 40, 90, 50, a * 0.5));
+    g.addColorStop(1, hsl(this.hue + 80, 80, 30, 0));
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r * 3, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(0,0,0,0.85)`;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.strokeStyle = hsl(this.hue, 100, 70, a * 0.9);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Ring glyphs
+    for (let i = 0; i < 3; i++) {
+      const ang = this.phase * 1.5 + (i / 3) * Math.PI * 2;
+      const rx = this.x + Math.cos(ang) * (this.r + 5);
+      const ry = this.y + Math.sin(ang) * (this.r + 5);
+      ctx.beginPath();
+      ctx.arc(rx, ry, 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = hsl(this.hue, 100, 80, a);
+      ctx.fill();
+    }
+  }
+}
+
+class Shockwave {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.r = 0; this.maxR = Math.max(W, H) * 0.75;
+    this.life = 1;
+  }
+  update() {
+    this.r += 14;
+    this.life = 1 - this.r / this.maxR;
+  }
+  draw() {
+    if (this.life <= 0) return;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(140,190,255,${this.life * 0.55})`;
+    ctx.lineWidth = 2.5 * this.life;
+    ctx.stroke();
+  }
+}
+
+// ─── Events ──────────────────────────────────────────────────────────────────
+canvas.addEventListener('mousemove', e => {
+  mouse.px = mouse.x; mouse.py = mouse.y;
+  mouse.x = e.clientX; mouse.y = e.clientY;
+  mouse.vx = mouse.x - mouse.px; mouse.vy = mouse.y - mouse.py;
+});
+
+canvas.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  mouse.down = true;
+  mouse.x = e.clientX; mouse.y = e.clientY;
+  const count = slowMo ? 2 : 5;
+  if (mode === 'blackhole') {
+    blackHoles.push(new BlackHole(e.clientX, e.clientY));
+    bhCount++;
+    showMsg('✦ BLACK HOLE FORGED');
+  } else if (mode === 'wormhole') {
+    const wh = new Wormhole(e.clientX, e.clientY);
+    wormholes.push(wh);
+    if (wormholes.length % 2 === 0) {
+      const prev = wormholes[wormholes.length - 2];
+      wh.pair = prev; prev.pair = wh;
+      showMsg('∞ WORMHOLE PAIR LINKED');
+    } else {
+      showMsg('◉ WORMHOLE END — click again to pair');
+    }
+    whCount++;
+  } else {
+    for (let i = 0; i < count; i++) {
+      if (particles.length < 2200) {
+        const a = rand(0, Math.PI * 2), sp = rand(1, 3.5);
+        particles.push(new Particle(e.clientX, e.clientY, {
+          vx: Math.cos(a) * sp + mouse.vx * 0.3,
+          vy: Math.sin(a) * sp + mouse.vy * 0.3,
+          type: mode
+        }));
+      }
+    }
+  }
+});
+
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mouseleave', () => mouse.down = false);
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  const k = e.key.toLowerCase();
+  if (k === '1') setMode('attract');
+  else if (k === '2') setMode('repel');
+  else if (k === '3') setMode('vortex');
+  else if (k === '4') setMode('wander');
+  else if (k === '5') setMode('pulse');
+  else if (k === 'b') setMode('blackhole');
+  else if (k === 'w') setMode('wormhole');
+  else if (k === 'c') { particles.length = 0; blackHoles.length = 0; wormholes.length = 0; showMsg('✕ VOID CLEARED'); }
+  else if (k === 's') { shockwaves.push(new Shockwave(W / 2, H / 2)); explosions++; showMsg('⚡ SHOCKWAVE'); }
+  else if (k === 'p') { paused = !paused; showMsg(paused ? '⏸ PAUSED' : '▶ RESUME'); }
+  else if (k === 'm') toggleMenu();
+  else if (k === 'f') { slowMo = !slowMo; showMsg(slowMo ? '🐢 SLOW MOTION' : '⚡ NORMAL SPEED'); }
+  else if (k === 'g') { const a = rand(0, Math.PI * 2), sp = rand(3, 6); for (let i = 0; i < 80; i++) { if (particles.length < 2200) particles.push(new Particle(W / 2, H / 2, { vx: Math.cos(a + rand(-0.5, 0.5)) * sp, vy: Math.sin(a + rand(-0.5, 0.5)) * sp })); } showMsg('💥 GRAIN BURST'); }
+  else if (k === 'r') { for (let i = 0; i < 6; i++) { const x = rand(W * 0.15, W * 0.85), y = rand(H * 0.15, H * 0.85); const wh = new Wormhole(x, y); wormholes.push(wh); } showMsg('∞ RANDOM WORMHOLES'); }
+  else if (k >= '1' && k <= '5') { setPalette(parseInt(k) - 1); }
+});
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('h-mode').textContent = m.toUpperCase();
+  document.querySelectorAll('.mrow[data-mode]').forEach(el => el.classList.toggle('active', el.dataset.mode === m));
+  showMsg('◈ ' + m.toUpperCase() + ' MODE');
+}
+
+function setPalette(i) {
+  paletteIdx = i;
+  document.querySelectorAll('.pchip').forEach((el, idx) => el.classList.toggle('active', idx === i));
+  showMsg('🎨 ' + PALETTES[i].name.toUpperCase() + ' PALETTE');
+}
+
+function toggleMenu() {
+  const m = document.getElementById('menu');
+  m.style.display = m.style.display === 'block' ? 'none' : 'block';
+}
+
+document.querySelectorAll('.mrow[data-mode]').forEach(el => {
+  el.addEventListener('click', () => setMode(el.dataset.mode));
+});
+document.querySelectorAll('.mrow[data-action]').forEach(el => {
+  el.addEventListener('click', () => {
+    const a = el.dataset.action;
+    if (a === 'clear') { particles.length = 0; blackHoles.length = 0; wormholes.length = 0; showMsg('✕ VOID CLEARED'); }
+    if (a === 'shockwave') { shockwaves.push(new Shockwave(W / 2, H / 2)); explosions++; showMsg('⚡ SHOCKWAVE'); }
+    if (a === 'pause') { paused = !paused; showMsg(paused ? '⏸ PAUSED' : '▶ RESUME'); toggleMenu(); }
+  });
+});
+
+let msgTimer = null;
+function showMsg(text) {
+  const el = document.getElementById('msg');
+  el.textContent = text; el.style.opacity = 1;
+  clearTimeout(msgTimer);
+  msgTimer = setTimeout(() => el.style.opacity = 0, 1800);
+}
+
+// ─── Palette chips ───────────────────────────────────────────────────────────
+const palUi = document.getElementById('palette-ui');
+PALETTES.forEach((p, i) => {
+  const chip = document.createElement('div');
+  chip.className = 'pchip' + (i === 0 ? ' active' : '');
+  chip.style.background = `linear-gradient(135deg, hsl(${p.hues[0]},90%,55%), hsl(${p.hues[2]},90%,45%))`;
+  chip.title = `${p.name} (${p.label})`;
+  chip.addEventListener('click', () => setPalette(i));
+  palUi.appendChild(chip);
+});
+
+// ─── Render ──────────────────────────────────────────────────────────────────
+function drawBackground() {
+  ctx.fillStyle = 'rgba(4, 4, 14, 0.28)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(40, 55, 100, 0.06)';
+  ctx.lineWidth = 0.5;
+  const gs = 60;
+  for (let x = gs; x < W; x += gs) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = gs; y < H; y += gs) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  // Stars
+  for (const s of stars) {
+    s.tw += 0.018;
+    const a = 0.25 + Math.sin(s.tw) * 0.25;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(180,200,255,${a})`;
+    ctx.fill();
+  }
+}
+
+function drawConnections() {
+  const maxD = 110;
+  // Particle connections
+  for (let i = 0; i < particles.length; i++) {
+    for (let j = i + 1; j < particles.length; j++) {
+      const d = dist(particles[i].x, particles[i].y, particles[j].x, particles[j].y);
+      if (d < maxD) {
+        const a = (1 - d / maxD) * 0.18;
+        const hue = (particles[i].hue + particles[j].hue) / 2;
+        ctx.beginPath();
+        ctx.moveTo(particles[i].x, particles[i].y);
+        ctx.lineTo(particles[j].x, particles[j].y);
+        ctx.strokeStyle = hsl(hue, 80, 60, a);
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Wormhole beams
+  for (const wh of wormholes) {
+    if (wh.pair) {
+      const d = dist(wh.x, wh.y, wh.pair.x, wh.pair.y);
+      const segs = 28;
+      ctx.beginPath();
+      ctx.moveTo(wh.x, wh.y);
+      for (let i = 1; i <= segs; i++) {
+        const t = i / segs;
+        const cx = lerp(wh.x, wh.pair.x, t) + Math.sin(frame * 0.06 + i * 0.9) * 25;
+        const cy = lerp(wh.y, wh.pair.y, t) + Math.cos(frame * 0.06 + i * 1.1) * 25;
+        ctx.lineTo(cx, cy);
+      }
+      ctx.strokeStyle = hsl(wh.hue, 100, 65, 0.3);
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 9]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+}
+
+// ─── HUD ─────────────────────────────────────────────────────────────────────
+function updateHUD() {
+  document.getElementById('h-particles').textContent = particles.length;
+  document.getElementById('h-entropy').textContent = (particles.length * 0.042 + blackHoles.length * 4.5).toFixed(2);
+  document.getElementById('h-explosions').textContent = explosions;
+  document.getElementById('h-bh').textContent = bhCount;
+  document.getElementById('h-wh').textContent = Math.floor(whCount / 2);
+  document.getElementById('pc').textContent = particles.length;
+}
+
+// ─── FPS ─────────────────────────────────────────────────────────────────────
+let fps = 60, fpsFrames = 0, fpsTime = performance.now();
+
+// ─── Main Loop ───────────────────────────────────────────────────────────────
+let lastTime = performance.now();
+
+function loop(now) {
+  requestAnimationFrame(loop);
+  const rawDt = (now - lastTime) / 16.667;
+  const dt = Math.min(rawDt, 3.5);
+  lastTime = now;
+  frame++;
+
+  // FPS
+  fpsFrames++;
+  if (now - fpsTime >= 500) {
+    fps = Math.round(fpsFrames / ((now - fpsTime) / 1000));
+    fpsTime = now; fpsFrames = 0;
+    document.getElementById('h-fps').textContent = fps;
+  }
+
+  if (!paused) {
+    // Spawn ambient
+    if (mouse.down && mode !== 'blackhole' && mode !== 'wormhole' && particles.length < 2200 && frame % 2 === 0) {
+      const a = rand(0, Math.PI * 2), sp = rand(0.8, 3);
+      particles.push(new Particle(
+        mouse.x + rand(-10, 10), mouse.y + rand(-10, 10),
+        { vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, type: mode }
+      ));
+    }
+
+    // Update
+    for (const p of particles) p.update(dt);
+    for (const bh of blackHoles) bh.update();
+    for (const wh of wormholes) wh.update();
+
+    // Prune
+    for (let i = particles.length - 1; i >= 0; i--) {
+      if (particles[i].life <= 0 || particles[i].r < 0.3) particles.splice(i, 1);
+    }
+    for (let i = blackHoles.length - 1; i >= 0; i--) { if (blackHoles[i].life <= 0) blackHoles.splice(i, 1); }
+    for (let i = wormholes.length - 1; i >= 0; i--) { if (wormholes[i].life <= 0) wormholes.splice(i, 1); }
+
+    // Shockwaves
+    for (let i = shockwaves.length - 1; i >= 0; i--) {
+      shockwaves[i].update();
+      if (shockwaves[i].life <= 0) shockwaves.splice(i, 1);
+    }
+
+    // Shockwave push
+    for (const sw of shockwaves) {
+      for (const p of particles) {
+        const d = dist(p.x, p.y, sw.x, sw.y);
+        const ringD = Math.abs(d - sw.r);
+        if (ringD < 40) {
+          const f = (1 - ringD / 40) * 3.5 * sw.life;
+          const a = Math.atan2(p.y - sw.y, p.x - sw.x);
+          p.vx += Math.cos(a) * f; p.vy += Math.sin(a) * f;
+        }
+      }
+    }
+
+    // Inter-particle physics
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const a = particles[i], b = particles[j];
+        const d = dist(a.x, a.y, b.x, b.y);
+        const minD = a.r + b.r + 3;
+        if (d < minD && d > 0.01) {
+          const overlap = (minD - d) * 0.5;
+          const nx = (b.x - a.x) / d, ny = (b.y - a.y) / d;
+          a.x -= nx * overlap; a.y -= ny * overlap;
+          b.x += nx * overlap; b.y += ny * overlap;
+          const relV = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+          if (relV > 0) {
+            const impulse = relV * 0.45;
+            a.vx -= nx * impulse; a.vy -= ny * impulse;
+            b.vx += nx * impulse; b.vy += ny * impulse;
+          }
+        }
+      }
+    }
+  }
+
+  drawBackground();
+  drawConnections();
+  for (const s of shockwaves) s.draw();
+  for (const wh of wormholes) wh.draw();
+  for (const bh of blackHoles) bh.draw();
+  for (const p of particles) p.draw();
+
+  // Mouse glow
+  if (mouse.down) {
+    const mg = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 55);
+    mg.addColorStop(0, hsl(particleHue(), 100, 70, 0.25));
+    mg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.beginPath();
+    ctx.arc(mouse.x, mouse.y, 55, 0, Math.PI * 2);
+    ctx.fillStyle = mg;
+    ctx.fill();
+  }
+
+  if (frame % 4 === 0) updateHUD();
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+ctx.fillStyle = '#000';
+ctx.fillRect(0, 0, W, H);
+
+// Seed particles
+for (let i = 0; i < 160; i++) {
+  particles.push(new Particle(rand(0, W), rand(0, H)));
+}
+
+showMsg('◈ QUANTUM FORGE — click to forge · keys 1-5 to switch modes · M for menu');
+
+requestAnimationFrame(loop);
+
+window.addEventListener('resize', () => {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+});
+
+// Prevent context menu on canvas
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+</script>
+</body>
+</html>
