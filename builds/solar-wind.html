@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solar Wind — Generative Art</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #666;
+  }
+  canvas { display: block; }
+  .ui {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .title {
+    color: #ff9944;
+    font-size: 14px;
+    text-shadow: 0 0 10px rgba(255, 150, 50, 0.5);
+    margin-bottom: 6px;
+  }
+  .hint {
+    font-size: 11px;
+    color: #444;
+    line-height: 1.6;
+  }
+  .stats {
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    font-size: 10px;
+    color: #333;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .controls {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .controls button {
+    background: rgba(20, 20, 35, 0.7);
+    border: 1px solid rgba(255, 150, 50, 0.2);
+    color: #888;
+    padding: 6px 12px;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s;
+  }
+  .controls button:hover {
+    border-color: rgba(255, 150, 50, 0.5);
+    color: #ffaa66;
+  }
+  .controls button.active {
+    border-color: rgba(255, 150, 50, 0.7);
+    color: #ff9944;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="ui">
+  <div class="title">☀ solar wind</div>
+  <div class="hint">move mouse to sculpt the wind<br>click to create solar flares<br>hold to attract · space to pause</div>
+</div>
+<div class="stats" id="stats"></div>
+<div class="controls">
+  <button id="btnPalette" class="active">palette 1-4</button>
+  <button id="btnMode">mode: flow</button>
+  <button id="btnBurst">burst</button>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ---- noise (simplex-like) ----
+class SimplexNoise {
+  constructor() {
+    this.grad3 = [[1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],[1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],[0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]];
+    this.p = [];
+    for (let i = 0; i < 256; i++) this.p[i] = Math.floor(Math.random() * 256);
+    this.perm = [];
+    for (let i = 0; i < 512; i++) this.perm[i] = this.p[i & 255];
+  }
+  dot(g, x, y) { return g[0] * x + g[1] * y; }
+  noise2D(xin, yin) {
+    const F2 = 0.5 * (Math.sqrt(3) - 1);
+    const G2 = (3 - Math.sqrt(3)) / 6;
+    let s = (xin + yin) * F2;
+    let i = Math.floor(xin + s);
+    let j = Math.floor(yin + s);
+    let t = (i + j) * G2;
+    let x0 = xin - i + t;
+    let y0 = yin - j + t;
+    let i1, j1;
+    if (x0 > y0) { i1 = 1; j1 = 0; }
+    else { i1 = 0; j1 = 1; }
+    let x1 = x0 - i1 + G2;
+    let y1 = y0 - j1 + G2;
+    let x2 = x0 - 1 + 2 * G2;
+    let y2 = y0 - 1 + 2 * G2;
+    i &= 255; j &= 255;
+    let gi0 = this.perm[i + this.perm[j]] % 12;
+    let gi1 = this.perm[i + i1 + this.perm[j + j1]] % 12;
+    let gi2 = this.perm[i + 1 + this.perm[j + 1]] % 12;
+    let n0 = 0, n1 = 0, n2 = 0;
+    let t0 = 0.5 - x0 * x0 - y0 * y0;
+    if (t0 > 0) { t0 *= t0; n0 = t0 * t0 * this.dot(this.grad3[gi0], x0, y0); }
+    let t1 = 0.5 - x1 * x1 - y1 * y1;
+    if (t1 > 0) { t1 *= t1; n1 = t1 * t1 * this.dot(this.grad3[gi1], x1, y1); }
+    let t2 = 0.5 - x2 * x2 - y2 * y2;
+    if (t2 > 0) { t2 *= t2; n2 = t2 * t2 * this.dot(this.grad3[gi2], x2, y2); }
+    return 70 * (n0 + n1 + n2);
+  }
+}
+const noise = new SimplexNoise();
+
+// ---- palettes ----
+const palettes = [
+  { name: 'Solar', colors: [[255, 150, 50], [255, 200, 80], [255, 100, 30], [255, 220, 150], [200, 80, 20]] },
+  { name: 'Aurora', colors: [[100, 255, 180], [80, 200, 255], [150, 100, 255], [50, 255, 200], [200, 255, 100]] },
+  { name: 'Nebula', colors: [[200, 100, 255], [255, 100, 200], [100, 150, 255], [255, 150, 100], [150, 255, 200]] },
+  { name: 'Deep', colors: [[50, 100, 200], [100, 150, 255], [20, 50, 150], [150, 200, 255], [30, 80, 180]] }
+];
+let paletteIdx = 0;
+let palette = palettes[0];
+
+function lerpColor(c1, c2, t) {
+  return [
+    c1[0] + (c2[0] - c1[0]) * t,
+    c1[1] + (c2[1] - c1[1]) * t,
+    c1[2] + (c2[2] - c1[2]) * t
+  ];
+}
+
+// ---- particles ----
+const PARTICLE_COUNT = 2000;
+let particles = [];
+let mouse = { x: cx, y: cy, active: false, down: false };
+let time = 0;
+let paused = false;
+let mode = 0; // 0: flow, 1: attract, 2: vortex
+
+const modes = ['flow', 'attract', 'vortex'];
+let modeBtn = document.getElementById('btnMode');
+
+class Particle {
+  constructor(x, y) {
+    this.reset(x, y);
+  }
+  reset(x, y) {
+    if (x !== undefined) {
+      this.x = x;
+      this.y = y;
+    } else {
+      const angle = Math.random() * Math.PI * 2;
+      const r = 20 + Math.random() * 60;
+      this.x = cx + Math.cos(angle) * r;
+      this.y = cy + Math.sin(angle) * r;
+    }
+    this.vx = 0;
+    this.vy = 0;
+    this.life = 0;
+    this.maxLife = 200 + Math.random() * 300;
+    this.colorIdx = Math.floor(Math.random() * palette.colors.length);
+    this.size = 0.5 + Math.random() * 1.5;
+    this.noiseOffX = Math.random() * 1000;
+    this.noiseOffY = Math.random() * 1000;
+  }
+  update() {
+    this.life++;
+    if (this.life > this.maxLife || this.x < -50 || this.x > W + 50 || this.y < -50 || this.y > H + 50) {
+      this.reset();
+      return;
+    }
+    const dx = this.x - cx;
+    const dy = this.y - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const angle = Math.atan2(dy, dx);
+    
+    // base solar wind - radial outflow with noise
+    const windStrength = 0.3 + dist * 0.002;
+    const noiseScale = 0.003;
+    const n = noise.noise2D(this.x * noiseScale + time * 0.0005, this.y * noiseScale + time * 0.0003);
+    const perpAngle = angle + Math.PI / 2;
+    const noiseForce = n * 1.5;
+    
+    let fx = Math.cos(angle) * windStrength;
+    let fy = Math.sin(angle) * windStrength;
+    fx += Math.cos(perpAngle) * noiseForce;
+    fy += Math.sin(perpAngle) * noiseForce;
+    
+    // mode effects
+    if (mode === 1 && mouse.active) {
+      const mdx = this.x - mouse.x;
+      const mdy = this.y - mouse.y;
+      const mDist = Math.sqrt(mdx * mdx + mdy * mdy);
+      if (mDist < 200) {
+        const force = (200 - mDist) / 200 * 0.8;
+        fx -= (mdx / mDist) * force;
+        fy -= (mdy / mDist) * force;
+      }
+    }
+    if (mode === 2 && mouse.active) {
+      const mdx = this.x - mouse.x;
+      const mdy = this.y - mouse.y;
+      const mDist = Math.sqrt(mdx * mdx + mdy * mdy);
+      if (mDist < 200 && mDist > 5) {
+        const force = (200 - mDist) / 200 * 1.2;
+        fx += (-mdy / mDist) * force;
+        fy += (mdx / mDist) * force;
+      }
+    }
+    
+    // mouse interaction
+    if (mouse.active && mode === 0) {
+      const mdx = this.x - mouse.x;
+      const mdy = this.y - mouse.y;
+      const mDist = Math.sqrt(mdx * mdx + mdy * mdy);
+      if (mDist < 150 && mDist > 5) {
+        const force = (150 - mDist) / 150 * 0.5;
+        fx += (mdx / mDist) * force;
+        fy += (mdy / mDist) * force;
+      }
+    }
+    
+    this.vx = this.vx * 0.95 + fx * 0.5;
+    this.vy = this.vy * 0.95 + fy * 0.5;
+    this.x += this.vx;
+    this.y += this.vy;
+  }
+  draw() {
+    const alpha = Math.min(1, this.life / 30) * Math.min(1, (this.maxLife - this.life) / 50);
+    const c = palette.colors[this.colorIdx];
+    ctx.fillStyle = `rgba(${c[0]|0}, ${c[1]|0}, ${c[2]|0}, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// flare system
+let flares = [];
+class Flare {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.life = 0;
+    this.maxLife = 60 + Math.random() * 40;
+    this.particles = [];
+    const count = 30 + Math.random() * 40;
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 1 + Math.random() * 4;
+      this.particles.push({
+        x: 0, y: 0,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: 1 + Math.random() * 2,
+        colorIdx: Math.floor(Math.random() * palette.colors.length)
+      });
+    }
+  }
+  update() {
+    this.life++;
+    let alive = false;
+    for (const p of this.particles) {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vx *= 0.96;
+      p.vy *= 0.96;
+      if (this.life < this.maxLife) alive = true;
+    }
+    return alive;
+  }
+  draw() {
+    const alpha = Math.min(1, this.life / 10) * Math.max(0, 1 - this.life / this.maxLife);
+    for (const p of this.particles) {
+      const c = palette.colors[p.colorIdx];
+      ctx.fillStyle = `rgba(${c[0]|0}, ${c[1]|0}, ${c[2]|0}, ${alpha * 0.8})`;
+      ctx.beginPath();
+      ctx.arc(this.x + p.x, this.y + p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// init
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+  particles.push(new Particle());
+}
+
+// draw sun
+function drawSun() {
+  const pulse = 1 + Math.sin(time * 0.05) * 0.05 + Math.sin(time * 0.03) * 0.03;
+  const r = 18 * pulse;
+  const c = palette.colors[0];
+  
+  // corona
+  const grad = ctx.createRadialGradient(cx, cy, r * 0.5, cx, cy, r * 3);
+  grad.addColorStop(0, `rgba(${c[0]|0}, ${c[1]|0}, ${c[2]|0}, 0.6)`);
+  grad.addColorStop(0.3, `rgba(${c[0]|0}, ${c[1]|0}, ${c[2]|0}, 0.15)`);
+  grad.addColorStop(1, `rgba(${c[0]|0}, ${c[1]|0}, ${c[2]|0}, 0)`);
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 3, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // core
+  ctx.fillStyle = `rgba(255, 255, 240, 0.95)`;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// mouse
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('mousedown', e => {
+  mouse.down = true;
+  flares.push(new Flare(e.clientX, e.clientY));
+  // burst particles from click
+  for (let i = 0; i < 100; i++) {
+    const p = new Particle(e.clientX, e.clientY);
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 3;
+    p.vx = Math.cos(angle) * speed;
+    p.vy = Math.sin(angle) * speed;
+    p.maxLife = 100 + Math.random() * 150;
+    particles.push(p);
+  }
+  // trim excess
+  while (particles.length > PARTICLE_COUNT + 200) particles.shift();
+});
+canvas.addEventListener('mouseup', () => { mouse.down = false; });
+
+// keyboard
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); paused = !paused; }
+  if (e.key >= '1' && e.key <= '4') {
+    paletteIdx = parseInt(e.key) - 1;
+    palette = palettes[paletteIdx];
+    document.getElementById('btnPalette').textContent = `palette: ${palette.name}`;
+  }
+  if (e.key === 'm') {
+    mode = (mode + 1) % 3;
+    modeBtn.textContent = `mode: ${modes[mode]}`;
+  }
+});
+
+// controls
+document.getElementById('btnPalette').addEventListener('click', () => {
+  paletteIdx = (paletteIdx + 1) % palettes.length;
+  palette = palettes[paletteIdx];
+  document.getElementById('btnPalette').textContent = `palette: ${palette.name}`;
+});
+modeBtn.addEventListener('click', () => {
+  mode = (mode + 1) % 3;
+  modeBtn.textContent = `mode: ${modes[mode]}`;
+});
+document.getElementById('btnBurst').addEventListener('click', () => {
+  for (let i = 0; i < 500; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const r = 20 + Math.random() * 30;
+    particles.push(new Particle(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r));
+  }
+  while (particles.length > PARTICLE_COUNT + 500) particles.shift();
+});
+
+// stats
+const statsEl = document.getElementById('stats');
+
+// loop
+function animate() {
+  if (!paused) {
+    // fade trail
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+    ctx.fillRect(0, 0, W, H);
+    
+    time++;
+    
+    drawSun();
+    
+    for (const p of particles) {
+      p.update();
+      p.draw();
+    }
+    
+    flares = flares.filter(f => {
+      const alive = f.update();
+      if (alive) f.draw();
+      return alive;
+    });
+    
+    // trim particles
+    while (particles.length > PARTICLE_COUNT + 300) particles.shift();
+    
+    statsEl.textContent = `particles: ${particles.length} · flares: ${flares.length} · ${palette.name} · ${modes[mode]}`;
+  }
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+</body>
+</html>
