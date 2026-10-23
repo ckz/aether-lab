@@ -3,61 +3,83 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Neural Bloom — Generative Art</title>
+<title>Neural Bloom</title>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body {
-  background: #0a0a0f;
-  overflow: hidden;
-  font-family: 'Courier New', monospace;
-  cursor: crosshair;
-}
-canvas { display: block; }
-#info {
-  position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: rgba(255,255,255,0.4);
-  font-size: 12px;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  pointer-events: none;
-  z-index: 10;
-}
-#stats {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  color: rgba(255,255,255,0.3);
-  font-size: 11px;
-  letter-spacing: 1px;
-  pointer-events: none;
-  z-index: 10;
-  text-align: right;
-}
-#title {
-  position: fixed;
-  top: 20px;
-  left: 20px;
-  color: rgba(255,255,255,0.15);
-  font-size: 14px;
-  letter-spacing: 4px;
-  text-transform: uppercase;
-  pointer-events: none;
-  z-index: 10;
-}
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #8899aa;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 20px; left: 20px;
+    z-index: 10;
+    font-size: 12px;
+    line-height: 1.8;
+    pointer-events: none;
+    text-shadow: 0 0 8px rgba(0,0,0,0.8);
+  }
+  #ui h1 {
+    font-size: 18px;
+    color: #aabbcc;
+    margin-bottom: 6px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+  }
+  #ui .controls { margin-top: 10px; pointer-events: auto; }
+  #ui button {
+    background: rgba(30,40,55,0.6);
+    border: 1px solid rgba(120,140,160,0.3);
+    color: #8899aa;
+    padding: 4px 10px;
+    margin: 2px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    border-radius: 3px;
+    transition: all 0.2s;
+  }
+  #ui button:hover {
+    background: rgba(50,70,100,0.7);
+    border-color: rgba(160,200,255,0.5);
+    color: #ccddee;
+  }
+  #palette-indicator {
+    position: fixed;
+    bottom: 20px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: rgba(160,180,200,0.6);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    pointer-events: none;
+    text-shadow: 0 0 10px rgba(0,0,0,0.9);
+  }
 </style>
 </head>
 <body>
 <canvas id="canvas"></canvas>
-<div id="title">Neural Bloom</div>
-<div id="stats"></div>
-<div id="info">click to seed · space to pause · c to clear</div>
+<div id="ui">
+  <h1>✦ Neural Bloom</h1>
+  <div>Click to plant seeds</div>
+  <div>Move mouse to influence growth</div>
+  <div class="controls">
+    <button onclick="setPalette(0)">Aurora</button>
+    <button onclick="setPalette(1)">Ember</button>
+    <button onclick="setPalette(2)">Deep</button>
+    <button onclick="setPalette(3)">Neon</button>
+    <button onclick="clearAll()">Clear</button>
+  </div>
+</div>
+<div id="palette-indicator">Palette: Aurora</div>
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-const stats = document.getElementById('stats');
 
 let W, H;
 function resize() {
@@ -67,203 +89,332 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-let paused = false;
+const palettes = [
+  { name: 'Aurora',  bg: '#06080f', colors: ['#00ffa3','#00d4ff','#7b61ff','#ff6b9d','#00ff88'], glow: 'rgba(0,255,163,' },
+  { name: 'Ember',   bg: '#0f0806', colors: ['#ff6a00','#ffaa00','#ff3300','#ffcc44','#ff8800'], glow: 'rgba(255,106,0,' },
+  { name: 'Deep',    bg: '#060a10', colors: ['#1a8fff','#00ccff','#4488ff','#0066cc','#66aaff'], glow: 'rgba(26,143,255,' },
+  { name: 'Neon',    bg: '#0a0a0a', colors: ['#ff00ff','#00ffff','#ffff00','#ff0080','#80ff00'], glow: 'rgba(255,0,255,' },
+];
+let currentPalette = 0;
+
+function setPalette(i) {
+  currentPalette = i;
+  document.getElementById('palette-indicator').textContent = 'Palette: ' + palettes[i].name;
+}
+
+const seeds = [];
+const particles = [];
+const connections = [];
+let mouse = { x: -9999, y: -9999, active: false };
 let time = 0;
-let particles = [];
-let mouse = { x: W/2, y: H/2, active: false };
 
-const CONFIG = {
-  maxParticles: 600,
-  baseSpeed: 0.3,
-  connectionDist: 120,
-  hueBase: 200,
-  hueRange: 80,
-  trailAlpha: 0.04,
-  particleSize: 2,
-  neuronChance: 0.002
-};
-
-class Particle {
-  constructor(x, y, isNeuron = false) {
-    this.x = x || Math.random() * W;
-    this.y = y || Math.random() * H;
-    this.vx = (Math.random() - 0.5) * CONFIG.baseSpeed * 2;
-    this.vy = (Math.random() - 0.5) * CONFIG.baseSpeed * 2;
-    this.life = 1;
-    this.decay = 0.0003 + Math.random() * 0.0005;
-    this.hue = CONFIG.hueBase + Math.random() * CONFIG.hueRange;
-    this.size = isNeuron ? CONFIG.particleSize * 3 : CONFIG.particleSize * (0.5 + Math.random());
-    this.isNeuron = isNeuron;
-    this.pulsePhase = Math.random() * Math.PI * 2;
-    this.pulseSpeed = 0.01 + Math.random() * 0.02;
+class Seed {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.branches = [];
+    this.maxDepth = 5 + Math.floor(Math.random() * 5);
+    this.growSpeed = 0.4 + Math.random() * 0.6;
+    this.alive = true;
+    this.age = 0;
+    this.maxAge = 800 + Math.random() * 400;
+    this.colorIndex = Math.floor(Math.random() * 5);
+    this.generateBranches();
   }
-  
-  update() {
-    if (!paused) {
-      this.x += this.vx;
-      this.y += this.vy;
-      this.life -= this.decay;
-      this.pulsePhase += this.pulseSpeed;
-      
-      // Gentle attraction to mouse when active
-      if (mouse.active) {
-        const dx = mouse.x - this.x;
-        const dy = mouse.y - this.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        if (dist < 200) {
-          const force = 0.0003;
-          this.vx += dx * force;
-          this.vy += dy * force;
+
+  generateBranches() {
+    const numBranches = 3 + Math.floor(Math.random() * 5);
+    for (let i = 0; i < numBranches; i++) {
+      const angle = (Math.PI * 2 / numBranches) * i + (Math.random() - 0.5) * 0.5;
+      const len = 30 + Math.random() * 60;
+      this.branches.push({
+        angle,
+        length: len,
+        currentLength: 0,
+        depth: 1,
+        children: [],
+        thickness: 3 + Math.random() * 2,
+        swayOffset: Math.random() * Math.PI * 2,
+        swayAmp: 0.01 + Math.random() * 0.02,
+        nodes: [],
+        growing: true,
+      });
+    }
+  }
+
+  update(dt) {
+    this.age += dt;
+    if (this.age > this.maxAge) this.alive = false;
+
+    let anyGrowing = false;
+    const grow = (b, depth) => {
+      if (!b.growing) return;
+      b.currentLength += this.growSpeed * (1 - depth * 0.15);
+      if (b.currentLength >= b.length) {
+        b.growing = false;
+        if (depth < this.maxDepth && b.children.length < 3) {
+          const numChildren = 1 + Math.floor(Math.random() * 2);
+          for (let i = 0; i < numChildren; i++) {
+            const childAngle = b.angle + (Math.random() - 0.5) * 1.2;
+            const childLen = b.length * (0.5 + Math.random() * 0.25);
+            const child = {
+              angle: childAngle,
+              length: childLen,
+              currentLength: 0,
+              depth: depth + 1,
+              children: [],
+              thickness: b.thickness * 0.65,
+              swayOffset: Math.random() * Math.PI * 2,
+              swayAmp: 0.01 + Math.random() * 0.03,
+              nodes: [],
+              growing: true,
+            };
+            b.children.push(child);
+          }
         }
       }
-      
-      // Speed limit
-      const speed = Math.sqrt(this.vx*this.vx + this.vy*this.vy);
-      const maxSpeed = 1.5;
-      if (speed > maxSpeed) {
-        this.vx = (this.vx / speed) * maxSpeed;
-        this.vy = (this.vy / speed) * maxSpeed;
+      b.nodes = [];
+      const segments = Math.floor(b.currentLength / 4);
+      for (let s = 0; s <= segments; s++) {
+        const t = s / Math.max(segments, 1);
+        const sway = Math.sin(time * 0.8 + b.swayOffset + t * 2) * b.swayAmp * t * 40;
+        const mx = mouse.active ? (mouse.x - this.x) * 0.02 * t : 0;
+        const my = mouse.active ? (mouse.y - this.y) * 0.02 * t : 0;
+        const nx = this.x + Math.cos(b.angle + sway + mx) * b.currentLength * t;
+        const ny = this.y + Math.sin(b.angle + sway + my) * b.currentLength * t;
+        b.nodes.push({ x: nx, y: ny });
       }
-      
-      // Wrap edges
-      if (this.x < 0) this.x = W;
-      if (this.x > W) this.x = 0;
-      if (this.y < 0) this.y = H;
-      if (this.y > H) this.y = 0;
-    }
-  }
-  
-  draw() {
-    const pulse = this.isNeuron ? 1 + Math.sin(this.pulsePhase) * 0.5 : 1;
-    const alpha = this.life * (this.isNeuron ? 0.9 : 0.6);
-    const size = this.size * pulse;
-    
-    // Glow
-    const glow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, size * 4);
-    glow.addColorStop(0, `hsla(${this.hue}, 80%, 60%, ${alpha})`);
-    glow.addColorStop(0.5, `hsla(${this.hue}, 70%, 50%, ${alpha * 0.3})`);
-    glow.addColorStop(1, `hsla(${this.hue}, 60%, 40%, 0)`);
-    
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, size * 4, 0, Math.PI * 2);
-    ctx.fillStyle = glow;
-    ctx.fill();
-    
-    // Core
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, size, 0, Math.PI * 2);
-    ctx.fillStyle = `hsla(${this.hue}, 90%, 70%, ${alpha})`;
-    ctx.fill();
-  }
-}
+      b.children.forEach(c => grow(c, depth + 1));
+      if (b.growing) anyGrowing = true;
+    };
 
-// Initialize with some particles
-for (let i = 0; i < 150; i++) {
-  particles.push(new Particle());
-}
+    this.branches.forEach(b => grow(b, 1));
+  }
 
-// Draw connections
-function drawConnections() {
-  for (let i = 0; i < particles.length; i++) {
-    for (let j = i + 1; j < particles.length; j++) {
-      const dx = particles[i].x - particles[j].x;
-      const dy = particles[i].y - particles[j].y;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      
-      if (dist < CONFIG.connectionDist) {
-        const alpha = (1 - dist / CONFIG.connectionDist) * 0.15;
-        const avgHue = (particles[i].hue + particles[j].hue) / 2;
-        
+  draw(ctx) {
+    const drawBranch = (b) => {
+      if (b.nodes.length < 2) return;
+      const alpha = Math.max(0, 1 - this.age / this.maxAge);
+      const col = palettes[currentPalette].colors[this.colorIndex % 5];
+
+      ctx.beginPath();
+      ctx.moveTo(b.nodes[0].x, b.nodes[0].y);
+      for (let i = 1; i < b.nodes.length - 1; i++) {
+        const xc = (b.nodes[i].x + b.nodes[i+1].x) / 2;
+        const yc = (b.nodes[i].y + b.nodes[i+1].y) / 2;
+        ctx.quadraticCurveTo(b.nodes[i].x, b.nodes[i].y, xc, yc);
+      }
+      if (b.nodes.length >= 2) {
+        const last = b.nodes[b.nodes.length - 1];
+        ctx.lineTo(last.x, last.y);
+      }
+      ctx.strokeStyle = col + Math.floor(alpha * 180).toString(16).padStart(2,'0');
+      ctx.lineWidth = b.thickness;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+
+      // glow
+      ctx.strokeStyle = palettes[currentPalette].glow + (alpha * 0.25).toFixed(2) + ')';
+      ctx.lineWidth = b.thickness * 3;
+      ctx.stroke();
+
+      // endpoint node
+      if (!b.growing && b.nodes.length > 0) {
+        const end = b.nodes[b.nodes.length - 1];
+        const pulse = 0.6 + 0.4 * Math.sin(time * 2 + b.swayOffset);
         ctx.beginPath();
-        ctx.moveTo(particles[i].x, particles[i].y);
-        ctx.lineTo(particles[j].x, particles[j].y);
-        ctx.strokeStyle = `hsla(${avgHue}, 60%, 50%, ${alpha})`;
-        ctx.lineWidth = 0.5;
-        ctx.stroke();
+        ctx.arc(end.x, end.y, b.thickness * 1.5 * pulse, 0, Math.PI * 2);
+        ctx.fillStyle = palettes[currentPalette].glow + (alpha * 0.5 * pulse).toFixed(2) + ')';
+        ctx.fill();
       }
-    }
+
+      b.children.forEach(drawBranch);
+    };
+    this.branches.forEach(drawBranch);
+
+    // seed origin glow
+    const pulse = 0.7 + 0.3 * Math.sin(time * 3 + this.x);
+    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, 30);
+    grad.addColorStop(0, palettes[currentPalette].glow + (0.5 * pulse).toFixed(2) + ')');
+    grad.addColorStop(1, 'transparent');
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 30, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
   }
 }
 
-// Spawn burst at position
-function spawnBurst(x, y, count = 20) {
-  for (let i = 0; i < count; i++) {
-    const p = new Particle(x, y, Math.random() < 0.1);
-    const angle = Math.random() * Math.PI * 2;
-    const speed = 1 + Math.random() * 2;
-    p.vx = Math.cos(angle) * speed;
-    p.vy = Math.sin(angle) * speed;
-    particles.push(p);
+class Particle {
+  constructor(x, y, color) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 1.5;
+    this.vy = (Math.random() - 0.5) * 1.5 - 0.5;
+    this.life = 1;
+    this.decay = 0.004 + Math.random() * 0.01;
+    this.size = 1 + Math.random() * 2.5;
+    this.color = color;
   }
-  // Trim if over limit
-  while (particles.length > CONFIG.maxParticles) {
-    particles.shift();
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += 0.005;
+    this.life -= this.decay;
+    this.vx *= 0.99;
+    this.vy *= 0.99;
+  }
+  draw(ctx) {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fillStyle = this.color + Math.floor(this.life * 120).toString(16).padStart(2,'0');
+    ctx.fill();
   }
 }
 
-// Event handlers
+canvas.addEventListener('mousedown', (e) => {
+  plantSeed(e.clientX, e.clientY);
+});
 canvas.addEventListener('mousemove', (e) => {
   mouse.x = e.clientX;
   mouse.y = e.clientY;
   mouse.active = true;
+  if (Math.random() < 0.15) {
+    const col = palettes[currentPalette].colors[Math.floor(Math.random() * 5)];
+    particles.push(new Particle(mouse.x + (Math.random()-0.5)*20, mouse.y + (Math.random()-0.5)*20, col));
+  }
 });
+canvas.addEventListener('mouseup', () => mouse.active = false);
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
 
-canvas.addEventListener('mouseleave', () => {
-  mouse.active = false;
-});
-
-canvas.addEventListener('click', (e) => {
-  spawnBurst(e.clientX, e.clientY, 30);
-});
-
+// Touch support
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
-  const touch = e.touches[0];
-  mouse.x = touch.clientX;
-  mouse.y = touch.clientY;
+  const t = e.touches[0];
+  plantSeed(t.clientX, t.clientY);
+});
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
   mouse.active = true;
-  spawnBurst(touch.clientX, touch.clientY, 30);
 });
 
-document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space') {
-    paused = !paused;
-  } else if (e.code === 'KeyC') {
-    particles = [];
-    ctx.fillStyle = 'rgba(10, 10, 15, 1)';
-    ctx.fillRect(0, 0, W, H);
+function plantSeed(x, y) {
+  seeds.push(new Seed(x, y));
+  // burst particles
+  const col = palettes[currentPalette].colors[Math.floor(Math.random() * 5)];
+  for (let i = 0; i < 30; i++) {
+    particles.push(new Particle(x, y, col));
   }
-});
+  // auto-plant a few neighboring seeds sometimes
+  if (Math.random() < 0.35) {
+    setTimeout(() => {
+      plantSeed(x + (Math.random()-0.5)*120, y + (Math.random()-0.5)*120);
+    }, 200 + Math.random() * 300);
+  }
+}
 
-// Animation loop
-function animate() {
-  // Trail effect
-  ctx.fillStyle = `rgba(10, 10, 15, ${CONFIG.trailAlpha})`;
-  ctx.fillRect(0, 0, W, H);
-  
-  if (!paused) {
-    time++;
-    
-    // Random neuron spawning
-    if (Math.random() < CONFIG.neuronChance && particles.length < CONFIG.maxParticles) {
-      particles.push(new Particle(null, null, true));
+function clearAll() {
+  seeds.length = 0;
+  particles.length = 0;
+}
+
+function updateConnections() {
+  // Draw faint connections between nearby living endpoints
+  const endpoints = [];
+  seeds.forEach(s => {
+    const collect = (b) => {
+      if (!b.growing && b.nodes.length > 1) {
+        endpoints.push({ x: b.nodes[b.nodes.length-1].x, y: b.nodes[b.nodes.length-1].y, seed: s, branch: b });
+      }
+      b.children.forEach(collect);
+    };
+    s.branches.forEach(collect);
+  });
+
+  connections.length = 0;
+  for (let i = 0; i < endpoints.length; i++) {
+    for (let j = i+1; j < endpoints.length; j++) {
+      const dx = endpoints[i].x - endpoints[j].x;
+      const dy = endpoints[i].y - endpoints[j].y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < 150 && Math.random() < 0.02) {
+        connections.push({ x1: endpoints[i].x, y1: endpoints[i].y, x2: endpoints[j].x, y2: endpoints[j].y, dist, alpha: 0.15 });
+      }
     }
   }
-  
-  // Update and draw
-  drawConnections();
-  
-  particles = particles.filter(p => p.life > 0);
-  particles.forEach(p => {
-    p.update();
-    p.draw();
+}
+
+function drawConnections(ctx) {
+  connections.forEach(c => {
+    const pulse = 0.5 + 0.5 * Math.sin(time * 1.5 + c.x1 * 0.01);
+    ctx.beginPath();
+    ctx.moveTo(c.x1, c.y1);
+    ctx.lineTo(c.x2, c.y2);
+    ctx.strokeStyle = palettes[currentPalette].glow + (c.alpha * pulse).toFixed(3) + ')';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
   });
-  
-  // Stats
-  stats.innerHTML = `particles: ${particles.length}<br>time: ${time}`;
-  
+}
+
+// Background stars
+const stars = [];
+for (let i = 0; i < 120; i++) {
+  stars.push({
+    x: Math.random() * 3000,
+    y: Math.random() * 2000,
+    size: Math.random() * 1.5,
+    twinkle: Math.random() * Math.PI * 2,
+    speed: 0.5 + Math.random() * 2,
+  });
+}
+
+function drawStars(ctx) {
+  stars.forEach(s => {
+    const a = 0.3 + 0.4 * Math.sin(time * s.speed + s.twinkle);
+    ctx.beginPath();
+    ctx.arc(s.x % W, s.y % H, s.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(180,200,220,${a})`;
+    ctx.fill();
+  });
+}
+
+function animate() {
+  time += 0.016;
+
+  // subtle fade for trails
+  ctx.fillStyle = palettes[currentPalette].bg + 'f0';
+  ctx.fillRect(0, 0, W, H);
+
+  drawStars(ctx);
+
+  // update seeds
+  for (let i = seeds.length - 1; i >= 0; i--) {
+    seeds[i].update(0.016);
+    if (!seeds[i].alive) seeds.splice(i, 1);
+  }
+  seeds.forEach(s => s.draw(ctx));
+
+  updateConnections();
+  drawConnections(ctx);
+
+  // particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update();
+    particles[i].draw(ctx);
+    if (particles[i].life <= 0) particles.splice(i, 1);
+  }
+
   requestAnimationFrame(animate);
 }
+
+// Initial seeds
+setTimeout(() => {
+  plantSeed(W * 0.3, H * 0.5);
+  setTimeout(() => plantSeed(W * 0.7, H * 0.4), 400);
+  setTimeout(() => plantSeed(W * 0.5, H * 0.65), 800);
+}, 100);
 
 animate();
 </script>
