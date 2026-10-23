@@ -3,519 +3,484 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Particle Life — Emergent Ecosystem</title>
+<title>Particle Life — Emergent Colony</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
-  background: #0a0a0f;
-  overflow: hidden;
+  background: #06060c;
+  color: #aaa;
   font-family: 'Courier New', monospace;
-  color: #c8c8d0;
-  user-select: none;
+  overflow: hidden;
+  cursor: crosshair;
 }
-canvas { display: block; cursor: crosshair; }
-
+canvas { display: block; }
 #ui {
   position: fixed;
   top: 16px;
-  left: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
   z-index: 10;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
-
-#stats {
-  background: rgba(10, 10, 20, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  padding: 10px 14px;
-  font-size: 12px;
-  line-height: 1.7;
-  backdrop-filter: blur(8px);
-  min-width: 200px;
-}
-#stats h3 {
-  font-size: 11px;
+#title {
+  font-size: 14px;
+  color: #c4a0ff;
+  letter-spacing: 4px;
   text-transform: uppercase;
-  letter-spacing: 2px;
-  color: #888;
   margin-bottom: 4px;
 }
-#stats .val { color: #fff; font-weight: bold; }
-
-#legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
-}
-.species-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  background: rgba(255,255,255,0.04);
-  border-radius: 4px;
-  padding: 2px 7px;
-  font-size: 10px;
-}
-.species-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  box-shadow: 0 0 6px currentColor;
-}
-
-#controls {
-  background: rgba(10, 10, 20, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  padding: 10px 14px;
-  backdrop-filter: blur(8px);
+#stats {
   font-size: 11px;
-  line-height: 1.8;
-  color: #777;
+  color: #555;
+  letter-spacing: 1px;
 }
-#controls kbd {
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 3px;
-  padding: 1px 5px;
-  font-size: 10px;
-  color: #aaa;
-  font-family: inherit;
-}
-
-#help {
+#controls {
   position: fixed;
   bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(10, 10, 20, 0.8);
-  border: 1px solid rgba(255,255,255,0.06);
-  border-radius: 20px;
-  padding: 8px 18px;
+  display: flex;
+  gap: 8px;
+  z-index: 10;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.btn {
+  background: rgba(20, 20, 35, 0.8);
+  border: 1px solid rgba(120, 100, 200, 0.3);
+  color: #9990cc;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
   font-size: 11px;
-  color: #666;
-  backdrop-filter: blur(8px);
-  transition: opacity 0.5s;
+  letter-spacing: 1px;
+  transition: all 0.2s;
+  pointer-events: all;
+}
+.btn:hover {
+  background: rgba(40, 35, 60, 0.9);
+  border-color: rgba(160, 140, 240, 0.6);
+  color: #c4a0ff;
+}
+.btn.active {
+  background: rgba(60, 50, 100, 0.9);
+  border-color: rgba(180, 160, 255, 0.7);
+  color: #fff;
+}
+#legend {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10;
   pointer-events: none;
 }
-
-#paused-overlay {
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 10px;
+  color: #666;
+}
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+#hint {
   position: fixed;
-  top: 50%;
+  bottom: 60px;
   left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 28px;
-  letter-spacing: 8px;
-  text-transform: uppercase;
-  color: rgba(255,255,255,0.15);
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: #444;
+  z-index: 10;
   pointer-events: none;
-  display: none;
-  z-index: 20;
+  white-space: nowrap;
 }
 </style>
 </head>
 <body>
-
 <canvas id="canvas"></canvas>
-
 <div id="ui">
-  <div id="stats">
-    <h3>Ecosystem</h3>
-    <div>Particles: <span class="val" id="s-total">0</span></div>
-    <div>FPS: <span class="val" id="s-fps">0</span></div>
-    <div id="legend"></div>
-  </div>
-  <div id="controls">
-    <kbd>Click</kbd> Spawn &nbsp; <kbd>Space</kbd> Pause &nbsp; <kbd>R</kbd> Reset &nbsp; <kbd>H</kbd> Hide UI
-  </div>
+  <div id="title">◈ Particle Life ◈</div>
+  <div id="stats">initializing…</div>
 </div>
-
-<div id="help">click to introduce life · space to pause · r to reseed</div>
-<div id="paused-overlay">Paused</div>
+<div id="legend"></div>
+<div id="controls">
+  <button class="btn" onclick="setPreset(0)">Cells</button>
+  <button class="btn" onclick="setPreset(1)">Chains</button>
+  <button class="btn" onclick="setPreset(2)">Colonies</button>
+  <button class="btn" onclick="setPreset(3)">Chaos</button>
+  <button class="btn" onclick="setPreset(4)">Harmony</button>
+  <button class="btn" onclick="randomizeRules()">R — Random</button>
+  <button class="btn" onclick="resetSimulation()">Space — Reset</button>
+</div>
+<div id="hint">Click to place · Drag to attract · 1-5 palettes · R randomize · Space reset</div>
 
 <script>
+// ─── Configuration ───
+const PARTICLE_COUNT = 2000;
+const SPECIES = 5;
+const GRID_SIZE = 20;
+const FRICTION = 0.92;
+const MAX_SPEED = 3;
+const MOUSE_RADIUS = 120;
+const MOUSE_FORCE = 0.8;
+
+// ─── Palettes ───
+const palettes = [
+  ['#00e5ff','#ff006e','#8338ec','#ffbe0b','#06d6a0'],
+  ['#ff6b6b','#feca57','#48dbfb','#ff9ff3','#54a0ff'],
+  ['#e0aaff','#c77dff','#9d4edd','#7b2cbf','#3c096c'],
+  ['#f72585','#7209b7','#3a0ca3','#4361ee','#4cc9f0'],
+  ['#d4a373','#ccd5ae','#e9edc9','#fefae0','#faedcd'],
+];
+let currentPalette = 0;
+
+// ─── Rule Presets ───
+const presets = [
+  // 0: Cells — self-attraction, mutual repulsion between different types
+  [
+    [ 1,-.5,-.5,-.3,-.3],
+    [-.5, 1,-.5,-.3,-.3],
+    [-.5,-.5, 1,-.3,-.3],
+    [-.3,-.3,-.3, 1,-.2],
+    [-.3,-.3,-.3,-.2, 1],
+  ],
+  // 1: Chains — linear attraction, perpendicular repulsion
+  [
+    [ 0, .8,-.3, .4,-.4],
+    [-.3, 0, .8,-.4, .4],
+    [ .4,-.3, 0, .8,-.3],
+    [-.4, .4,-.3, 0, .8],
+    [ .8,-.4, .4,-.3, 0],
+  ],
+  // 2: Colonies — cluster formation with neighbors
+  [
+    [ 1, .5, .1,-.6,-.6],
+    [ .5, 1, .1,-.6,-.6],
+    [ .1, .1, 1, .2,-.6],
+    [-.5,-.5, .3, 1, .2],
+    [-.5,-.5, .1, .2, 1],
+  ],
+  // 3: Chaos — wild random
+  [
+    [ .2,-.8, .5,-.4, .6],
+    [-.4, .2, .7,-.3,-.5],
+    [ .6,-.2,-.4, .8,-.1],
+    [-.3, .5,-.6, .1, .7],
+    [ .7,-.3, .4,-.8, .2],
+  ],
+  // 4: Harmony — gentle mutual attraction with structure
+  [
+    [ .4, .3, .3, .2, .2],
+    [ .3, .4, .3, .2, .2],
+    [ .3, .3, .4, .2, .2],
+    [ .2, .2, .2, .4, .3],
+    [ .2, .2, .2, .3, .4],
+  ],
+];
+
+let rules = presets[0];
+let particles = [];
+let activePreset = 0;
+
+// ─── Canvas Setup ───
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
+let W, H;
 
-let W, H, DPR;
 function resize() {
-  DPR = window.devicePixelRatio || 1;
-  W = window.innerWidth;
-  H = window.innerHeight;
-  canvas.width = W * DPR;
-  canvas.height = H * DPR;
-  canvas.style.width = W + 'px';
-  canvas.style.height = H + 'px';
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
 }
 resize();
 window.addEventListener('resize', resize);
 
-// Species definitions — each with color, speed, size, sense radius, and dietary preferences
-const SPECIES_DEFS = [
-  { name: 'Cyan Drift',   color: '#00e5ff', glow: '#00e5ff', speed: 2.2, size: 3.5, sense: 55,  diet: [1, 0, 0, 0] },
-  { name: 'Amber Graze',  color: '#ffab00', glow: '#ffab00', speed: 1.6, size: 3.0, sense: 50,  diet: [0, 1, 0, 0] },
-  { name: 'Magenta Dash', color: '#ff4081', glow: '#ff4081', speed: 3.0, size: 2.8, sense: 65,  diet: [0, 0, 1, 0] },
-  { name: 'Lime Scav',    color: '#76ff03', glow: '#76ff03', speed: 1.3, size: 3.2, sense: 70,  diet: [1, 0, 0, 1] },
-  { name: 'Violet Hunt',  color: '#b388ff', glow: '#b388ff', speed: 2.6, size: 3.6, sense: 60,  diet: [0, 1, 1, 0] },
-  { name: 'Coral Prowl',  color: '#ff6e40', glow: '#ff6e40', speed: 2.0, size: 4.0, sense: 58,  diet: [0, 0, 0, 1] },
-];
-
-const TOTAL_SPECIES = SPECIES_DEFS.length;
-
-// Spatial hash for neighbor queries
-class SpatialHash {
-  constructor(cellSize) {
-    this.cellSize = cellSize;
-    this.cells = new Map();
+// ─── Spatial Grid ───
+let grid = {};
+function gridKey(x, y) {
+  return Math.floor(x / GRID_SIZE) + ',' + Math.floor(y / GRID_SIZE);
+}
+function rebuildGrid() {
+  grid = {};
+  for (let p of particles) {
+    const k = gridKey(p.x, p.y);
+    if (!grid[k]) grid[k] = [];
+    grid[k].push(p);
   }
-  clear() { this.cells.clear(); }
-  key(x, y) {
-    return ((Math.floor(x / this.cellSize)) * 73856093) ^ ((Math.floor(y / this.cellSize)) * 19349663);
-  }
-  insert(p) {
-    const k = this.key(p.x, p.y);
-    if (!this.cells.has(k)) this.cells.set(k, []);
-    this.cells.get(k).push(p);
-  }
-  query(x, y, radius) {
-    const results = [];
-    const cs = this.cellSize;
-    const minCX = Math.floor((x - radius) / cs);
-    const maxCX = Math.floor((x + radius) / cs);
-    const minCY = Math.floor((y - radius) / cs);
-    const maxCY = Math.floor((y + radius) / cs);
-    for (let cx = minCX; cx <= maxCX; cx++) {
-      for (let cy = minCY; cy <= maxCY; cy++) {
-        const k = cx * 73856093 ^ cy * 19349663;
-        const cell = this.cells.get(k);
-        if (cell) {
-          for (let i = 0; i < cell.length; i++) results.push(cell[i]);
-        }
-      }
+}
+function getNeighbors(x, y) {
+  const cx = Math.floor(x / GRID_SIZE);
+  const cy = Math.floor(y / GRID_SIZE);
+  const result = [];
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      const k = (cx+dx) + ',' + (cy+dy);
+      if (grid[k]) result.push(...grid[k]);
     }
-    return results;
+  }
+  return result;
+}
+
+// ─── Particles ───
+class Particle {
+  constructor(x, y, type) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 2;
+    this.vy = (Math.random() - 0.5) * 2;
+    this.type = type;
+    this.trail = [];
+    this.maxTrail = 6;
   }
 }
 
-const hash = new SpatialHash(80);
-
-let particles = [];
-let paused = false;
-let hideUI = false;
-let frameCount = 0;
-let lastFpsTime = performance.now();
-let fps = 0;
-let generation = 0;
-
-function createParticle(x, y, species) {
-  const s = SPECIES_DEFS[species];
-  const angle = Math.random() * Math.PI * 2;
-  return {
-    x: x || Math.random() * W,
-    y: y || Math.random() * H,
-    vx: Math.cos(angle) * s.speed,
-    vy: Math.sin(angle) * s.speed,
-    species,
-    energy: 0.5 + Math.random() * 0.5,
-    age: 0,
-    alive: true,
-  };
-}
-
-function seed(world) {
-  const perSpecies = Math.floor(world / TOTAL_SPECIES);
+function initParticles() {
   particles = [];
-  for (let s = 0; s < TOTAL_SPECIES; s++) {
-    for (let i = 0; i < perSpecies; i++) {
-      particles.push(createParticle(null, null, s));
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    particles.push(new Particle(
+      Math.random() * W,
+      Math.random() * H,
+      Math.floor(Math.random() * SPECIES)
+    ));
+  }
+}
+
+// ─── Mouse ───
+let mouse = { x: -1000, y: -1000, down: false };
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+canvas.addEventListener('mousedown', e => {
+  mouse.down = true;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  // Spawn burst on click
+  for (let i = 0; i < 30; i++) {
+    const type = Math.floor(Math.random() * SPECIES);
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 4;
+    const p = new Particle(e.clientX, e.clientY, type);
+    p.vx = Math.cos(angle) * speed;
+    p.vy = Math.sin(angle) * speed;
+    particles.push(p);
+  }
+  // Keep particle count bounded
+  while (particles.length > PARTICLE_COUNT + 500) {
+    particles.shift();
+  }
+});
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mouseleave', () => {
+  mouse.x = -1000;
+  mouse.y = -1000;
+  mouse.down = false;
+});
+// Touch support
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  mouse.down = true;
+}, { passive: false });
+canvas.addEventListener('touchstart', e => {
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  mouse.down = true;
+  for (let i = 0; i < 30; i++) {
+    const type = Math.floor(Math.random() * SPECIES);
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 4;
+    const p = new Particle(t.clientX, t.clientY, type);
+    p.vx = Math.cos(angle) * speed;
+    p.vy = Math.sin(angle) * speed;
+    particles.push(p);
+  }
+  while (particles.length > PARTICLE_COUNT + 500) particles.shift();
+});
+canvas.addEventListener('touchend', () => {
+  mouse.down = false;
+  mouse.x = -1000;
+});
+
+// ─── Controls ───
+function setPreset(i) {
+  activePreset = i;
+  rules = presets[i];
+  document.querySelectorAll('.btn').forEach((b, idx) => {
+    b.classList.toggle('active', idx === i);
+  });
+}
+function randomizeRules() {
+  rules = [];
+  for (let i = 0; i < SPECIES; i++) {
+    rules[i] = [];
+    for (let j = 0; j < SPECIES; j++) {
+      rules[i][j] = Math.round((Math.random() * 2 - 1) * 10) / 10;
     }
   }
-  generation++;
+  activePreset = -1;
+  document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
 }
+function resetSimulation() {
+  initParticles();
+  activePreset = 0;
+  setPreset(0);
+}
+document.addEventListener('keydown', e => {
+  if (e.key >= '1' && e.key <= '5') {
+    currentPalette = parseInt(e.key) - 1;
+  }
+  if (e.key === 'r' || e.key === 'R') randomizeRules();
+  if (e.key === ' ') {
+    e.preventDefault();
+    resetSimulation();
+  }
+});
 
-seed(600);
-
-// Food particles — small, slowly drifting, replenish over time
-let foods = [];
-function replenishFood() {
-  if (foods.length < 300 && Math.random() < 0.3) {
-    foods.push({
-      x: Math.random() * W,
-      y: Math.random() * H,
-      vx: (Math.random() - 0.5) * 0.3,
-      vy: (Math.random() - 0.5) * 0.3,
-      size: 1.5 + Math.random() * 1.5,
-      energy: 0.15,
-    });
+// ─── Legend ───
+function buildLegend() {
+  const el = document.getElementById('legend');
+  el.innerHTML = '';
+  const colors = palettes[currentPalette];
+  for (let i = 0; i < SPECIES; i++) {
+    el.innerHTML += `<div class="legend-item"><div class="legend-dot" style="background:${colors[i]}"></div>TYPE ${i}</div>`;
   }
 }
-replenishFood();
+buildLegend();
 
-function update(dt) {
-  dt = Math.min(dt, 2); // Cap to avoid explosion on tab refocus
+// ─── Simulation ───
+function update() {
+  rebuildGrid();
+  const colors = palettes[currentPalette];
 
-  // Spatial hash rebuild
-  hash.clear();
-  for (let i = 0; i < particles.length; i++) {
-    hash.insert(particles[i]);
-  }
+  for (let p of particles) {
+    // Mouse interaction
+    const mdx = mouse.x - p.x;
+    const mdy = mouse.y - p.y;
+    const mDist = Math.sqrt(mdx * mdx + mdy * mdy);
+    if (mDist < MOUSE_RADIUS && mDist > 0) {
+      const force = (1 - mDist / MOUSE_RADIUS) * MOUSE_FORCE * (mouse.down ? -1 : 0.5);
+      p.vx += (mdx / mDist) * force;
+      p.vy += (mdy / mDist) * force;
+    }
 
-  const senseSq = 80 * 80;
-
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-    if (!p.alive) { particles.splice(i, 1); continue; }
-
-    const s = SPECIES_DEFS[p.species];
-    const neighbors = hash.query(p.x, p.y, s.sense);
-
-    // Find targets based on diet
-    let targetX = null, targetY = null, targetDist = s.sense;
-    let mate = null;
-
-    for (let j = 0; j < neighbors.length; j++) {
-      const n = neighbors[j];
+    // Particle interactions
+    const neighbors = getNeighbors(p.x, p.y);
+    let fx = 0, fy = 0;
+    for (let n of neighbors) {
       if (n === p) continue;
-      const dx = n.x - p.x;
-      const dy = n.y - p.y;
-      const dSq = dx * dx + dy * dy;
-      if (dSq > senseSq) continue;
-      const d = Math.sqrt(dSq);
+      let dx = n.x - p.x;
+      let dy = n.y - p.y;
+      let dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 1) dist = 1;
+      if (dist > 80) continue;
 
-      // Check if this neighbor is edible (diet)
-      if (s.diet[n.species] > 0 && d < targetDist) {
-        targetDist = d;
-        targetX = n.x;
-        targetY = n.y;
-      }
-
-      // Reproduction: same species, high energy, nearby
-      if (n.species === p.species && n.alive && p.energy > 0.8 && n.energy > 0.8 && d < 20 && mate === null) {
-        mate = n;
-      }
+      const rule = rules[p.type][n.type];
+      const f = rule / dist;
+      fx += (dx / dist) * f;
+      fy += (dy / dist) * f;
     }
 
-    // Steer toward target
-    if (targetX !== null) {
-      const dx = targetX - p.x;
-      const dy = targetY - p.y;
-      const d = Math.sqrt(dx * dx + dy * dy) || 1;
-      p.vx += (dx / d) * 0.15 * dt;
-      p.vy += (dy / d) * 0.15 * dt;
-    } else {
-      // Wander
-      p.vx += (Math.random() - 0.5) * 0.1 * dt;
-      p.vy += (Math.random() - 0.5) * 0.1 * dt;
+    p.vx += fx;
+    p.vy += fy;
+
+    // Friction + clamp
+    p.vx *= FRICTION;
+    p.vy *= FRICTION;
+    const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+    if (speed > MAX_SPEED) {
+      p.vx = (p.vx / speed) * MAX_SPEED;
+      p.vy = (p.vy / speed) * MAX_SPEED;
     }
 
-    // Clamp speed
-    const spd = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
-    const maxSpd = s.speed;
-    if (spd > maxSpd) {
-      p.vx = (p.vx / spd) * maxSpd;
-      p.vy = (p.vy / spd) * maxSpd;
-    }
+    p.x += p.vx;
+    p.y += p.vy;
 
-    // Move
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
-
-    // Wrap
+    // Wrap edges with padding
     if (p.x < -10) p.x = W + 10;
     if (p.x > W + 10) p.x = -10;
     if (p.y < -10) p.y = H + 10;
     if (p.y > H + 10) p.y = -10;
 
-    // Metabolism
-    p.energy -= 0.003 * dt;
-    p.age += dt;
-
-    // Check collisions with food
-    for (let f = foods.length - 1; f >= 0; f--) {
-      const food = foods[f];
-      const dx = p.x - food.x;
-      const dy = p.y - food.y;
-      const dSq = dx * dx + dy * dy;
-      const eatRadius = s.size + food.size + 4;
-      if (dSq < eatRadius * eatRadius) {
-        p.energy = Math.min(1.5, p.energy + food.energy);
-        foods.splice(f, 1);
-      }
-    }
-
-    // Check collisions with prey
-    for (let j = particles.length - 1; j >= 0; j--) {
-      if (i === j) continue;
-      const other = particles[j];
-      if (!other.alive) continue;
-      if (s.diet[other.species] > 0) {
-        const dx = p.x - other.x;
-        const dy = p.y - other.y;
-        const dSq = dx * dx + dy * dy;
-        const eatR = s.size + SPECIES_DEFS[other.species].size + 3;
-        if (dSq < eatR * eatR) {
-          p.energy = Math.min(1.5, p.energy + 0.4);
-          other.alive = false;
-        }
-      }
-    }
-
-    // Reproduction
-    if (mate && mate.alive && particles.length < 4000) {
-      const child = createParticle(p.x, p.y, p.species);
-      child.vx = (Math.random() - 0.5) * 2;
-      child.vy = (Math.random() - 0.5) * 2;
-      particles.push(child);
-      p.energy *= 0.5;
-      mate.energy *= 0.5;
-      mate = null;
-    }
-
-    // Death
-    if (p.energy <= 0 || p.age > 2000) {
-      p.alive = false;
-    }
+    // Trail
+    p.trail.push({ x: p.x, y: p.y });
+    if (p.trail.length > p.maxTrail) p.trail.shift();
   }
-
-  // Auto-repop if too few
-  if (particles.length < 100) {
-    for (let s = 0; s < TOTAL_SPECIES; s++) {
-      for (let i = 0; i < 15; i++) {
-        particles.push(createParticle(null, null, s));
-      }
-    }
-  }
-
-  // Update food
-  for (let i = foods.length - 1; i >= 0; i--) {
-    const f = foods[i];
-    f.x += f.vx * dt;
-    f.y += f.vy * dt;
-    if (f.x < 0 || f.x > W || f.y < 0 || f.y > H) {
-      foods.splice(i, 1);
-    }
-  }
-  replenishFood();
 }
 
-function draw() {
-  // Trail fade
-  ctx.fillStyle = 'rgba(10, 10, 18, 0.18)';
+function render() {
+  const colors = palettes[currentPalette];
+
+  // Fade instead of clear
+  ctx.fillStyle = 'rgba(6, 6, 12, 0.15)';
   ctx.fillRect(0, 0, W, H);
 
-  // Draw food
-  ctx.globalAlpha = 0.5;
-  for (let i = 0; i < foods.length; i++) {
-    const f = foods[i];
-    ctx.fillStyle = 'rgba(200, 200, 180, 0.6)';
+  // Draw connections between nearby same-type particles (sparse)
+  ctx.lineWidth = 0.4;
+  for (let p of particles) {
+    if (p.trail.length < 2) continue;
+    const c = colors[p.type];
+    ctx.strokeStyle = c + '18';
     ctx.beginPath();
-    ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.moveTo(p.trail[0].x, p.trail[0].y);
+    for (let i = 1; i < p.trail.length; i++) {
+      ctx.lineTo(p.trail[i].x, p.trail[i].y);
+    }
+    ctx.stroke();
   }
-  ctx.globalAlpha = 1;
 
   // Draw particles with glow
-  for (let i = 0; i < particles.length; i++) {
-    const p = particles[i];
-    const s = SPECIES_DEFS[p.species];
-    const alpha = Math.min(1, p.energy * 1.2);
+  for (let p of particles) {
+    const c = colors[p.type];
+    const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+    const alpha = 0.5 + speed * 0.3;
 
-    // Glow
-    ctx.globalAlpha = alpha * 0.25;
-    ctx.fillStyle = s.glow;
+    // Outer glow
     ctx.beginPath();
-    ctx.arc(p.x, p.y, s.size * 3, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = c + '40';
     ctx.fill();
 
     // Core
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = s.color;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, s.size, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, 1.2, 0, Math.PI * 2);
+    ctx.fillStyle = c;
+    ctx.globalAlpha = alpha;
     ctx.fill();
+    ctx.globalAlpha = 1;
   }
-  ctx.globalAlpha = 1;
 }
-
-// UI
-const legendEl = document.getElementById('legend');
-SPECIES_DEFS.forEach((s, i) => {
-  const tag = document.createElement('span');
-  tag.className = 'species-tag';
-  tag.innerHTML = `<span class="species-dot" style="color:${s.color};background:${s.color}"></span>${s.name}`;
-  legendEl.appendChild(tag);
-});
 
 function updateStats() {
-  document.getElementById('s-total').textContent = particles.length;
-  document.getElementById('s-fps').textContent = fps;
+  const el = document.getElementById('stats');
+  el.textContent = `${particles.length} particles · ${SPECIES} types · preset: ${['cells','chains','colonies','chaos','harmony'][activePreset] || 'random'} · palette ${currentPalette + 1}`;
 }
-setInterval(updateStats, 500);
 
-// Input
-canvas.addEventListener('click', (e) => {
-  const rect = canvas.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
-  // Spawn a burst of 12-18 particles of a random species
-  const sp = Math.floor(Math.random() * TOTAL_SPECIES);
-  const count = 12 + Math.floor(Math.random() * 8);
-  for (let i = 0; i < count; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = Math.random() * 25;
-    const p = createParticle(mx + Math.cos(angle) * dist, my + Math.sin(angle) * dist, sp);
-    p.energy = 0.8 + Math.random() * 0.2;
-    particles.push(p);
-  }
-});
-
-window.addEventListener('keydown', (e) => {
-  if (e.code === 'Space') {
-    e.preventDefault();
-    paused = !paused;
-    document.getElementById('paused-overlay').style.display = paused ? 'block' : 'none';
-  }
-  if (e.code === 'KeyR') {
-    foods = [];
-    seed(600);
-  }
-  if (e.code === 'KeyH') {
-    hideUI = !hideUI;
-    document.getElementById('ui').style.opacity = hideUI ? '0' : '1';
-    document.getElementById('ui').style.transition = 'opacity 0.3s';
-  }
-});
-
-// Fade help after 8s
-setTimeout(() => {
-  document.getElementById('help').style.opacity = '0';
-}, 8000);
-
-// Main loop
-let lastTime = performance.now();
-function loop(now) {
-  const dt = (now - lastTime) / 1000 * 60; // Normalize to ~60fps
-  lastTime = now;
-
-  if (!paused) {
-    update(dt);
-    draw();
-  }
-
-  frameCount++;
-  if (now - lastFpsTime >= 1000) {
-    fps = frameCount;
-    frameCount = 0;
-    lastFpsTime = now;
-  }
-
+// ─── Main Loop ───
+function loop() {
+  update();
+  render();
+  updateStats();
   requestAnimationFrame(loop);
 }
-requestAnimationFrame(loop);
+
+// ─── Start ───
+initParticles();
+setPreset(0);
+setTimeout(() => {
+  // Clear canvas fully at start
+  ctx.fillStyle = '#06060c';
+  ctx.fillRect(0, 0, W, H);
+}, 50);
+loop();
 </script>
 </body>
 </html>
