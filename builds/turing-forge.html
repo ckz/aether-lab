@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Turing Forge — Reaction Diffusion</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #08080f;
+  color: #aaa;
+  font-family: 'Courier New', monospace;
+  overflow: hidden;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+canvas {
+  display: block;
+  flex: 1;
+  cursor: crosshair;
+  image-rendering: pixelated;
+}
+#hud {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  padding: 10px 16px;
+  background: rgba(8,8,15,0.92);
+  border-bottom: 1px solid rgba(160,140,240,0.15);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 10;
+  flex-wrap: wrap;
+}
+#hud .title {
+  color: #c4a0ff;
+  font-size: 13px;
+  font-weight: bold;
+  margin-right: 8px;
+  letter-spacing: 2px;
+}
+.hud-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hud-label {
+  color: #666;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+#hud button {
+  background: rgba(40,35,70,0.8);
+  color: #aaa;
+  border: 1px solid rgba(120,100,200,0.3);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+#hud button:hover {
+  background: rgba(80,60,140,0.6);
+  color: #fff;
+  border-color: rgba(160,140,240,0.6);
+}
+#hud button.active {
+  background: rgba(100,60,180,0.5);
+  border-color: #c4a0ff;
+  color: #fff;
+}
+#hud select {
+  background: rgba(30,28,55,0.9);
+  color: #ccc;
+  border: 1px solid rgba(120,100,200,0.3);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+#hud select:focus { outline: none; border-color: #c4a0ff; }
+#stats {
+  color: #555;
+  font-size: 10px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+#help {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(8,8,15,0.85);
+  border: 1px solid rgba(120,100,200,0.2);
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 11px;
+  color: #666;
+  z-index: 10;
+  transition: opacity 0.5s;
+  pointer-events: none;
+}
+#help span { color: #c4a0ff; margin: 0 4px; }
+#seed-cursor {
+  position: fixed;
+  width: 24px; height: 24px;
+  border: 2px solid rgba(200,160,255,0.5);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 5;
+  transform: translate(-50%, -50%);
+  display: none;
+  box-shadow: 0 0 12px rgba(180,140,240,0.3);
+}
+#preset-label {
+  color: #888;
+  font-size: 10px;
+  padding: 2px 8px;
+  background: rgba(30,28,55,0.5);
+  border-radius: 3px;
+}
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="hud">
+  <div class="title">◈ TURING FORGE</div>
+  <div class="hud-group">
+    <span class="hud-label">Brush</span>
+    <button id="btn-seed" class="active" title="Paint seeds (S)">◉ seed</button>
+    <button id="btn-wipe" title="Clear canvas (W)">⊘ wipe</button>
+    <button id="btn-pause" title="Pause/Resume (Space)">⏸ pause</button>
+  </div>
+  <div class="hud-group">
+    <span class="hud-label">Preset</span>
+    <select id="preset">
+      <option value="mitosis">Mitosis</option>
+      <option value="coral">Coral</option>
+      <option value="worms">Worms</option>
+      <option value="spots">Spots</option>
+      <option value="stripes">Stripes</option>
+      <option value="maze">Maze</option>
+      <option value="bubbles">Bubbles</option>
+    </select>
+    <span id="preset-label">mitosis</span>
+  </div>
+  <div class="hud-group">
+    <span class="hud-label">Palette</span>
+    <button class="palette-btn active" data-palette="0">◆</button>
+    <button class="palette-btn" data-palette="1">◇</button>
+    <button class="palette-btn" data-palette="2">◈</button>
+    <button class="palette-btn" data-palette="3">◉</button>
+    <button class="palette-btn" data-palette="4">◎</button>
+  </div>
+  <div class="hud-group">
+    <button id="btn-save" title="Save PNG">⤓ save</button>
+  </div>
+  <div id="stats">FPS: --</div>
+</div>
+
+<div id="help">
+  <span>CLICK/DRAG</span> paint seeds &middot;
+  <span>1-5</span> palette &middot;
+  <span>SPACE</span> pause &middot;
+  <span>R</span> reset &middot;
+  <span>S</span> seed &middot;
+  <span>W</span> wipe
+</div>
+
+<div id="seed-cursor"></div>
+
+<script>
+// ─── Configuration ─────────────────────────────────────────────
+const W = Math.min(window.innerWidth, 400);
+const H = Math.min(window.innerHeight - 50, 400);
+const SCALE = 2; // each sim cell = SCALE screen pixels
+const SW = Math.floor(W / SCALE);
+const SH = Math.floor(H / SCALE);
+const SIM_SIZE = SW * SH;
+
+const PRESETS = {
+  mitosis:    { feed: 0.0367, kill: 0.06449, diffA: 1.0,  diffB: 0.5  },
+  coral:      { feed: 0.0545, kill: 0.062,   diffA: 1.0,  diffB: 0.5  },
+  worms:      { feed: 0.078,  kill: 0.061,   diffA: 1.0,  diffB: 0.5  },
+  spots:      { feed: 0.03,   kill: 0.062,   diffA: 1.0,  diffB: 0.5  },
+  stripes:    { feed: 0.02,   kill: 0.0505,  diffA: 1.0,  diffB: 0.5  },
+  maze:       { feed: 0.0297, kill: 0.057,   diffA: 1.0,  diffB: 0.5  },
+  bubbles:    { feed: 0.029,  kill: 0.057,   diffA: 1.0,  diffB: 0.5  },
+};
+
+const PALETTES = [
+  // 0: Classic (purple/coral)
+  [[8,8,16], [30,10,60], [80,20,120], [180,60,180], [255,120,200], [255,220,240]],
+  // 1: Ocean
+  [[4,8,16], [0,30,80], [0,80,140], [30,160,200], [100,220,240], [200,250,255]],
+  // 2: Fire
+  [[16,4,4], [60,10,0], [160,30,0], [240,100,10], [255,180,40], [255,250,180]],
+  // 3: Arctic
+  [[8,12,18], [15,40,60], [30,90,120], [60,160,180], [140,220,220], [230,250,250]],
+  // 4: Neon
+  [[5,5,12], [10,0,30], [0,40,40], [0,200,100], [200,255,0], [255,255,200]],
+];
+
+// ─── State ──────────────────────────────────────────────────────
+let gridA, gridB, nextA, nextB;
+let feed, kill, diffA, diffB;
+let palette = 0;
+let paused = false;
+let preset = 'mitosis';
+let mouseDown = false, mouseX = 0, mouseY = 0;
+let simTime = 0;
+let iterationsPerFrame = 12;
+let fps = 0, frameCount = 0, lastFpsTime = 0;
+let brushRadius = 4;
+let brushAmount = 0.5;
+
+// ─── Canvas Setup ───────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+canvas.width = W;
+canvas.height = H;
+
+// ImageData for pixel rendering
+const imgData = ctx.createImageData(W, H);
+const pixels = imgData.data;
+
+// Offscreen buffer for upscaling
+const bufCanvas = document.createElement('canvas');
+bufCanvas.width = SW;
+bufCanvas.height = SH;
+const bufCtx = bufCanvas.getContext('2d');
+const bufImgData = bufCtx.createImageData(SW, SH);
+const bufPixels = bufImgData.data;
+
+// ─── Simulation Init ────────────────────────────────────────────
+function initGrids() {
+  const p = PRESETS[preset];
+  feed = p.feed; kill = p.kill; diffA = p.diffA; diffB = p.diffB;
+
+  gridA = new Float32Array(SIM_SIZE).fill(1.0);
+  gridB = new Float32Array(SIM_SIZE).fill(0.0);
+  nextA = new Float32Array(SIM_SIZE);
+  nextB = new Float32Array(SIM_SIZE);
+
+  // Seed center with random-ish drops
+  seedRegion(SW/2, SH/2, 15, 1.0);
+  for (let i = 0; i < 8; i++) {
+    seedRegion(Math.random()*SW, Math.random()*SH, 6, 0.7);
+  }
+}
+
+function seedRegion(cx, cy, r, amt) {
+  for (let y = -r; y <= r; y++) {
+    for (let x = -r; x <= r; x++) {
+      if (x*x + y*y > r*r) continue;
+      const px = Math.floor(cx + x);
+      const py = Math.floor(cy + y);
+      if (px < 0 || px >= SW || py < 0 || py >= SH) continue;
+      const idx = py * SW + px;
+      gridB[idx] = Math.min(1.0, gridB[idx] + amt * (1.0 - Math.sqrt(x*x+y*y)/r));
+    }
+  }
+}
+
+function wipeGrid() {
+  gridA.fill(1.0);
+  gridB.fill(0.0);
+  seedRegion(SW/2, SH/2, 12, 1.0);
+}
+
+// ─── Simulation Step ────────────────────────────────────────────
+function simStep() {
+  for (let y = 1; y < SH - 1; y++) {
+    for (let x = 1; x < SW - 1; x++) {
+      const i = y * SW + x;
+      const a = gridA[i];
+      const b = gridB[i];
+
+      const lapA = gridA[i-1] + gridA[i+1] + gridA[i-SW] + gridA[i+SW] - 4*a;
+      const lapB = gridB[i-1] + gridB[i+1] + gridB[i-SW] + gridB[i+SW] - 4*b;
+
+      const abb = a * b * b;
+      nextA[i] = a + (diffA * lapA - abb + feed * (1 - a));
+      nextB[i] = b + (diffB * lapB + abb - (kill + feed) * b);
+    }
+  }
+
+  // Swap buffers
+  [gridA, nextA] = [nextA, gridA];
+  [gridB, nextB] = [nextB, gridB];
+}
+
+// ─── Rendering ──────────────────────────────────────────────────
+function getPaletteColor(val) {
+  const pal = PALETTES[palette];
+  const v = Math.max(0, Math.min(1, val));
+  const t = v * (pal.length - 1);
+  const i0 = Math.floor(t);
+  const i1 = Math.min(i0 + 1, pal.length - 1);
+  const f = t - i0;
+  const c0 = pal[i0], c1 = pal[i1];
+  return [
+    c0[0] + (c1[0]-c0[0])*f,
+    c0[1] + (c1[1]-c0[1])*f,
+    c0[2] + (c1[2]-c0[2])*f,
+  ];
+}
+
+function render() {
+  bufCtx.putImageData(bufImgData, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(bufCanvas, 0, 0, W, H);
+}
+
+function renderBuffer() {
+  for (let i = 0; i < SIM_SIZE; i++) {
+    const v = gridA[i];
+    const [r, g, b] = getPaletteColor(v);
+    const pi = i * 4;
+    bufPixels[pi]   = r;
+    bufPixels[pi+1] = g;
+    bufPixels[pi+2] = b;
+    bufPixels[pi+3] = 255;
+  }
+  bufCtx.putImageData(bufImgData, 0, 0);
+}
+
+// ─── Main Loop ──────────────────────────────────────────────────
+let lastTime = performance.now();
+
+function loop(now) {
+  requestAnimationFrame(loop);
+
+  // FPS
+  frameCount++;
+  if (now - lastFpsTime >= 1000) {
+    fps = frameCount;
+    frameCount = 0;
+    lastFpsTime = now;
+    document.getElementById('stats').textContent = `FPS: ${fps} · iters/f: ${iterationsPerFrame}`;
+  }
+
+  // Seed mouse
+  if (mouseDown) {
+    const sx = Math.floor(mouseX / SCALE);
+    const sy = Math.floor(mouseY / SCALE);
+    seedRegion(sx, sy, brushRadius, brushAmount);
+  }
+
+  if (!paused) {
+    for (let i = 0; i < iterationsPerFrame; i++) {
+      simStep();
+    }
+    simTime++;
+  }
+
+  renderBuffer();
+  render();
+}
+
+// ─── Event Handlers ─────────────────────────────────────────────
+const canvasEl = document.getElementById('canvas');
+const seedCursor = document.getElementById('seed-cursor');
+const helpEl = document.getElementById('help');
+
+canvasEl.addEventListener('mousedown', (e) => {
+  mouseDown = true;
+  const sx = Math.floor(e.clientX / SCALE);
+  const sy = Math.floor(e.clientY / SCALE);
+  seedRegion(sx, sy, brushRadius, brushAmount);
+});
+canvasEl.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  seedCursor.style.left = e.clientX + 'px';
+  seedCursor.style.top = e.clientY + 'px';
+  if (mouseDown) {
+    const sx = Math.floor(e.clientX / SCALE);
+    const sy = Math.floor(e.clientY / SCALE);
+    seedRegion(sx, sy, brushRadius, brushAmount);
+  }
+});
+window.addEventListener('mouseup', () => mouseDown = false);
+canvasEl.addEventListener('mouseenter', () => seedCursor.style.display = 'block');
+canvasEl.addEventListener('mouseleave', () => { seedCursor.style.display = 'none'; mouseDown = false; });
+
+// Touch support
+canvasEl.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  mouseDown = true;
+  const t = e.touches[0];
+  mouseX = t.clientX; mouseY = t.clientY;
+  const sx = Math.floor(t.clientX / SCALE);
+  const sy = Math.floor(t.clientY / SCALE);
+  seedRegion(sx, sy, brushRadius, brushAmount);
+}, { passive: false });
+canvasEl.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouseX = t.clientX; mouseY = t.clientY;
+  const sx = Math.floor(t.clientX / SCALE);
+  const sy = Math.floor(t.clientY / SCALE);
+  seedRegion(sx, sy, brushRadius, brushAmount);
+}, { passive: false });
+canvasEl.addEventListener('touchend', () => mouseDown = false);
+
+// Keyboard
+window.addEventListener('keydown', (e) => {
+  switch (e.key.toLowerCase()) {
+    case ' ':
+      e.preventDefault();
+      togglePause();
+      break;
+    case 'r':
+      initGrids();
+      break;
+    case 'w':
+      wipeGrid();
+      break;
+    case 's':
+      setTool('seed');
+      break;
+    case '1': case '2': case '3': case '4': case '5':
+      setPalette(parseInt(e.key) - 1);
+      break;
+    case 'arrowup':
+      iterationsPerFrame = Math.min(60, iterationsPerFrame + 2);
+      break;
+    case 'arrowdown':
+      iterationsPerFrame = Math.max(1, iterationsPerFrame - 2);
+      break;
+  }
+});
+
+// HUD buttons
+document.getElementById('btn-seed').addEventListener('click', () => setTool('seed'));
+document.getElementById('btn-wipe').addEventListener('click', wipeGrid);
+document.getElementById('btn-pause').addEventListener('click', togglePause);
+document.getElementById('btn-save').addEventListener('click', savePNG);
+
+document.getElementById('preset').addEventListener('change', (e) => {
+  preset = e.target.value;
+  document.getElementById('preset-label').textContent = preset;
+  initGrids();
+});
+
+document.querySelectorAll('.palette-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    setPalette(parseInt(btn.dataset.palette));
+  });
+});
+
+function setTool(tool) {
+  document.getElementById('btn-seed').classList.toggle('active', tool === 'seed');
+}
+function togglePause() {
+  paused = !paused;
+  const btn = document.getElementById('btn-pause');
+  btn.textContent = paused ? '▶ play' : '⏸ pause';
+  btn.classList.toggle('active', paused);
+}
+function setPalette(p) {
+  palette = p;
+  document.querySelectorAll('.palette-btn').forEach((b, i) => {
+    b.classList.toggle('active', i === p);
+  });
+}
+function savePNG() {
+  const link = document.createElement('a');
+  link.download = `turing-forge-${preset}-${Date.now()}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+// Fade help
+setTimeout(() => { helpEl.style.opacity = '0'; }, 8000);
+canvasEl.addEventListener('mousemove', () => {
+  helpEl.style.opacity = '1';
+  clearTimeout(helpEl._t);
+  helpEl._t = setTimeout(() => { helpEl.style.opacity = '0'; }, 4000);
+}, { once: false });
+
+// ─── Boot ───────────────────────────────────────────────────────
+initGrids();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
