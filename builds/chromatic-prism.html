@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chromatic Prism — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #aaa;
+  }
+  canvas { display: block; }
+  .controls {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 10;
+    font-size: 11px;
+    line-height: 1.8;
+    background: rgba(0,0,0,0.7);
+    padding: 12px 16px;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.1);
+    pointer-events: none;
+  }
+  .controls .title {
+    color: #c4a0ff;
+    font-size: 13px;
+    margin-bottom: 6px;
+    letter-spacing: 1px;
+  }
+  .controls span { color: #888; }
+  .info {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    font-size: 10px;
+    color: #555;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="controls">
+  <div class="title">◈ CHROMATIC PRISM ◈</div>
+  <span>Mouse</span> — rotate prism<br>
+  <span>Scroll</span> — zoom in/out<br>
+  <span>1-4</span> — switch palette<br>
+  <span>Space</span> — auto-rotate<br>
+  <span>S</span> — save PNG
+</div>
+<div class="info">Raymarched spectral refraction · 1920×1080 · Aether Lab</div>
+
+<script>
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true });
+if (!gl) { document.body.innerHTML = '<p style="color:#fff;padding:40px">WebGL required</p>'; }
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  gl.viewport(0, 0, W, H);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Mouse
+let mx = 0, my = 0, rotX = 0.3, rotY = 0;
+let autoRotate = false;
+let zoom = 3.0;
+canvas.addEventListener('mousemove', e => {
+  mx = (e.clientX / W - 0.5) * 2;
+  my = (e.clientY / H - 0.5) * 2;
+});
+canvas.addEventListener('wheel', e => {
+  zoom += e.deltaY * -0.005;
+  zoom = Math.max(1.5, Math.min(8, zoom));
+  e.preventDefault();
+});
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') { autoRotate = !autoRotate; e.preventDefault(); }
+  if (e.key >= '1' && e.key <= '4') setPalette(parseInt(e.key) - 1);
+  if (e.code === 'KeyS') saveImage();
+});
+
+function saveImage() {
+  const link = document.createElement('a');
+  link.download = 'chromatic-prism-' + Date.now() + '.png';
+  link.href = canvas.toDataURL();
+  link.click();
+}
+
+// Shaders
+const vs = `attribute vec2 a_pos; void main(){gl_Position=vec4(a_pos,0,1);}`;
+
+const fs = `
+precision highp float;
+uniform vec2 u_res;
+uniform float u_time;
+uniform vec2 u_mouse;
+uniform float u_zoom;
+uniform int u_palette;
+
+#define PI 3.14159265
+#define MAX_STEPS 80
+#define MAX_DIST 20.0
+#define SURF 0.001
+
+// Rotation matrices
+mat2 rot(float a){float c=cos(a),s=sin(a);return mat2(c,-s,s,c);}
+
+// SDFs
+float sdSphere(vec3 p, float r){return length(p)-r;}
+float sdBox(vec3 p, vec3 b){vec3 d=abs(p)-b;return length(max(d,0.))+min(max(d.x,max(d.y,d.z)),0.);}
+float sdTriPrism(vec3 p, vec2 h){
+  vec3 q=abs(p);return max(q.z-h.y,max(q.x*0.866+p.y*0.5,-p.y)-h.x*0.5);
+}
+float sdTorus(vec3 p, vec2 t){vec2 q=vec2(length(p.xy)-t.x,p.z);return length(q)-t.y;}
+float sdOctahedron(vec3 p, float s){p=abs(p);return(p.x+p.y+p.z-s)*0.57735027;}
+float sdCrystal(vec3 p, float s){return sdOctahedron(p,s);}
+float sdCylinder(vec3 p, float r, float h){return max(length(p.xy)-r,abs(p.z)-h);}
+float sdCone(vec3 p, vec2 c){float q=length(p.xy);return max(dot(c,vec2(q,p.z)),-p.z);}
+float sdPyramid(vec3 p, float h){float m2=h*h+0.25;p.z-=h;vec3 q=vec3(abs(p.x),abs(p.y),p.z);vec3 b=vec3(q.xy-m2/(q.z+h),q.z*2.*h);vec3 d=vec3(length(b.xy),max(q.x+q.y,-q.z),max(q.x+q.y,q.z));return min(min(d.x,-d.z),min(d.y,d.z)*sign(dot(b,normalize(vec3(-b.y,b.x,0)))));}
+
+// Smooth min for blending
+float smin(float a, float b, float k){float h=clamp(0.5+0.5*(b-a)/k,0.,1.);return mix(b,a,h)-k*h*(1.-h);}
+
+// Palette functions
+vec3 pal0(float t){ // Spectrum
+  return 0.5+0.5*cos(6.28318*(t+vec3(0,0.33,0.67)));
+}
+vec3 pal1(float t){ // Ember
+  return 0.5+0.5*cos(6.28318*(t+vec3(0.0,0.1,0.2)));
+}
+vec3 pal2(float t){ // Ocean
+  return mix(vec3(0.0,0.02,0.1),vec3(0.0,0.5,0.8),0.5+0.5*cos(6.28318*(t+0.0)));
+}
+vec3 pal3(float t){ // Aurora
+  vec3 a=vec3(0.0,0.8,0.4);
+  vec3 b=vec3(0.2,0.0,0.8);
+  vec3 c=vec3(1.0,0.2,0.4);
+  return mix(mix(a,b,0.5+0.5*cos(6.28318*t)),c,0.5+0.5*sin(6.28318*t*1.7));
+}
+
+vec3 getPalette(float t, int p){
+  if(p==0) return pal0(t);
+  if(p==1) return pal1(t);
+  if(p==2) return pal2(t);
+  return pal3(t);
+}
+
+// Scene
+float map(vec3 p){
+  float t=u_time*0.3;
+  
+  // Floor with gentle waves
+  float floor=p.y+1.2+0.15*sin(p.x*2.+t)*sin(p.z*2.+t*0.7);
+  
+  // Prism body - rotating based on mouse
+  vec3 pp=p;
+  pp.xz*=rot(rotY+t*0.1);
+  pp.yz*=rot(rotX);
+  
+  // Main crystal prism
+  float crystal=sdCrystal(pp,0.55);
+  
+  // Inner glow structure
+  float inner=sdSphere(pp,0.25);
+  
+  // Surrounding smaller crystals
+  float small1=sdCrystal(pp-vec3(1.1,0.,0.),0.2);
+  float small2=sdCrystal(pp+vec3(1.1,0.,0.),0.2);
+  float small3=sdCrystal(pp-vec3(0.,0.,1.1),0.2);
+  float small4=sdCrystal(pp+vec3(0.,0.,1.1),0.2);
+  float small5=sdCrystal(pp-vec3(0.7,0.4,0.7),0.15);
+  float small6=sdCrystal(pp+vec3(0.7,0.4,0.7),0.15);
+  
+  float cluster=smin(small1,small2,0.2);
+  cluster=smin(cluster,small3,0.2);
+  cluster=smin(cluster,small4,0.2);
+  cluster=smin(cluster,small5,0.15);
+  cluster=smin(cluster,small6,0.15);
+  
+  // Torus ring
+  float ring=sdTorus(pp-vec3(0,0.35,0),vec2(1.15,0.04));
+  
+  // Floating dots
+  float dots=1e10;
+  for(float i=0.;i<8.;i++){
+    float fi=i;
+    float a=fi*1.2566+t*0.5;
+    float r=1.4;
+    vec3 dp=pp-vec3(cos(a)*r,0.3*sin(t+fi),sin(a)*r);
+    float d=length(dp)-0.04;
+    dots=min(dots,d);
+  }
+  
+  // Ground plane with subtle grid
+  float scene=min(floor,min(crystal,min(cluster,min(ring,dots))));
+  
+  return scene;
+}
+
+vec3 getNormal(vec3 p){
+  vec2 e=vec2(0.001,0);
+  return normalize(vec3(
+    map(p+e.xyy)-map(p-e.xyy),
+    map(p+e.yxy)-map(p-e.yxy),
+    map(p+e.yyx)-map(p-e.yyx)
+  ));
+}
+
+float raymarch(vec3 ro, vec3 rd){
+  float d=0.;
+  for(int i=0;i<MAX_STEPS;i++){
+    vec3 p=ro+rd*d;
+    float ds=map(p);
+    if(ds<SURF||d>MAX_DIST) break;
+    d+=ds*0.7;
+  }
+  return d;
+}
+
+float shadow(vec3 ro, vec3 rd, float mint, float maxt){
+  for(float t=mint;t<maxt;){
+    float h=map(ro+rd*t);
+    if(h<SURF) return 0.;
+    t+=h;
+  }
+  return 1.;
+}
+
+float ao(vec3 p, vec3 n){
+  float ao=0.;
+  for(float i=1.;i<=4.;i++){
+    float d=i*0.15;
+    ao+=max(0.,(d-map(p+n*d))/d);
+  }
+  return 1.-ao*0.15;
+}
+
+void main(){
+  vec2 uv=(gl_FragCoord.xy-0.5*u_res)/u_res.y;
+  
+  // Camera
+  vec3 ro=vec3(0,0.5,zoom);
+  vec3 rd=normalize(vec3(uv,-1.2));
+  
+  // Auto rotate
+  float rY=autoRotate?u_time*0.3:rotY;
+  float rX=autoRotate?0.3:rotX;
+  
+  // Mouse influence on camera
+  ro.xz*=rot(mx*0.3+rY);
+  ro.yz*=rot(-my*0.2+rX);
+  rd.xz*=rot(mx*0.3+rY);
+  rd.yz*=rot(-my*0.2+rX);
+  
+  float d=raymarch(ro,rd);
+  
+  vec3 col=vec3(0.01,0.01,0.02); // dark background
+  
+  if(d<MAX_DIST){
+    vec3 p=ro+rd*d;
+    vec3 n=getNormal(p);
+    
+    // Lighting
+    vec3 light1=normalize(vec3(2,3,1));
+    vec3 light2=normalize(vec3(-1,2,-1));
+    
+    float diff1=max(dot(n,light1),0.);
+    float diff2=max(dot(n,light2),0.);
+    float spec1=pow(max(dot(reflect(-light1,n),-rd),0.),32.);
+    float spec2=pow(max(dot(reflect(-light2,n),-rd),0.),16.);
+    
+    float a=ao(p,n);
+    
+    // Spectral color based on position
+    float hue=atan(p.z,p.x)/6.28318+0.5;
+    hue+=u_time*0.05;
+    hue=mod(hue,1.);
+    
+    vec3 objCol=getPalette(hue,u_palette);
+    
+    // Material
+    vec3 mat=objCol*(0.3+0.5*diff1)*a;
+    mat+=objCol*0.3*diff2;
+    mat+=vec3(1)*spec1*0.5;
+    mat+=objCol*0.3*spec2;
+    
+    // Fresnel rim
+    float fres=pow(1.-max(dot(n,-rd),0.),3.);
+    mat+=getPalette(hue+0.3,u_palette)*fres*0.6;
+    
+    // Subtle transmission through crystal
+    float trans=exp(-d*0.3)*0.3;
+    mat+=getPalette(hue+0.5,u_palette)*trans;
+    
+    // Ground reflection tint
+    if(p.y<-0.8){
+      mat+=objCol*0.1*max(0.,-n.y);
+      // Grid lines
+      float grid=0.;
+      grid+=0.3*smoothstep(0.02,0.,abs(fract(p.x)-0.5));
+      grid+=0.3*smoothstep(0.02,0.,abs(fract(p.z)-0.5));
+      mat+=vec3(0.03)*grid*0.2;
+    }
+    
+    // Fog
+    float fog=1.-exp(-d*0.15);
+    vec3 fogCol=getPalette(u_time*0.02,u_palette)*0.02;
+    col=mix(mat,fogCol,fog);
+  }
+  
+  // Vignette
+  vec2 vuv=gl_FragCoord.xy/u_res;
+  float vig=1.-dot(vuv-0.5,vuv-0.5)*1.2;
+  col*=vig;
+  
+  // Tone mapping
+  col=col/(1.+col);
+  col=pow(col,vec3(0.85));
+  
+  gl_FragColor=vec4(col,1);
+}
+`;
+
+function compileShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error(gl.getShaderInfoLog(s));
+    gl.deleteShader(s);
+    return null;
+  }
+  return s;
+}
+
+const vsObj = compileShader(gl.VERTEX_SHADER, vs);
+const fsObj = compileShader(gl.FRAGMENT_SHADER, fs);
+const prog = gl.createProgram();
+gl.attachShader(prog, vsObj);
+gl.attachShader(prog, fsObj);
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+const aPos = gl.getAttribLocation(prog, 'a_pos');
+gl.enableVertexAttribArray(aPos);
+gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+const uRes = gl.getUniformLocation(prog, 'u_res');
+const uTime = gl.getUniformLocation(prog, 'u_time');
+const uMouse = gl.getUniformLocation(prog, 'u_mouse');
+const uZoom = gl.getUniformLocation(prog, 'u_zoom');
+const uPalette = gl.getUniformLocation(prog, 'u_palette');
+
+let palette = 0;
+
+function setPalette(p) {
+  palette = p;
+}
+
+function render(now) {
+  const t = now * 0.001;
+  if (autoRotate) { rotY = t * 0.3; }
+  
+  gl.uniform2f(uRes, W, H);
+  gl.uniform1f(uTime, t);
+  gl.uniform2f(uMouse, mx, my);
+  gl.uniform1f(uZoom, zoom);
+  gl.uniform1i(uPalette, palette);
+  
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+</script>
+</body>
+</html>
