@@ -3,322 +3,350 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Chromatic Nebula — Generative Art</title>
+<title>Chromatic Nebula</title>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body {
-  background: #000;
-  overflow: hidden;
-  font-family: 'Courier New', monospace;
-  cursor: crosshair;
-}
-canvas { display: block; }
-#ui {
-  position: fixed;
-  top: 20px;
-  left: 20px;
-  color: rgba(255,255,255,0.7);
-  font-size: 13px;
-  z-index: 10;
-  pointer-events: none;
-  text-shadow: 0 0 10px rgba(0,0,0,0.8);
-}
-#ui .title {
-  font-size: 18px;
-  font-weight: bold;
-  color: #fff;
-  margin-bottom: 8px;
-  letter-spacing: 3px;
-}
-#ui .info {
-  line-height: 1.6;
-}
-#ui .controls {
-  margin-top: 12px;
-  pointer-events: auto;
-}
-#ui .controls button {
-  background: rgba(255,255,255,0.1);
-  border: 1px solid rgba(255,255,255,0.3);
-  color: #fff;
-  padding: 6px 14px;
-  margin: 2px;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 12px;
-  border-radius: 3px;
-  transition: all 0.2s;
-}
-#ui .controls button:hover {
-  background: rgba(255,255,255,0.25);
-  border-color: rgba(255,255,255,0.6);
-}
-#stats {
-  position: fixed;
-  bottom: 20px;
-  left: 20px;
-  color: rgba(255,255,255,0.5);
-  font-size: 11px;
-  z-index: 10;
-  pointer-events: none;
-}
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+  canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+  #ui {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.6); font: 12px/1.4 'Courier New', monospace;
+    text-align: center; letter-spacing: 3px; text-transform: uppercase;
+    pointer-events: none; z-index: 5; text-shadow: 0 0 8px rgba(100,180,255,0.3);
+  }
+  #hint {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.35); font: 11px/1.4 'Courier New', monospace;
+    text-align: center; pointer-events: none; z-index: 5;
+  }
+  #palette-name {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    color: rgba(255,255,255,0); font: 28px/1 'Courier New', monospace;
+    letter-spacing: 8px; text-transform: uppercase; pointer-events: none; z-index: 5;
+    transition: color 1.5s ease;
+  }
+  #palette-name.show { color: rgba(255,255,255,0.7); }
 </style>
 </head>
 <body>
-<div id="ui">
-  <div class="title">✨ CHROMATIC NEBULA</div>
-  <div class="info">
-    Move mouse to attract particles<br>
-    Click to create bursts<br>
-    Press SPACE to pause<br>
-    Press R to reset<br>
-    Press M to toggle mode
-  </div>
-  <div class="controls">
-    <button onclick="reset()">Reset</button>
-    <button onclick="toggleMode()">Toggle Mode</button>
-    <button onclick="saveFrame()">Save Frame</button>
-  </div>
-</div>
-<div id="stats"></div>
+<div id="ui">Chromatic Nebula</div>
+<div id="palette-name"></div>
+<div id="hint">move mouse to warp · scroll to zoom · 1-5 palette · space pause</div>
 <canvas id="c"></canvas>
+
 <script>
 const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
-let W, H, cx, cy;
-let particles = [];
-let trails = [];
-let mouse = { x: 0, y: 0, active: false };
+const gl = canvas.getContext('webgl', { antialias: true, alpha: false });
+
+if (!gl) {
+  document.body.innerHTML = '<p style="color:#fff;text-align:center;margin-top:40vh">WebGL required</p>';
+  throw new Error('No WebGL');
+}
+
+// --- Shaders ---
+const vert = `
+attribute vec2 a;
+void main(){ gl_Position = vec4(a, 0.0, 1.0); }
+`;
+
+const frag = `
+precision highp float;
+
+uniform float uTime;
+uniform vec2 uRes;
+uniform vec2 uMouse;
+uniform float uZoom;
+uniform int uPalette;
+uniform float uPaused;
+
+#define PI 3.14159265359
+#define TAU 6.28318530718
+
+// Hash & noise
+float hash(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash(i);
+  float b = hash(i + vec2(1.0, 0.0));
+  float c = hash(i + vec2(0.0, 1.0));
+  float d = hash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  mat2 rot = mat2(cos(0.5), sin(0.5), -sin(0.5), cos(0.5));
+  for (int i = 0; i < 7; i++) {
+    v += a * noise(p);
+    p = rot * p * 2.1 + vec2(100.0);
+    a *= 0.5;
+  }
+  return v;
+}
+
+float fbm4(vec2 p) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) {
+    v += a * noise(p);
+    p *= 2.1;
+    a *= 0.5;
+  }
+  return v;
+}
+
+// Domain warping
+float warpedFbm(vec2 p, float t) {
+  vec2 q = vec2(fbm(p + vec2(0.0, 0.0) + 0.15 * t),
+                fbm(p + vec2(5.2, 1.3) + 0.12 * t));
+  vec2 r = vec2(fbm(p + 4.0 * q + vec2(1.7, 9.2) + 0.1 * t),
+                fbm(p + 4.0 * q + vec2(8.3, 2.8) + 0.08 * t));
+  return fbm(p + 4.0 * r);
+}
+
+// Color palettes
+vec3 paletteA(float t) {
+  // Aurora — deep blue through teal to magenta
+  vec3 a = vec3(0.05, 0.02, 0.15);
+  vec3 b = vec3(0.3, 0.1, 0.4);
+  vec3 c = vec3(0.0, 0.5, 0.6);
+  vec3 d = vec3(0.55, 0.15, 0.55);
+  return a + b * cos(TAU * (c * t + d));
+}
+
+vec3 paletteB(float t) {
+  // Ember — black through crimson to gold
+  vec3 a = vec3(0.1, 0.02, 0.02);
+  vec3 b = vec3(0.5, 0.15, 0.05);
+  vec3 c = vec3(0.6, 0.3, 0.1);
+  vec3 d = vec3(0.9, 0.5, 0.1);
+  return a + b * cos(TAU * (c * t + d));
+}
+
+vec3 paletteC(float t) {
+  // Ocean — deep navy through cyan to white foam
+  vec3 a = vec3(0.02, 0.05, 0.12);
+  vec3 b = vec3(0.1, 0.35, 0.5);
+  vec3 c = vec3(0.3, 0.55, 0.65);
+  vec3 d = vec3(0.5, 0.8, 0.9);
+  return a + b * cos(TAU * (c * t + d));
+}
+
+vec3 paletteD(float t) {
+  // Neon — black through electric green to hot pink
+  vec3 a = vec3(0.05, 0.0, 0.08);
+  vec3 b = vec3(0.2, 0.6, 0.3);
+  vec3 c = vec3(0.9, 0.3, 0.7);
+  vec3 d = vec3(0.1, 0.8, 0.5);
+  return a + b * cos(TAU * (c * t + d));
+}
+
+vec3 paletteE(float t) {
+  // Cosmic — deep purple through indigo to warm gold
+  vec3 a = vec3(0.08, 0.02, 0.12);
+  vec3 b = vec3(0.4, 0.2, 0.5);
+  vec3 c = vec3(0.5, 0.4, 0.3);
+  vec3 d = vec3(0.9, 0.7, 0.2);
+  return a + b * cos(TAU * (c * t + d));
+}
+
+vec3 getColor(float t, int pal) {
+  if (pal == 1) return paletteA(t);
+  if (pal == 2) return paletteB(t);
+  if (pal == 3) return paletteC(t);
+  if (pal == 4) return paletteD(t);
+  return paletteE(t);
+}
+
+// Stars
+float stars(vec2 uv, float seed) {
+  vec2 gv = fract(uv * 300.0) - 0.5;
+  vec2 id = floor(uv * 300.0);
+  float h = hash(id + seed);
+  float star = smoothstep(0.95, 1.0, h) * (0.5 + 0.5 * sin(uTime * (0.5 + h * 2.0) + h * TAU));
+  float d = length(gv);
+  return star * smoothstep(0.03, 0.0, d) * (0.5 + 0.5 * h);
+}
+
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / min(uRes.x, uRes.y);
+  float t = uTime * 0.08;
+  float paused = uPaused;
+  float animT = t * (1.0 - paused * 0.95);
+
+  // Mouse influence
+  vec2 mouse = (uMouse - 0.5 * uRes) / min(uRes.x, uRes.y);
+  float mouseDist = length(uv - mouse * 0.5);
+  vec2 mouseWarp = (uv - mouse * 0.5) * 0.3 / (mouseDist + 0.5);
+  uv += mouseWarp * 0.15 * (1.0 - smoothstep(0.0, 1.5, mouseDist));
+
+  // Zoom
+  uv /= uZoom;
+
+  // === Nebula clouds ===
+  float n1 = warpedFbm(uv * 1.5 + animT * 0.3, animT);
+  float n2 = warpedFbm(uv * 2.3 - animT * 0.2 + 3.7, animT);
+  float n3 = warpedFbm(uv * 0.8 + vec2(animT * 0.15, -animT * 0.1) + 7.1, animT);
+
+  float nebula = n1 * 0.5 + n2 * 0.3 + n3 * 0.2;
+  nebula = smoothstep(0.15, 0.75, nebula);
+
+  // === Color ===
+  float colorIdx = nebula + n2 * 0.3 + animT * 0.05;
+  vec3 col = getColor(colorIdx, uPalette);
+
+  // Brightness variation
+  float bright = smoothstep(0.3, 0.9, n1 * n3 + n2 * 0.5);
+  col *= 0.4 + bright * 0.8;
+
+  // === Core glow ===
+  float coreGlow = exp(-length(uv) * 1.5) * 0.3;
+  col += getColor(0.5 + animT * 0.02, uPalette) * coreGlow;
+
+  // === Stars ===
+  float twinkle = 0.5 + 0.5 * sin(uTime * (1.0 + hash(floor(uv * 200.0)) * 3.0));
+  col += stars(uv, 0.0) * twinkle * 0.8;
+  col += stars(uv * 1.5 + 50.0, 100.0) * twinkle * 0.5;
+
+  // === Dust lanes ===
+  float dust = smoothstep(0.5, 0.7, fbm4(uv * 3.0 + animT * 0.05));
+  col *= 1.0 - dust * 0.4;
+
+  // === Vignette ===
+  vec2 vuv = gl_FragCoord.xy / uRes;
+  float vig = 1.0 - dot((vuv - 0.5) * 1.2, (vuv - 0.5) * 1.2);
+  col *= smoothstep(0.0, 0.7, vig);
+
+  // === Tone map & gamma ===
+  col = col / (1.0 + col);
+  col = pow(col, vec3(0.9));
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+// Compile shader
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error(gl.getShaderInfoLog(s));
+  }
+  return s;
+}
+
+const prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, vert));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, frag));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+// Fullscreen quad
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+const aLoc = gl.getAttribLocation(prog, 'a');
+gl.enableVertexAttribArray(aLoc);
+gl.vertexAttribPointer(aLoc, 2, gl.FLOAT, false, 0, 0);
+
+// Uniforms
+const uTime = gl.getUniformLocation(prog, 'uTime');
+const uRes = gl.getUniformLocation(prog, 'uRes');
+const uMouse = gl.getUniformLocation(prog, 'uMouse');
+const uZoom = gl.getUniformLocation(prog, 'uZoom');
+const uPalette = gl.getUniformLocation(prog, 'uPalette');
+const uPaused = gl.getUniformLocation(prog, 'uPaused');
+
+// State
+let mouseX = 0, mouseY = 0;
+let zoom = 1.0;
+let targetZoom = 1.0;
+let palette = 5;
+let paused = 0;
 let time = 0;
-let paused = false;
-let mode = 0;
-const modeNames = ['Nebula', 'Vortex', 'Bloom'];
 let lastFrame = performance.now();
-let fps = 0;
+let paletteEl = document.getElementById('palette-name');
+const paletteNames = ['', 'Aurora', 'Ember', 'Ocean', 'Neon', 'Cosmic'];
 
-function resize() {
-  W = canvas.width = window.innerWidth;
-  H = canvas.height = window.innerHeight;
-  cx = W / 2;
-  cy = H / 2;
-}
-resize();
-window.addEventListener('resize', resize);
-
-class Particle {
-  constructor(x, y, burst = false) {
-    this.x = x || Math.random() * W;
-    this.y = y || Math.random() * H;
-    const angle = Math.random() * Math.PI * 2;
-    const speed = burst ? Math.random() * 6 + 2 : Math.random() * 1.5 + 0.3;
-    this.vx = Math.cos(angle) * speed;
-    this.vy = Math.sin(angle) * speed;
-    this.life = burst ? 1.0 : Math.random() * 0.8 + 0.2;
-    this.maxLife = this.life;
-    this.size = Math.random() * 2.5 + 0.5;
-    this.hue = (time * 0.3 + Math.random() * 60 + 200) % 360;
-    this.trail = [];
-    this.maxTrail = Math.floor(Math.random() * 20) + 10;
-    this.wander = Math.random() * 0.02 + 0.01;
-  }
-
-  update() {
-    this.trail.push({ x: this.x, y: this.y, life: this.life });
-    if (this.trail.length > this.maxTrail) this.trail.shift();
-
-    if (mode === 0) { // Nebula - flowing noise
-      const angle = this.noise(this.x * 0.003, this.y * 0.003, time * 0.0005) * Math.PI * 4;
-      this.vx += Math.cos(angle) * 0.15;
-      this.vy += Math.sin(angle) * 0.15;
-    } else if (mode === 1) { // Vortex - spiral
-      const dx = this.x - cx;
-      const dy = this.y - cy;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const angle = Math.atan2(dy, dx) + Math.PI / 2;
-      const force = Math.min(0.3, 50 / (dist + 50));
-      this.vx += Math.cos(angle) * force;
-      this.vy += Math.sin(angle) * force;
-      this.vx -= dx * 0.0001;
-      this.vy -= dy * 0.0001;
-    } else { // Bloom - organic breathing
-      const dx = this.x - cx;
-      const dy = this.y - cy;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const wave = Math.sin(dist * 0.01 - time * 0.002) * 0.3;
-      this.vx += (dx / dist) * wave;
-      this.vy += (dy / dist) * wave;
-      this.vx += Math.sin(time * 0.001 + this.x * 0.01) * 0.05;
-      this.vy += Math.cos(time * 0.001 + this.y * 0.01) * 0.05;
-    }
-
-    // Mouse attraction
-    if (mouse.active) {
-      const dx = mouse.x - this.x;
-      const dy = mouse.y - this.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 300) {
-        const force = (300 - dist) / 300 * 0.5;
-        this.vx += (dx / dist) * force;
-        this.vy += (dy / dist) * force;
-      }
-    }
-
-    // Damping
-    this.vx *= 0.98;
-    this.vy *= 0.98;
-
-    // Speed limit
-    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-    const maxSpeed = mode === 1 ? 4 : 3;
-    if (speed > maxSpeed) {
-      this.vx = (this.vx / speed) * maxSpeed;
-      this.vy = (this.vy / speed) * maxSpeed;
-    }
-
-    this.x += this.vx;
-    this.y += this.vy;
-
-    // Wrap
-    if (this.x < -50) this.x = W + 50;
-    if (this.x > W + 50) this.x = -50;
-    if (this.y < -50) this.y = H + 50;
-    if (this.y > H + 50) this.y = -50;
-
-    this.life -= 0.001;
-    this.hue += 0.2;
-  }
-
-  noise(x, y, z) {
-    // Simple hash-based noise
-    const n = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453;
-    return n - Math.floor(n);
-  }
-
-  draw() {
-    // Draw trail
-    if (this.trail.length > 1) {
-      for (let i = 0; i < this.trail.length; i++) {
-        const t = this.trail[i];
-        const alpha = (i / this.trail.length) * this.life * 0.5;
-        const size = this.size * (i / this.trail.length);
-        ctx.fillStyle = `hsla(${this.hue}, 80%, 60%, ${alpha})`;
-        ctx.beginPath();
-        ctx.arc(t.x, t.y, size, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-
-    // Draw particle
-    const alpha = this.life;
-    const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size * 3);
-    gradient.addColorStop(0, `hsla(${this.hue}, 90%, 70%, ${alpha})`);
-    gradient.addColorStop(0.5, `hsla(${this.hue + 20}, 80%, 50%, ${alpha * 0.5})`);
-    gradient.addColorStop(1, `hsla(${this.hue + 40}, 70%, 30%, 0)`);
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size * 3, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  get dead() { return this.life <= 0; }
+function showPalette() {
+  paletteEl.textContent = paletteNames[palette];
+  paletteEl.classList.add('show');
+  setTimeout(() => paletteEl.classList.remove('show'), 1500);
 }
 
-// Initialize
-for (let i = 0; i < 800; i++) {
-  particles.push(new Particle());
-}
-
-// Mouse events
+// Events
 canvas.addEventListener('mousemove', e => {
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
-  mouse.active = true;
+  mouseX = e.clientX * devicePixelRatio;
+  mouseY = (canvas.height / devicePixelRatio - e.clientY) * devicePixelRatio;
 });
-canvas.addEventListener('mouseleave', () => { mouse.active = false; });
-canvas.addEventListener('click', e => {
-  for (let i = 0; i < 50; i++) {
-    particles.push(new Particle(e.clientX, e.clientY, true));
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  targetZoom *= e.deltaY > 0 ? 1.08 : 0.93;
+  targetZoom = Math.max(0.3, Math.min(5.0, targetZoom));
+}, { passive: false });
+
+window.addEventListener('keydown', e => {
+  if (e.key >= '1' && e.key <= '5') {
+    palette = parseInt(e.key);
+    showPalette();
+  }
+  if (e.key === ' ') {
+    e.preventDefault();
+    paused = paused ? 0 : 1;
   }
 });
 
-// Keyboard
-document.addEventListener('keydown', e => {
-  if (e.code === 'Space') { paused = !paused; e.preventDefault(); }
-  if (e.code === 'KeyR') reset();
-  if (e.code === 'KeyM') toggleMode();
-});
+// Touch support
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const touch = e.touches[0];
+  mouseX = touch.clientX * devicePixelRatio;
+  mouseY = (canvas.height / devicePixelRatio - touch.clientY) * devicePixelRatio;
+}, { passive: false });
 
-function reset() {
-  particles = [];
-  for (let i = 0; i < 800; i++) {
-    particles.push(new Particle());
-  }
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, W, H);
+// Resize
+function resize() {
+  const dpr = Math.min(devicePixelRatio, 2);
+  canvas.width = window.innerWidth * dpr;
+  canvas.height = window.innerHeight * dpr;
+  gl.viewport(0, 0, canvas.width, canvas.height);
 }
+window.addEventListener('resize', resize);
+resize();
 
-function toggleMode() {
-  mode = (mode + 1) % 3;
-  document.querySelector('.title').textContent = `✨ ${modeNames[mode].toUpperCase()} — CHROMATIC NEBULA`;
-}
+// Init mouse center
+mouseX = canvas.width / 2;
+mouseY = canvas.height / 2;
 
-function saveFrame() {
-  const link = document.createElement('a');
-  link.download = `chromatic-nebula-${Date.now()}.png`;
-  link.href = canvas.toDataURL();
-  link.click();
-}
-
-function animate(now) {
-  requestAnimationFrame(animate);
-
-  // FPS
-  fps = 1000 / (now - lastFrame);
+// Render loop
+function frame(now) {
+  const dt = Math.min((now - lastFrame) / 1000, 0.1);
   lastFrame = now;
 
-  if (paused) return;
+  if (!paused) time += dt;
+  zoom += (targetZoom - zoom) * 0.08;
 
-  time++;
+  gl.uniform1f(uTime, time);
+  gl.uniform2f(uRes, canvas.width, canvas.height);
+  gl.uniform2f(uMouse, mouseX, mouseY);
+  gl.uniform1f(uZoom, zoom);
+  gl.uniform1i(uPalette, palette);
+  gl.uniform1f(uPaused, paused);
 
-  // Semi-transparent overlay for trails
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
-  ctx.fillRect(0, 0, W, H);
-
-  // Update and draw particles
-  particles = particles.filter(p => !p.dead);
-
-  // Maintain minimum particle count
-  while (particles.length < 800) {
-    particles.push(new Particle());
-  }
-
-  // Add new particles at edges
-  if (Math.random() < 0.3) {
-    const edge = Math.floor(Math.random() * 4);
-    let x, y;
-    if (edge === 0) { x = Math.random() * W; y = -10; }
-    else if (edge === 1) { x = W + 10; y = Math.random() * H; }
-    else if (edge === 2) { x = Math.random() * W; y = H + 10; }
-    else { x = -10; y = Math.random() * H; }
-    particles.push(new Particle(x, y));
-  }
-
-  // Update composite operation for glow
-  ctx.globalCompositeOperation = 'lighter';
-
-  for (const p of particles) {
-    p.update();
-    p.draw();
-  }
-
-  ctx.globalCompositeOperation = 'source-over';
-
-  // Stats
-  document.getElementById('stats').textContent =
-    `Particles: ${particles.length} | Mode: ${modeNames[mode]} | FPS: ${fps.toFixed(0)}`;
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  requestAnimationFrame(frame);
 }
 
-requestAnimationFrame(animate);
+requestAnimationFrame(frame);
+showPalette();
 </script>
 </body>
 </html>
