@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frost Fractal Explorer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #04060d; font-family: 'Courier New', monospace; }
+  canvas { display: block; cursor: crosshair; }
+  #ui {
+    position: fixed;
+    top: 16px; left: 16px;
+    color: #8fb3d4;
+    font-size: 11px;
+    pointer-events: none;
+    line-height: 1.6;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+  }
+  #title {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #b8d8f0;
+    font-size: 13px;
+    letter-spacing: 3px;
+    text-shadow: 0 0 12px rgba(140,200,255,0.5);
+    pointer-events: none;
+  }
+  #hint {
+    position: fixed;
+    bottom: 16px; left: 16px;
+    color: #5a7a96;
+    font-size: 11px;
+    pointer-events: none;
+  }
+  #controls {
+    position: fixed;
+    top: 16px; right: 16px;
+    color: #8fb3d4;
+    font-size: 11px;
+    pointer-events: none;
+    text-align: right;
+    line-height: 1.6;
+  }
+  .k { color: #c8e0ff; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="title">◈ FROST FRACTAL EXPLORER ◈</div>
+<div id="ui">
+  <div>crystals: <span id="count">0</span></div>
+  <div>branches: <span id="branches">0</span></div>
+  <div>temp: <span id="temp">0</span>°</div>
+</div>
+<div id="controls">
+  <div><span class="k">click</span> plant seed</div>
+  <div><span class="k">drag</span> paint frost</div>
+  <div><span class="k">space</span> storm</div>
+  <div><span class="k">1-4</span> palettes</div>
+  <div><span class="k">c</span> clear</div>
+  <div><span class="k">s</span> save</div>
+</div>
+<div id="hint">Temperature rises when frost fills the void — watch the crystals weaken</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W = canvas.width = window.innerWidth;
+let H = canvas.height = window.innerHeight;
+let crystals = [];
+let totalBranches = 0;
+let mouse = { x: 0, y: 0, down: false };
+let temperature = 0;
+let palette = 0;
+
+const PALETTES = [
+  { name: 'Arctic', colors: ['#c8e8ff', '#8ec8f0', '#4a9ad4', '#2a7ab8', '#1a5a8a'], bg: '#0a1020', temp: 0.65 },
+  { name: 'Aurora', colors: ['#b8ffd8', '#78e8a8', '#38c878', '#189858', '#0a7838'], bg: '#061410', temp: 0.75 },
+  { name: 'Ember Ice', colors: ['#ffe8c8', '#f0b878', '#e08838', '#c85818', '#a03808'], bg: '#140a02', temp: 0.55 },
+  { name: 'Void Frost', colors: ['#e8e0ff', '#c0a8f0', '#9878d4', '#7048b8', '#48289a'], bg: '#0c0618', temp: 0.85 }
+];
+
+function bg() { return PALETTES[palette].bg; }
+function tempLimit() { return PALETTES[palette].temp; }
+
+// Seed the canvas
+ctx.fillStyle = bg();
+ctx.fillRect(0, 0, W, H);
+
+class Branch {
+  constructor(x, y, angle, length, depth, parent, color) {
+    this.x = x;
+    this.y = y;
+    this.angle = angle;
+    this.length = length;
+    this.depth = depth;
+    this.parent = parent;
+    this.color = color;
+    this.speed = 0.4 + Math.random() * 1.2;
+    this.grow = 0;
+    this.target = length;
+    this.children = [];
+    this.done = false;
+    this.born = Date.now();
+    this.thickness = Math.max(0.3, (1 - depth / 7) * 2.2);
+    this.fade = 1;
+    this.glow = 0.4 + Math.random() * 0.6;
+  }
+
+  update() {
+    if (this.done) return;
+    const tempPenalty = Math.min(1, temperature / tempLimit());
+    const effectiveSpeed = this.speed * (1 - tempPenalty * 0.8);
+    if (effectiveSpeed <= 0.02) {
+      this.done = true;
+      return;
+    }
+    this.grow += effectiveSpeed;
+    if (this.grow >= this.target) {
+      this.grow = this.target;
+      this.done = true;
+      if (this.depth < 7 && Math.random() < 0.55 - tempPenalty * 0.45) {
+        this.spawn();
+      }
+    }
+  }
+
+  spawn() {
+    const tipX = this.x + Math.cos(this.angle) * this.grow;
+    const tipY = this.y + Math.sin(this.angle) * this.grow;
+    const num = Math.random() < 0.3 ? 2 : 1;
+    const colors = PALETTES[palette].colors;
+    for (let i = 0; i < num; i++) {
+      const spread = (Math.random() - 0.5) * 1.2;
+      const newLen = this.length * (0.58 + Math.random() * 0.25);
+      const child = new Branch(
+        tipX, tipY,
+        this.angle + spread,
+        newLen,
+        this.depth + 1,
+        this,
+        colors[Math.min(this.depth + 1, colors.length - 1)]
+      );
+      this.children.push(child);
+      crystals.push(child);
+      totalBranches++;
+    }
+  }
+
+  draw() {
+    const progress = Math.min(1, this.grow / this.target);
+    const tipX = this.x + Math.cos(this.angle) * this.grow;
+    const tipY = this.y + Math.sin(this.angle) * this.grow;
+
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y);
+    ctx.lineTo(tipX, tipY);
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = this.thickness * progress;
+    ctx.lineCap = 'round';
+    ctx.globalAlpha = this.fade * (0.6 + progress * 0.4) * this.glow;
+    ctx.shadowBlur = 6 * this.glow;
+    ctx.shadowColor = this.color;
+    ctx.stroke();
+
+    // Frost particles at tip
+    if (!this.done && Math.random() < 0.25) {
+      ctx.beginPath();
+      ctx.arc(tipX, tipY, 0.6 + Math.random() * 1.2, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.globalAlpha = 0.7;
+      ctx.fill();
+    }
+
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+
+    this.children.forEach(c => c.draw());
+  }
+}
+
+function plantSeed(x, y, size = 8) {
+  const count = 3 + Math.floor(Math.random() * 3);
+  const colors = PALETTES[palette].colors;
+  const mainColor = colors[0];
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 / count) * i + Math.random() * 0.4;
+    const len = size * (0.6 + Math.random() * 0.9);
+    const b = new Branch(x, y, angle, len, 0, null, mainColor);
+    crystals.push(b);
+    totalBranches++;
+  }
+  // Small root-like angles
+  if (Math.random() < 0.6) {
+    for (let i = 0; i < 2; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const len = size * 0.5;
+      const b = new Branch(x, y, angle, len, 0, null, colors[2]);
+      crystals.push(b);
+      totalBranches++;
+    }
+  }
+}
+
+function storm() {
+  const count = 20 + Math.floor(Math.random() * 25);
+  for (let i = 0; i < count; i++) {
+    const x = Math.random() * W;
+    const y = Math.random() * H;
+    setTimeout(() => plantSeed(x, y, 4 + Math.random() * 10), Math.random() * 800);
+  }
+}
+
+function updateUI() {
+  document.getElementById('count').textContent = crystals.filter(c => c.depth === 0).length;
+  document.getElementById('branches').textContent = totalBranches;
+  document.getElementById('temp').textContent = temperature.toFixed(1);
+}
+
+// Event handlers
+canvas.addEventListener('mousedown', (e) => {
+  mouse.down = true;
+  plantSeed(e.clientX, e.clientY, 10);
+});
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  if (mouse.down && Math.random() < 0.35) {
+    plantSeed(e.clientX + (Math.random()-0.5)*20, e.clientY + (Math.random()-0.5)*20, 3 + Math.random()*5);
+  }
+});
+canvas.addEventListener('mouseup', () => mouse.down = false);
+window.addEventListener('keydown', (e) => {
+  if (e.key === ' ') { e.preventDefault(); storm(); }
+  if (e.key >= '1' && e.key <= '4') { palette = parseInt(e.key) - 1; }
+  if (e.key.toLowerCase() === 'c') {
+    crystals = [];
+    totalBranches = 0;
+    temperature = 0;
+    ctx.fillStyle = bg();
+    ctx.fillRect(0, 0, W, H);
+  }
+  if (e.key.toLowerCase() === 's') {
+    const link = document.createElement('a');
+    link.download = `frost-fractal-${Date.now()}.png`;
+    link.href = canvas.toDataURL();
+    link.click();
+  }
+});
+
+window.addEventListener('resize', () => {
+  // Capture current image and redraw
+  const img = ctx.getImageData(0, 0, W, H);
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  ctx.fillStyle = bg();
+  ctx.fillRect(0, 0, W, H);
+  ctx.putImageData(img, 0, 0);
+});
+
+function loop() {
+  // Temperature decays slowly
+  temperature *= 0.992;
+  // Temperature rises with crystal count
+  const count = crystals.filter(c => c.depth === 0).length;
+  temperature = Math.max(0, Math.min(tempLimit() * 1.5, temperature + count * 0.0004));
+
+  crystals.forEach(c => c.update());
+
+  // If temperature gets too high, some crystals dim
+  if (temperature > tempLimit()) {
+    const dim = crystals.filter(c => !c.done && c.depth > 2 && Math.random() < 0.01);
+    dim.forEach(c => { c.fade *= 0.95; });
+  }
+
+  // Draw all root crystals
+  const roots = crystals.filter(c => c.depth === 0 || c.parent === null);
+  roots.forEach(r => r.draw());
+
+  updateUI();
+  requestAnimationFrame(loop);
+}
+
+// Initial seed
+plantSeed(W / 2, H / 2, 9);
+loop();
+</script>
+</body>
+</html>
