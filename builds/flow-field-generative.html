@@ -3,329 +3,337 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Flow Field — Generative Art by Aether</title>
+<title>Flow Field — Aether Generative</title>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body {
-  background: #0a0a0f;
-  overflow: hidden;
-  font-family: 'Courier New', monospace;
-  color: #e0e0e0;
-}
-canvas {
-  display: block;
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 1;
-}
-.overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 10;
-  pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 20px;
-}
-.top-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-.title {
-  font-size: 14px;
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  opacity: 0.7;
-  text-shadow: 0 0 10px rgba(100, 200, 255, 0.5);
-}
-.title span { color: #64c8ff; }
-.stats {
-  font-size: 11px;
-  text-align: right;
-  opacity: 0.5;
-  line-height: 1.6;
-}
-.bottom-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-}
-.hint {
-  font-size: 11px;
-  opacity: 0.4;
-  letter-spacing: 1px;
-}
-.controls {
-  pointer-events: all;
-  display: flex;
-  gap: 10px;
-}
-.controls button {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #e0e0e0;
-  padding: 8px 16px;
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
-  letter-spacing: 1px;
-  cursor: pointer;
-  transition: all 0.3s;
-  text-transform: uppercase;
-}
-.controls button:hover {
-  background: rgba(100, 200, 255, 0.15);
-  border-color: rgba(100, 200, 255, 0.4);
-  color: #64c8ff;
-}
-.mode-indicator {
-  font-size: 11px;
-  opacity: 0.6;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-}
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #a8b8c8;
+    height: 100%;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+  }
+  .overlay {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    z-index: 10;
+    background: rgba(10, 10, 20, 0.7);
+    padding: 12px 16px;
+    border-radius: 6px;
+    border: 1px solid rgba(100, 140, 180, 0.2);
+    font-size: 12px;
+    line-height: 1.6;
+    pointer-events: none;
+    backdrop-filter: blur(6px);
+  }
+  .overlay strong {
+    color: #7ec8e3;
+  }
+  .controls {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 320px;
+  }
+  .controls button {
+    background: rgba(10, 10, 20, 0.7);
+    border: 1px solid rgba(100, 140, 180, 0.3);
+    color: #a8b8c8;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    backdrop-filter: blur(6px);
+    transition: all 0.2s;
+  }
+  .controls button:hover {
+    border-color: #7ec8e3;
+    color: #7ec8e3;
+  }
+  .palette-indicator {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    display: flex;
+    gap: 6px;
+  }
+  .palette-dot {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.2);
+    transition: transform 0.3s;
+  }
+  .palette-dot:hover {
+    transform: scale(1.3);
+  }
 </style>
 </head>
 <body>
-<canvas id="canvas"></canvas>
+<canvas id="c"></canvas>
+
+<div class="palette-indicator" id="paletteIndicator"></div>
+
+<div class="controls">
+  <button onclick="resetField()">Reset Field</button>
+  <button onclick="togglePalette()">Cycle Palette</button>
+  <button onclick="toggleMode()">Toggle Mode</button>
+  <button onclick="clearTrails()">Clear Trails</button>
+  <button onclick="toggleFlow()">Pause Flow</button>
+</div>
+
 <div class="overlay">
-  <div class="top-bar">
-    <div class="title"><span>◆</span> Flow Field <span>◆</span></div>
-    <div class="stats" id="stats">
-      particles: 0<br>
-      fps: 0
-    </div>
-  </div>
-  <div class="bottom-bar">
-    <div class="hint">move mouse to attract · click to burst · space to pause</div>
-    <div class="controls">
-      <button onclick="cycleMode()">mode</button>
-      <button onclick="cyclePalette()">palette</button>
-      <button onclick="reset()">reset</button>
-      <button onclick="toggleTrails()">trails</button>
-    </div>
-  </div>
+  <strong>Flow Field</strong> — Aether Generative<br>
+  Move mouse to disturb the field<br>
+  Click to inject turbulence<br>
+  Particles: <span id="pcount">0</span><br>
+  Palette: <span id="palName">-</span>
 </div>
 
 <script>
-const canvas = document.getElementById('canvas');
+const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-
 let W, H;
+let particles = [];
+let mouse = { x: -9999, y: -9999, active: false };
+let flowing = true;
+let mode = 0; // 0 = flow, 1 = orbit, 2 = vortex
+let paletteIndex = 0;
+
+const palettes = [
+  {
+    name: 'Aurora',
+    colors: ['#7ec8e3', '#a8e6cf', '#dcedc1', '#ffd3b6', '#ffaaa5'],
+    bg: '#0a0a0f'
+  },
+  {
+    name: 'Ember',
+    colors: ['#ff6b6b', '#ffa07a', '#ffd93d', '#ff8c42', '#ff5252'],
+    bg: '#120808'
+  },
+  {
+    name: 'Neon',
+    colors: ['#00f5ff', '#ff00ff', '#ffff00', '#00ff88', '#ff4444'],
+    bg: '#050510'
+  },
+  {
+    name: 'Forest',
+    colors: ['#2d5a27', '#5a8a4a', '#8fb339', '#c4d6a6', '#e8f0d8'],
+    bg: '#0a0f08'
+  },
+  {
+    name: 'Monochrome',
+    colors: ['#ffffff', '#c0c0c0', '#808080', '#404040', '#a0a0a0'],
+    bg: '#000000'
+  }
+];
+
+let currentPalette = palettes[0];
+
 function resize() {
   W = canvas.width = window.innerWidth;
   H = canvas.height = window.innerHeight;
+  ctx.fillStyle = currentPalette.bg;
+  ctx.fillRect(0, 0, W, H);
 }
-resize();
 window.addEventListener('resize', resize);
+resize();
 
-// Mouse
-let mouse = { x: W/2, y: H/2, active: false };
-canvas.addEventListener('mousemove', e => {
+// Simplex-like noise approximation
+function noise(x, y, t) {
+  const s = Math.sin(x * 0.01 + t) * Math.cos(y * 0.013 - t * 0.7) +
+            Math.sin((x + y) * 0.007 + t * 1.3) * 0.5 +
+            Math.cos(x * 0.023 - y * 0.019 + t * 0.4) * 0.3;
+  return s;
+}
+
+class Particle {
+  constructor() {
+    this.reset();
+  }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.vx = 0;
+    this.vy = 0;
+    this.life = 0;
+    this.maxLife = 200 + Math.random() * 400;
+    this.color = currentPalette.colors[Math.floor(Math.random() * currentPalette.colors.length)];
+    this.size = 0.5 + Math.random() * 2;
+    this.history = [];
+  }
+  update(t) {
+    const scale = 0.003;
+    let angle;
+
+    if (mode === 0) {
+      angle = noise(this.x, this.y, t) * Math.PI * 4;
+    } else if (mode === 1) {
+      const cx = W / 2, cy = H / 2;
+      const dx = this.x - cx, dy = this.y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 0.001;
+      angle = Math.atan2(dy, dx) + Math.PI / 2 + noise(this.x * 0.5, this.y * 0.5, t) * 1.5;
+    } else {
+      const cx = W / 2, cy = H / 2;
+      const dx = this.x - cx, dy = this.y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 0.001;
+      angle = Math.atan2(dy, dx) + noise(this.x * 0.008, this.y * 0.008, t) * 3;
+    }
+
+    const speed = 1.2;
+    this.vx += Math.cos(angle) * speed * 0.3;
+    this.vy += Math.sin(angle) * speed * 0.3;
+
+    // Mouse disturbance
+    if (mouse.active) {
+      const dx = this.x - mouse.x;
+      const dy = this.y - mouse.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 0.001;
+      if (dist < 200) {
+        const force = (200 - dist) / 200;
+        this.vx += (dx / dist) * force * 3;
+        this.vy += (dy / dist) * force * 3;
+      }
+    }
+
+    this.vx *= 0.92;
+    this.vy *= 0.92;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life++;
+
+    this.history.push({ x: this.x, y: this.y });
+    if (this.history.length > 8) this.history.shift();
+
+    // Wrap or reset
+    if (this.x < -20 || this.x > W + 20 || this.y < -20 || this.y > H + 20 || this.life > this.maxLife) {
+      this.reset();
+    }
+  }
+  draw(ctx) {
+    if (this.history.length < 2) return;
+    const alpha = Math.min(1, this.life / 30) * Math.min(1, (this.maxLife - this.life) / 50);
+    ctx.strokeStyle = this.color;
+    ctx.globalAlpha = alpha * 0.5;
+    ctx.lineWidth = this.size;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(this.history[0].x, this.history[0].y);
+    for (let i = 1; i < this.history.length; i++) {
+      ctx.lineTo(this.history[i].x, this.history[i].y);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function initParticles(count) {
+  particles = [];
+  for (let i = 0; i < count; i++) {
+    particles.push(new Particle());
+  }
+  document.getElementById('pcount').textContent = count;
+}
+
+initParticles(600);
+
+let time = 0;
+function animate() {
+  if (flowing) {
+    // Semi-transparent overlay for trail effect
+    ctx.fillStyle = currentPalette.bg + '0e';
+    ctx.globalAlpha = 0.08;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalAlpha = 1;
+
+    time += 0.008;
+    for (const p of particles) {
+      p.update(time);
+      p.draw(ctx);
+    }
+  }
+  requestAnimationFrame(animate);
+}
+animate();
+
+// Interaction
+canvas.addEventListener('mousemove', (e) => {
   mouse.x = e.clientX;
   mouse.y = e.clientY;
   mouse.active = true;
 });
-canvas.addEventListener('mouseleave', () => mouse.active = false);
-canvas.addEventListener('click', e => {
-  burst(e.clientX, e.clientY);
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('click', (e) => {
+  // Inject burst
+  for (let i = 0; i < 30; i++) {
+    const p = new Particle();
+    p.x = e.clientX + (Math.random() - 0.5) * 40;
+    p.y = e.clientY + (Math.random() - 0.5) * 40;
+    const angle = Math.random() * Math.PI * 2;
+    p.vx = Math.cos(angle) * 4;
+    p.vy = Math.sin(angle) * 4;
+    particles.push(p);
+  }
+  // Trim if too many
+  while (particles.length > 1200) particles.shift();
+  document.getElementById('pcount').textContent = particles.length;
 });
 
-// Keyboard
-let paused = false;
-document.addEventListener('keydown', e => {
-  if (e.code === 'Space') { e.preventDefault(); paused = !paused; }
-});
-
-// State
-let particles = [];
-let mode = 0;
-const modes = ['flow', 'vortex', 'wave', 'galaxy'];
-let paletteIndex = 0;
-const palettes = [
-  { name: 'Aurora', colors: ['#64c8ff', '#a78bfa', '#f472b6', '#34d399', '#fbbf24'] },
-  { name: 'Ember', colors: ['#ff6b35', '#f7c59f', '#ef476f', '#ffd166', '#06d6a0'] },
-  { name: 'Deep', colors: ['#023e8a', '#0077b6', '#0096c7', '#48cae4', '#90e0ef'] },
-  { name: 'Neon', colors: ['#ff00ff', '#00ffff', '#ff0080', '#80ff00', '#ffff00'] },
-  { name: 'Mono', colors: ['#ffffff', '#cccccc', '#999999', '#666666', '#e0e0e0'] },
-];
-let trails = true;
-
-function cycleMode() { mode = (mode + 1) % modes.length; }
-function cyclePalette() { paletteIndex = (paletteIndex + 1) % palettes.length; }
-function reset() { particles = []; init(); }
-function toggleTrails() { trails = !trails; }
-
-// Noise-like function (simple sin-based pseudo-noise)
-function noise(x, y, t) {
-  return Math.sin(x * 0.01 + t) * Math.cos(y * 0.01 + t * 0.5) +
-         Math.sin((x + y) * 0.005 + t * 0.3) * 0.5;
+// Controls
+function resetField() {
+  ctx.fillStyle = currentPalette.bg;
+  ctx.fillRect(0, 0, W, H);
+  initParticles(600);
 }
-
-// Particle class
-class Particle {
-  constructor(x, y, burst = false) {
-    this.x = x || Math.random() * W;
-    this.y = y || Math.random() * H;
-    this.vx = 0;
-    this.vy = 0;
-    this.life = 1;
-    this.decay = 0.001 + Math.random() * 0.002;
-    this.size = 1 + Math.random() * 2;
-    this.color = palettes[paletteIndex].colors[Math.floor(Math.random() * 5)];
-    this.speed = 0.5 + Math.random() * 1.5;
-    if (burst) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 2 + Math.random() * 6;
-      this.vx = Math.cos(angle) * speed;
-      this.vy = Math.sin(angle) * speed;
-      this.decay = 0.005 + Math.random() * 0.01;
-    }
-  }
-
-  update(t) {
-    let angle, force;
-
-    switch (modes[mode]) {
-      case 'flow':
-        angle = noise(this.x, this.y, t) * Math.PI * 2;
-        break;
-      case 'vortex':
-        const cx = W/2, cy = H/2;
-        const dx = this.x - cx, dy = this.y - cy;
-        const dist = Math.sqrt(dx*dx + dy*dy) + 1;
-        angle = Math.atan2(dy, dx) + Math.PI/2 + noise(this.x, this.y, t);
-        break;
-      case 'wave':
-        angle = Math.sin(this.x * 0.005 + t) + Math.cos(this.y * 0.005 + t * 0.7);
-        angle *= Math.PI;
-        break;
-      case 'galaxy':
-        const gcx = W/2, gcy = H/2;
-        const gdx = this.x - gcx, gdy = this.y - gcy;
-        const gdist = Math.sqrt(gdx*gdx + gdy*gdy) + 1;
-        angle = Math.atan2(gdy, gdx) + Math.PI/2 + (100 / gdist) * 0.02;
-        break;
-    }
-
-    this.vx += Math.cos(angle) * 0.1 * this.speed;
-    this.vy += Math.sin(angle) * 0.1 * this.speed;
-
-    // Mouse attraction
-    if (mouse.active) {
-      const mdx = mouse.x - this.x;
-      const mdy = mouse.y - this.y;
-      const mdist = Math.sqrt(mdx*mdx + mdy*mdy) + 1;
-      if (mdist < 200) {
-        const mforce = (200 - mdist) / 200 * 0.3;
-        this.vx += (mdx / mdist) * mforce;
-        this.vy += (mdy / mdist) * mforce;
-      }
-    }
-
-    this.vx *= 0.98;
-    this.vy *= 0.98;
-    this.x += this.vx;
-    this.y += this.vy;
-    this.life -= this.decay;
-
-    // Wrap or kill
-    if (this.x < 0 || this.x > W || this.y < 0 || this.y > H) {
-      this.life -= 0.01;
-    }
-  }
-
-  draw() {
-    ctx.globalAlpha = Math.max(0, this.life) * 0.8;
-    ctx.fillStyle = this.color;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Trail
-    if (trails && (Math.abs(this.vx) > 0.5 || Math.abs(this.vy) > 0.5)) {
-      ctx.strokeStyle = this.color;
-      ctx.globalAlpha = Math.max(0, this.life) * 0.3;
-      ctx.lineWidth = this.size * 0.5 * this.life;
-      ctx.beginPath();
-      ctx.moveTo(this.x, this.y);
-      ctx.lineTo(this.x - this.vx * 2, this.y - this.vy * 2);
-      ctx.stroke();
-    }
+function togglePalette() {
+  paletteIndex = (paletteIndex + 1) % palettes.length;
+  currentPalette = palettes[paletteIndex];
+  document.getElementById('palName').textContent = currentPalette.name;
+  updatePaletteIndicator();
+  // Re-color particles gradually
+  for (const p of particles) {
+    p.color = currentPalette.colors[Math.floor(Math.random() * currentPalette.colors.length)];
   }
 }
-
-function init() {
-  particles = [];
-  const count = Math.min(800, Math.floor(W * H / 2000));
-  for (let i = 0; i < count; i++) {
-    particles.push(new Particle());
+function toggleMode() {
+  mode = (mode + 1) % 3;
+  const modes = ['Flow Field', 'Orbital', 'Vortex'];
+  document.getElementById('palName').textContent = modes[mode];
+}
+function clearTrails() {
+  ctx.fillStyle = currentPalette.bg;
+  ctx.fillRect(0, 0, W, H);
+}
+function toggleFlow() {
+  flowing = !flowing;
+}
+function updatePaletteIndicator() {
+  const container = document.getElementById('paletteIndicator');
+  container.innerHTML = '';
+  for (const c of currentPalette.colors) {
+    const dot = document.createElement('div');
+    dot.className = 'palette-dot';
+    dot.style.background = c;
+    container.appendChild(dot);
   }
 }
-
-function burst(x, y) {
-  for (let i = 0; i < 50; i++) {
-    particles.push(new Particle(x, y, true));
-  }
-  // Cap particles
-  while (particles.length > 1500) particles.shift();
-}
-
-// Render
-let time = 0;
-let lastTime = performance.now();
-let frameCount = 0;
-let fps = 0;
-
-function render() {
-  if (!paused) {
-    if (trails) {
-      ctx.fillStyle = 'rgba(10, 10, 15, 0.03)';
-      ctx.fillRect(0, 0, W, H);
-    } else {
-      ctx.fillStyle = 'rgba(10, 10, 15, 0.15)';
-      ctx.fillRect(0, 0, W, H);
-    }
-
-    time += 0.005;
-
-    particles.forEach(p => {
-      p.update(time);
-      p.draw();
-    });
-
-    // Replenish dead particles
-    const target = Math.min(800, Math.floor(W * H / 2000));
-    while (particles.filter(p => p.life > 0).length < target) {
-      particles.push(new Particle());
-    }
-
-    // Remove dead
-    particles = particles.filter(p => p.life > 0);
-  }
-
-  // FPS
-  frameCount++;
-  const now = performance.now();
-  if (now - lastTime > 1000) {
-    fps = frameCount;
-    frameCount = 0;
-    lastTime = now;
-    document.getElementById('stats').innerHTML = 
-      `particles: ${particles.length}<br>fps: ${fps}<br>mode: ${modes[mode]}<br>palette: ${palettes[paletteIndex].name}`;
-  }
-
-  ctx.globalAlpha = 1;
-  requestAnimationFrame(render);
-}
-
-init();
-render();
+updatePaletteIndicator();
+document.getElementById('palName').textContent = currentPalette.name;
 </script>
 </body>
 </html>
