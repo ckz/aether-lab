@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aether's Dev Workbench</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text2: #8b949e;
+    --accent: #58a6ff;
+    --accent2: #bc8cff;
+    --green: #3fb950;
+    --orange: #d29922;
+    --red: #f85149;
+    --radius: 10px;
+    --font: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.5;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    display: inline;
+  }
+  .header .sub {
+    color: var(--text2);
+    font-size: 12px;
+    margin-top: 4px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .card.full { grid-column: 1 / -1; }
+  .card-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--accent);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .card-title .icon { font-size: 14px; }
+  label {
+    display: block;
+    color: var(--text2);
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+  textarea, input[type="text"], select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 12px;
+    padding: 8px 10px;
+    width: 100%;
+    outline: none;
+    resize: vertical;
+  }
+  textarea:focus, input:focus, select:focus {
+    border-color: var(--accent);
+  }
+  textarea { min-height: 80px; }
+  button {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 11px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  button:hover {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  button.accent { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.accent:hover { background: #79b8ff; }
+  .btn-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .clipboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .clip-slot {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+  }
+  .clip-slot .slot-label {
+    font-size: 10px;
+    color: var(--accent2);
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .clip-slot textarea {
+    min-height: 50px;
+    font-size: 11px;
+  }
+  .case-btns { display: flex; gap: 4px; flex-wrap: wrap; }
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .stat-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    text-align: center;
+  }
+  .stat-value { font-size: 18px; font-weight: 600; color: var(--accent); }
+  .stat-label { font-size: 10px; color: var(--text2); margin-top: 2px; }
+  .output {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    color: var(--green);
+    font-size: 11px;
+    word-break: break-all;
+    min-height: 36px;
+    white-space: pre-wrap;
+  }
+  .tabs {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 6px 12px;
+    color: var(--text2);
+    font-size: 11px;
+  }
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .tab:hover { color: var(--text); background: none; }
+  .lorem-result {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 12px;
+    color: var(--text);
+    min-height: 80px;
+    white-space: pre-wrap;
+    line-height: 1.7;
+  }
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: var(--green);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+  .footer {
+    text-align: center;
+    color: var(--text2);
+    font-size: 11px;
+    margin-top: 20px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⚙️ Aether's Dev Workbench</h1>
+  <div class="sub">Multi-tool for developers · 100% offline · single file · no tracking</div>
+</div>
+
+<div class="grid">
+
+  <!-- CLIPBOARD SLOTS -->
+  <div class="card full">
+    <div class="card-title"><span class="icon">📋</span> Clipboard Slots (1–6)</div>
+    <div class="clipboard-grid">
+      <div class="clip-slot" id="slot-0">
+        <div class="slot-label">Slot 1 <button onclick="copySlot(0)" style="padding:2px 6px;font-size:9px">copy</button></div>
+        <textarea placeholder="Paste or type here…" oninput="saveSlot(0)"></textarea>
+      </div>
+      <div class="clip-slot" id="slot-1">
+        <div class="slot-label">Slot 2 <button onclick="copySlot(1)" style="padding:2px 6px;font-size:9px">copy</button></div>
+        <textarea placeholder="Paste or type here…" oninput="saveSlot(1)"></textarea>
+      </div>
+      <div class="clip-slot" id="slot-2">
+        <div class="slot-label">Slot 3 <button onclick="copySlot(2)" style="padding:2px 6px;font-size:9px">copy</button></div>
+        <textarea placeholder="Paste or type here…" oninput="saveSlot(2)"></textarea>
+      </div>
+      <div class="clip-slot" id="slot-3">
+        <div class="slot-label">Slot 4 <button onclick="copySlot(3)" style="padding:2px 6px;font-size:9px">copy</button></div>
+        <textarea placeholder="Paste or type here…" oninput="saveSlot(3)"></textarea>
+      </div>
+      <div class="clip-slot" id="slot-4">
+        <div class="slot-label">Slot 5 <button onclick="copySlot(4)" style="padding:2px 6px;font-size:9px">copy</button></div>
+        <textarea placeholder="Paste or type here…" oninput="saveSlot(4)"></textarea>
+      </div>
+      <div class="clip-slot" id="slot-5">
+        <div class="slot-label">Slot 6 <button onclick="copySlot(5)" style="padding:2px 6px;font-size:9px">copy</button></div>
+        <textarea placeholder="Paste or type here…" oninput="saveSlot(5)"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEXT CASE CONVERTER -->
+  <div class="card">
+    <div class="card-title"><span class="icon">🔤</span> Text Case</div>
+    <textarea id="caseInput" placeholder="Type something…" oninput="updateCase()"></textarea>
+    <div class="case-btns">
+      <button onclick="setCase('lower')">lower</button>
+      <button onclick="setCase('UPPER')">UPPER</button>
+      <button onclick="setCase('Title')">Title Case</button>
+      <button onclick="setCase('camel')">camelCase</button>
+      <button onclick="setCase('snake')">snake_case</button>
+      <button onclick="setCase('kebab')">kebab-case</button>
+      <button onclick="setCase('dot')">dot.case</button>
+      <button onclick="setCase('pascal')">PascalCase</button>
+      <button onclick="setCase('const')">CONST_CASE</button>
+      <button onclick="setCase('sentence')">Sentence case</button>
+    </div>
+  </div>
+
+  <!-- LIVE STATS -->
+  <div class="card">
+    <div class="card-title"><span class="icon">📊</span> Live Text Stats</div>
+    <div class="stats-row">
+      <div class="stat-box"><div class="stat-value" id="sChars">0</div><div class="stat-label">chars</div></div>
+      <div class="stat-box"><div class="stat-value" id="sWords">0</div><div class="stat-label">words</div></div>
+      <div class="stat-box"><div class="stat-value" id="sLines">0</div><div class="stat-label">lines</div></div>
+      <div class="stat-box"><div class="stat-value" id="sBytes">0</div><div class="stat-label">bytes</div></div>
+    </div>
+    <textarea id="statsInput" placeholder="Start typing to see live stats…" oninput="updateStats()"></textarea>
+    <div class="btn-row">
+      <button onclick="clearStats()">clear</button>
+      <button onclick="pasteIntoStats()">paste</button>
+    </div>
+  </div>
+
+  <!-- BASE64 -->
+  <div class="card">
+    <div class="card-title"><span class="icon">🔐</span> Base64</div>
+    <textarea id="b64Input" placeholder="Text to encode / Base64 to decode…" oninput="updateB64()"></textarea>
+    <div class="output" id="b64Output">Output appears here…</div>
+    <div class="btn-row">
+      <button onclick="copyB64()">copy output</button>
+      <button onclick="swapB64()">⇄ swap</button>
+    </div>
+  </div>
+
+  <!-- LOREM IPSUM -->
+  <div class="card">
+    <div class="card-title"><span class="icon">📝</span> Lorem Ipsum Generator</div>
+    <div class="btn-row" style="margin-bottom:8px">
+      <button onclick="genLorem(1)">1 paragraph</button>
+      <button onclick="genLorem(3)">3 paragraphs</button>
+      <button onclick="genLorem(5)">5 paragraphs</button>
+      <button onclick="genLorem(1,'sentences')">8 sentences</button>
+      <button onclick="copyLorem()">copy</button>
+    </div>
+    <div class="lorem-result" id="loremOutput">Click a button to generate…</div>
+  </div>
+
+</div>
+
+<div class="footer">
+  Aether's Dev Workbench · 100% client-side · nothing leaves your browser · press <strong>Ctrl+Shift+V</strong> in any slot to paste without formatting
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ---- CLIPBOARD SLOTS ----
+function saveSlot(i) {
+  try { localStorage.setItem('dw-slot-' + i, document.getElementById('slot-' + i).querySelector('textarea').value); } catch(e) {}
+}
+function loadSlots() {
+  for (let i = 0; i < 6; i++) {
+    try {
+      const v = localStorage.getItem('dw-slot-' + i);
+      if (v) document.querySelector(`#slot-${i} textarea`).value = v;
+    } catch(e) {}
+  }
+}
+function copySlot(i) {
+  const ta = document.querySelector(`#slot-${i} textarea`);
+  navigator.clipboard.writeText(ta.value).then(() => showToast('copied!'));
+}
+window.addEventListener('DOMContentLoaded', loadSlots);
+
+// ---- TEXT CASE ----
+function updateCase() { updateCaseDisplay(document.getElementById('caseInput').value); }
+function updateCaseDisplay(text) { document.getElementById('caseOutput') && (document.getElementById('caseOutput').textContent = text); }
+function setCase(style) {
+  const input = document.getElementById('caseInput');
+  let text = input.value;
+  if (!text) return;
+  const words = text.split(/\s+/);
+  switch(style) {
+    case 'lower': text = text.toLowerCase(); break;
+    case 'UPPER': text = text.toUpperCase(); break;
+    case 'Title': text = words.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' '); break;
+    case 'camel':
+      text = words.map((w, i) => i === 0 ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join('');
+      break;
+    case 'snake': text = words.map(w => w.toLowerCase()).join('_'); break;
+    case 'kebab': text = words.map(w => w.toLowerCase()).join('-'); break;
+    case 'dot': text = words.map(w => w.toLowerCase()).join('.'); break;
+    case 'pascal': text = words.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(''); break;
+    case 'const': text = words.map(w => w.toUpperCase()).join('_'); break;
+    case 'sentence':
+      text = text.toLowerCase().replace(/(^\s*\w|[.!?]\s*\w)/g, c => c.toUpperCase());
+      break;
+  }
+  input.value = text;
+  updateCaseDisplay(text);
+}
+
+// ---- LIVE STATS ----
+function updateStats() {
+  const text = document.getElementById('statsInput').value;
+  const chars = text.length;
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const lines = text ? text.split('\n').length : 0;
+  const bytes = new Blob([text]).size;
+  document.getElementById('sChars').textContent = chars;
+  document.getElementById('sWords').textContent = words;
+  document.getElementById('sLines').textContent = lines;
+  document.getElementById('sBytes').textContent = bytes;
+}
+function clearStats() { document.getElementById('statsInput').value = ''; updateStats(); }
+async function pasteIntoStats() {
+  try {
+    const text = await navigator.clipboard.readText();
+    document.getElementById('statsInput').value = text;
+    updateStats();
+  } catch(e) { showToast('paste denied — try Ctrl+V'); }
+}
+
+// ---- BASE64 ----
+function updateB64() {
+  const input = document.getElementById('b64Input').value.trim();
+  const output = document.getElementById('b64Output');
+  if (!input) { output.textContent = 'Output appears here…'; return; }
+  try {
+    if (/^[A-Za-z0-9+/]*=*$/.test(input) && input.length > 4) {
+      output.textContent = decodeURIComponent(escape(atob(input)));
+      output.style.color = 'var(--green)';
+    } else {
+      output.textContent = btoa(unescape(encodeURIComponent(input)));
+      output.style.color = 'var(--accent)';
+    }
+  } catch(e) {
+    output.textContent = '⚠ Could not decode — not valid Base64';
+    output.style.color = 'var(--red)';
+  }
+}
+function copyB64() { copyText(document.getElementById('b64Output').textContent); }
+function swapB64() {
+  const input = document.getElementById('b64Input');
+  const output = document.getElementById('b64Output');
+  if (output.textContent && !output.textContent.startsWith('Output') && !output.textContent.startsWith('⚠')) {
+    input.value = output.textContent;
+    updateB64();
+  }
+}
+
+// ---- LOREM IPSUM ----
+const loremWords = ['lorem','ipsum','dolor','sit','amet','consectetur','adipiscing','elit','sed','do','eiusmod','tempor','incididunt','ut','labore','et','dolore','magna','aliqua','enim','ad','minim','veniam','quis','nostrud','exercitation','ullamco','laboris','nisi','aliquip','ex','ea','commodo','consequat','duis','aute','irure','in','reprehenderit','voluptate','velit','esse','cillum','fugiat','nulla','pariatur','excepteur','sint','occaecat','cupidatat','non','proident','sunt','culpa','qui','officia','deserunt','mollit','anim','id','est','laborum','porta','semper','lacus','vel','facilisis','volutpat','sapien','nec','sagittis','orci','a','scelerisque','purus','viverra','accumsan','in','nisl','pellentesque','tincidunt','habitasse','platea','dictumst','vestibulum','rhoncus','est','pulvinar','auctor','mauris','placerat','pellentesque','tristique','massa','viverra','tortor','egestas','fermentum','dapibus','aliquam','erat','volutpat','maecenas','imperdiet','magnis','dis','parturient','montes','nascetur','ridiculus','mus','nam','ligula','consectetur','elementum','vivamus','scelerisque','felis','vel','maximus','aliquet','sodales'];
+function randomWord() { return loremWords[Math.floor(Math.random() * loremWords.length)]; }
+function genLorem(n, unit='paragraphs') {
+  let text = '';
+  const genParagraph = () => {
+    let s = 'Lorem ipsum dolor sit amet, ';
+    const count = 20 + Math.floor(Math.random() * 30);
+    for (let i = 0; i < count; i++) s += randomWord() + ' ';
+    s = s.trim();
+    const sentences = s.split(', ');
+    return sentences.slice(0, Math.min(4, sentences.length)).join(', ') + '.';
+  };
+  if (unit === 'sentences') {
+    const parts = [];
+    for (let i = 0; i < 8; i++) parts.push(genParagraph().split('. ')[0] + '.');
+    text = parts.join(' ');
+  } else {
+    const parts = [];
+    for (let i = 0; i < n; i++) parts.push(genParagraph());
+    text = parts.join('\n\n');
+  }
+  document.getElementById('loremOutput').textContent = text;
+}
+function copyLorem() { copyText(document.getElementById('loremOutput').textContent); }
+
+// ---- UTILITIES ----
+function copyText(text) {
+  navigator.clipboard.writeText(text).then(() => showToast('copied!'));
+}
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1500);
+}
+</script>
+
+</body>
+</html>
