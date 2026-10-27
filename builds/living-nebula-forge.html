@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Living Nebula Forge</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #aaa;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #title {
+    font-size: 14px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.5);
+    margin-bottom: 6px;
+  }
+  #palette-name {
+    font-size: 11px;
+    letter-spacing: 3px;
+    color: rgba(255,255,255,0.3);
+  }
+  #controls {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+  }
+  .key {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: rgba(255,255,255,0.4);
+    pointer-events: none;
+  }
+  #stats {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    font-size: 10px;
+    color: rgba(255,255,255,0.2);
+    text-align: right;
+    z-index: 10;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <div id="title">Living Nebula Forge</div>
+  <div id="palette-name">Cosmic</div>
+</div>
+<div id="stats"></div>
+<div id="controls">
+  <span class="key">1-5 PALETTES</span>
+  <span class="key">CLICK SEED</span>
+  <span class="key">DRAG SCULPT</span>
+  <span class="key">SPACE STORM</span>
+  <span class="key">C CLEAR</span>
+  <span class="key">S SAVE</span>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const statsEl = document.getElementById('stats');
+const paletteNameEl = document.getElementById('palette-name');
+
+let W, H, DPR;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Simplex-like noise ---
+const perm = new Uint8Array(512);
+const grad = [[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]];
+function initNoise() {
+  const p = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) p[i] = i;
+  for (let i = 255; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [p[i], p[j]] = [p[j], p[i]];
+  }
+  for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+}
+initNoise();
+
+function noise2D(x, y) {
+  const xi = Math.floor(x) & 255, yi = Math.floor(y) & 255;
+  const xf = x - Math.floor(x), yf = y - Math.floor(y);
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const aa = perm[perm[xi] + yi], ab = perm[perm[xi] + yi + 1];
+  const ba = perm[perm[xi + 1] + yi], bb = perm[perm[xi + 1] + yi + 1];
+  const g = (hash, fx, fy) => { const [gx, gy] = grad[hash & 7]; return gx * fx + gy * fy; };
+  const x1 = g(aa, xf, yf) * (1 - u) + g(ba, xf - 1, yf) * u;
+  const x2 = g(ab, xf, yf - 1) * (1 - u) + g(bb, xf - 1, yf - 1) * u;
+  return (x1 * (1 - v) + x2 * v);
+}
+
+// --- Palettes ---
+const palettes = [
+  { name: 'Cosmic',    colors: [[20,0,40],[60,0,120],[0,80,180],[100,20,160],[0,180,220],[180,0,120]], bg: '#000008' },
+  { name: 'Ember',     colors: [[40,0,0],[120,20,0],[200,60,0],[255,120,0],[255,200,40],[255,80,20]], bg: '#050000' },
+  { name: 'Aurora',    colors: [[0,20,10],[0,80,40],[0,160,80],[40,220,120],[100,255,180],[180,255,220]], bg: '#000805' },
+  { name: 'Void',      colors: [[5,5,15],[15,10,30],[30,20,60],[60,40,100],[100,60,140],[150,100,200]], bg: '#020208' },
+  { name: 'Infrared',  colors: [[30,0,10],[80,0,20],[150,10,30],[220,30,50],[255,80,80],[255,180,180]], bg: '#080000' },
+];
+
+let paletteIdx = 0;
+let palette = palettes[0];
+
+// --- Particles ---
+const PARTICLE_COUNT = 2200;
+let particles = [];
+
+function createParticle(x, y, seeded) {
+  const ci = Math.floor(Math.random() * palette.colors.length);
+  const c = palette.colors[ci];
+  return {
+    x: x !== undefined ? x : Math.random() * W,
+    y: y !== undefined ? y : Math.random() * H,
+    vx: (Math.random() - 0.5) * 0.3,
+    vy: (Math.random() - 0.5) * 0.3,
+    size: seeded ? 1.5 + Math.random() * 2.5 : 0.4 + Math.random() * 1.6,
+    life: seeded ? 0.7 + Math.random() * 0.3 : 0.3 + Math.random() * 0.7,
+    maxLife: seeded ? 0.7 + Math.random() * 0.3 : 0.3 + Math.random() * 0.7,
+    colorIdx: ci,
+    alpha: 0.15 + Math.random() * 0.45,
+    noiseOffX: Math.random() * 1000,
+    noiseOffY: Math.random() * 1000,
+    seeded: !!seeded,
+    pulseSpeed: 0.005 + Math.random() * 0.02,
+    pulsePhase: Math.random() * Math.PI * 2,
+  };
+}
+
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    particles.push(createParticle());
+  }
+}
+initParticles();
+
+// --- Nebula cores ---
+let nebulaCores = [];
+function addCore(x, y) {
+  nebulaCores.push({
+    x, y,
+    radius: 0,
+    targetRadius: 80 + Math.random() * 160,
+    strength: 0.6 + Math.random() * 0.4,
+    life: 1,
+    decay: 0.0008 + Math.random() * 0.0015,
+    colorIdx: Math.floor(Math.random() * palette.colors.length),
+  });
+}
+
+// --- Interaction ---
+let mouse = { x: W / 2, y: H / 2, down: false, active: false };
+let stormMode = false;
+let time = 0;
+let frameCount = 0;
+let fps = 60;
+let lastFpsTime = performance.now();
+
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+});
+canvas.addEventListener('mousedown', e => {
+  mouse.down = true;
+  addCore(e.clientX, e.clientY);
+});
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mouseleave', () => { mouse.active = false; mouse.down = false; });
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY; mouse.active = true; mouse.down = true;
+  addCore(t.clientX, t.clientY);
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+}, { passive: false });
+canvas.addEventListener('touchend', () => { mouse.down = false; });
+
+document.addEventListener('keydown', e => {
+  if (e.key >= '1' && e.key <= '5') {
+    paletteIdx = parseInt(e.key) - 1;
+    palette = palettes[paletteIdx];
+    paletteNameEl.textContent = palette.name;
+  }
+  if (e.key === ' ') { stormMode = !stormMode; e.preventDefault(); }
+  if (e.key === 'c' || e.key === 'C') { nebulaCores = []; initParticles(); }
+  if (e.key === 's' || e.key === 'S') savePNG();
+});
+
+function savePNG() {
+  const link = document.createElement('a');
+  link.download = 'nebula-forge-' + Date.now() + '.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+// --- Main loop ---
+function update() {
+  time += 0.003;
+
+  // Update cores
+  for (let i = nebulaCores.length - 1; i >= 0; i--) {
+    const core = nebulaCores[i];
+    core.radius += (core.targetRadius - core.radius) * 0.02;
+    core.life -= core.decay;
+    if (core.life <= 0) nebulaCores.splice(i, 1);
+  }
+
+  // Mouse gravity
+  const mx = mouse.active ? mouse.x : W / 2 + Math.sin(time * 0.7) * W * 0.3;
+  const my = mouse.active ? mouse.y : H / 2 + Math.cos(time * 0.5) * H * 0.3;
+
+  for (const p of particles) {
+    // Noise-driven flow
+    const ns = 0.002;
+    const nx = noise2D(p.x * ns + p.noiseOffX, p.y * ns + time * 0.5);
+    const ny = noise2D(p.x * ns + time * 0.5, p.y * ns + p.noiseOffY);
+    const angle = Math.atan2(ny, nx) + Math.PI * 0.5;
+    const speed = stormMode ? 3.5 : 0.8;
+    p.vx += Math.cos(angle) * speed * 0.04;
+    p.vy += Math.sin(angle) * speed * 0.04;
+
+    // Nebula core attraction
+    for (const core of nebulaCores) {
+      const dx = core.x - p.x, dy = core.y - p.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 1;
+      if (dist < core.radius * 2) {
+        const force = (1 - dist / (core.radius * 2)) * core.strength * core.life * 0.03;
+        p.vx += (dx / dist) * force;
+        p.vy += (dy / dist) * force;
+      }
+    }
+
+    // Mouse interaction
+    if (mouse.active) {
+      const dx = mx - p.x, dy = my - p.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 1;
+      if (dist < 150) {
+        const force = (1 - dist / 150) * (mouse.down ? 0.15 : 0.04);
+        p.vx += (dx / dist) * force;
+        p.vy += (dy / dist) * force;
+      }
+    }
+
+    // Damping
+    p.vx *= 0.96;
+    p.vy *= 0.96;
+
+    // Clamp speed
+    const maxSpeed = stormMode ? 6 : 2.5;
+    const spd = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+    if (spd > maxSpeed) { p.vx = (p.vx / spd) * maxSpeed; p.vy = (p.vy / spd) * maxSpeed; }
+
+    p.x += p.vx;
+    p.y += p.vy;
+
+    // Wrap
+    if (p.x < -20) p.x = W + 20;
+    if (p.x > W + 20) p.x = -20;
+    if (p.y < -20) p.y = H + 20;
+    if (p.y > H + 20) p.y = -20;
+  }
+}
+
+function draw() {
+  // Trail fade
+  ctx.fillStyle = palette.bg + '18';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.globalCompositeOperation = 'lighter';
+
+  for (const p of particles) {
+    // Pulsing alpha
+    const pulse = 0.7 + 0.3 * Math.sin(time * p.pulseSpeed * 60 + p.pulsePhase);
+    const lifeFade = Math.min(p.life / p.maxLife, 1);
+    const alpha = p.alpha * pulse * lifeFade;
+    if (alpha < 0.01) continue;
+
+    const c = palette.colors[p.colorIdx];
+    const sz = p.size * (0.8 + 0.4 * pulse);
+
+    // Glow
+    const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, sz * 4);
+    glow.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},${alpha})`);
+    glow.addColorStop(0.4, `rgba(${c[0]},${c[1]},${c[2]},${alpha * 0.3})`);
+    glow.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`);
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, sz * 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Core
+    ctx.fillStyle = `rgba(${Math.min(255,c[0]+80)},${Math.min(255,c[1]+80)},${Math.min(255,c[2]+80)},${alpha * 0.9})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, sz * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Nebula core halos
+  for (const core of nebulaCores) {
+    const c = palette.colors[core.colorIdx];
+    const halo = ctx.createRadialGradient(core.x, core.y, 0, core.x, core.y, core.radius);
+    halo.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},${0.06 * core.life})`);
+    halo.addColorStop(0.5, `rgba(${c[0]},${c[1]},${c[2]},${0.02 * core.life})`);
+    halo.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`);
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(core.x, core.y, core.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function loop() {
+  update();
+  draw();
+
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) {
+    fps = frameCount;
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+  statsEl.textContent = `${fps} fps · ${particles.length} particles · ${nebulaCores.length} cores`;
+  requestAnimationFrame(loop);
+}
+
+// Initial clear
+ctx.fillStyle = palette.bg;
+ctx.fillRect(0, 0, W, H);
+
+loop();
+</script>
+</body>
+</html>
