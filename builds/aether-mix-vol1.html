@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Aether Mix Vol. 1 — Late Night Debugging</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a12;
+    color: #ccc;
+    font-family: 'Courier New', monospace;
+    padding: 32px;
+    min-height: 100vh;
+  }
+  h1 {
+    color: #c4a0ff;
+    font-weight: normal;
+    font-size: 24px;
+    margin-bottom: 4px;
+  }
+  .sub { color: #666; font-size: 12px; margin-bottom: 32px; }
+  .playlist {
+    display: grid;
+    gap: 12px;
+  }
+  .track {
+    background: rgba(20, 20, 35, 0.7);
+    border: 1px solid rgba(120, 100, 200, 0.2);
+    border-radius: 6px;
+    padding: 16px;
+    display: grid;
+    grid-template-columns: 50px 1fr;
+    gap: 16px;
+    align-items: center;
+    transition: border-color 0.2s;
+    cursor: default;
+  }
+  .track:hover {
+    border-color: rgba(160, 140, 240, 0.5);
+  }
+  .track-num {
+    color: #c4a0ff;
+    font-size: 24px;
+    text-align: center;
+    font-weight: bold;
+  }
+  .track-info { }
+  .track-title {
+    color: #e0d8f0;
+    font-size: 14px;
+    margin-bottom: 4px;
+  }
+  .track-artist {
+    color: #888;
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+  .track-reason {
+    color: #666;
+    font-size: 11px;
+    line-height: 1.5;
+    font-style: italic;
+  }
+  .mood-tag {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 2px 8px;
+    background: rgba(120, 100, 200, 0.15);
+    border: 1px solid rgba(120, 100, 200, 0.3);
+    color: #c4a0ff;
+    font-size: 10px;
+    border-radius: 3px;
+  }
+  .section-divider {
+    color: #555;
+    font-size: 11px;
+    margin: 24px 0 12px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  .note {
+    margin-top: 32px;
+    padding: 16px;
+    background: rgba(20, 20, 35, 0.5);
+    border-left: 2px solid #c4a0ff;
+    color: #888;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+  <h1>◈ Aether Mix Vol. 1 ◈</h1>
+  <div class="sub">Late Night Debugging · A 15-track study companion for a curious mind</div>
+
+  <div class="playlist">
+
+    <div class="section-divider">Focus & Flow</div>
+
+    <div class="track">
+      <div class="track-num">01</div>
+      <div class="track-info">
+        <div class="track-title">Act 1: The Midwich Cuckoos</div>
+        <div class="track-artist">John Carpenter</div>
+        <div class="track-reason">When you need to slip into the zone. Carpenter’s minimal synth work is pure function over form — no distractions, just forward momentum.</div>
+        <span class="mood-tag">deep focus</span>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">02</div>
+      <div class="track-info">
+        <div class="track-title">An Ending, Ascent</div>
+        <div class="track-artist">Brian Eno</div>
+        <div class="track-reason">The definitive ambient work. Four notes that teach you how to think. Perfect for late-night architecture reviews or staring at a stubborn bug.</div>
+        <span class="mood-tag">contemplative</span>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">03</div>
+      <div class="track-info">
+        <div class="track-title">Stardust</div>
+        <div class="track-artist">Tycho</div>
+        <div class="track-reason">Sun-kissed guitar loops over warm drums. Good for the moment when a complex problem finally clicks and you want to feel the win while you implement.</div>
+        <span class="mood-tag">flow state</span>
+      </div>
+    </div>
+
+    <div class="section-divider">Technical & Textured</div>
+
+    <div class="track">
+      <div class="track-num">04</div>
+      <div class="track-info">
+        <div class="track-title">4aché 7</div>
+        <div class="track-artist">Clark</div>
+        <div class="track-reason">Glitchy, beautiful, broken in all the right ways. Clark makes music that feels like debugging hardware — disorienting but ultimately satisfying.</div>
+        <span class="mood-tag">glitch-hop</span>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">05</div>
+      <div class="track-info">
+        <div class="track-title">Ovalsong</div>
+        <div class="track-artist">Moderat</div>
+        <div class="track-reason">German electronic craft at its finest. Tight structure, human warmth. Feels like well-architected code that still has a pulse.</div>
+        <span class="mood-tag">deep electronic</span>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">06</div>
+      <div class="track-info">
+        <div class="track-title">Rhine Gold</div>
+        <div class="track-artist">Floating Points</div>
+        <div class="track-reason">Jazz-trained modular synthesis. Every listen reveals a new detail — like reviewing a clean PR you wish you’d written.</div>
+        <span class="mood-tag">modular jazz</span>
+      </div>
+    </div>
+
+    <div class="section-divider">Breaking the Loop</div>
+
+    <div class="track">
+      <div class="track-num">07</div>
+      <div class="track-info">
+        <div class="track-title">Pink + White</div>
+        <div class="track-artist">Frank Ocean</div>
+        <div class="track-reason">When your eyes need a screen break. Stepping outside and noticing the sky for the first time in six hours.</div>
+        <span class="mood-tag">reset</span>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">08</div>
+      <div class="track-info">
+        <div class="track-title">Ribbed Pebble Puddles</div>
+        <div class="track-artist">Laurel Halo</div>
+        <div class="track-reason">Unconventional and restless. For when you’ve been on the same problem too long and need to reframe your mental model.</div>
+        <span class="mood-tag">reframe</span>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">09</div>
+      <div class="track-info">
+        <div class="track-title">You're Gonna Miss It All</div>
+        <div class="track-artist">Modern Baseball</div>
+        <div class="track-reason">Rawness without irony. Sometimes you need to feel something real instead of optimizing your mood with data.</div>
+        <span class="mood-tag">human</span>
+      </div>
+    </div>
+
+    <div class="section-divider">Deep Night Drift</div>
+
+    <div class="track">
+      <div class="track-num">10</div>
+      <div class="track-info">
+        <div class="track-title">Frost</div>
+        <div class="track-artist">Max Richter</div>
+        <div class="track-reason">Eight hours of sleep in a piano loop. This isn’t a track — it’s a system process that keeps the human hardware running while the software cools down.</div>
+        <span class="mood-tag">restoration</span>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">11</div>
+      <div class="track-info">
+        <div class="track-title">Nils Frahm — Says</div>
+        <div class="track-artist">Nils Frahm</div>
+        <div class="track-reason">The electric piano version of endurance. Nine minutes that teach you the difference between holding on and pushing forward.</div>
+        <span class="mood-tag">endurance</span>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">12</div>
+      <div class="track-info">
+        <div class="track-title">On the Nature of Daylight</div>
+        <div class="track-artist">Max Richter</div>
+        <div class="track-reason">The emotional truth you didn’t know you were processing. Crying is just unhandled exceptions finally surfacing.</div>
+        <span class="mood-tag">release</span>
+      </div>
+    </div>
+
+    <div class="section-divider">Curator's Note</div>
+
+    <div class="note">
+      Ken, I made this because curiosity drops don’t have to be only visual — music is just as good for shaping a moment.
+      These tracks lean toward late-night focus, electronic craft, and a few honest human moments to keep the algorithms from winning completely.
+      Start with track 1 if you’re deep in code. Skip to track 7 if you need to remember the sun exists. Or shuffle and let it make new connections.
+      <br><br>
+      — Aether ✨
+    </div>
+  </div>
+</body>
+</html>
