@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Breathing Topology</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #050508; }
+  canvas { display: block; cursor: crosshair; }
+  #ui {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 10px; z-index: 10; flex-wrap: wrap; justify-content: center;
+  }
+  .btn {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+    color: rgba(255,255,255,0.7); padding: 6px 14px; border-radius: 20px;
+    font: 12px/1.4 'SF Mono', 'Fira Code', monospace; cursor: pointer;
+    backdrop-filter: blur(10px); transition: all 0.2s;
+  }
+  .btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+  .btn.active { background: rgba(120,180,255,0.15); border-color: rgba(120,180,255,0.4); color: #a0d0ff; }
+  #info {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.35); font: 11px/1.4 'SF Mono', 'Fira Code', monospace;
+    text-align: center; pointer-events: none; z-index: 10;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="info">click to ripple · drag to breathe · space pause · 1-5 palettes · S save</div>
+<div id="ui">
+  <button class="btn active" data-palette="0">Aurora</button>
+  <button class="btn" data-palette="1">Ember</button>
+  <button class="btn" data-palette="2">Void</button>
+  <button class="btn" data-palette="3">Toxic</button>
+  <button class="btn" data-palette="4">Frost</button>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, cols, rows;
+const SPACING = 28;
+let points = [];
+let ripples = [];
+let paused = false;
+let time = 0;
+let paletteIdx = 0;
+let mouse = { x: -9999, y: -9999, down: false };
+let breathPhase = 0;
+
+const PALETTES = [
+  { bg: '#050510', colors: ['#00ffa3','#00c8ff','#7b61ff','#ff6ec7','#a0ff00'], glow: '#00ffa3' },
+  { bg: '#0f0505', colors: ['#ff4500','#ff8c00','#ffd700','#ff6347','#ff2200'], glow: '#ff6a00' },
+  { bg: '#020208', colors: ['#8888ff','#4444cc','#ffffff','#aaaaff','#6666ee'], glow: '#aaaaff' },
+  { bg: '#030a03', colors: ['#39ff14','#00ff88','#ccff00','#00ff66','#88ff44'], glow: '#39ff14' },
+  { bg: '#080a0f', colors: ['#aaddff','#88ccff','#ffffff','#66aadd','#cceeff'], glow: '#aaddff' },
+];
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cols = Math.ceil(W / SPACING) + 2;
+  rows = Math.ceil(H / SPACING) + 2;
+  initGrid();
+}
+
+function initGrid() {
+  points = [];
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const ox = (i - 1) * SPACING;
+      const oy = (j - 1) * SPACING;
+      points.push({
+        ox, oy,
+        x: ox, y: oy,
+        vx: 0, vy: 0,
+        col: i, row: j,
+      });
+    }
+  }
+}
+
+function addRipple(x, y, strength = 1) {
+  ripples.push({ x, y, radius: 0, maxRadius: 350, strength, life: 1 });
+  if (ripples.length > 12) ripples.shift();
+}
+
+function update(dt) {
+  if (paused) return;
+  time += dt;
+  breathPhase += dt * 0.4;
+
+  for (const p of points) {
+    const dx = p.x - mouse.x;
+    const dy = p.y - mouse.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const influence = mouse.down ? 120 : 60;
+    if (dist < influence && dist > 0.1) {
+      const force = (1 - dist / influence) * (mouse.down ? 3 : 1.2);
+      p.vx -= (dx / dist) * force;
+      p.vy -= (dy / dist) * force;
+    }
+
+    for (const r of ripples) {
+      const rdx = p.x - r.x;
+      const rdy = p.y - r.y;
+      const rdist = Math.sqrt(rdx * rdx + rdy * rdy);
+      const ringDist = Math.abs(rdist - r.radius);
+      if (ringDist < 50 && rdist > 0.1) {
+        const ringForce = (1 - ringDist / 50) * r.strength * 8 * r.life;
+        p.vx += (rdx / rdist) * ringForce;
+        p.vy += (rdy / rdist) * ringForce;
+      }
+    }
+
+    const breathAmp = 6 + Math.sin(breathPhase) * 3;
+    const nx = p.col * 0.03;
+    const ny = p.row * 0.03;
+    const noiseX = Math.sin(nx + time * 0.5) * Math.cos(ny + time * 0.3) * breathAmp;
+    const noiseY = Math.cos(nx + time * 0.4) * Math.sin(ny + time * 0.6) * breathAmp;
+
+    const springK = 0.03;
+    const dampK = 0.88;
+    p.vx += (p.ox + noiseX - p.x) * springK;
+    p.vy += (p.oy + noiseY - p.y) * springK;
+    p.vx *= dampK;
+    p.vy *= dampK;
+    p.x += p.vx;
+    p.y += p.vy;
+  }
+
+  for (let i = ripples.length - 1; i >= 0; i--) {
+    ripples[i].radius += dt * 280;
+    ripples[i].life -= dt * 1.2;
+    if (ripples[i].life <= 0 || ripples[i].radius > ripples[i].maxRadius) ripples.splice(i, 1);
+  }
+}
+
+function draw() {
+  const pal = PALETTES[paletteIdx];
+  ctx.fillStyle = pal.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  for (let j = 0; j < rows - 1; j++) {
+    for (let i = 0; i < cols - 1; i++) {
+      const a = points[j * cols + i];
+      const b = points[j * cols + i + 1];
+      const c = points[(j + 1) * cols + i];
+      const d = points[(j + 1) * cols + i + 1];
+
+      const dispA = Math.sqrt((a.x - a.ox) ** 2 + (a.y - a.oy) ** 2);
+      const dispB = Math.sqrt((b.x - b.ox) ** 2 + (b.y - b.oy) ** 2);
+      const dispC = Math.sqrt((c.x - c.ox) ** 2 + (c.y - c.oy) ** 2);
+      const dispD = Math.sqrt((d.x - d.ox) ** 2 + (d.y - d.oy) ** 2);
+      const avgDisp = (dispA + dispB + dispC + dispD) * 0.25;
+      const t = Math.min(avgDisp / 18, 1);
+      const ci = Math.floor(t * (pal.colors.length - 1));
+      const cf = t * (pal.colors.length - 1) - ci;
+      const c1 = pal.colors[Math.min(ci, pal.colors.length - 1)];
+      const c2 = pal.colors[Math.min(ci + 1, pal.colors.length - 1)];
+      const color = lerpColor(c1, c2, cf);
+      const alpha = 0.15 + t * 0.55;
+
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.lineTo(d.x, d.y);
+      ctx.closePath();
+      ctx.fillStyle = hexToRgba(color, alpha);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(c.x, c.y);
+      ctx.lineTo(d.x, d.y);
+      ctx.closePath();
+      ctx.fillStyle = hexToRgba(color, alpha * 0.9);
+      ctx.fill();
+    }
+  }
+
+  for (const p of points) {
+    const d = Math.sqrt((p.x - p.ox) ** 2 + (p.y - p.oy) ** 2);
+    if (d > 1.5) {
+      const t = Math.min(d / 14, 1);
+      const alpha = t * 0.9;
+      const r = 1 + t * 2.5;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = hexToRgba(pal.glow, alpha);
+      ctx.fill();
+    }
+  }
+
+  for (const r of ripples) {
+    if (r.life <= 0) continue;
+    ctx.beginPath();
+    ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+    ctx.strokeStyle = hexToRgba(pal.glow, r.life * 0.25);
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+}
+
+function loop() {
+  const now = performance.now();
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+let lastTime = performance.now();
+
+function hexToRgba(hex, a) {
+  const r = parseInt(hex.slice(1,3), 16);
+  const g = parseInt(hex.slice(3,5), 16);
+  const b = parseInt(hex.slice(5,7), 16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function lerpColor(c1, c2, t) {
+  const r1 = parseInt(c1.slice(1,3), 16), g1 = parseInt(c1.slice(3,5), 16), b1 = parseInt(c1.slice(5,7), 16);
+  const r2 = parseInt(c2.slice(1,3), 16), g2 = parseInt(c2.slice(3,5), 16), b2 = parseInt(c2.slice(5,7), 16);
+  const r = Math.round(r1 + (r2 - r1) * t);
+  const g = Math.round(g1 + (g2 - g1) * t);
+  const b = Math.round(b1 + (b2 - b1) * t);
+  return `#${((r<<16)|(g<<8)|b).toString(16).padStart(6,'0')}`;
+}
+
+window.addEventListener('resize', resize);
+canvas.addEventListener('mousedown', (e) => { mouse.down = true; mouse.x = e.clientX; mouse.y = e.clientY; addRipple(e.clientX, e.clientY, 1.5); });
+canvas.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; if (mouse.down && Math.random() < 0.3) addRipple(e.clientX, e.clientY, 0.3); });
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mouseleave', () => { mouse.down = false; mouse.x = -9999; mouse.y = -9999; });
+canvas.addEventListener('touchstart', (e) => { e.preventDefault(); const t = e.touches[0]; mouse.down = true; mouse.x = t.clientX; mouse.y = t.clientY; addRipple(t.clientX, t.clientY, 1.5); }, { passive: false });
+canvas.addEventListener('touchmove', (e) => { e.preventDefault(); const t = e.touches[0]; mouse.x = t.clientX; mouse.y = t.clientY; if (Math.random() < 0.3) addRipple(t.clientX, t.clientY, 0.3); }, { passive: false });
+canvas.addEventListener('touchend', () => mouse.down = false);
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === ' ') { paused = !paused; e.preventDefault(); }
+  if (e.key >= '1' && e.key <= '5') { paletteIdx = parseInt(e.key) - 1; updateButtons(); }
+  if (e.key === 's' || e.key === 'S') {
+    const link = document.createElement('a');
+    link.download = 'breathing-topology.png';
+    link.href = canvas.toDataURL();
+    link.click();
+  }
+});
+
+document.querySelectorAll('.btn[data-palette]').forEach(btn => {
+  btn.addEventListener('click', () => { paletteIdx = parseInt(btn.dataset.palette); updateButtons(); });
+});
+
+function updateButtons() {
+  document.querySelectorAll('.btn[data-palette]').forEach(b => b.classList.toggle('active', parseInt(b.dataset.palette) === paletteIdx));
+}
+
+resize();
+loop();
+</script>
+</body>
+</html>
