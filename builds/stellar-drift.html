@@ -8,255 +8,322 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     background: #0a0a0f;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 100vh;
-    font-family: 'Courier New', monospace;
-    color: #aaa;
     overflow: hidden;
-  }
-  canvas {
-    border-radius: 8px;
-    box-shadow: 0 0 60px rgba(100, 140, 255, 0.15);
+    font-family: 'Courier New', monospace;
+    color: #ccc;
     cursor: crosshair;
   }
-  .controls {
-    margin-top: 20px;
-    display: flex;
-    gap: 20px;
-    align-items: center;
-    font-size: 13px;
-    z-index: 10;
-  }
-  .controls label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .controls input[type="range"] {
-    width: 100px;
-    accent-color: #7b9fff;
-  }
-  .controls button {
-    background: rgba(100, 140, 255, 0.15);
-    border: 1px solid rgba(100, 140, 255, 0.3);
-    color: #aaccff;
-    padding: 6px 14px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-family: inherit;
+  canvas { display: block; }
+  #info {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
     font-size: 12px;
-    transition: all 0.2s;
+    color: rgba(255,255,255,0.4);
+    text-align: center;
+    pointer-events: none;
+    letter-spacing: 1px;
   }
-  .controls button:hover {
-    background: rgba(100, 140, 255, 0.3);
-    color: #fff;
-  }
-  .title {
-    margin-bottom: 16px;
-    font-size: 14px;
-    letter-spacing: 4px;
-    text-transform: uppercase;
-    color: rgba(140, 170, 255, 0.7);
-  }
-  .stats {
-    margin-top: 8px;
+  #stats {
+    position: fixed;
+    top: 20px;
+    right: 20px;
     font-size: 11px;
-    color: rgba(140, 170, 255, 0.4);
+    color: rgba(255,255,255,0.3);
+    text-align: right;
+    pointer-events: none;
+    line-height: 1.6;
+  }
+  #controls {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    pointer-events: all;
+  }
+  .btn {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.5);
+    padding: 6px 12px;
+    margin: 2px;
+    font-size: 11px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 1px;
+    transition: all 0.3s;
+  }
+  .btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.8);
+    border-color: rgba(255,255,255,0.3);
   }
 </style>
 </head>
 <body>
-  <div class="title">✦ Stellar Drift ✦</div>
-  <canvas id="canvas"></canvas>
-  <div class="controls">
-    <label>Speed <input type="range" id="speed" min="1" max="10" value="3"></label>
-    <label>Trails <input type="range" id="trails" min="1" max="30" value="10"></label>
-    <label>Density <input type="range" id="density" min="500" max="8000" value="2500" step="500"></label>
-    <label>Chaos <input type="range" id="chaos" min="1" max="100" value="40"></label>
-    <button id="reset">↻ Reset</button>
-    <button id="colorShift">◈ Shift Hue</button>
-  </div>
-  <div class="stats" id="stats">particles: 2500 | FPS: --</div>
+<canvas id="canvas"></canvas>
+<div id="controls">
+  <button class="btn" onclick="resetField()">RESET</button>
+  <button class="btn" onclick="toggleMode()">MODE</button>
+  <button class="btn" onclick="changePalette()">PALETTE</button>
+</div>
+<div id="stats">
+  particles: <span id="pcount">0</span><br>
+  mode: <span id="pmode">flow</span><br>
+  palette: <span id="ppal">nebula</span>
+</div>
+<div id="info">move mouse to influence the field · click to burst</div>
 
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
+let W, H;
 function resize() {
-  const s = Math.min(window.innerWidth - 40, window.innerHeight - 140, 900);
-  canvas.width = s;
-  canvas.height = s * 0.75;
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
 }
 resize();
-window.addEventListener('resize', () => { resize(); init(); });
+window.addEventListener('resize', resize);
 
-// Simplex-like noise using sin-based pseudo-random field
-function noise(x, y, t) {
-  return (
-    Math.sin(x * 0.02 + t * 0.3) * Math.cos(y * 0.02 - t * 0.2) +
-    Math.sin((x + y) * 0.015 + t * 0.15) * 0.7 +
-    Math.sin(x * 0.005 - t * 0.1) * Math.cos(y * 0.005 + t * 0.08) * 1.5
-  );
-}
+// ─── State ──────────────────────────────────────────────
+const PALETTES = {
+  nebula:  ['#ff6b9d', '#c44dff', '#4d7dff', '#00d4ff', '#ff6b9d'],
+  aurora:  ['#00ff88', '#00ccaa', '#4488ff', '#8844ff', '#00ff88'],
+  ember:   ['#ff4400', '#ff8800', '#ffcc00', '#ff4400', '#ff4400'],
+  ocean:   ['#0044ff', '#0088ff', '#00ccff', '#0044ff', '#0044ff'],
+  ghost:   ['#ffffff', '#aaaaff', '#ffffff', '#ffaaff', '#ffffff'],
+  mono:    ['#ffffff', '#aaaaaa', '#555555', '#aaaaaa', '#ffffff']
+};
+const PAL_NAMES = Object.keys(PALETTES);
+let palette = 0;
+let mode = 0; // 0=flow, 1=orbit, 2=wave
 
-let particles = [];
-let W, H;
-let hueBase = 210; // blue base
-let hueRange = 60;
-let t = 0;
-let mouse = { x: -1000, y: -1000, active: false };
+const mouse = { x: W/2, y: H/2, active: false, click: 0 };
 
-function getParticleColor(life, maxLife) {
-  const ratio = life / maxLife;
-  const h = (hueBase + (1 - ratio) * hueRange) % 360;
-  const s = 70 + ratio * 30;
-  const l = 30 + ratio * 50;
-  const a = 0.1 + ratio * 0.6;
-  return `hsla(${h}, ${s}%, ${l}%, ${a})`;
-}
-
-class Particle {
-  constructor() { this.reset(); }
-  reset() {
-    this.x = Math.random() * W;
-    this.y = Math.random() * H;
-    this.life = 0;
-    this.maxLife = 150 + Math.random() * 350;
-    this.speed = 0.5 + Math.random() * 1.5;
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+});
+canvas.addEventListener('click', e => {
+  mouse.click = 30;
+  for (let i = 0; i < 40; i++) {
+    particles.push(new Particle(e.clientX, e.clientY, true));
   }
-  update(speedMult, chaosMult) {
-    const angle = noise(this.x, this.y, t) * Math.PI * 2 * (chaosMult / 50);
-    let vx = Math.cos(angle) * this.speed * speedMult;
-    let vy = Math.sin(angle) * this.speed * speedMult;
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY; mouse.active = true;
+}, { passive: false });
 
-    // Mouse attraction
+// ─── Noise (simple value noise) ─────────────────────────
+const NOISE_SIZE = 256;
+const noiseGrid = new Float32Array(NOISE_SIZE * NOISE_SIZE);
+function initNoise() {
+  for (let i = 0; i < noiseGrid.length; i++) {
+    noiseGrid[i] = Math.random();
+  }
+}
+function smoothNoise(x, y) {
+  const ix = Math.floor(x) & (NOISE_SIZE - 1);
+  const iy = Math.floor(y) & (NOISE_SIZE - 1);
+  const fx = x - Math.floor(x);
+  const fy = y - Math.floor(y);
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  const ix1 = (ix + 1) & (NOISE_SIZE - 1);
+  const iy1 = (iy + 1) & (NOISE_SIZE - 1);
+  const a = noiseGrid[iy * NOISE_SIZE + ix];
+  const b = noiseGrid[iy * NOISE_SIZE + ix1];
+  const c = noiseGrid[iy1 * NOISE_SIZE + ix];
+  const d = noiseGrid[iy1 * NOISE_SIZE + ix1];
+  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+}
+let noiseTime = 0;
+
+// ─── Particles ──────────────────────────────────────────
+class Particle {
+  constructor(x, y, burst) {
+    this.x = x || Math.random() * W;
+    this.y = y || Math.random() * H;
+    this.vx = 0;
+    this.vy = 0;
+    this.life = burst ? 60 + Math.random() * 60 : Infinity;
+    this.maxLife = this.life;
+    this.speed = 0.5 + Math.random() * 1.5;
+    this.size = 0.5 + Math.random() * 1.5;
+    this.hueOffset = Math.random();
+    this.trail = [];
+    this.maxTrail = 8 + Math.floor(Math.random() * 12);
+  }
+  update() {
+    if (this.life !== Infinity) this.life--;
+    const colors = PALETTES[PAL_NAMES[palette]];
+    const col = colors[Math.floor(this.hueOffset * (colors.length - 1))];
+    this.trail.push({ x: this.x, y: this.y });
+    if (this.trail.length > this.maxTrail) this.trail.shift();
+
+    const scale = 0.003;
+    let angle;
+    if (mode === 0) { // flow
+      const n = smoothNoise(this.x * scale + noiseTime, this.y * scale + noiseTime * 0.7) * Math.PI * 4;
+      angle = n;
+    } else if (mode === 1) { // orbit
+      const cx = W / 2, cy = H / 2;
+      const dx = this.x - cx, dy = this.y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 0.001;
+      angle = Math.atan2(dy, dx) + Math.PI * 0.5 + Math.sin(dist * 0.01 - noiseTime * 2) * 0.5;
+    } else { // wave
+      angle = Math.sin(this.x * 0.01 + noiseTime * 3) * Math.PI;
+      angle += Math.cos(this.y * 0.01 + noiseTime * 2) * Math.PI * 0.5;
+    }
+
+    let fx = Math.cos(angle) * this.speed;
+    let fy = Math.sin(angle) * this.speed;
+
+    // mouse influence
     if (mouse.active) {
-      const dx = mouse.x - this.x;
-      const dy = mouse.y - this.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 200 && dist > 1) {
-        const force = (200 - dist) / 200 * 0.8;
-        vx += (dx / dist) * force;
-        vy += (dy / dist) * force;
+      const dx = this.x - mouse.x;
+      const dy = this.y - mouse.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 1;
+      if (dist < 200) {
+        const force = (1 - dist / 200) * 2;
+        fx += (dx / dist) * force;
+        fy += (dy / dist) * force;
       }
     }
 
-    this.x += vx;
-    this.y += vy;
-    this.life++;
-
-    if (this.x < -20 || this.x > W + 20 || this.y < -20 || this.y > H + 20 || this.life > this.maxLife) {
-      this.reset();
+    // click burst
+    if (mouse.click > 0) {
+      const dx = this.x - mouse.x;
+      const dy = this.y - mouse.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 1;
+      if (dist < 300) {
+        const force = (1 - dist / 300) * mouse.click * 0.3;
+        fx += (dx / dist) * force;
+        fy += (dy / dist) * force;
+      }
     }
+
+    this.vx += (fx - this.vx) * 0.1;
+    this.vy += (fy - this.vy) * 0.1;
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // wrap
+    if (this.x < 0) this.x += W;
+    if (this.x > W) this.x -= W;
+    if (this.y < 0) this.y += H;
+    if (this.y > H) this.y -= H;
+
+    return this.life > 0;
   }
-  draw(ctx) {
+  draw() {
+    const colors = PALETTES[PAL_NAMES[palette]];
+    const col = colors[Math.floor(this.hueOffset * (colors.length - 1))];
+    const alpha = this.life === Infinity ? 0.6 : 0.6 * (this.life / this.maxLife);
+
+    // draw trail
+    if (this.trail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(this.trail[0].x, this.trail[0].y);
+      for (let i = 1; i < this.trail.length; i++) {
+        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+      }
+      ctx.strokeStyle = col;
+      ctx.globalAlpha = alpha * 0.3;
+      ctx.lineWidth = this.size * 0.5;
+      ctx.stroke();
+    }
+
+    // draw head
     ctx.beginPath();
-    ctx.arc(this.x, this.y, 1.2, 0, Math.PI * 2);
-    ctx.fillStyle = getParticleColor(this.life, this.maxLife);
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = col;
+    ctx.globalAlpha = alpha;
     ctx.fill();
+    ctx.globalAlpha = 1;
   }
 }
 
-function init() {
-  W = canvas.width;
-  H = canvas.height;
-  const count = parseInt(document.getElementById('density').value);
+const MAX_PARTICLES = 2000;
+let particles = [];
+function initParticles() {
   particles = [];
-  for (let i = 0; i < count; i++) particles.push(new Particle());
-  // Fade to black on init
+  for (let i = 0; i < 1500; i++) {
+    particles.push(new Particle());
+  }
+}
+
+// ─── Background fade ────────────────────────────────────
+let bgAlpha = 0.05;
+
+// ─── Main loop ──────────────────────────────────────────
+let lastTime = performance.now();
+function loop() {
+  const now = performance.now();
+  const dt = (now - lastTime) / 1000;
+  lastTime = now;
+  noiseTime += dt * 0.3;
+
+  // fade
+  ctx.fillStyle = `rgba(10, 10, 15, ${bgAlpha})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // update
+  particles = particles.filter(p => p.update());
+
+  // maintain count
+  while (particles.length < 1500) {
+    particles.push(new Particle());
+  }
+  if (particles.length > MAX_PARTICLES) {
+    particles = particles.slice(0, MAX_PARTICLES);
+  }
+
+  // draw
+  for (const p of particles) p.draw();
+
+  // click decay
+  if (mouse.click > 0) mouse.click -= dt * 3;
+
+  // stats
+  document.getElementById('pcount').textContent = particles.length;
+  const MODES = ['flow', 'orbit', 'wave'];
+  document.getElementById('pmode').textContent = MODES[mode];
+  document.getElementById('ppal').textContent = PAL_NAMES[palette];
+
+  requestAnimationFrame(loop);
+}
+
+// ─── Controls ───────────────────────────────────────────
+function resetField() {
+  initNoise();
+  initParticles();
   ctx.fillStyle = 'rgba(10, 10, 15, 1)';
   ctx.fillRect(0, 0, W, H);
 }
-
-canvas.addEventListener('mousemove', (e) => {
-  const rect = canvas.getBoundingClientRect();
-  mouse.x = e.clientX - rect.left;
-  mouse.y = e.clientY - rect.top;
-  mouse.active = true;
-});
-canvas.addEventListener('mouseleave', () => { mouse.active = false; });
-canvas.addEventListener('touchmove', (e) => {
-  e.preventDefault();
-  const rect = canvas.getBoundingClientRect();
-  mouse.x = e.touches[0].clientX - rect.left;
-  mouse.y = e.touches[0].clientY - rect.top;
-  mouse.active = true;
-}, { passive: false });
-canvas.addEventListener('touchend', () => { mouse.active = false; });
-
-document.getElementById('reset').addEventListener('click', () => {
-  t = 0;
-  hueBase = Math.random() * 360;
-  init();
-});
-document.getElementById('colorShift').addEventListener('click', () => {
-  hueBase = (hueBase + 60 + Math.random() * 60) % 360;
-});
-
-let lastFrame = performance.now();
-let fps = 0;
-let frameCount = 0;
-let fpsTime = 0;
-
-function animate() {
-  const now = performance.now();
-  const dt = (now - lastFrame) / 1000;
-  lastFrame = now;
-  t += dt;
-
-  const speedMult = parseFloat(document.getElementById('speed').value) * 0.5;
-  const trailAlpha = parseFloat(document.getElementById('trails').value) / 255;
-  const chaosMult = parseFloat(document.getElementById('chaos').value);
-
-  // Trail fade
-  ctx.fillStyle = `rgba(10, 10, 15, ${trailAlpha})`;
+function toggleMode() {
+  mode = (mode + 1) % 3;
+  const MODES = ['flow', 'orbit', 'wave'];
+  document.getElementById('pmode').textContent = MODES[mode];
+  // clear for visual feedback
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.3)';
   ctx.fillRect(0, 0, W, H);
-
-  // Draw connections between nearby particles (sparse, for performance)
-  ctx.lineWidth = 0.3;
-  for (let i = 0; i < particles.length; i += 3) {
-    const p = particles[i];
-    p.update(speedMult, chaosMult);
-    p.draw(ctx);
-
-    // Only check connections for a subset
-    if (i % 6 === 0) {
-      for (let j = i + 1; j < Math.min(i + 30, particles.length); j += 3) {
-        const q = particles[j];
-        const dx = p.x - q.x;
-        const dy = p.y - q.y;
-        const d = dx * dx + dy * dy;
-        if (d < 1800) {
-          ctx.beginPath();
-          ctx.moveTo(p.x, p.y);
-          ctx.lineTo(q.x, q.y);
-          const alpha = (1 - d / 1800) * 0.15;
-          ctx.strokeStyle = `hsla(${hueBase}, 60%, 50%, ${alpha})`;
-          ctx.stroke();
-        }
-      }
-    }
-  }
-
-  // FPS counter
-  frameCount++;
-  fpsTime += dt;
-  if (fpsTime >= 1) {
-    fps = Math.round(frameCount / fpsTime);
-    frameCount = 0;
-    fpsTime = 0;
-  }
-  document.getElementById('stats').textContent =
-    `particles: ${particles.length} | FPS: ${fps} | hue: ${Math.round(hueBase)}°`;
-
-  requestAnimationFrame(animate);
+}
+function changePalette() {
+  palette = (palette + 1) % PAL_NAMES.length;
+  document.getElementById('ppal').textContent = PAL_NAMES[palette];
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.3)';
+  ctx.fillRect(0, 0, W, H);
 }
 
-init();
-animate();
+// ─── Init ───────────────────────────────────────────────
+initNoise();
+initParticles();
+ctx.fillStyle = 'rgba(10, 10, 15, 1)';
+ctx.fillRect(0, 0, W, H);
+loop();
 </script>
 </body>
 </html>
