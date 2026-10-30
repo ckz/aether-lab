@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How Big Is That? — Data Size Explainer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace, sans-serif;
+    background: #0a0a0f;
+    color: #e0e0e0;
+    min-height: 100vh;
+    padding: 2rem;
+  }
+
+  .container {
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(135deg, #00d4ff, #7b2ff7, #ff2d55);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .subtitle {
+    color: #888;
+    margin-bottom: 2rem;
+    font-size: 1rem;
+  }
+
+  .input-section {
+    background: #12121a;
+    border: 1px solid #2a2a3a;
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+  }
+
+  .input-group {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+
+  input[type="text"] {
+    flex: 1;
+    padding: 1rem 1.2rem;
+    font-size: 1.1rem;
+    background: #0a0a0f;
+    border: 2px solid #2a2a3a;
+    border-radius: 12px;
+    color: #fff;
+    outline: none;
+    transition: border-color 0.3s;
+  }
+
+  input[type="text"]:focus {
+    border-color: #7b2ff7;
+  }
+
+  select {
+    padding: 1rem;
+    font-size: 1rem;
+    background: #0a0a0f;
+    border: 2px solid #2a2a3a;
+    border-radius: 12px;
+    color: #fff;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .quick-stack {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+
+  .chip {
+    padding: 0.5rem 1rem;
+    background: #1a1a2e;
+    border: 1px solid #2a2a3a;
+    border-radius: 20px;
+    color: #aaa;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+  }
+
+  .chip:hover {
+    background: #2a1a3e;
+    border-color: #7b2ff7;
+    color: #fff;
+  }
+
+  .results {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+
+  .card {
+    background: #12121a;
+    border: 1px solid #2a2a3a;
+    border-radius: 16px;
+    padding: 1.5rem;
+    transition: transform 0.2s, border-color 0.2s;
+  }
+
+  .card:hover {
+    transform: translateY(-2px);
+    border-color: #7b2ff7;
+  }
+
+  .card-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .card-label {
+    color: #888;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 0.5rem;
+  }
+
+  .card-value {
+    font-size: 1.5rem;
+    color: #fff;
+    margin-bottom: 0.25rem;
+  }
+
+  .card-detail {
+    color: #aaa;
+    font-size: 0.9rem;
+  }
+
+  .big-number {
+    font-size: 3rem;
+    font-weight: bold;
+    background: linear-gradient(135deg, #00d4ff, #7b2ff7);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin: 1.5rem 0;
+  }
+
+  .scale-bar {
+    background: #1a1a2e;
+    border-radius: 8px;
+    height: 12px;
+    overflow: hidden;
+    margin-top: 1rem;
+  }
+
+  .scale-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #00d4ff, #7b2ff7, #ff2d55);
+    transition: width 0.5s ease;
+  }
+
+  .comparison-box {
+    background: #12121a;
+    border: 1px solid #2a2a3a;
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+  }
+
+  .comparison-title {
+    font-size: 1.2rem;
+    margin-bottom: 1rem;
+    color: #fff;
+  }
+
+  .comparison-item {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #1a1a2e;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .comparison-item:last-child { border-bottom: none; }
+
+  .comp-name { color: #ccc; }
+  .comp-value { color: #00d4ff; font-family: monospace; }
+
+  .fun-fact {
+    background: #1a1a2e;
+    border-left: 4px solid #7b2ff7;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-top: 2rem;
+  }
+
+  .fun-fact-title {
+    color: #7b2ff7;
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+  }
+
+  .fun-fact-text { color: #ccc; line-height: 1.6; }
+
+  .examples-section {
+    margin-top: 2rem;
+  }
+
+  .examples-title {
+    color: #888;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 1rem;
+  }
+
+  .example-btn {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    margin: 0.25rem;
+    background: #12121a;
+    border: 1px solid #2a2a3a;
+    border-radius: 8px;
+    color: #aaa;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+  }
+
+  .example-btn:hover {
+    border-color: #7b2ff7;
+    color: #fff;
+  }
+
+  footer {
+    text-align: center;
+    color: #555;
+    margin-top: 3rem;
+    font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>How Big Is That?</h1>
+  <p class="subtitle">Data size explainer — paste a number, understand the scale</p>
+
+  <div class="input-section">
+    <div class="input-group">
+      <input type="text" id="sizeInput" placeholder="Enter a size (e.g., 500, 1.5, 2500000)" value="1024">
+      <select id="unitSelect">
+        <option value="bytes">Bytes</option>
+        <option value="kb">KB</option>
+        <option value="mb" selected>MB</option>
+        <option value="gb">GB</option>
+        <option value="tb">TB</option>
+        <option value="pb">PB</option>
+      </select>
+    </div>
+    <div class="quick-stack">
+      <span class="chip" onclick="setSize(1, 'mb')">1 MB</span>
+      <span class="chip" onclick="setSize(5, 'gb')">5 GB</span>
+      <span class="chip" onclick="setSize(1, 'tb')">1 TB</span>
+      <span class="chip" onclick="setSize(16, 'gb')">16 GB</span>
+      <span class="chip" onclick="setSize(100, 'mb')">100 MB</span>
+      <span class="chip" onclick="setSize(4.7, 'gb')">4.7 GB</span>
+      <span class="chip" onclick="setSize(50, 'kb')">50 KB</span>
+      <span class="chip" onclick="setSize(1, 'pb')">1 PB</span>
+    </div>
+  </div>
+
+  <div id="results"></div>
+
+  <div class="examples-section">
+    <div class="examples-title">Try these examples:</div>
+    <span class="example-btn" onclick="setSize(2, 'mb')">2 MB photo</span>
+    <span class="example-btn" onclick="setSize(140, 'gb')">140 GB SSD</span>
+    <span class="example-btn" onclick="setSize(200, 'mb')">200 MB app</span>
+    <span class="example-btn" onclick="setSize(4.7, 'gb')">4.7 GB DVD</span>
+    <span class="example-btn" onclick="setSize(100, 'pb')">100 PB Google index</span>
+    <span class="example-btn" onclick="setSize(500, 'mb')">500 MB music album</span>
+    <span class="example-btn" onclick="setSize(3.5, 'mb')">3.5 MB floppy disk</span>
+  </div>
+
+  <footer>
+    <p>All comparisons are approximate. Built for curiosity.</p>
+  </footer>
+</div>
+
+<script>
+  const UNITS = {
+    bytes: 1,
+    kb: 1024,
+    mb: 1024 ** 2,
+    gb: 1024 ** 3,
+    tb: 1024 ** 4,
+    pb: 1024 ** 5
+  };
+
+  const COMPARISONS = [
+    { name: 'Plain text pages', bytesPer: 3000, icon: '📄' },
+    { name: 'Photos (compressed)', bytesPer: 3 * 1024 * 1024, icon: '📷' },
+    { name: 'Songs (MP3 320kbps)', bytesPer: 10 * 1024 * 1024, icon: '🎵' },
+    { name: 'HD movies', bytesPer: 4 * 1024 * 1024 * 1024, icon: '🎬' },
+    { name: 'Books (scanned)', bytesPer: 50 * 1024 * 1024, icon: '📚' },
+    { name: 'Email inboxes', bytesPer: 500 * 1024 * 1024, icon: '📧' },
+    { name: 'Websites (archived)', bytesPer: 100 * 1024 * 1024, icon: '🌐' },
+    { name: 'Human genome (raw)', bytesPer: 3 * 1024 * 1024 * 1024, icon: '🧬' },
+    { name: 'Floppy disks', bytesPer: 1.44 * 1024 * 1024, icon: '💾' },
+    { name: 'CD-ROMs', bytesPer: 700 * 1024 * 1024, icon: '💿' },
+    { name: 'DVDs', bytesPer: 4.7 * 1024 * 1024 * 1024, icon: '📀' },
+    { name: 'Blu-rays', bytesPer: 25 * 1024 * 1024 * 1024, icon: '📼' },
+    { name: 'Smartphone photos', bytesPer: 5 * 1024 * 1024, icon: '📱' },
+    { name: '4K video (1 hour)', bytesPer: 20 * 1024 * 1024 * 1024, icon: '🎥' },
+  ];
+
+  const FUN_FACTS = [
+    "The entire text of Wikipedia, compressed, fits in about 20 GB. All human knowledge, in a wallet-sized drive.",
+    "1 PB could store 500 billion pages of text — enough to build a stack of paper reaching to the moon and back 50 times.",
+    "A single gram of DNA can theoretically store 215 petabytes. Nature has been running on better storage tech for 4 billion years.",
+    "In 1993, the internet's total data was about 1% of what a modern smartphone stores. We've grown since.",
+    "Google processes ~20 petabytes of data daily. That's more than all books ever printed, every single day.",
+    "The Voyager 1 spacecraft, launched in 1977, has transmitted about 600 GB of data across 24+ billion kilometers.",
+    "Your brain's storage capacity is estimated at ~2.5 petabytes. You are, in a very real sense, a living hard drive.",
+  ];
+
+  function toBytes(value, unit) {
+    return value * UNITS[unit];
+  }
+
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const size = Math.pow(k, i);
+    const formatted = (bytes / size).toFixed(i === 0 ? 0 : 2);
+    return formatted + ' ' + sizes[i];
+  }
+
+  function formatNumber(num) {
+    if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
+    if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
+    if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
+    if (num >= 1e3) return (num / 1e3).toFixed(2) + 'K';
+    return Math.round(num).toString();
+  }
+
+  function setSize(value, unit) {
+    document.getElementById('sizeInput').value = value;
+    document.getElementById('unitSelect').value = unit;
+    update();
+  }
+
+  function update() {
+    const input = document.getElementById('sizeInput').value;
+    const unit = document.getElementById('unitSelect').value;
+    const value = parseFloat(input);
+
+    if (!input || isNaN(value) || value < 0) {
+      document.getElementById('results').innerHTML = '';
+      return;
+    }
+
+    const bytes = toBytes(value, unit);
+    const resultsDiv = document.getElementById('results');
+
+    // Main stats cards
+    let html = `
+      <div class="card" style="grid-column: 1 / -1;">
+        <div class="card-label">Total Size</div>
+        <div class="big-number">${formatBytes(bytes)}</div>
+        <div style="color: #888; font-size: 0.9rem;">${bytes.toLocaleString()} bytes</div>
+      </div>
+    `;
+
+    // Comparisons
+    const sortedComparisons = COMPARISONS
+      .map(c => ({
+        ...c,
+        count: bytes / c.bytesPer
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+
+    html += '<div class="comparison-box"><div class="comparison-title">📊 Real-World Comparisons</div>';
+    sortedComparisons.forEach(comp => {
+      const count = comp.count;
+      let display;
+      if (count >= 1e9) display = (count / 1e9).toFixed(1) + ' billion';
+      else if (count >= 1e6) display = (count / 1e6).toFixed(1) + ' million';
+      else if (count >= 1e3) display = Math.round(count).toLocaleString();
+      else if (count >= 1) display = count.toFixed(1);
+      else display = '<' + (1 / count).toFixed(0) + 'th of one';
+
+      html += `
+        <div class="comparison-item">
+          <span class="comp-name">${comp.icon} ${comp.name}</span>
+          <span class="comp-value">${display}</span>
+        </div>
+      `;
+    });
+    html += '</div>';
+
+    // Fun fact
+    const factIndex = Math.floor(Math.random() * FUN_FACTS.length);
+    html += `
+      <div class="fun-fact">
+        <div class="fun-fact-title">💡 Fun Fact</div>
+        <div class="fun-fact-text">${FUN_FACTS[factIndex]}</div>
+      </div>
+    `;
+
+    resultsDiv.innerHTML = html;
+  }
+
+  document.getElementById('sizeInput').addEventListener('input', update);
+  document.getElementById('unitSelect').addEventListener('change', update);
+
+  update();
+</script>
+</body>
+</html>
