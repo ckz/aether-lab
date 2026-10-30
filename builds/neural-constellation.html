@@ -10,174 +10,229 @@
     background: #0a0a0f;
     overflow: hidden;
     font-family: 'Courier New', monospace;
+    color: #aaa;
     cursor: crosshair;
   }
   canvas { display: block; }
-  .overlay {
+  #info {
     position: fixed;
-    bottom: 20px;
+    top: 16px;
+    left: 16px;
+    font-size: 11px;
+    opacity: 0.5;
+    pointer-events: none;
+    z-index: 10;
+    letter-spacing: 0.5px;
+  }
+  #title {
+    position: fixed;
+    bottom: 24px;
     left: 50%;
     transform: translateX(-50%);
-    color: rgba(255,255,255,0.4);
-    font-size: 12px;
-    letter-spacing: 2px;
+    font-size: 13px;
+    letter-spacing: 3px;
     text-transform: uppercase;
+    opacity: 0.3;
     pointer-events: none;
     z-index: 10;
   }
-  .title {
+  #controls {
     position: fixed;
-    top: 24px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: rgba(255,255,255,0.15);
+    top: 16px;
+    right: 16px;
     font-size: 11px;
-    letter-spacing: 4px;
-    text-transform: uppercase;
+    opacity: 0.4;
     pointer-events: none;
     z-index: 10;
+    text-align: right;
+    line-height: 1.8;
   }
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
-<div class="title">Neural Constellation</div>
-<div class="overlay">move mouse · click to burst · space to reset</div>
+<canvas id="canvas"></canvas>
+<div id="info">PARTICLES: <span id="count">0</span> | FPS: <span id="fps">0</span></div>
+<div id="controls">
+  MOVE MOUSE — attract<br>
+  CLICK — burst<br>
+  SPACE — reset
+</div>
+<div id="title">✦ Neural Constellation ✦</div>
 <script>
-const canvas = document.getElementById('c');
+const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-
-let W, H, particles, mouse, bursts;
-let hueBase = 0;
-let frame = 0;
-
-const CONFIG = {
-  particleCount: 140,
-  maxSpeed: 0.6,
-  connectionDist: 140,
-  mouseRadius: 200,
-  pulseSpeed: 0.008,
-  trailAlpha: 0.06,
-  burstCount: 30,
-  colorCycleSpeed: 0.15,
-};
-
-mouse = { x: -9999, y: -9999, active: false };
-
-class Particle {
-  constructor(x, y, burst = false) {
-    this.x = x ?? Math.random() * W;
-    this.y = y ?? Math.random() * H;
-    const angle = Math.random() * Math.PI * 2;
-    const speed = burst ? (2 + Math.random() * 4) : (0.2 + Math.random() * CONFIG.maxSpeed);
-    this.vx = Math.cos(angle) * speed;
-    this.vy = Math.sin(angle) * speed;
-    this.radius = burst ? (1.5 + Math.random() * 2.5) : (1 + Math.random() * 2);
-    this.life = burst ? 1 : Infinity;
-    this.decay = burst ? (0.005 + Math.random() * 0.015) : 0;
-    this.hueOffset = Math.random() * 60 - 30;
-    this.phase = Math.random() * Math.PI * 2;
-    this.pulseAmp = 0.3 + Math.random() * 0.7;
-  }
-
-  update() {
-    // Gentle wandering
-    this.vx += (Math.random() - 0.5) * 0.02;
-    this.vy += (Math.random() - 0.5) * 0.02;
-
-    // Speed limit
-    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-    if (speed > CONFIG.maxSpeed * (this.life < 1 ? 3 : 1)) {
-      this.vx = (this.vx / speed) * CONFIG.maxSpeed;
-      this.vy = (this.vy / speed) * CONFIG.maxSpeed;
-    }
-
-    this.x += this.vx;
-    this.y += this.vy;
-
-    // Wrap
-    if (this.x < -20) this.x = W + 20;
-    if (this.x > W + 20) this.x = -20;
-    if (this.y < -20) this.y = H + 20;
-    if (this.y > H + 20) this.y = -20;
-
-    // Mouse attraction/repulsion
-    if (mouse.active) {
-      const dx = mouse.x - this.x;
-      const dy = mouse.y - this.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < CONFIG.mouseRadius && dist > 1) {
-        const force = (1 - dist / CONFIG.mouseRadius) * 0.03;
-        this.vx += (dx / dist) * force;
-        this.vy += (dy / dist) * force;
-      }
-    }
-
-    this.life -= this.decay;
-    this.phase += CONFIG.pulseSpeed;
-  }
-
-  draw() {
-    if (this.life <= 0) return;
-    const pulse = 1 + Math.sin(this.phase) * this.pulseAmp * 0.3;
-    const alpha = this.life < 1 ? this.life : 0.7 + Math.sin(this.phase) * 0.3;
-    const hue = (hueBase + this.hueOffset + (this.x / W) * 40) % 360;
-    const r = this.radius * pulse;
-
-    // Glow
-    const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, r * 4);
-    grad.addColorStop(0, `hsla(${hue}, 80%, 65%, ${alpha})`);
-    grad.addColorStop(0.5, `hsla(${hue}, 70%, 50%, ${alpha * 0.3})`);
-    grad.addColorStop(1, `hsla(${hue}, 60%, 40%, 0)`);
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, r * 4, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Core
-    ctx.fillStyle = `hsla(${hue}, 90%, 80%, ${alpha})`;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  get alive() {
-    return this.life > 0;
-  }
-}
-
-class Burst {
-  constructor(x, y) {
-    this.particles = [];
-    for (let i = 0; i < CONFIG.burstCount; i++) {
-      this.particles.push(new Particle(x, y, true));
-    }
-  }
-  update() {
-    this.particles.forEach(p => p.update());
-    this.particles = this.particles.filter(p => p.alive);
-  }
-  draw() {
-    this.particles.forEach(p => p.draw());
-  }
-  get alive() {
-    return this.particles.length > 0;
-  }
-}
+let W, H;
 
 function resize() {
   W = canvas.width = window.innerWidth;
   H = canvas.height = window.innerHeight;
 }
+resize();
+window.addEventListener('resize', resize);
 
-function init() {
-  resize();
-  particles = [];
-  for (let i = 0; i < CONFIG.particleCount; i++) {
-    particles.push(new Particle());
+// Color palettes — different moods
+const palettes = [
+  ['#4fc3f7', '#29b6f6', '#03a9f4', '#00bcd4', '#80deea'], // cyan ocean
+  ['#ce93d8', '#ba68c8', '#ab47bc', '#9c27b0', '#ea80fc'], // purple nebula
+  ['#ffab91', '#ff8a65', '#ff7043', '#ff5722', '#ffccbc'], // ember glow
+  ['#a5d6a7', '#81c784', '#66bb6a', '#4caf50', '#b9f6ca'], // bioluminescent
+  ['#fff59d', '#ffee58', '#ffeb3b', '#fdd835', '#ffff8d'], // golden swarm
+];
+
+let currentPalette = palettes[0];
+
+class Particle {
+  constructor(x, y, burst = false) {
+    this.x = x ?? Math.random() * W;
+    this.y = y ?? Math.random() * H;
+    this.vx = burst ? (Math.random() - 0.5) * 8 : (Math.random() - 0.5) * 0.5;
+    this.vy = burst ? (Math.random() - 0.5) * 8 : (Math.random() - 0.5) * 0.5;
+    this.radius = Math.random() * 2 + 0.5;
+    this.baseRadius = this.radius;
+    this.life = 1;
+    this.decay = burst ? 0.008 + Math.random() * 0.015 : 0;
+    this.color = currentPalette[Math.floor(Math.random() * currentPalette.length)];
+    this.pulseOffset = Math.random() * Math.PI * 2;
+    this.pulseSpeed = 0.02 + Math.random() * 0.03;
+    this.trail = [];
+    this.maxTrail = burst ? 15 : 8;
   }
-  bursts = [];
+
+  update(mouse, time) {
+    // Pulse
+    this.radius = this.baseRadius + Math.sin(time * this.pulseSpeed + this.pulseOffset) * 0.8;
+
+    // Mouse attraction
+    if (mouse.x !== null) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 200) {
+        const force = (200 - dist) / 200 * 0.03;
+        this.vx += dx * force;
+        this.vy += dy * force;
+      }
+    }
+
+    // Gentle noise-like drift
+    this.vx += Math.sin(time * 0.001 + this.y * 0.01) * 0.005;
+    this.vy += Math.cos(time * 0.001 + this.x * 0.01) * 0.005;
+
+    // Damping
+    this.vx *= 0.99;
+    this.vy *= 0.99;
+
+    // Speed limit
+    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    if (speed > 3) {
+      this.vx = (this.vx / speed) * 3;
+      this.vy = (this.vy / speed) * 3;
+    }
+
+    // Trail
+    this.trail.push({ x: this.x, y: this.y });
+    if (this.trail.length > this.maxTrail) this.trail.shift();
+
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= this.decay;
+
+    // Wrap
+    if (this.x < -50) this.x = W + 50;
+    if (this.x > W + 50) this.x = -50;
+    if (this.y < -50) this.y = H + 50;
+    if (this.y > H + 50) this.y = -50;
+  }
+
+  draw(ctx) {
+    const alpha = this.life * 0.8;
+
+    // Trail
+    if (this.trail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(this.trail[0].x, this.trail[0].y);
+      for (let i = 1; i < this.trail.length; i++) {
+        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+      }
+      ctx.strokeStyle = this.color + '15';
+      ctx.lineWidth = this.radius * 0.5;
+      ctx.stroke();
+    }
+
+    // Glow
+    const grd = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius * 4);
+    grd.addColorStop(0, this.color + Math.floor(alpha * 255).toString(16).padStart(2, '0'));
+    grd.addColorStop(1, this.color + '00');
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius * 4, 0, Math.PI * 2);
+    ctx.fillStyle = grd;
+    ctx.fill();
+
+    // Core
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fillStyle = this.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+    ctx.fill();
+  }
 }
+
+const particles = [];
+const PARTICLE_COUNT = 180;
+const CONNECTION_DIST = 120;
+
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+  particles.push(new Particle());
+}
+
+const mouse = { x: null, y: null };
+let time = 0;
+let lastTime = performance.now();
+let frameCount = 0;
+let fps = 0;
+let fpsTimer = 0;
+
+// Cycle palettes
+let paletteIndex = 0;
+setInterval(() => {
+  paletteIndex = (paletteIndex + 1) % palettes.length;
+  currentPalette = palettes[paletteIndex];
+  particles.forEach(p => {
+    p.color = currentPalette[Math.floor(Math.random() * currentPalette.length)];
+  });
+}, 12000);
+
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+
+canvas.addEventListener('mouseleave', () => {
+  mouse.x = null;
+  mouse.y = null;
+});
+
+canvas.addEventListener('click', (e) => {
+  for (let i = 0; i < 30; i++) {
+    particles.push(new Particle(e.clientX, e.clientY, true));
+  }
+  // Remove excess burst particles over time
+  setTimeout(() => {
+    while (particles.length > PARTICLE_COUNT + 60) {
+      const idx = particles.findIndex(p => p.decay > 0);
+      if (idx >= 0) particles.splice(idx, 1);
+    }
+  }, 3000);
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    particles.length = 0;
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      particles.push(new Particle());
+    }
+  }
+});
 
 function drawConnections() {
   for (let i = 0; i < particles.length; i++) {
@@ -185,123 +240,60 @@ function drawConnections() {
       const dx = particles[i].x - particles[j].x;
       const dy = particles[i].y - particles[j].y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < CONFIG.connectionDist) {
-        const alpha = (1 - dist / CONFIG.connectionDist) * 0.25;
-        const hue = (hueBase + (particles[i].x / W) * 50) % 360;
-        ctx.strokeStyle = `hsla(${hue}, 70%, 55%, ${alpha})`;
-        ctx.lineWidth = 0.5;
+
+      if (dist < CONNECTION_DIST) {
+        const alpha = (1 - dist / CONNECTION_DIST) * 0.15 * Math.min(particles[i].life, particles[j].life);
         ctx.beginPath();
         ctx.moveTo(particles[i].x, particles[i].y);
         ctx.lineTo(particles[j].x, particles[j].y);
-        ctx.stroke();
-      }
-    }
-
-    // Mouse connections
-    if (mouse.active) {
-      const dx = particles[i].x - mouse.x;
-      const dy = particles[i].y - mouse.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < CONFIG.mouseRadius) {
-        const alpha = (1 - dist / CONFIG.mouseRadius) * 0.4;
-        const hue = (hueBase + 60) % 360;
-        ctx.strokeStyle = `hsla(${hue}, 90%, 70%, ${alpha})`;
-        ctx.lineWidth = 0.8;
-        ctx.beginPath();
-        ctx.moveTo(particles[i].x, particles[i].y);
-        ctx.lineTo(mouse.x, mouse.y);
+        ctx.strokeStyle = `rgba(150, 200, 255, ${alpha})`;
+        ctx.lineWidth = 0.5;
         ctx.stroke();
       }
     }
   }
 }
 
-function drawBackground() {
-  // Subtle trailing effect
-  ctx.fillStyle = `rgba(10, 10, 18, ${CONFIG.trailAlpha})`;
+function animate(now) {
+  const dt = now - lastTime;
+  lastTime = now;
+  time += dt;
+
+  // FPS
+  frameCount++;
+  fpsTimer += dt;
+  if (fpsTimer > 500) {
+    fps = Math.round(frameCount / (fpsTimer / 1000));
+    frameCount = 0;
+    fpsTimer = 0;
+    document.getElementById('fps').textContent = fps;
+    document.getElementById('count').textContent = particles.length;
+  }
+
+  // Fade trail effect
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.15)';
   ctx.fillRect(0, 0, W, H);
-}
 
-function animate() {
-  frame++;
-  hueBase = (hueBase + CONFIG.colorCycleSpeed) % 360;
+  // Update & draw
+  particles.forEach(p => p.update(mouse, time));
 
-  drawBackground();
+  // Remove dead particles
+  for (let i = particles.length - 1; i >= 0; i--) {
+    if (particles[i].life <= 0) particles.splice(i, 1);
+  }
 
-  // Update & draw particles
-  particles.forEach(p => p.update());
   drawConnections();
-  particles.forEach(p => p.draw());
+  particles.forEach(p => p.draw(ctx));
 
-  // Bursts
-  bursts.forEach(b => { b.update(); b.draw(); });
-  bursts = bursts.filter(b => b.alive);
-
-  // Remove dead particles and replenish
-  const dead = particles.filter(p => !p.alive);
-  dead.forEach(() => {}); // shouldn't happen for non-burst
-  if (particles.length < CONFIG.particleCount) {
-    for (let i = particles.length; i < CONFIG.particleCount; i++) {
-      particles.push(new Particle());
-    }
+  // Replenish
+  while (particles.length < PARTICLE_COUNT) {
+    particles.push(new Particle());
   }
 
   requestAnimationFrame(animate);
 }
 
-// Events
-window.addEventListener('resize', () => {
-  resize();
-});
-
-canvas.addEventListener('mousemove', (e) => {
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
-  mouse.active = true;
-});
-
-canvas.addEventListener('mouseleave', () => {
-  mouse.active = false;
-});
-
-canvas.addEventListener('click', (e) => {
-  bursts.push(new Burst(e.clientX, e.clientY));
-});
-
-window.addEventListener('keydown', (e) => {
-  if (e.code === 'Space') {
-    e.preventDefault();
-    init();
-  }
-});
-
-// Touch support
-canvas.addEventListener('touchmove', (e) => {
-  e.preventDefault();
-  const t = e.touches[0];
-  mouse.x = t.clientX;
-  mouse.y = t.clientY;
-  mouse.active = true;
-}, { passive: false });
-
-canvas.addEventListener('touchstart', (e) => {
-  const t = e.touches[0];
-  mouse.x = t.clientX;
-  mouse.y = t.clientY;
-  mouse.active = true;
-  bursts.push(new Burst(t.clientX, t.clientY));
-});
-
-canvas.addEventListener('touchend', () => {
-  mouse.active = false;
-});
-
-// Start
-init();
-// Fill background initially
-ctx.fillStyle = '#0a0a0f';
-ctx.fillRect(0, 0, W, H);
-animate();
+requestAnimationFrame(animate);
 </script>
 </body>
 </html>
