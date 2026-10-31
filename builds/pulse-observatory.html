@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pulse Observatory — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    color: #8899aa;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0; left: 0;
+    cursor: crosshair;
+  }
+  #ui {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 10;
+    font-size: 11px;
+    line-height: 1.6;
+    pointer-events: none;
+    text-shadow: 0 0 6px rgba(100, 180, 255, 0.5);
+  }
+  #ui .title {
+    font-size: 16px;
+    color: #8af;
+    margin-bottom: 6px;
+    letter-spacing: 2px;
+  }
+  #ui .scan-line {
+    color: #5a6;
+    margin-bottom: 2px;
+  }
+  #ui .hint {
+    color: #556;
+    margin-top: 8px;
+    font-size: 10px;
+  }
+  #status {
+    position: fixed;
+    bottom: 16px;
+    left: 16px;
+    z-index: 10;
+    font-size: 10px;
+    color: #445;
+    pointer-events: none;
+  }
+  #controls {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10;
+    font-size: 10px;
+    color: #445;
+    text-align: right;
+    pointer-events: none;
+  }
+  #controls kbd {
+    background: rgba(80, 100, 120, 0.2);
+    border: 1px solid rgba(80, 100, 120, 0.3);
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-family: inherit;
+    color: #668;
+  }
+  #legend {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    z-index: 10;
+    font-size: 9px;
+    color: #334;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="ui">
+  <div class="title">◈ PULSE OBSERVATORY ◈</div>
+  <div class="scan-line" id="scan">AWAITING SIGNAL...</div>
+  <div id="echoes">STARS DETECTED: <span id="count">0</span></div>
+  <div id="last-ping">LAST ECHO: --</div>
+  <div class="hint">click to ping · hold for wide scan · space to clear map</div>
+</div>
+
+<div id="controls">
+  <div><kbd>1-5</kbd> palette</div>
+  <div><kbd>C</kbd> clear echoes</div>
+  <div><kbd>R</kbd> reset all</div>
+  <div><kbd>S</kbd> save PNG</div>
+  <div><kbd>A</kbd> auto demo</div>
+</div>
+
+<div id="legend">
+  <div>● star (revealed)</div>
+  <div>○ echo wavefront</div>
+  <div>◌ return ping</div>
+</div>
+
+<div id="status">pulse-observatory v1 · aether lab</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// State
+let stars = [];
+let pulses = [];
+let echoes = [];
+let particles = [];
+let autoMode = true;
+let autoTimer = 0;
+let frame = 0;
+let paletteIdx = 0;
+const MAX_STARS = 60;
+const MAX_PULSES = 12;
+
+const palettes = [
+  { name: 'DEEP SPACE', bg: '#000011', star: '#6699cc', pulse: '#3366aa', echo: '#88bbff', particle: '#4477aa', grid: '#0a0a1a' },
+  { name: 'AURORA', bg: '#000a0a', star: '#66cc88', pulse: '#226644', echo: '#88ffbb', particle: '#338855', grid: '#050a0a' },
+  { name: 'EMBER', bg: '#0a0500', star: '#cc9966', pulse: '#884422', echo: '#ffbb88', particle: '#995533', grid: '#0a0805' },
+  { name: 'VIOLET', bg: '#05000a', star: '#9966cc', pulse: '#552288', echo: '#bb88ff', particle: '#663399', grid: '#08050a' },
+  { name: 'FROST', bg: '#000a0a', star: '#88ccdd', pulse: '#336677', echo: '#aaeeff', particle: '#448899', grid: '#050808' },
+];
+
+// Stars (hidden until pinged)
+function generateStars() {
+  stars = [];
+  const count = 30 + Math.floor(Math.random() * 30);
+  const maxR = Math.min(W, H) * 0.42;
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * maxR * (0.3 + Math.random() * 0.7);
+    stars.push({
+      x: cx + Math.cos(angle) * dist,
+      y: cy + Math.sin(angle) * dist,
+      size: 0.8 + Math.random() * 2.5,
+      brightness: 0.3 + Math.random() * 0.7,
+      freq: 0.5 + Math.random() * 2,
+      phase: Math.random() * Math.PI * 2,
+      discovered: false,
+      discoveredAt: 0,
+      color: Math.random() < 0.15 ? 'bright' : (Math.random() < 0.3 ? 'warm' : 'normal'),
+    });
+  }
+}
+generateStars();
+
+// Add ambient dust particles
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < 100; i++) {
+    particles.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: (Math.random() - 0.5) * 0.3,
+      size: Math.random() * 1.5,
+      alpha: Math.random() * 0.4,
+    });
+  }
+}
+initParticles();
+
+// Ping
+function ping(wide) {
+  if (pulses.length >= MAX_PULSES) pulses.shift();
+  const speed = wide ? 3.5 : 2.5;
+  const maxDist = wide ? Math.min(W, H) * 0.7 : Math.min(W, H) * 0.45;
+  pulses.push({
+    x: cx,
+    y: cy,
+    radius: 0,
+    maxDist,
+    speed,
+    alpha: 0.9,
+    width: wide ? 1.5 : 2.5,
+  });
+  updateScan('SIGNAL EMITTED...');
+}
+
+// Echo: return ping from discovered star
+function sendEcho(star) {
+  const dx = star.x - cx;
+  const dy = star.y - cy;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const angle = Math.atan2(dy, dx);
+  
+  echoes.push({
+    startAngle: angle,
+    dist,
+    progress: 0,
+    speed: 2.5,
+    alpha: 0.8,
+    starBrightness: star.brightness,
+    size: star.size,
+  });
+  
+  star.discovered = true;
+  star.discoveredAt = frame;
+  
+  const angleDeg = ((angle * 180 / Math.PI) + 360) % 360;
+  const dir = angleDeg < 180 ? (angleDeg < 90 ? 'NE' : 'SE') : (angleDeg < 270 ? 'SW' : 'NW');
+  const distPct = Math.round((dist / (Math.min(W, H) * 0.4)) * 100);
+  document.getElementById('last-ping').textContent = 
+    `LAST ECHO: ${distPct}% · ${dir} · sz${star.size.toFixed(1)}`;
+}
+
+// Update discovered count
+function updateCount() {
+  const c = stars.filter(s => s.discovered).length;
+  document.getElementById('count').textContent = c;
+}
+
+let scanTimeout;
+
+function updateScan(text) {
+  document.getElementById('scan').textContent = text;
+  clearTimeout(scanTimeout);
+  scanTimeout = setTimeout(() => {
+    document.getElementById('scan').textContent = 'AWAITING SIGNAL...';
+  }, 2000);
+}
+
+// Drawing
+function drawGrid() {
+  const p = palettes[paletteIdx];
+  ctx.strokeStyle = p.grid;
+  ctx.lineWidth = 0.5;
+  const spacing = 60;
+  for (let x = cx % spacing; x < W; x += spacing) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+  for (let y = cy % spacing; y < H; y += spacing) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+  
+  // Center crosshair
+  ctx.strokeStyle = p.grid.replace('#', '');
+  ctx.globalAlpha = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - 20, cy);
+  ctx.lineTo(cx + 20, cy);
+  ctx.moveTo(cx, cy - 20);
+  ctx.lineTo(cx, cy + 20);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+function drawStars() {
+  const p = palettes[paletteIdx];
+  const t = frame * 0.02;
+  
+  stars.forEach(star => {
+    if (!star.discovered) return;
+    
+    const age = frame - star.discoveredAt;
+    const fadeIn = Math.min(1, age / 30);
+    const twinkle = 0.7 + 0.3 * Math.sin(t * star.freq + star.phase);
+    const alpha = star.brightness * fadeIn * twinkle;
+    
+    if (alpha < 0.02) return;
+    
+    const color = star.color === 'bright' ? '#ffffff' : 
+                  star.color === 'warm' ? '#ffcc88' : 
+                  p.star;
+    
+    // Glow
+    const grad = ctx.createRadialGradient(star.x, star.y, 0, star.x, star.y, star.size * 6);
+    grad.addColorStop(0, color);
+    grad.addColorStop(0.3, color + '44');
+    grad.addColorStop(1, 'transparent');
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(star.x, star.y, star.size * 6, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Core
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.globalAlpha = 1;
+  });
+}
+
+function drawPulses() {
+  const p = palettes[paletteIdx];
+  
+  pulses.forEach(pulse => {
+    ctx.strokeStyle = p.pulse;
+    ctx.lineWidth = pulse.width;
+    ctx.globalAlpha = pulse.alpha * 0.7;
+    ctx.beginPath();
+    ctx.arc(pulse.x, pulse.y, pulse.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Inner faint ring
+    ctx.lineWidth = pulse.width * 0.3;
+    ctx.globalAlpha = pulse.alpha * 0.3;
+    ctx.beginPath();
+    ctx.arc(pulse.x, pulse.y, pulse.radius * 0.85, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    ctx.globalAlpha = 1;
+  });
+}
+
+function drawEchoes() {
+  const p = palettes[paletteIdx];
+  
+  echoes.forEach(echo => {
+    const r = echo.dist * echo.progress;
+    if (r < 1) return;
+    
+    const alpha = echo.alpha * (1 - echo.progress) * 0.8;
+    
+    // Echo dot traveling back
+    const ex = cx + Math.cos(echo.startAngle) * r;
+    const ey = cy + Math.sin(echo.startAngle) * r;
+    
+    // Trail
+    const trailLen = 40;
+    const tx = cx + Math.cos(echo.startAngle) * Math.max(0, r - trailLen);
+    const ty = cy + Math.sin(echo.startAngle) * Math.max(0, r - trailLen);
+    
+    ctx.strokeStyle = p.echo;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = alpha * 0.4;
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    
+    // Echo dot
+    const grad = ctx.createRadialGradient(ex, ey, 0, ex, ey, echo.size * 8);
+    grad.addColorStop(0, p.echo);
+    grad.addColorStop(0.3, p.echo + '44');
+    grad.addColorStop(1, 'transparent');
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(ex, ey, echo.size * 8, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.echo;
+    ctx.beginPath();
+    ctx.arc(ex, ey, echo.size + 1, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.globalAlpha = 1;
+  });
+}
+
+function drawParticles() {
+  const p = palettes[paletteIdx];
+  
+  particles.forEach(pt => {
+    ctx.globalAlpha = pt.alpha;
+    ctx.fillStyle = p.particle;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
+
+function drawScopeLines() {
+  const p = palettes[paletteIdx];
+  ctx.strokeStyle = p.pulse + '18';
+  ctx.lineWidth = 0.5;
+  
+  // Radar sweep traces
+  const t = frame * 0.01;
+  for (let r = 50; r < Math.min(W, H) * 0.5; r += 80) {
+    ctx.globalAlpha = 0.15 + 0.05 * Math.sin(t + r * 0.01);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawConnections() {
+  const p = palettes[paletteIdx];
+  const discovered = stars.filter(s => s.discovered);
+  if (discovered.length < 2) return;
+  
+  ctx.lineWidth = 0.3;
+  for (let i = 0; i < discovered.length; i++) {
+    for (let j = i + 1; j < discovered.length; j++) {
+      const dx = discovered[i].x - discovered[j].x;
+      const dy = discovered[i].y - discovered[j].y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const maxDist = 200;
+      if (dist > maxDist) continue;
+      
+      const alpha = (1 - dist / maxDist) * 0.2;
+      ctx.strokeStyle = p.echo;
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.moveTo(discovered[i].x, discovered[i].y);
+      ctx.lineTo(discovered[j].x, discovered[j].y);
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Update
+function update() {
+  frame++;
+  
+  // Pulses expand
+  pulses.forEach(pulse => {
+    pulse.radius += pulse.speed;
+    pulse.alpha *= 0.995;
+    
+    // Check collision with undiscovered stars
+    stars.forEach(star => {
+      if (star.discovered) return;
+      const dx = star.x - cx;
+      const dy = star.y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (Math.abs(dist - pulse.radius) < 8) {
+        sendEcho(star);
+        updateCount();
+      }
+    });
+  });
+  
+  pulses = pulses.filter(p => p.radius < p.maxDist && p.alpha > 0.01);
+  
+  // Echoes return
+  echoes.forEach(echo => {
+    echo.progress += echo.speed / echo.dist;
+  });
+  echoes = echoes.filter(e => e.progress < 1.1);
+  
+  // Particles drift
+  particles.forEach(pt => {
+    pt.x += pt.vx;
+    pt.y += pt.vy;
+    if (pt.x < 0) pt.x = W;
+    if (pt.x > W) pt.x = 0;
+    if (pt.y < 0) pt.y = H;
+    if (pt.y > H) pt.y = 0;
+  });
+  
+  // Auto mode
+  if (autoMode) {
+    autoTimer++;
+    if (autoTimer > 90 + Math.random() * 120) {
+      autoTimer = 0;
+      ping(Math.random() < 0.4);
+    }
+  }
+}
+
+function draw() {
+  const p = palettes[paletteIdx];
+  
+  // Clear with fade
+  ctx.fillStyle = p.bg + 'dd';
+  ctx.fillRect(0, 0, W, H);
+  
+  drawGrid();
+  drawScopeLines();
+  drawConnections();
+  drawParticles();
+  drawEchoes();
+  drawPulses();
+  drawStars();
+  
+  // Center indicator
+  ctx.globalAlpha = 0.3 + 0.1 * Math.sin(frame * 0.05);
+  ctx.fillStyle = p.pulse;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// Events
+canvas.addEventListener('mousedown', e => {
+  autoMode = false;
+  ping(false);
+});
+
+canvas.addEventListener('mousemove', e => {
+  // Subtle parallax on particles
+  const dx = (e.clientX - cx) * 0.0003;
+  const dy = (e.clientY - cy) * 0.0003;
+  particles.forEach(pt => {
+    pt.vx += dx * 0.1;
+    pt.vy += dy * 0.1;
+    // Clamp velocity
+    const speed = Math.sqrt(pt.vx * pt.vx + pt.vy * pt.vy);
+    if (speed > 1) {
+      pt.vx = (pt.vx / speed) * 1;
+      pt.vy = (pt.vy / speed) * 1;
+    }
+  });
+});
+
+// Touch support
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  autoMode = false;
+  if (e.touches.length >= 2) ping(true);
+  else ping(false);
+}, { passive: false });
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.key >= '1' && e.key <= '5') {
+    paletteIdx = parseInt(e.key) - 1;
+    updateScan('PALETTE: ' + palettes[paletteIdx].name);
+  }
+  if (e.key === 'c' || e.key === 'C') {
+    stars.forEach(s => { s.discovered = false; s.discoveredAt = 0; });
+    echoes = [];
+    updateCount();
+    updateScan('MAP CLEARED');
+  }
+  if (e.key === 'r' || e.key === 'R') {
+    generateStars();
+    pulses = [];
+    echoes = [];
+    updateCount();
+    updateScan('RADAR RESET');
+  }
+  if (e.key === 's' || e.key === 'S') {
+    savePNG();
+  }
+  if (e.key === ' ') {
+    autoMode = !autoMode;
+    updateScan(autoMode ? 'AUTO SCAN: ON' : 'AUTO SCAN: OFF');
+  }
+  if (e.key === 'a' || e.key === 'A') {
+    autoMode = !autoMode;
+    updateScan(autoMode ? 'AUTO SCAN: ON' : 'AUTO SCAN: OFF');
+  }
+});
+
+function savePNG() {
+  const link = document.createElement('a');
+  link.download = `pulse-observatory-${Date.now()}.png`;
+  link.href = canvas.toDataURL();
+  link.click();
+  updateScan('FRAME CAPTURED');
+}
+
+// Demo auto-starts, do initial ping after a moment
+setTimeout(() => { if (autoMode) ping(false); }, 800);
+setTimeout(() => { if (autoMode) ping(true); }, 2000);
+
+loop();
+</script>
+</body>
+</html>
