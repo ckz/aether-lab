@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Resonant Ink — Harmonograph</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #08080f;
+    color: #c8b8ff;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  #canvas {
+    flex: 1;
+    display: block;
+    cursor: crosshair;
+  }
+  #controls {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    background: rgba(10, 10, 20, 0.85);
+    border: 1px solid rgba(120, 100, 200, 0.25);
+    border-radius: 6px;
+    padding: 14px 16px;
+    font-size: 11px;
+    line-height: 1.7;
+    backdrop-filter: blur(6px);
+    z-index: 10;
+    min-width: 190px;
+  }
+  #controls h2 {
+    font-size: 13px;
+    color: #c4a0ff;
+    margin-bottom: 8px;
+    font-weight: normal;
+    letter-spacing: 2px;
+  }
+  #controls label {
+    display: block;
+    color: #8878b8;
+    margin-top: 6px;
+  }
+  #controls input[type="range"] {
+    width: 100%;
+    accent-color: #8868d8;
+    margin-top: 2px;
+  }
+  #controls select, #controls button {
+    width: 100%;
+    background: rgba(30, 20, 50, 0.8);
+    color: #c8b8ff;
+    border: 1px solid rgba(120, 100, 200, 0.3);
+    border-radius: 3px;
+    padding: 5px 6px;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    margin-top: 3px;
+  }
+  #controls button:hover { background: rgba(60, 40, 100, 0.8); }
+  #controls button.primary {
+    background: rgba(100, 70, 180, 0.5);
+    border-color: rgba(160, 140, 240, 0.5);
+    margin-top: 8px;
+  }
+  .row { display: flex; gap: 6px; }
+  .row button { flex: 1; }
+  #title {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    font-size: 11px;
+    color: rgba(180, 160, 220, 0.5);
+    letter-spacing: 3px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #info {
+    position: fixed;
+    bottom: 12px;
+    left: 12px;
+    font-size: 10px;
+    color: rgba(140, 120, 180, 0.4);
+    z-index: 10;
+    pointer-events: none;
+  }
+  .val { color: #b898ff; }
+</style>
+</head>
+<body>
+  <div id="title">◈ RESONANT INK ◈</div>
+  <canvas id="canvas"></canvas>
+
+  <div id="controls">
+    <h2>▸ pendulum lab</h2>
+    <label>Freq X <span class="val" id="vFx">1.000</span></label>
+    <input type="range" id="Fx" min="0.1" max="5" step="0.001" value="1.000">
+    <label>Freq Y <span class="val" id="vFy">1.618</span></label>
+    <input type="range" id="Fy" min="0.1" max="5" step="0.001" value="1.618">
+    <label>Damping X <span class="val" id="vDx">0.9990</span></label>
+    <input type="range" id="Dx" min="0.990" max="1.000" step="0.0001" value="0.9990">
+    <label>Damping Y <span class="val" id="vDy">0.9992</span></label>
+    <input type="range" id="Dy" min="0.990" max="1.000" step="0.0001" value="0.9992">
+    <label>Phase <span class="val" id="vPh">0.000</span>π</label>
+    <input type="range" id="Ph" min="0" max="2" step="0.01" value="0">
+    <label>Amplitude <span class="val" id="vAm">200</span></label>
+    <input type="range" id="Am" min="50" max="350" step="1" value="200">
+    <label>Palette</label>
+    <select id="palette">
+      <option value="aurora">Aurora</option>
+      <option value="ember">Ember</option>
+      <option value="neon">Neon</option>
+      <option value="void">Void</option>
+      <option value="mono">Mono</option>
+      <option value="frost">Frost</option>
+    </select>
+    <label>Pen count <span class="val" id="vPens">3</span></label>
+    <input type="range" id="pens" min="1" max="8" step="1" value="3">
+    <div class="row">
+      <button onclick="savePNG()">📷 Save</button>
+      <button onclick="resetPendulums()">↻ Reset</button>
+    </div>
+    <button class="primary" onclick="randomize()">⚄ Randomize</button>
+  </div>
+
+  <div id="info">move mouse to guide · scroll to zoom · space to pause · C to cycle palette</div>
+
+  <script>
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  let W, H, cx, cy;
+
+  const PALETTES = {
+    aurora: ['#00ffc8','#00a8ff','#8855ff','#ff55cc','#55ffaa','#00ddff'],
+    ember:  ['#ff4400','#ff8800','#ffcc00','#ff2200','#ffaa44','#ff6622'],
+    neon:   ['#ff00ff','#00ffff','#ffff00','#ff0088','#88ff00','#00ff88'],
+    void:   ['#4433aa','#6622cc','#8822ee','#aa44ff','#3311aa','#5533dd'],
+    mono:   ['#ffffff','#aaaacc','#6666aa','#ccccdd','#8888bb','#ddddee'],
+    frost:  ['#aaddff','#88ccff','#ccf0ff','#66aadd','#eef8ff','#99ddff'],
+  };
+
+  let state = {};
+  function getParam(id, def) { return parseFloat(document.getElementById(id).value) || def; }
+  function readControls() {
+    const pal = document.getElementById('palette').value;
+    state = {
+      fx: getParam('Fx', 1),
+      fy: getParam('Fy', 1.618),
+      dx: getParam('Dx', 0.999),
+      dy: getParam('Dy', 0.9992),
+      ph: getParam('Ph', 0) * Math.PI,
+      amp: getParam('Am', 200),
+      palette: PALETTES[pal],
+      pens: Math.round(getParam('pens', 3)),
+      paused: false,
+      zoom: 1,
+      mouseInfluence: 0,
+      mouseX: 0,
+      mouseY: 0,
+      t: 0,
+    };
+  }
+
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+    cx = W / 2;
+    cy = H / 2;
+  }
+
+  class Pendulum {
+    constructor(index, total) {
+      this.index = index;
+      this.total = total;
+      this.reset();
+    }
+    reset() {
+      const offset = this.index / this.total;
+      this.fx = state.fx + offset * 0.02;
+      this.fy = state.fy + offset * 0.03;
+      this.dx = state.dx;
+      this.dy = state.dy;
+      this.phase = state.ph + offset * Math.PI * 0.5;
+      this.amp = state.amp;
+      this.t = Math.random() * 1000;
+      this.x = 0;
+      this.y = 0;
+      this.prevX = 0;
+      this.prevY = 0;
+      this.color = state.palette[this.index % state.palette.length];
+      this.alpha = 1;
+      this.trail = [];
+    }
+    update(dt) {
+      this.prevX = this.x;
+      this.prevY = this.y;
+      this.t += dt;
+      const dampX = Math.pow(this.dx, dt * 60);
+      const dampY = Math.pow(this.dy, dt * 60);
+      // Use effective stored amplitude
+      const ex = this.amp * dampX;
+      const ey = this.amp * dampY;
+      this.x = ex * Math.sin(this.fx * this.t + this.phase);
+      this.y = ey * Math.cos(this.fy * this.t);
+
+      // Mouse influence
+      if (state.mouseInfluence > 0) {
+        const dx = this.x - (state.mouseX - cx) / state.zoom;
+        const dy = this.y - (state.mouseY - cy) / state.zoom;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const influence = Math.exp(-dist * dist / 20000) * state.mouseInfluence * 40;
+        this.x += influence * Math.sin(this.t * 3);
+        this.y += influence * Math.cos(this.t * 2.5);
+      }
+    }
+  }
+
+  let pens = [];
+
+  function initPens() {
+    pens = [];
+    for (let i = 0; i < state.pens; i++) {
+      pens.push(new Pendulum(i, state.pens));
+    }
+  }
+
+  function frame(time) {
+    if (!state.paused) {
+      const dt = 1 / 60;
+      state.t += dt;
+
+      // Fade existing ink
+      ctx.fillStyle = 'rgba(8, 8, 15, 0.012)';
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(state.zoom, state.zoom);
+
+      pens.forEach((p, i) => {
+        p.update(1/60);
+
+        // Draw segment
+        ctx.beginPath();
+        ctx.moveTo(p.prevX, p.prevY);
+        ctx.lineTo(p.x, p.y);
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = 1.2 / state.zoom;
+        ctx.globalAlpha = 0.6;
+        ctx.stroke();
+
+        // Soft glow
+        ctx.beginPath();
+        ctx.moveTo(p.prevX, p.prevY);
+        ctx.lineTo(p.x, p.y);
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = 3 / state.zoom;
+        ctx.globalAlpha = 0.08;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      });
+
+      ctx.restore();
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function clearCanvas() {
+    ctx.fillStyle = '#08080f';
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function resetPendulums() {
+    clearCanvas();
+    readControls();
+    initPens();
+  }
+
+  function randomize() {
+    const r = (a, b) => a + Math.random() * (b - a);
+    const rStep = (a, b) => (Math.random() * (b - a) + a).toFixed(3);
+    const presets = [
+      [1, 2, 0.9990, 0.9992],
+      [2, 3, 0.9993, 0.9995],
+      [3, 4, 0.9995, 0.9996],
+      [1, 3, 0.9992, 0.9994],
+      [2, 5, 0.9996, 0.9997],
+      [3, 2, 0.9991, 0.9993],
+      [4, 7, 0.9997, 0.9998],
+      [5, 4, 0.9994, 0.9996],
+    ];
+    const p = presets[Math.floor(Math.random() * presets.length)];
+    document.getElementById('Fx').value = p[0] + Math.random() * 0.5;
+    document.getElementById('Fy').value = p[1] + Math.random() * 0.5;
+    document.getElementById('Dx').value = (0.9990 + Math.random() * 0.0007).toFixed(4);
+    document.getElementById('Dy').value = (0.9992 + Math.random() * 0.0006).toFixed(4);
+    document.getElementById('Ph').value = (Math.random() * 2).toFixed(2);
+    document.getElementById('Am').value = Math.floor(100 + Math.random() * 200);
+    const pals = Object.keys(PALETTES);
+    document.getElementById('palette').value = pals[Math.floor(Math.random() * pals.length)];
+    updateLabels();
+    resetPendulums();
+  }
+
+  function updateLabels() {
+    document.getElementById('vFx').textContent = parseFloat(document.getElementById('Fx').value).toFixed(3);
+    document.getElementById('vFy').textContent = parseFloat(document.getElementById('Fy').value).toFixed(3);
+    document.getElementById('vDx').textContent = parseFloat(document.getElementById('Dx').value).toFixed(4);
+    document.getElementById('vDy').textContent = parseFloat(document.getElementById('Dy').value).toFixed(4);
+    document.getElementById('vPh').textContent = parseFloat(document.getElementById('Ph').value).toFixed(2);
+    document.getElementById('vAm').textContent = document.getElementById('Am').value;
+    document.getElementById('vPens').textContent = document.getElementById('pens').value;
+  }
+
+  function savePNG() {
+    const link = document.createElement('a');
+    link.download = 'resonant-ink-' + Date.now() + '.png';
+    link.href = canvas.toDataURL();
+    link.click();
+  }
+
+  // Event bindings
+  ['Fx','Fy','Dx','Dy','Ph','Am','pens'].forEach(id => {
+    document.getElementById(id).addEventListener('input', () => {
+      updateLabels();
+      // Live-update pendulum params
+      const pal = document.getElementById('palette').value;
+      pens.forEach((p, i) => {
+        p.fx = getParam('Fx', 1) + (i / pens.length) * 0.02;
+        p.fy = getParam('Fy', 1.618) + (i / pens.length) * 0.03;
+        p.dx = getParam('Dx', 0.999);
+        p.dy = getParam('Dy', 0.9992);
+        p.phase = getParam('Ph', 0) * Math.PI + (i / pens.length) * Math.PI * 0.5;
+        p.amp = getParam('Am', 200);
+        p.color = PALETTES[pal][i % PALETTES[pal].length];
+      });
+    });
+  });
+  document.getElementById('palette').addEventListener('change', () => {
+    const pal = PALETTES[document.getElementById('palette').value];
+    pens.forEach((p, i) => p.color = pal[i % pal.length]);
+  });
+
+  canvas.addEventListener('mousemove', e => {
+    state.mouseX = e.clientX;
+    state.mouseY = e.clientY;
+    state.mouseInfluence = 0.5;
+  });
+  canvas.addEventListener('mouseleave', () => state.mouseInfluence = 0);
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    state.zoom = Math.max(0.3, Math.min(4, state.zoom - e.deltaY * 0.001));
+  });
+
+  const palKeys = Object.keys(PALETTES);
+  let palIdx = 0;
+  document.addEventListener('keydown', e => {
+    if (e.key === ' ') { e.preventDefault(); state.paused = !state.paused; }
+    if (e.key === 'c' || e.key === 'C') {
+      palIdx = (palIdx + 1) % palKeys.length;
+      document.getElementById('palette').value = palKeys[palIdx];
+      document.getElementById('palette').dispatchEvent(new Event('change'));
+    }
+    if (e.key === 's' || e.key === 'S') savePNG();
+    if (e.key === 'r' || e.key === 'R') resetPendulums();
+  });
+
+  window.addEventListener('resize', () => { resize(); clearCanvas(); });
+
+  // Boot
+  resize();
+  clearCanvas();
+  readControls();
+  updateLabels();
+  initPens();
+  requestAnimationFrame(frame);
+  </script>
+</body>
+</html>
