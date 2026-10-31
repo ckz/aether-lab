@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SSH Config Forge</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --green: #3fb950;
+    --blue: #58a6ff;
+    --yellow: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --orange: #ffa657;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 28px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--green);
+    letter-spacing: -0.5px;
+  }
+  .header p { color: var(--text-dim); margin-top: 4px; font-size: 12px; }
+
+  .app {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  @media (max-width: 800px) {
+    .app { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+
+  .panel-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--blue);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel-title .icon { font-size: 14px; }
+
+  .form-group {
+    margin-bottom: 12px;
+  }
+  .form-group label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    font-weight: 500;
+  }
+  .form-group input, .form-group select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 10px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    transition: border-color 0.15s;
+  }
+  .form-group input:focus, .form-group select:focus {
+    outline: none;
+    border-color: var(--blue);
+  }
+  .form-group input::placeholder { color: #484f58; }
+
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .toggle-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .toggle-chip {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 4px 9px;
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--text-dim);
+    transition: all 0.12s;
+    user-select: none;
+  }
+  .toggle-chip:hover { border-color: var(--blue); color: var(--text); }
+  .toggle-chip.active {
+    background: rgba(88,166,255,0.12);
+    border-color: var(--blue);
+    color: var(--blue);
+  }
+
+  .section-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin: 16px 0 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .presets-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 6px;
+  }
+  .preset-btn {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.12s;
+  }
+  .preset-btn:hover { border-color: var(--green); transform: translateY(-1px); }
+  .preset-btn .preset-icon { font-size: 16px; margin-bottom: 2px; }
+  .preset-btn .preset-name {
+    font-size: 11px;
+    color: var(--text);
+    font-weight: 500;
+  }
+  .preset-btn .preset-desc {
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  .output-panel { display: flex; flex-direction: column; }
+
+  .output-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  .btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.12s;
+  }
+  .btn:hover { border-color: var(--blue); color: var(--blue); }
+  .btn.primary {
+    background: var(--green);
+    border-color: var(--green);
+    color: #0d1117;
+    font-weight: 600;
+  }
+  .btn.primary:hover { background: #4cc764; }
+  .btn.danger { color: var(--red); }
+  .btn.danger:hover { border-color: var(--red); color: var(--red); }
+
+  .btn-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+
+  .code-block {
+    background: #010409;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    font-size: 12px;
+    line-height: 1.7;
+    color: #e6edf3;
+    white-space: pre;
+    overflow-x: auto;
+    flex: 1;
+    min-height: 280px;
+    tab-size: 2;
+    position: relative;
+  }
+
+  .code-block .kw  { color: var(--red); }
+  .code-block .str { color: var(--green); }
+  .code-block .num { color: var(--orange); }
+  .code-block .cmt { color: #484f58; font-style: italic; }
+  .code-block .opt { color: var(--purple); }
+
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--green);
+    color: #0d1117;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: all 0.2s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+
+  .stats {
+    display: flex;
+    gap: 14px;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 8px;
+  }
+  .stat span { color: var(--yellow); font-weight: 600; }
+
+  .help-text {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 3px;
+    line-height: 1.4;
+  }
+
+  .hint {
+    background: rgba(88,166,255,0.07);
+    border: 1px solid rgba(88,166,255,0.2);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 12px;
+    line-height: 1.5;
+  }
+  .hint strong { color: var(--text); }
+
+  .host-list {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    max-height: 120px;
+    overflow-y: auto;
+    font-size: 11px;
+  }
+  .host-entry {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .host-entry:last-child { border-bottom: none; }
+  .host-entry:hover { background: var(--surface2); }
+  .host-entry .host-name { color: var(--green); font-weight: 500; }
+  .host-entry .host-addr { color: var(--text-dim); }
+  .host-entry .host-del { color: var(--red); cursor: pointer; padding: 0 4px; }
+  .host-entry .host-del:hover { color: var(--red); font-weight: bold; }
+
+  .empty-hosts { padding: 12px; text-align: center; color: #484f58; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⬢ SSH Config Forge</h1>
+  <p>Forge clean ~/.ssh/config blocks — fast, offline, no signup.</p>
+</div>
+
+<div class="app">
+
+  <!-- LEFT PANEL -->
+  <div class="panel">
+    <div class="panel-title"><span class="icon">📋</span> Host Alias</div>
+
+    <div class="form-group">
+      <label>Host Alias</label>
+      <input type="text" id="hostAlias" placeholder="e.g. production, home-server, pi-zero" maxlength="40">
+      <div class="help-text">This becomes the `Host` value. Use short memorable names.</div>
+    </div>
+
+    <div class="row">
+      <div class="form-group">
+        <label>Hostname (IP or domain)</label>
+        <input type="text" id="hostname" placeholder="192.168.1.100 or example.com">
+      </div>
+      <div class="form-group">
+        <label>Port</label>
+        <input type="text" id="port" placeholder="22" maxlength="5">
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="form-group">
+        <label>User</label>
+        <input type="text" id="user" placeholder="root, ubuntu, deploy">
+      </div>
+      <div class="form-group">
+        <label>Identity File (key path)</label>
+        <input type="text" id="identityFile" placeholder="~/.ssh/id_ed25519">
+      </div>
+    </div>
+
+    <div class="section-label">Connection</div>
+
+    <div class="form-group">
+      <label>ProxyJump</label>
+      <input type="text" id="proxyJump" placeholder="bastion-host (leave empty if none)">
+      <div class="help-text">Jump host alias for nested connections. Must already be in your config.</div>
+    </div>
+
+    <div class="form-group">
+      <label>Extra Options</label>
+      <div class="toggle-group" id="optionToggles">
+        <div class="toggle-chip" data-opt="StrictHostKeyChecking no">StrictHostKey</div>
+        <div class="toggle-chip" data-opt="UserKnownHostsFile /dev/null">NoKnownHosts</div>
+        <div class="toggle-chip" data-opt="ForwardAgent yes">ForwardAgent</div>
+        <div class="toggle-chip" data-opt="ForwardX11 yes">ForwardX11</div>
+        <div class="toggle-chip" data-opt="Compression yes">Compression</div>
+        <div class="toggle-chip" data-opt="ServerAliveInterval 60">AliveInterval</div>
+        <div class="toggle-chip" data-opt="ControlMaster auto">ControlMaster</div>
+        <div class="toggle-chip" data-opt="ControlPath ~/.ssh/cm-%r@%h:%p">ControlPath</div>
+        <div class="toggle-chip" data-opt="ControlPersist 10m">ControlPersist</div>
+        <div class="toggle-chip" data-opt="LocalForward 8080 localhost:80">LocalForward</div>
+        <div class="toggle-chip" data-opt="RemoteForward 9090 localhost:9090">RemoteForward</div>
+        <div class="toggle-chip" data-opt="DynamicForward 1080">DynamicForward</div>
+      </div>
+      <div class="help-text">Click to toggle. Some options depend on others (e.g. ControlPath requires ControlMaster).</div>
+    </div>
+
+    <div class="section-label">Quick Presets</div>
+    <div class="presets-grid">
+      <div class="preset-btn" data-preset="aws">
+        <div class="preset-icon">☁️</div>
+        <div class="preset-name">AWS EC2</div>
+        <div class="preset-desc">ec2-user, StrictHostKey</div>
+      </div>
+      <div class="preset-btn" data-preset="gcp">
+        <div class="preset-icon">🌐</div>
+        <div class="preset-name">GCP VM</div>
+        <div class="preset-desc">username, compression</div>
+      </div>
+      <div class="preset-btn" data-preset="do">
+        <div class="preset-icon">🌊</div>
+        <div class="preset-name">DigitalOcean</div>
+        <div class="preset-desc">root, ForwardAgent</div>
+      </div>
+      <div class="preset-btn" data-preset="pi">
+        <div class="preset-icon">🍓</div>
+        <div class="preset-name">Raspberry Pi</div>
+        <div class="preset-desc">pi, port 2222</div>
+      </div>
+      <div class="preset-btn" data-preset="vps">
+        <div class="preset-icon">🖥️</div>
+        <div class="preset-name">VPS Generic</div>
+        <div class="preset-desc">deploy, compression, alive</div>
+      </div>
+      <div class="preset-btn" data-preset="bastion">
+        <div class="preset-icon">🏰</div>
+        <div class="preset-name">Bastion Host</div>
+        <div class="preset-desc">jump server, ControlMaster</div>
+      </div>
+      <div class="preset-btn" data-preset="docker">
+        <div class="preset-icon">🐳</div>
+        <div class="preset-name">Docker Machine</div>
+        <div class="preset-desc">docker, StrictHostKey off</div>
+      </div>
+      <div class="preset-btn" data-preset="tailscale">
+        <div class="preset-icon">🦎</div>
+        <div class="preset-name">Tailscale</div>
+        <div class="preset-desc">tailnet IP, no host key</div>
+      </div>
+    </div>
+
+    <div class="section-label">Saved Hosts</div>
+    <div class="host-list" id="hostList">
+      <div class="empty-hosts">No saved hosts yet. Build your first block above.</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn primary" onclick="addToSaved()">＋ Save This Host</button>
+      <button class="btn danger" onclick="clearSaved()">Clear All</button>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="panel output-panel">
+    <div class="panel-title"><span class="icon">⚙️</span> Generated Config</div>
+
+    <div class="output-header">
+      <div class="stats" id="stats">
+        <div class="stat">Lines: <span id="lineCount">0</span></div>
+        <div class="stat">Options: <span id="optCount">0</span></div>
+      </div>
+      <div class="btn-row" style="margin-top:0">
+        <button class="btn" onclick="copyConfig()">📋 Copy</button>
+        <button class="btn" onclick="downloadConfig()">💾 Download</button>
+        <button class="btn danger" onclick="clearForm()">Clear</button>
+      </div>
+    </div>
+
+    <div class="code-block" id="output"># Fill in the form to generate your SSH config block</div>
+
+    <div class="hint">
+      <strong>How to use:</strong> Append the generated block to your <code>~/.ssh/config</code> file.
+      Run <strong>chmod 600 ~/.ssh/config</strong> after editing. Test with <strong>ssh &lt;alias&gt;</strong>.
+      For ProxyJump chains, list each hop in the <code>ProxyJump</code> field separated by <code>,</code> (e.g. <code>bastion,gateway</code>).
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast">✓ Copied to clipboard!</div>
+
+<script>
+  // State
+  const activeOptions = new Set();
+  let savedHosts = JSON.parse(localStorage.getItem('ssh-forge-hosts') || '[]');
+
+  // Presets
+  const presets = {
+    aws: {
+      alias: 'aws-ec2', hostname: '', port: '22', user: 'ec2-user',
+      identityFile: '~/.ssh/id_ed25519', proxyJump: '',
+      options: ['StrictHostKeyChecking no', 'UserKnownHostsFile /dev/null']
+    },
+    gcp: {
+      alias: 'gcp-vm', hostname: '', port: '22', user: 'username',
+      identityFile: '~/.ssh/id_ed25519', proxyJump: '',
+      options: ['Compression yes']
+    },
+    do: {
+      alias: 'droplet', hostname: '', port: '22', user: 'root',
+      identityFile: '~/.ssh/id_ed25519', proxyJump: '',
+      options: ['ForwardAgent yes', 'StrictHostKeyChecking no']
+    },
+    pi: {
+      alias: 'raspberrypi', hostname: '', port: '2222', user: 'pi',
+      identityFile: '~/.ssh/pi-key', proxyJump: '',
+      options: ['StrictHostKeyChecking no', 'UserKnownHostsFile /dev/null']
+    },
+    vps: {
+      alias: 'vps', hostname: '', port: '22', user: 'deploy',
+      identityFile: '~/.ssh/id_ed25519', proxyJump: '',
+      options: ['Compression yes', 'ServerAliveInterval 60']
+    },
+    bastion: {
+      alias: 'internal-host', hostname: '', port: '22', user: 'ubuntu',
+      identityFile: '~/.ssh/id_ed25519', proxyJump: 'bastion-host',
+      options: ['ControlMaster auto', 'ControlPath ~/.ssh/cm-%r@%h:%p', 'ControlPersist 10m', 'ForwardAgent yes']
+    },
+    docker: {
+      alias: 'docker-host', hostname: '', port: '22', user: 'docker',
+      identityFile: '~/.ssh/docker-key', proxyJump: '',
+      options: ['StrictHostKeyChecking no', 'UserKnownHostsFile /dev/null', 'ForwardAgent yes']
+    },
+    tailscale: {
+      alias: 'tail-host', hostname: '100.x.y.z', port: '22', user: 'user',
+      identityFile: '~/.ssh/id_ed25519', proxyJump: '',
+      options: ['StrictHostKeyChecking no', 'UserKnownHostsFile /dev/null']
+    }
+  };
+
+  // Load saved hosts
+  function renderHostList() {
+    const el = document.getElementById('hostList');
+    if (savedHosts.length === 0) {
+      el.innerHTML = '<div class="empty-hosts">No saved hosts yet. Build your first block above.</div>';
+      return;
+    }
+    el.innerHTML = savedHosts.map((h, i) => `
+      <div class="host-entry">
+        <div>
+          <span class="host-name">${esc(h.alias)}</span>
+          <span class="host-addr"> — ${esc(h.user) || '?'}@${esc(h.hostname) || '?'}:${esc(h.port || '22')}</span>
+        </div>
+        <span class="host-del" onclick="deleteHost(${i})">✕</span>
+      </div>
+    `).join('');
+  }
+
+  function addToSaved() {
+    const host = getFormData();
+    if (!host.alias || !host.hostname) {
+      showToast('⚠ Enter at least Host Alias and Hostname');
+      return;
+    }
+    savedHosts.push({...host, options: [...activeOptions]});
+    localStorage.setItem('ssh-forge-hosts', JSON.stringify(savedHosts));
+    renderHostList();
+    showToast('✓ Host saved!');
+  }
+
+  function deleteHost(i) {
+    savedHosts.splice(i, 1);
+    localStorage.setItem('ssh-forge-hosts', JSON.stringify(savedHosts));
+    renderHostList();
+  }
+
+  function clearSaved() {
+    if (!confirm('Clear all saved hosts?')) return;
+    savedHosts = [];
+    localStorage.setItem('ssh-forge-hosts', JSON.stringify(savedHosts));
+    renderHostList();
+  }
+
+  function loadHost(h) {
+    document.getElementById('hostAlias').value = h.alias || '';
+    document.getElementById('hostname').value = h.hostname || '';
+    document.getElementById('port').value = h.port || '22';
+    document.getElementById('user').value = h.user || '';
+    document.getElementById('identityFile').value = h.identityFile || '';
+    document.getElementById('proxyJump').value = h.proxyJump || '';
+    activeOptions.clear();
+    (h.options || []).forEach(o => activeOptions.add(o));
+    document.querySelectorAll('.toggle-chip').forEach(chip => {
+      chip.classList.toggle('active', activeOptions.has(chip.dataset.opt));
+    });
+    updateOutput();
+  }
+
+  // Double-click saved host to load
+  document.getElementById('hostList').addEventListener('dblclick', e => {
+    const entry = e.target.closest('.host-entry');
+    if (!entry) return;
+    const idx = [...entry.parentNode.children].indexOf(entry);
+    // find matching saved host (skip entries with del buttons)
+    const entries = [...document.querySelectorAll('.host-entry')];
+    const realIdx = entries.indexOf(entry);
+    if (realIdx >= 0 && savedHosts[realIdx]) loadHost(savedHosts[realIdx]);
+  });
+
+  function getFormData() {
+    return {
+      alias: document.getElementById('hostAlias').value.trim(),
+      hostname: document.getElementById('hostname').value.trim(),
+      port: document.getElementById('port').value.trim(),
+      user: document.getElementById('user').value.trim(),
+      identityFile: document.getElementById('identityFile').value.trim(),
+      proxyJump: document.getElementById('proxyJump').value.trim(),
+    };
+  }
+
+  // Toggle chips
+  document.getElementById('optionToggles').addEventListener('click', e => {
+    const chip = e.target.closest('.toggle-chip');
+    if (!chip) return;
+    const opt = chip.dataset.opt;
+    if (activeOptions.has(opt)) {
+      activeOptions.delete(opt);
+      chip.classList.remove('active');
+    } else {
+      activeOptions.add(opt);
+      chip.classList.add('active');
+    }
+    updateOutput();
+  });
+
+  // Presets
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = presets[btn.dataset.preset];
+      if (!p) return;
+      document.getElementById('hostAlias').value = p.alias;
+      document.getElementById('hostname').value = p.hostname;
+      document.getElementById('port').value = p.port;
+      document.getElementById('user').value = p.user;
+      document.getElementById('identityFile').value = p.identityFile;
+      document.getElementById('proxyJump').value = p.proxyJump;
+      activeOptions.clear();
+      (p.options || []).forEach(o => activeOptions.add(o));
+      document.querySelectorAll('.toggle-chip').forEach(chip => {
+        chip.classList.toggle('active', activeOptions.has(chip.dataset.opt));
+      });
+      updateOutput();
+    });
+  });
+
+  // Live update
+  ['hostAlias','hostname','port','user','identityFile','proxyJump'].forEach(id => {
+    document.getElementById(id).addEventListener('input', updateOutput);
+  });
+
+  function esc(str) {
+    if (!str) return '';
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function buildRawConfig() {
+    const d = getFormData();
+    const alias = d.alias || 'myhost';
+    const lines = [];
+    lines.push(`# ─── ${alias} ─────────────────────`);
+    lines.push(`Host ${alias}`);
+    if (d.hostname)  lines.push(`    HostName ${d.hostname}`);
+    if (d.port && d.port !== '22') lines.push(`    Port ${d.port}`);
+    if (d.user)      lines.push(`    User ${d.user}`);
+    if (d.identityFile) lines.push(`    IdentityFile ${d.identityFile}`);
+    if (d.proxyJump) lines.push(`    ProxyJump ${d.proxyJump}`);
+
+    const sortedOpts = [...activeOptions].sort((a, b) => {
+      const aVal = a.split(' ')[0];
+      const bVal = b.split(' ')[0];
+      return aVal.localeCompare(bVal);
+    });
+    sortedOpts.forEach(opt => {
+      const [key, ...rest] = opt.split(' ');
+      const val = rest.join(' ');
+      lines.push(`    ${key}${val ? ' ' + val : ''}`);
+    });
+
+    lines.push('');
+    return { text: lines.join('\n'), lineCount: lines.length, optCount: sortedOpts.length };
+  }
+
+  function syntaxHighlight(raw) {
+    return esc(raw)
+      .replace(/^(\s*)(Host|Port|User|IdentityFile|ProxyJump|StrictHostKeyChecking|UserKnownHostsFile|ForwardAgent|ForwardX11|Compression|ServerAliveInterval|ControlMaster|ControlPath|ControlPersist|LocalForward|RemoteForward|DynamicForward)(\s+)(.+)$/gm,
+        (m, ws, kw, sp, val) => {
+          let colored = `<span class="kw">${kw}</span><span class="str">${val}</span>`;
+          if (!isNaN(val)) colored = `<span class="kw">${kw}</span><span class="num">${val}</span>`;
+          return ws + colored;
+        })
+      .replace(/^(#.*)$/gm, '<span class="cmt">$1</span>');
+  }
+
+  function updateOutput() {
+    const { text, lineCount, optCount } = buildRawConfig();
+    document.getElementById('output').innerHTML = syntaxHighlight(text);
+    document.getElementById('lineCount').textContent = lineCount;
+    document.getElementById('optCount').textContent = optCount;
+  }
+
+  function copyConfig() {
+    const { text } = buildRawConfig();
+    navigator.clipboard.writeText(text).then(() => showToast('✓ Copied to clipboard!'));
+  }
+
+  function downloadConfig() {
+    const { text } = buildRawConfig();
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'ssh-config-block.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('✓ Downloaded ssh-config-block.txt');
+  }
+
+  function clearForm() {
+    ['hostAlias','hostname','port','user','identityFile','proxyJump'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('port').value = '22';
+    activeOptions.clear();
+    document.querySelectorAll('.toggle-chip').forEach(c => c.classList.remove('active'));
+    updateOutput();
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2000);
+  }
+
+  // Init
+  renderHostList();
+  updateOutput();
+</script>
+</body>
+</html>
