@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frequency Garden</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+    user-select: none;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 12px;
+    z-index: 10;
+  }
+  .btn {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: rgba(255,255,255,0.7);
+    padding: 8px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    letter-spacing: 1px;
+    transition: all 0.3s;
+    backdrop-filter: blur(10px);
+  }
+  .btn:hover {
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+    border-color: rgba(255,255,255,0.3);
+  }
+  .btn.active {
+    background: rgba(255,255,255,0.15);
+    border-color: rgba(255,255,255,0.4);
+    color: #fff;
+  }
+  #info {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.3);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-align: center;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #counter {
+    position: fixed;
+    top: 20px;
+    right: 24px;
+    color: rgba(255,255,255,0.2);
+    font-size: 11px;
+    letter-spacing: 2px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #title-overlay {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    z-index: 20;
+    pointer-events: none;
+    transition: opacity 2s;
+  }
+  #title-overlay h1 {
+    font-size: 28px;
+    font-weight: 300;
+    letter-spacing: 8px;
+    color: rgba(255,255,255,0.8);
+    text-shadow: 0 0 40px rgba(100,200,255,0.3);
+    margin-bottom: 12px;
+  }
+  #title-overlay p {
+    font-size: 12px;
+    letter-spacing: 3px;
+    color: rgba(255,255,255,0.3);
+  }
+  #title-overlay.fade { opacity: 0; }
+</style>
+</head>
+<body>
+
+<div id="title-overlay">
+  <h1>FREQUENCY GARDEN</h1>
+  <p>CLICK TO PLANT · DRAG TO TEND · SPACE FOR RAIN</p>
+</div>
+
+<div id="ui">
+  <button class="btn active" onclick="setPalette(0)">Aurora</button>
+  <button class="btn" onclick="setPalette(1)">Ember</button>
+  <button class="btn" onclick="setPalette(2)">Deep</button>
+  <button class="btn" onclick="setPalette(3)">Void</button>
+  <button class="btn" onclick="clearGarden()">Clear</button>
+</div>
+
+<div id="counter">FLOWERS: 0</div>
+<div id="info">1-4 PALETTE · SPACE RAIN · C CLEAR · H HARMONIZE</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Palettes ───
+const palettes = [
+  { name: 'Aurora', colors: ['#00ffc8','#00b4d8','#7b2ff7','#e04090','#48e6c5','#a78bfa','#34d399','#60a5fa','#f472b6','#a3e635'] },
+  { name: 'Ember',  colors: ['#ff6b35','#ff2e63','#ff9f1c','#ff6b6b','#e84855','#ffbe0b','#fb5607','#ff006e','#ffd166','#ef476f'] },
+  { name: 'Deep',   colors: ['#0077b6','#005f99','#003d66','#023e8a','#0096c7','#48cae4','#90e0ef','#00b4d8','#023e8a','#0077b6'] },
+  { name: 'Void',   colors: ['#e0e0ff','#b8b8ff','#8888dd','#ff88cc','#88ccff','#ccffcc','#ffcc88','#cc88ff','#88ffcc','#ffccff'] },
+];
+let paletteIdx = 0;
+
+// ─── Audio ───
+let audioCtx = null;
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+// Pentatonic scale frequencies (C major pentatonic, 2 octaves)
+const scale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25, 783.99, 880.00, 1046.50, 1174.66];
+const noteNames = ['C4','D4','E4','G4','A4','C5','D5','E5','G5','A5','C6','D6'];
+
+function playNote(freq, duration = 2.5, type = 'sine', vol = 0.04) {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  
+  // Main tone
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, now);
+  gain.gain.setValueAtTime(vol, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + duration);
+  
+  // Subtle harmonic
+  const osc2 = audioCtx.createOscillator();
+  const gain2 = audioCtx.createGain();
+  osc2.type = 'sine';
+  osc2.frequency.setValueAtTime(freq * 2, now);
+  gain2.gain.setValueAtTime(vol * 0.15, now);
+  gain2.gain.exponentialRampToValueAtTime(0.001, now + duration * 0.6);
+  osc2.connect(gain2);
+  gain2.connect(audioCtx.destination);
+  osc2.start(now);
+  osc2.stop(now + duration * 0.6);
+}
+
+// ─── Flowers ───
+class Flower {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.targetY = y;
+    this.color = palettes[paletteIdx].colors[Math.floor(Math.random() * palettes[paletteIdx].colors.length)];
+    this.noteIdx = Math.floor(Math.random() * scale.length);
+    this.height = 0;
+    this.targetHeight = 30 + Math.random() * 80;
+    this.stemWidth = 1.5 + Math.random() * 1.5;
+    this.swayPhase = Math.random() * Math.PI * 2;
+    this.swaySpeed = 0.3 + Math.random() * 0.5;
+    this.swayAmount = 5 + Math.random() * 15;
+    this.petalCount = 3 + Math.floor(Math.random() * 4);
+    this.petalSize = 6 + Math.random() * 10;
+    this.glowRadius = 0;
+    this.targetGlow = 30 + Math.random() * 40;
+    this.growing = true;
+    this.age = 0;
+    this.opacity = 0;
+    this.playedNote = false;
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    // Particles
+    this.particles = [];
+    this.particleTimer = 0;
+  }
+  
+  update(wind, dt) {
+    this.age += dt;
+    this.swayPhase += this.swaySpeed * dt;
+    this.pulsePhase += 1.5 * dt;
+    
+    // Grow
+    if (this.growing) {
+      this.height += (this.targetHeight - this.height) * 0.02;
+      this.opacity = Math.min(1, this.opacity + 0.015);
+      if (this.height > this.targetHeight * 0.95) this.growing = false;
+    }
+    
+    // Glow
+    this.glowRadius += (this.targetGlow - this.glowRadius) * 0.03;
+    
+    // Play note when grown
+    if (!this.playedNote && !this.growing) {
+      this.playedNote = true;
+      playNote(scale[this.noteIdx], 3 + Math.random() * 2, 'sine', 0.03);
+    }
+    
+    // Periodic ambient note
+    if (this.age > 4 && Math.random() < 0.0005) {
+      playNote(scale[this.noteIdx], 2 + Math.random() * 2, 'triangle', 0.015);
+    }
+    
+    // Spawn pollen particles
+    this.particleTimer += dt;
+    if (this.particleTimer > 0.8 + Math.random() * 2) {
+      this.particleTimer = 0;
+      const tipX = this.x + Math.sin(this.swayPhase) * this.swayAmount * (this.height / this.targetHeight);
+      const tipY = this.y - this.height;
+      for (let i = 0; i < 2; i++) {
+        this.particles.push({
+          x: tipX + (Math.random() - 0.5) * 10,
+          y: tipY + (Math.random() - 0.5) * 10,
+          vx: (Math.random() - 0.5) * 8 + wind.x * 20,
+          vy: -Math.random() * 15 - 5,
+          life: 1,
+          size: 1 + Math.random() * 2,
+        });
+      }
+    }
+    
+    // Update particles
+    for (let p of this.particles) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 2 * dt; // slight gravity
+      p.life -= dt * 0.25;
+      p.vx += wind.x * dt * 10;
+    }
+    this.particles = this.particles.filter(p => p.life > 0);
+  }
+  
+  draw(ctx, wind) {
+    const sway = Math.sin(this.swayPhase) * this.swayAmount * Math.min(1, this.height / this.targetHeight);
+    const tipX = this.x + sway;
+    const tipY = this.y - this.height;
+    const pulse = 1 + Math.sin(this.pulsePhase) * 0.15;
+    
+    ctx.save();
+    ctx.globalAlpha = this.opacity;
+    
+    // Glow
+    const grd = ctx.createRadialGradient(tipX, tipY, 0, tipX, tipY, this.glowRadius * pulse);
+    grd.addColorStop(0, this.color + '30');
+    grd.addColorStop(1, this.color + '00');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(tipX, tipY, this.glowRadius * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Stem (curved)
+    ctx.strokeStyle = this.color + '60';
+    ctx.lineWidth = this.stemWidth;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y);
+    ctx.quadraticCurveTo(this.x + sway * 0.5, this.y - this.height * 0.5, tipX, tipY);
+    ctx.stroke();
+    
+    if (this.height > 5) {
+      // Petals
+      for (let i = 0; i < this.petalCount; i++) {
+        const angle = (i / this.petalCount) * Math.PI * 2 + this.swayPhase * 0.3;
+        const px = tipX + Math.cos(angle) * this.petalSize * pulse;
+        const py = tipY + Math.sin(angle) * this.petalSize * pulse;
+        
+        ctx.fillStyle = this.color + 'cc';
+        ctx.beginPath();
+        ctx.arc(px, py, this.petalSize * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Petal glow
+        const pg = ctx.createRadialGradient(px, py, 0, px, py, this.petalSize);
+        pg.addColorStop(0, this.color + '40');
+        pg.addColorStop(1, this.color + '00');
+        ctx.fillStyle = pg;
+        ctx.beginPath();
+        ctx.arc(px, py, this.petalSize, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Center
+      ctx.fillStyle = '#fff';
+      ctx.globalAlpha = this.opacity * 0.8;
+      ctx.beginPath();
+      ctx.arc(tipX, tipY, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    // Pollen particles
+    ctx.globalAlpha = this.opacity;
+    for (let p of this.particles) {
+      ctx.fillStyle = this.color;
+      ctx.globalAlpha = this.opacity * p.life * 0.6;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    ctx.restore();
+  }
+}
+
+// ─── Rain ───
+let raining = false;
+let rainDrops = [];
+
+class RainDrop {
+  constructor() {
+    this.x = Math.random() * W;
+    this.y = -10;
+    this.speed = 200 + Math.random() * 300;
+    this.length = 5 + Math.random() * 15;
+    this.opacity = 0.1 + Math.random() * 0.2;
+  }
+  update(dt) {
+    this.y += this.speed * dt;
+    return this.y < H;
+  }
+  draw(ctx) {
+    ctx.strokeStyle = `rgba(150,200,255,${this.opacity})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y);
+    ctx.lineTo(this.x, this.y + this.length);
+    ctx.stroke();
+  }
+}
+
+// ─── Background stars ───
+const stars = [];
+for (let i = 0; i < 120; i++) {
+  stars.push({
+    x: Math.random() * 2000,
+    y: Math.random() * 2000,
+    size: Math.random() * 1.2,
+    twinkle: Math.random() * Math.PI * 2,
+    speed: 0.3 + Math.random() * 1.5,
+  });
+}
+
+// ─── Ground ───
+function drawGround() {
+  const grd = ctx.createLinearGradient(0, H - 80, 0, H);
+  grd.addColorStop(0, 'rgba(10,10,20,0)');
+  grd.addColorStop(1, 'rgba(15,15,30,0.8)');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, H - 80, W, 80);
+  
+  // Subtle ground line
+  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, H - 30);
+  for (let x = 0; x < W; x += 30) {
+    ctx.lineTo(x + 15, H - 30 + Math.sin(x * 0.05 + performance.now() * 0.0005) * 3);
+  }
+  ctx.stroke();
+}
+
+// ─── State ───
+let flowers = [];
+let wind = { x: 0, y: 0, target: 0 };
+let mouse = { x: W/2, y: H/2, down: false };
+let dragging = false;
+let lastTime = performance.now();
+let titleFaded = false;
+
+// ─── Events ───
+function initAudioCtx() {
+  initAudio();
+  if (!titleFaded) {
+    document.getElementById('title-overlay').classList.add('fade');
+    titleFaded = true;
+  }
+}
+
+canvas.addEventListener('mousedown', (e) => {
+  initAudioCtx();
+  mouse.down = true;
+  dragging = false;
+  addFlower(e.clientX, e.clientY);
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  if (mouse.down && Math.random() < 0.3) {
+    dragging = true;
+    addFlower(e.clientX + (Math.random() - 0.5) * 40, e.clientY + (Math.random() - 0.5) * 20);
+  }
+});
+
+canvas.addEventListener('mouseup', () => { mouse.down = false; });
+
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  initAudioCtx();
+  const t = e.touches[0];
+  addFlower(t.clientX, t.clientY);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  if (Math.random() < 0.3) addFlower(t.clientX, t.clientY);
+}, { passive: false });
+
+function addFlower(x, y) {
+  if (flowers.length < 120) {
+    flowers.push(new Flower(x, y));
+    document.getElementById('counter').textContent = `FLOWERS: ${flowers.length}`;
+  }
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.key >= '1' && e.key <= '4') setPalette(parseInt(e.key) - 1);
+  if (e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); raining = !raining; }
+  if (e.key === 'c' || e.key === 'C') clearGarden();
+  if (e.key === 'h' || e.key === 'H') harmonize();
+});
+
+function setPalette(idx) {
+  paletteIdx = idx;
+  document.querySelectorAll('.btn').forEach((b, i) => {
+    b.classList.toggle('active', i <= 3 && i === idx);
+  });
+}
+
+function clearGarden() {
+  flowers = [];
+  document.getElementById('counter').textContent = 'FLOWERS: 0';
+}
+
+function harmonize() {
+  // Play a gentle chord from all flower notes
+  if (flowers.length === 0) return;
+  const uniqueNotes = [...new Set(flowers.map(f => scale[f.noteIdx % scale.length]))].slice(0, 6);
+  uniqueNotes.forEach((freq, i) => {
+    setTimeout(() => playNote(freq, 3, 'sine', 0.025), i * 150);
+  });
+}
+
+// ─── Animation loop ───
+let rainTimer = 0;
+function animate() {
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - lastTime) / 1000);
+  lastTime = now;
+  
+  // Wind
+  wind.target += (Math.random() - 0.5) * 0.3;
+  wind.target *= 0.99;
+  wind.x += (wind.target - wind.x) * 0.01;
+  
+  // Rain
+  rainTimer += dt;
+  if (raining && rainTimer > 0.02) {
+    rainTimer = 0;
+    rainDrops.push(new RainDrop());
+  }
+  rainDrops = rainDrops.filter(r => r.update(dt));
+  
+  // ─── Draw ───
+  // Fade trail
+  ctx.fillStyle = 'rgba(8, 8, 16, 0.15)';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Stars
+  for (let s of stars) {
+    s.twinkle += s.speed * dt;
+    const alpha = 0.2 + Math.sin(s.twinkle) * 0.15;
+    ctx.fillStyle = `rgba(200,220,255,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(s.x % W, s.y % H, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Ground
+  drawGround();
+  
+  // Rain
+  if (raining) {
+    for (let r of rainDrops) r.draw(ctx);
+  }
+  
+  // Flowers (back to front by height)
+  flowers.sort((a, b) => a.y - b.y);
+  for (let f of flowers) {
+    f.update(wind, dt);
+    f.draw(ctx, wind);
+  }
+  
+  // Mouse glow
+  if (!mouse.down) {
+    const mg = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 60);
+    mg.addColorStop(0, 'rgba(255,255,255,0.02)');
+    mg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = mg;
+    ctx.beginPath();
+    ctx.arc(mouse.x, mouse.y, 60, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  requestAnimationFrame(animate);
+}
+
+// Initial clear
+ctx.fillStyle = '#0a0a0f';
+ctx.fillRect(0, 0, W, H);
+
+animate();
+</script>
+</body>
+</html>
