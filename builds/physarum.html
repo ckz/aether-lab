@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Physarum — Slime Mold Networks</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050508;
+    color: #aaa;
+    font-family: 'Courier New', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  h1 {
+    color: #7f9;
+    font-weight: normal;
+    font-size: 18px;
+    margin-bottom: 4px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+  }
+  .sub {
+    color: #444;
+    font-size: 11px;
+    margin-bottom: 16px;
+  }
+  #canvas {
+    border: 1px solid #1a1a2a;
+    cursor: crosshair;
+    max-width: 100%;
+    image-rendering: pixelated;
+  }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+    justify-content: center;
+    max-width: 600px;
+  }
+  .btn {
+    background: rgba(30, 50, 40, 0.4);
+    color: #7f9;
+    border: 1px solid rgba(100, 180, 120, 0.3);
+    padding: 6px 14px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.2s;
+  }
+  .btn:hover {
+    background: rgba(50, 90, 60, 0.5);
+    border-color: rgba(120, 220, 140, 0.5);
+    color: #bfa;
+  }
+  .info {
+    color: #333;
+    font-size: 10px;
+    margin-top: 14px;
+    text-align: center;
+    line-height: 1.8;
+  }
+  .info span { color: #7f9; }
+  .palette-name {
+    color: #7f9;
+    font-size: 10px;
+    text-align: center;
+    margin-top: 6px;
+    opacity: 0.7;
+  }
+</style>
+</head>
+<body>
+  <h1>◈ Physarum ◈</h1>
+  <div class="sub">Agent-based slime mold networks — click to feed</div>
+  <canvas id="canvas" width="500" height="500"></canvas>
+  <div class="palette-name" id="paletteName">palette: forest</div>
+  <div class="controls">
+    <button class="btn" onclick="resetSim()">[R] Reset</button>
+    <button class="btn" onclick="togglePause()">[P] Pause</button>
+    <button class="btn" onclick="clearTrails()">[C] Clear Trails</button>
+    <button class="btn" onclick="nextPalette()">[1-5] Palette</button>
+    <button class="btn" onclick="savePNG()">[S] Save PNG</button>
+  </div>
+  <div class="info">
+    <span>Click</span> to place food · <span>Hold</span> to paint food trail · <span>Space</span> pause
+  </div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+const W = canvas.width;
+const H = canvas.height;
+const SCALE = 2; // trail grid is half resolution
+const TW = W / SCALE;
+const TH = H / SCALE;
+
+// Trail map (low-res for performance)
+let trailMap = new Float32Array(TW * TH);
+let prevTrailMap = new Float32Array(TW * TH);
+
+// Agents
+const NUM_AGENTS = 2000;
+let agents = [];
+
+// Parameters
+const SENSOR_ANGLE = Math.PI / 4;    // 45 degrees
+const SENSOR_DIST = 9;
+const TURN_SPEED = 0.4;
+const MOVE_SPEED = 1.0;
+const DEPOSIT_AMOUNT = 4.5;
+const DECAY_RATE = 0.96;
+const DIFFUSE_AMOUNT = 0.2;
+
+// Mouse food
+let mouseDown = false;
+let mouseX = 0, mouseY = 0;
+let foodSources = []; // [{x, y, r}]
+
+// Palettes
+const palettes = [
+  { name: 'forest',   bg: [5, 8, 5],    colors: [[20,80,30],[40,160,60],[80,220,100],[160,255,180],[10,40,15]] },
+  { name: 'ember',    bg: [8, 5, 3],    colors: [[80,30,10],[200,80,20],[255,160,40],[255,220,120],[40,10,5]] },
+  { name: 'aurora',   bg: [3, 5, 10],   colors: [[20,40,120],[40,80,200],[80,160,255],[140,220,255],[10,20,60]] },
+  { name: 'neon',     bg: [8, 3, 10],   colors: [[60,10,80],[160,20,200],[255,80,255],[255,160,255],[30,5,40]] },
+  { name: 'ocean',    bg: [3, 6, 10],   colors: [[10,40,60],[20,100,140],[40,180,200],[120,240,255],[5,15,30]] },
+];
+let currentPalette = 0;
+
+// Image data for display
+let imgData = ctx.createImageData(W, H);
+let displayData = new Uint8ClampedArray(W * H * 4);
+
+function initAgents() {
+  agents = [];
+  for (let i = 0; i < NUM_AGENTS; i++) {
+    agents.push({
+      x: Math.random() * TW,
+      y: Math.random() * TH,
+      angle: Math.random() * Math.PI * 2
+    });
+  }
+}
+
+function sense(agent, offsetAngle) {
+  const sx = Math.max(0, Math.min(TW - 1, Math.round(agent.x + Math.cos(agent.angle + offsetAngle) * SENSOR_DIST)));
+  const sy = Math.max(0, Math.min(TH - 1, Math.round(agent.y + Math.sin(agent.angle + offsetAngle) * SENSOR_DIST)));
+  return trailMap[sy * TW + sx];
+}
+
+function depositTrail(x, y, amount) {
+  const ix = Math.round(x);
+  const iy = Math.round(y);
+  if (ix >= 0 && ix < TW && iy >= 0 && iy < TH) {
+    trailMap[iy * TW + ix] += amount;
+  }
+}
+
+function updateAgent(agent) {
+  // Sense 3 positions
+  const front = sense(agent, 0);
+  const left = sense(agent, -SENSOR_ANGLE);
+  const right = sense(agent, SENSOR_ANGLE);
+
+  // Turn toward strongest trail
+  if (front > left && front > right) {
+    // go straight
+  } else if (front < left && front < right) {
+    agent.angle += (Math.random() - 0.5) * 2 * TURN_SPEED;
+  } else if (left > right) {
+    agent.angle -= TURN_SPEED * (0.5 + Math.random() * 0.5);
+  } else if (right > left) {
+    agent.angle += TURN_SPEED * (0.5 + Math.random() * 0.5);
+  }
+
+  // Move
+  agent.x += Math.cos(agent.angle) * MOVE_SPEED;
+  agent.y += Math.sin(agent.angle) * MOVE_SPEED;
+
+  // Wrap
+  if (agent.x < 0) agent.x += TW;
+  if (agent.x >= TW) agent.x -= TW;
+  if (agent.y < 0) agent.y += TH;
+  if (agent.y >= TH) agent.y -= TH;
+
+  // Deposit trail
+  depositTrail(agent.x, agent.y, DEPOSIT_AMOUNT);
+}
+
+function diffuseAndDecay() {
+  // Swap buffers
+  const tmp = prevTrailMap;
+  prevTrailMap = trailMap;
+  trailMap = tmp;
+
+  for (let y = 1; y < TH - 1; y++) {
+    for (let x = 1; x < TW - 1; x++) {
+      const idx = y * TW + x;
+      // Box blur for diffusion
+      const blurred = (
+        prevTrailMap[idx - 1] +
+        prevTrailMap[idx + 1] +
+        prevTrailMap[idx - TW] +
+        prevTrailMap[idx + TW]
+      ) * 0.25;
+      trailMap[idx] = blurred * DIFFUSE_AMOUNT + prevTrailMap[idx] * (1 - DIFFUSE_AMOUNT);
+      trailMap[idx] *= DECAY_RATE;
+    }
+  }
+}
+
+function drawFood() {
+  // Draw food as high trail values
+  for (const f of foodSources) {
+    const r2 = f.r * f.r;
+    for (let dy = -f.r; dy <= f.r; dy++) {
+      for (let dx = -f.r; dx <= f.r; dx++) {
+        if (dx * dx + dy * dy > r2) continue;
+        const fx = Math.round(f.x / SCALE) + dx;
+        const fy = Math.round(f.y / SCALE) + dy;
+        if (fx >= 0 && fx < TW && fy >= 0 && fy < TH) {
+          trailMap[fy * TW + fx] += 8.0;
+        }
+      }
+    }
+  }
+}
+
+function render() {
+  const pal = palettes[currentPalette].colors;
+  const bg = palettes[currentPalette].bg;
+
+  // Map trail values to colors
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const tx = Math.floor(x / SCALE);
+      const ty = Math.floor(y / SCALE);
+      const val = Math.min(1, trailMap[ty * TW + tx] / 6.0);
+      const pidx = Math.min(pal.length - 1, Math.floor(val * pal.length));
+      const c = pal[pidx];
+      const pixIdx = (y * W + x) * 4;
+      displayData[pixIdx] = c[0];
+      displayData[pixIdx + 1] = c[1];
+      displayData[pixIdx + 2] = c[2];
+      displayData[pixIdx + 3] = 255;
+    }
+  }
+
+  imgData.data.set(displayData);
+  ctx.putImageData(imgData, 0, 0);
+}
+
+let paused = false;
+let animId = null;
+
+function step() {
+  if (!paused) {
+    // Multiple simulation steps per frame for faster convergence
+    for (let s = 0; s < 3; s++) {
+      for (const agent of agents) {
+        updateAgent(agent);
+      }
+      diffuseAndDecay();
+    }
+    drawFood();
+    render();
+  }
+  animId = requestAnimationFrame(step);
+}
+
+function resetSim() {
+  trailMap.fill(0);
+  prevTrailMap.fill(0);
+  foodSources = [];
+  initAgents();
+}
+
+function togglePause() {
+  paused = !paused;
+}
+
+function clearTrails() {
+  trailMap.fill(0);
+  prevTrailMap.fill(0);
+}
+
+function nextPalette() {
+  currentPalette = (currentPalette + 1) % palettes.length;
+  document.getElementById('paletteName').textContent = 'palette: ' + palettes[currentPalette].name;
+}
+
+function savePNG() {
+  const link = document.createElement('a');
+  link.download = 'physarum-' + palettes[currentPalette].name + '-' + Date.now() + '.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+// Keyboard
+document.addEventListener('keydown', (e) => {
+  if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); togglePause(); }
+  else if (e.key === 'r' || e.key === 'R') resetSim();
+  else if (e.key === 'c' || e.key === 'C') clearTrails();
+  else if (e.key === 's' || e.key === 'S') savePNG();
+  else if (e.key >= '1' && e.key <= '5') {
+    currentPalette = parseInt(e.key) - 1;
+    document.getElementById('paletteName').textContent = 'palette: ' + palettes[currentPalette].name;
+  }
+});
+
+// Mouse
+canvas.addEventListener('mousedown', (e) => {
+  mouseDown = true;
+  const rect = canvas.getBoundingClientRect();
+  mouseX = (e.clientX - rect.left) * (W / rect.width);
+  mouseY = (e.clientY - rect.top) * (H / rect.height);
+  foodSources.push({ x: mouseX, y: mouseY, r: 18 });
+  // Prune old food
+  if (foodSources.length > 30) foodSources.shift();
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (!mouseDown) return;
+  const rect = canvas.getBoundingClientRect();
+  mouseX = (e.clientX - rect.left) * (W / rect.width);
+  mouseY = (e.clientY - rect.top) * (H / rect.height);
+  foodSources.push({ x: mouseX, y: mouseY, r: 12 });
+  if (foodSources.length > 50) foodSources.shift();
+});
+
+canvas.addEventListener('mouseup', () => mouseDown = false);
+canvas.addEventListener('mouseleave', () => mouseDown = false);
+
+// Touch
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const t = e.touches[0];
+  mouseX = (t.clientX - rect.left) * (W / rect.width);
+  mouseY = (t.clientY - rect.top) * (H / rect.height);
+  foodSources.push({ x: mouseX, y: mouseY, r: 18 });
+  if (foodSources.length > 30) foodSources.shift();
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const t = e.touches[0];
+  mouseX = (t.clientX - rect.left) * (W / rect.width);
+  mouseY = (t.clientY - rect.top) * (H / rect.height);
+  foodSources.push({ x: mouseX, y: mouseY, r: 12 });
+  if (foodSources.length > 50) foodSources.shift();
+}, { passive: false });
+
+// Seed with a ring of agents for initial pattern
+function seedRing() {
+  const cx = TW / 2, cy = TH / 2, r = TW * 0.3;
+  for (let i = 0; i < NUM_AGENTS; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    agents[i].x = cx + Math.cos(angle) * r * (0.7 + Math.random() * 0.6);
+    agents[i].y = cy + Math.sin(angle) * r * (0.7 + Math.random() * 0.6);
+    agents[i].angle = angle + Math.PI; // face inward
+  }
+}
+
+// Init
+initAgents();
+seedRing();
+step();
+</script>
+</body>
+</html>
