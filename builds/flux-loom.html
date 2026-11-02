@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flux Loom — Magnetic Thread Weaver</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+  canvas { display: block; cursor: crosshair; }
+
+  #ui {
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 6px; z-index: 10; align-items: center;
+    background: rgba(0,0,0,0.55); backdrop-filter: blur(8px);
+    padding: 7px 14px; border-radius: 40px; border: 1px solid rgba(255,255,255,0.12);
+    font: 11px/1.4 'SF Mono','Fira Code',monospace; color: #aaa; user-select: none;
+  }
+  #ui .sep { width: 1px; height: 14px; background: rgba(255,255,255,0.15); margin: 0 4px; }
+  #ui button {
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18);
+    color: #ccc; border-radius: 20px; padding: 4px 12px; cursor: pointer;
+    font: inherit; transition: background .15s, color .15s;
+  }
+  #ui button:hover { background: rgba(255,255,255,0.18); color: #fff; }
+  #ui button.on { background: rgba(120,180,255,0.3); color: #fff; border-color: rgba(120,180,255,0.6); }
+  #ui .key { color: #667; font-size: 10px; margin-right: 3px; }
+  #palette-name {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font: 10px/1 'SF Mono','Fira Code',monospace;
+    letter-spacing: 0.15em; text-transform: uppercase; z-index: 10; pointer-events: none;
+    transition: opacity .6s;
+  }
+  #hint {
+    position: fixed; bottom: 36px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.35); font: 10px/1.4 'SF Mono','Fira Code',monospace;
+    z-index: 10; pointer-events: none; text-align: center; transition: opacity 1.5s;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <button id="btn-pause" title="Space">⏸ Pause</button>
+  <div class="sep"></div>
+  <button class="pal-btn on" data-p="0">Aurora</button>
+  <button class="pal-btn" data-p="1">Ember</button>
+  <button class="pal-btn" data-p="2">Deep</button>
+  <button class="pal-btn" data-p="3">Neon</button>
+  <button class="pal-btn" data-p="4">Mono</button>
+  <div class="sep"></div>
+  <button id="btn-add" title="Click canvas to add">+ Node</button>
+  <button id="btn-clear">Clear</button>
+  <button id="btn-save" title="S">Save PNG</button>
+</div>
+
+<div id="hint">move mouse to attract · click to spawn · drag to paint threads · space pause · 1-5 palette</div>
+<div id="palette-name">Aurora</div>
+
+<canvas id="c"></canvas>
+
+<script>
+// ── Palette Definitions ──────────────────────────────────────────────
+const PALETTES = [
+  { name:'Aurora', bg:'#000a14',
+    node:[[80,220,255],[130,100,255],[200,80,255],[80,255,200],[180,255,130]],
+    thread:[60,180,255], glow:'rgba(100,200,255,0.08)', core:'rgba(200,240,255,0.9)' },
+  { name:'Ember', bg:'#0a0000',
+    node:[[255,160,40],[255,80,20],[255,220,60],[255,100,80],[200,40,20]],
+    thread:[255,140,40], glow:'rgba(255,120,30,0.08)', core:'rgba(255,220,180,0.9)' },
+  { name:'Deep', bg:'#010508',
+    node:[[30,60,140],[60,120,200],[20,180,180],[80,60,200],[40,100,160]],
+    thread:[40,100,200], glow:'rgba(40,100,200,0.07)', core:'rgba(180,220,255,0.85)' },
+  { name:'Neon', bg:'#020002',
+    node:[[255,0,128],[0,255,200],[255,255,0],[255,0,255],[0,200,255]],
+    thread:[255,100,200], glow:'rgba(255,80,200,0.08)', core:'rgba(255,220,255,0.9)' },
+  { name:'Mono', bg:'#000000',
+    node:[[220,220,220],[180,180,180],[140,140,140],[200,200,200],[160,160,160]],
+    thread:[200,200,200], glow:'rgba(200,200,200,0.06)', core:'rgba(255,255,255,0.9)' },
+];
+
+// ── Canvas Setup ──────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, DPR;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+  canvas.style.width = W+'px'; canvas.style.height = H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize', resize); resize();
+
+// ── State ─────────────────────────────────────────────────────────────
+let palIdx = 0;
+let paused = false;
+let nodes = [];
+let mouse = { x: W/2, y: H/2, active: false };
+let modeAdd = false; // adding nodes on click
+const MAX_NODES = 90;
+const CONNECT_DIST = 200;
+const MOUSE_INFLUENCE = 180;
+let paletteNameEl = document.getElementById('palette-name');
+let hintEl = document.getElementById('hint');
+setTimeout(()=>{ if(hintEl) hintEl.style.opacity='0'; }, 6000);
+
+// ── Node Class ────────────────────────────────────────────────────────
+class Node {
+  constructor(x, y, c) {
+    this.x = x; this.y = y;
+    this.vx = (Math.random()-.5)*0.6;
+    this.vy = (Math.random()-.5)*0.6;
+    this.r = 2 + Math.random()*2.5;
+    const pal = PALETTES[palIdx];
+    this.c = c || pal.node[Math.floor(Math.random()*pal.node.length)];
+    this.phase = Math.random()*Math.PI*2;
+    this.pulseSpeed = 0.02 + Math.random()*0.03;
+    this.driftAngle = Math.random()*Math.PI*2;
+    this.driftSpeed = 0.003 + Math.random()*0.008;
+    this.attractTo = null; // nearby node this one is attracted to
+  }
+  update(t, dt) {
+    // gentle wandering
+    this.driftAngle += (Math.random()-.5)*0.1;
+    this.vx += Math.cos(this.driftAngle)*0.015;
+    this.vy += Math.sin(this.driftAngle)*0.015;
+
+    // mouse attraction
+    if (mouse.active) {
+      const dx = mouse.x - this.x, dy = mouse.y - this.y;
+      const d = Math.hypot(dx, dy);
+      if (d < MOUSE_INFLUENCE && d > 1) {
+        const f = (1 - d/MOUSE_INFLUENCE) * 0.25;
+        this.vx += (dx/d)*f;
+        this.vy += (dy/d)*f;
+      }
+    }
+
+    // soft node-node spring toward nearest neighbor (fabric weaving)
+    let nearest = null, nd = Infinity;
+    for (const o of nodes) {
+      if (o === this) continue;
+      const d = Math.hypot(o.x-this.x, o.y-this.y);
+      if (d < nd) { nd = d; nearest = o; }
+    }
+    if (nearest && nd > 60 && nd < 350) {
+      const f = 0.0004 * (nd - 60) / 290;
+      const dx = nearest.x - this.x, dy = nearest.y - this.y;
+      this.vx += (dx/nd)*f;
+      this.vy += (dy/nd)*f;
+    }
+
+    // damping
+    this.vx *= 0.97; this.vy *= 0.97;
+    // speed cap
+    const sp = Math.hypot(this.vx, this.vy);
+    if (sp > 2.5) { this.vx = (this.vx/sp)*2.5; this.vy = (this.vy/sp)*2.5; }
+    this.x += this.vx; this.y += this.vy;
+    // soft bounds with bounce
+    const pad = 40;
+    if (this.x < pad) this.vx += 0.05;
+    if (this.x > W-pad) this.vx -= 0.05;
+    if (this.y < pad) this.vy += 0.05;
+    if (this.y > H-pad) this.vy -= 0.05;
+    // hard clamp
+    this.x = Math.max(5, Math.min(W-5, this.x));
+    this.y = Math.max(5, Math.min(H-5, this.y));
+    this.phase += this.pulseSpeed;
+  }
+  draw(ctx) {
+    const pulse = 0.7 + 0.3*Math.sin(this.phase);
+    const r = this.r * pulse;
+    // outer glow halo
+    const g = ctx.createRadialGradient(this.x,this.y,0,this.x,this.y,r*5);
+    g.addColorStop(0, `rgba(${this.c[0]},${this.c[1]},${this.c[2]},0.35)`);
+    g.addColorStop(1, `rgba(${this.c[0]},${this.c[1]},${this.c[2]},0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(this.x, this.y, r*5, 0, Math.PI*2); ctx.fill();
+    // core
+    ctx.fillStyle = `rgba(${this.c[0]},${this.c[1]},${this.c[2]},${0.85*pulse})`;
+    ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI*2); ctx.fill();
+    // white hot center
+    ctx.fillStyle = `rgba(255,255,255,${0.7*pulse})`;
+    ctx.beginPath(); ctx.arc(this.x, this.y, r*0.35, 0, Math.PI*2); ctx.fill();
+  }
+}
+
+// ── Thread Drawing ────────────────────────────────────────────────────
+function drawThreads(ctx) {
+  const pal = PALETTES[palIdx];
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i+1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j];
+      const dx = b.x-a.x, dy = b.y-a.y;
+      const d = Math.hypot(dx, dy);
+      if (d > CONNECT_DIST) continue;
+      const t = 1 - d/CONNECT_DIST;
+      const alpha = t * t * 0.55;
+      // thread color blends both node colors
+      const r = Math.round((a.c[0]+b.c[0])/2);
+      const g = Math.round((a.c[1]+b.c[1])/2);
+      const bl= Math.round((a.c[2]+b.c[2])/2);
+      // draw silk-like gradient line
+      const grad = ctx.createLinearGradient(a.x,a.y,b.x,b.y);
+      grad.addColorStop(0, `rgba(${a.c[0]},${a.c[1]},${a.c[2]},${alpha})`);
+      grad.addColorStop(1, `rgba(${b.c[0]},${b.c[1]},${b.c[2]},${alpha})`);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = t * 1.8;
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+      // occasional "knot" bead along thread
+      if (t > 0.7 && Math.random() < 0.003) {
+        const bx = a.x + dx*(0.3+Math.random()*0.4);
+        const by = a.y + dy*(0.3+Math.random()*0.4);
+        ctx.fillStyle = `rgba(${r},${g},${bl},${t*0.6})`;
+        ctx.beginPath(); ctx.arc(bx,by,1.2,0,Math.PI*2); ctx.fill();
+      }
+    }
+  }
+}
+
+// ── Mouse Threads ─────────────────────────────────────────────────────
+function drawMouseThreads(ctx) {
+  if (!mouse.active) return;
+  const pal = PALETTES[palIdx];
+  const tc = pal.thread;
+  for (const n of nodes) {
+    const dx = mouse.x - n.x, dy = mouse.y - n.y;
+    const d = Math.hypot(dx, dy);
+    if (d > MOUSE_INFLUENCE) continue;
+    const t = 1 - d/MOUSE_INFLUENCE;
+    const alpha = t * t * 0.3;
+    ctx.strokeStyle = `rgba(${tc[0]},${tc[1]},${tc[2]},${alpha})`;
+    ctx.lineWidth = t * 1.2;
+    ctx.beginPath(); ctx.moveTo(n.x,n.y); ctx.lineTo(mouse.x,mouse.y); ctx.stroke();
+  }
+}
+
+// ── Init Seed Nodes ───────────────────────────────────────────────────
+function seedInitial() {
+  const cx = W/2, cy = H/2;
+  const count = 18;
+  for (let i = 0; i < count; i++) {
+    const a = Math.random()*Math.PI*2;
+    const r = 80 + Math.random()*180;
+    nodes.push(new Node(cx+Math.cos(a)*r, cy+Math.sin(a)*r));
+  }
+}
+seedInitial();
+
+// ── Main Loop ─────────────────────────────────────────────────────────
+let lastT = 0;
+function frame(t) {
+  requestAnimationFrame(frame);
+  if (paused) return;
+  const dt = Math.min(t-lastT, 50); lastT = t;
+
+  const pal = PALETTES[palIdx];
+
+  // long-exposure trail fade
+  ctx.fillStyle = pal.bg + '14'; // hex alpha ~8%
+  ctx.fillRect(0,0,W,H);
+
+  // subtle ambient glow at mouse
+  if (mouse.active) {
+    const ag = ctx.createRadialGradient(mouse.x,mouse.y,0,mouse.x,mouse.y,200);
+    ag.addColorStop(0, pal.glow);
+    ag.addColorStop(1, 'transparent');
+    ctx.fillStyle = ag;
+    ctx.fillRect(mouse.x-200,mouse.y-200,400,400);
+  }
+
+  // update
+  for (const n of nodes) n.update(t, dt);
+
+  // draw threads below nodes
+  drawThreads(ctx);
+  drawMouseThreads(ctx);
+
+  // draw nodes on top
+  for (const n of nodes) n.draw(ctx);
+}
+requestAnimationFrame(frame);
+
+// ── Input ─────────────────────────────────────────────────────────────
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => mouse.active = false);
+canvas.addEventListener('mouseenter', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+});
+canvas.addEventListener('click', e => {
+  if (nodes.length < MAX_NODES) {
+    nodes.push(new Node(e.clientX, e.clientY));
+  }
+});
+// touch
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY; mouse.active = true;
+  if (nodes.length < MAX_NODES) nodes.push(new Node(t.clientX, t.clientY));
+}, {passive:false});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY; mouse.active = true;
+  if (nodes.length < MAX_NODES && Math.random() < 0.3)
+    nodes.push(new Node(t.clientX+(Math.random()-.5)*30, t.clientY+(Math.random()-.5)*30));
+}, {passive:false});
+canvas.addEventListener('touchend', () => mouse.active = false);
+
+// ── Keyboard ──────────────────────────────────────────────────────────
+window.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k === ' ') { paused = !paused; updatePauseBtn(); e.preventDefault(); }
+  if (k >= '1' && k <= '5') setPalette(parseInt(k)-1);
+  if (k === 'c') clearNodes();
+  if (k === 's') savePNG();
+  if (k === 'r') seedInitial();
+});
+
+function setPalette(i) {
+  palIdx = ((i % PALETTES.length) + PALETTES.length) % PALETTES.length;
+  document.querySelectorAll('.pal-btn').forEach(b => b.classList.toggle('on', parseInt(b.dataset.p)===palIdx));
+  paletteNameEl.textContent = PALETTES[palIdx].name;
+  // recolor existing nodes gradually on next spawn
+}
+document.querySelectorAll('.pal-btn').forEach(b => {
+  b.addEventListener('click', () => setPalette(parseInt(b.dataset.p)));
+});
+
+function updatePauseBtn() {
+  const btn = document.getElementById('btn-pause');
+  btn.textContent = paused ? '▶ Play' : '⏸ Pause';
+  btn.classList.toggle('on', paused);
+}
+document.getElementById('btn-pause').addEventListener('click', () => { paused=!paused; updatePauseBtn(); });
+document.getElementById('btn-clear').addEventListener('click', clearNodes);
+document.getElementById('btn-save').addEventListener('click', savePNG);
+
+function clearNodes() { nodes = []; }
+function savePNG() {
+  const link = document.createElement('a');
+  link.download = `flux-loom-${Date.now()}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+</script>
+</body>
+</html>
