@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Aether's Nebula Forge</title>
+<style>
+  html,body{margin:0;height:100%;background:#05060f;color:#d8deff;font-family:system-ui,sans-serif;overflow:hidden}
+  #wrap{position:relative;width:100vw;height:100vh}
+  canvas{display:block;width:100%;height:100%}
+  .hud{position:absolute;left:16px;top:16px;pointer-events:none;text-shadow:0 1px 4px #000}
+  h1{margin:0;font-size:18px;letter-spacing:.15em;text-transform:uppercase;color:#a7b6ff}
+  p{margin:6px 0 0;font-size:12px;opacity:.8;max-width:52ch}
+  .controls{position:absolute;right:16px;bottom:16px;display:flex;gap:8px;pointer-events:auto}
+  button{background:rgba(255,255,255,.07);color:#d8deff;border:1px solid rgba(255,255,255,.14);padding:8px 12px;border-radius:999px;backdrop-filter:blur(6px);cursor:pointer;font-size:12px}
+  button:hover{background:rgba(255,255,255,.14)}
+  .toast{position:absolute;left:50%;top:18px;transform:translateX(-50%);background:rgba(20,22,40,.65);border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(10px);padding:8px 14px;border-radius:999px;opacity:0;transition:opacity .4s;pointer-events:none}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div class="hud">
+    <h1>✦ Nebula Forge</h1>
+    <p>Click or drag to forge stars. They drift, pulse, and occasionally birth fleeting constellations.</p>
+  </div>
+  <div class="controls">
+    <button id="clearBtn">Clear</button>
+    <button id="burstBtn">Burst</button>
+    <button id="themeBtn">Shift Palette</button>
+  </div>
+  <div class="toast" id="toast">Constellation formed</div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+const palettes = [
+  { bg:'#05060f', stars:['#a7b6ff','#ffb6e1','#ffd8a8','#c8e6ff','#ffffff'] },
+  { bg:'#1a0510', stars:['#ff7eb6','#ff758c','#ffaaa5','#ffd2e8','#ffffff'] },
+  { bg:'#021a12', stars:['#7affc8','#a8ffd8','#c8ffe0','#7affdb','#ffffff'] },
+  { bg:'#1a1505', stars:['#ffd27a','#ffb84d','#ffe0a8','#ffd27a','#ffffff'] }
+];
+let palette = palettes[0];
+
+class Star {
+  constructor(x,y){
+    this.x = x ?? Math.random()*W;
+    this.y = y ?? Math.random()*H;
+    this.r = Math.random()*1.6 + 0.4;
+    this.vx = (Math.random()-0.5)*0.15;
+    this.vy = (Math.random()-0.5)*0.15;
+    this.life = 1;
+    this.decay = Math.random()*0.0006 + 0.0003;
+    this.pulse = Math.random()*Math.PI*2;
+    this.color = palette.stars[Math.floor(Math.random()*palette.stars.length)];
+  }
+  tick(){
+    this.x += this.vx;
+    this.y += this.vy;
+    this.pulse += 0.04;
+    this.life -= this.decay;
+    if(this.x < -20) this.x = W+20;
+    if(this.x > W+20) this.x = -20;
+    if(this.y < -20) this.y = H+20;
+    if(this.y > H+20) this.y = -20;
+  }
+  draw(){
+    const a = this.life * (0.55 + Math.sin(this.pulse)*0.45);
+    ctx.globalAlpha = Math.max(0,a);
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.r, 0, Math.PI*2);
+    ctx.fill();
+    if(this.r > 1.2){
+      ctx.globalAlpha = Math.max(0,a*0.25);
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.r*3.2, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+}
+
+let stars = [];
+let dragging = false;
+let last = {x:0,y:0};
+let toastTimer;
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), 1800);
+}
+
+function addStar(x,y,count=1){
+  for(let i=0;i<count;i++){
+    const jitter = 60;
+    stars.push(new Star(
+      x + (Math.random()-0.5)*jitter,
+      y + (Math.random()-0.5)*jitter
+    ));
+  }
+}
+
+canvas.addEventListener('mousedown', e => { dragging = true; addStar(e.clientX, e.clientY, 4); });
+canvas.addEventListener('mousemove', e => {
+  if(dragging) addStar(e.clientX, e.clientY, 2);
+  last = {x:e.clientX,y:e.clientY};
+});
+canvas.addEventListener('mouseup', () => dragging = false);
+canvas.addEventListener('touchstart', e => {
+  dragging = true;
+  const t = e.touches[0];
+  addStar(t.clientX, t.clientY, 4);
+}, {passive:true});
+canvas.addEventListener('touchmove', e => {
+  if(dragging){
+    const t = e.touches[0];
+    addStar(t.clientX, t.clientY, 2);
+  }
+}, {passive:true});
+canvas.addEventListener('touchend', () => dragging = false);
+
+document.getElementById('clearBtn').onclick = () => { stars = []; };
+document.getElementById('burstBtn').onclick = () => {
+  const cx = W/2, cy = H/2;
+  for(let i=0;i<220;i++){
+    const ang = Math.random()*Math.PI*2;
+    const speed = Math.random()*2.6 + 0.4;
+    const s = new Star(cx,cy);
+    s.vx = Math.cos(ang)*speed;
+    s.vy = Math.sin(ang)*speed;
+    s.r = Math.random()*2.2 + 0.5;
+    stars.push(s);
+  }
+  showToast('Starburst forged!');
+};
+document.getElementById('themeBtn').onclick = () => {
+  palette = palettes[(palettes.indexOf(palette)+1)%palettes.length];
+  document.body.style.background = palette.bg;
+};
+
+// ambient background stars
+for(let i=0;i<120;i++) stars.push(new Star());
+
+// constellations
+let constellations = [];
+function maybeConstellation(){
+  if(Math.random() > 0.00025) return;
+  const cx = Math.random()*W;
+  const cy = Math.random()*H;
+  const count = Math.floor(Math.random()*5)+3;
+  const pts = [];
+  for(let i=0;i<count;i++) pts.push({x:cx+(Math.random()-0.5)*220, y:cy+(Math.random()-0.5)*220});
+  constellations.push({pts, age:0, max:600 + Math.random()*400});
+  showToast('Constellation formed');
+}
+
+let frame = 0;
+function loop(){
+  ctx.clearRect(0,0,W,H);
+  frame++;
+  stars = stars.filter(s => s.life > 0);
+  for(const s of stars){ s.tick(); s.draw(); }
+  ctx.globalAlpha = 1;
+
+  // constellation lines
+  for(let i=constellations.length-1;i>=0;i--){
+    const c = constellations[i];
+    c.age++;
+    const a = c.age < 60 ? c.age/60 : c.age > c.max ? Math.max(0, (c.max-c.age)/120) : 1;
+    ctx.globalAlpha = a*0.35;
+    ctx.strokeStyle = '#a7b6ff';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    for(let j=0;j<c.pts.length;j++){
+      const p = c.pts[j];
+      if(j===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);
+    }
+    ctx.stroke();
+    if(c.age > c.max) constellations.splice(i,1);
+  }
+  ctx.globalAlpha = 1;
+
+  maybeConstellation();
+
+  // faint radial vignette
+  const g = ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.2,W/2,H/2,Math.max(W,H)*0.75);
+  g.addColorStop(0,'rgba(5,6,15,0)');
+  g.addColorStop(1,'rgba(5,6,15,0.55)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,W,H);
+
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
