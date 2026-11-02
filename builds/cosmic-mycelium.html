@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosmic Mycelium — Generative Art</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #e0e0ff;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+  canvas {
+    display: block;
+    position: absolute;
+    top: 0; left: 0;
+  }
+  #controls {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    background: rgba(10, 10, 20, 0.75);
+    backdrop-filter: blur(8px);
+    padding: 16px 20px;
+    border: 1px solid rgba(120, 120, 255, 0.2);
+    border-radius: 8px;
+    font-size: 11px;
+    max-width: 260px;
+    user-select: none;
+  }
+  #controls h1 {
+    font-size: 14px;
+    margin-bottom: 10px;
+    color: #8888ff;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  #controls .row {
+    margin: 6px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  #controls label { color: #8888cc; font-size: 10px; }
+  #controls input[type="range"] {
+    width: 120px;
+    accent-color: #6666ff;
+  }
+  #controls button {
+    background: rgba(100, 100, 255, 0.15);
+    color: #8888ff;
+    border: 1px solid rgba(100, 100, 255, 0.3);
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-top: 8px;
+    width: 100%;
+  }
+  #controls button:hover {
+    background: rgba(100, 100, 255, 0.3);
+  }
+  #stats {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    z-index: 10;
+    color: #444466;
+    font-size: 10px;
+    text-align: right;
+    pointer-events: none;
+  }
+  #hint {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    z-index: 10;
+    color: #333355;
+    font-size: 10px;
+    pointer-events: none;
+    animation: fadeHint 6s forwards;
+  }
+  @keyframes fadeHint {
+    0%, 60% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="controls">
+  <h1>✦ Cosmic Mycelium</h1>
+  <div class="row"><label>Branches</label><input type="range" id="branches" min="2" max="12" value="6" step="1"></div>
+  <div class="row"><label>Spread</label><input type="range" id="spread" min="10" max="90" value="45" step="1"></div>
+  <div class="row"><label>Lifespan</label><input type="range" id="lifespan" min="40" max="300" value="140" step="10"></div>
+  <div class="row"><label>Speed</label><input type="range" id="speed" min="1" max="10" value="4" step="1"></div>
+  <div class="row"><label>Glow</label><input type="range" id="glow" min="0" max="30" value="10" step="1"></div>
+  <button id="reset">↻ Regenerate</button>
+</div>
+<div id="stats"></div>
+<div id="hint">move mouse to attract growth · click to seed · space to pause</div>
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+let paused = false;
+let mouse = { x: -9999, y: -9999, active: false };
+let particles = [];
+let frame = 0;
+
+const palettes = [
+  ['#7b2fff','#ff2fcf','#2fcfff','#ff6a2f','#ffffff'],
+  ['#00ffc8','#ff006e','#ffbe0b','#3a86ff','#ffffff'],
+  ['#ff595e','#ffca3a','#8ac926','#1982c4','#ffffff'],
+  ['#e0aaff','#c77dff','#9d4edd','#7b2cbf','#ffffff'],
+  ['#00f5d4','#fee440','#f15bb5','#00bbf9','#ffffff'],
+];
+let palette = palettes[Math.floor(Math.random() * palettes.length)];
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; });
+window.addEventListener('mouseleave', () => mouse.active = false);
+canvas.addEventListener('click', e => {
+  for (let i = 0; i < 8; i++) {
+    spawn(e.clientX, e.clientY, Math.random() * Math.PI * 2);
+  }
+});
+window.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); paused = !paused; } });
+
+const params = {
+  get branches() { return +document.getElementById('branches').value; },
+  get spread() { return +document.getElementById('spread').value; },
+  get lifespan() { return +document.getElementById('lifespan').value; },
+  get speed() { return +document.getElementById('speed').value; },
+  get glow() { return +document.getElementById('glow').value; },
+};
+
+function reset() {
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, W, H);
+  palette = palettes[Math.floor(Math.random() * palettes.length)];
+  particles = [];
+  for (let i = 0; i < 3; i++) {
+    spawn(W * 0.2 + Math.random() * W * 0.6, H * 0.2 + Math.random() * H * 0.6, Math.random() * Math.PI * 2);
+  }
+}
+document.getElementById('reset').addEventListener('click', reset);
+
+function spawn(x, y, angle) {
+  const color = palette[Math.floor(Math.random() * palette.length)];
+  particles.push({
+    x, y, angle,
+    life: 0,
+    maxLife: params.lifespan * (0.6 + Math.random() * 0.8),
+    speed: params.speed * (0.5 + Math.random()),
+    color,
+    width: 0.5 + Math.random() * 1.5,
+    history: [{x, y}],
+    wobble: Math.random() * Math.PI * 2,
+    wobbleSpeed: 0.02 + Math.random() * 0.04,
+    wobbleAmp: 0.02 + Math.random() * 0.05,
+    dead: false,
+  });
+}
+
+function update() {
+  if (paused) return;
+  frame++;
+  const newParticles = [];
+  
+  for (const p of particles) {
+    if (p.dead) continue;
+    p.life++;
+    
+    // Mouse attraction
+    if (mouse.active) {
+      const dx = mouse.x - p.x;
+      const dy = mouse.y - p.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 200 && dist > 1) {
+        p.angle += (Math.atan2(dy, dx) - p.angle) * 0.02;
+        p.speed = Math.min(p.speed + 0.05, params.speed * 1.5);
+      }
+    }
+    
+    p.wobble += p.wobbleSpeed;
+    const wobbleOffset = Math.sin(p.wobble) * p.wobbleAmp;
+    
+    const prevX = p.x;
+    const prevY = p.y;
+    p.angle += wobbleOffset;
+    p.x += Math.cos(p.angle) * p.speed;
+    p.y += Math.sin(p.angle) * p.speed;
+    
+    // Fade near end of life
+    const lifeRatio = p.life / p.maxLife;
+    const alpha = lifeRatio < 0.1 ? lifeRatio * 10 : lifeRatio > 0.7 ? (1 - lifeRatio) / 0.3 : 1;
+    
+    ctx.beginPath();
+    ctx.moveTo(prevX, prevY);
+    ctx.lineTo(p.x, p.y);
+    ctx.strokeStyle = p.color + Math.floor(alpha * 80).toString(16).padStart(2, '0');
+    ctx.lineWidth = p.width * (1 - lifeRatio * 0.5);
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    
+    // Soft glow
+    if (params.glow > 0) {
+      ctx.beginPath();
+      ctx.moveTo(prevX, prevY);
+      ctx.lineTo(p.x, p.y);
+      ctx.strokeStyle = p.color + Math.floor(alpha * 25).toString(16).padStart(2, '0');
+      ctx.lineWidth = p.width * (params.glow / 10) * 3;
+      ctx.stroke();
+    }
+    
+    // Branch
+    if (p.life % 12 === 0 && p.life < p.maxLife * 0.8 && particles.length + newParticles.length < 3000) {
+      const branches = Math.floor(Math.random() * params.branches * 0.3);
+      for (let i = 0; i < branches; i++) {
+        if (Math.random() < 0.5) {
+          newParticles.push({
+            ...p,
+            angle: p.angle + (Math.random() - 0.5) * params.spread * 0.05,
+            speed: p.speed * (0.6 + Math.random() * 0.4),
+            history: [{ x: p.x, y: p.y }],
+            wobble: Math.random() * Math.PI * 2,
+            wobbleSpeed: 0.02 + Math.random() * 0.04,
+            wobbleAmp: 0.02 + Math.random() * 0.05,
+          });
+        }
+      }
+    }
+    
+    if (p.life >= p.maxLife || p.x < -50 || p.x > W + 50 || p.y < -50 || p.y > H + 50) {
+      p.dead = true;
+    }
+  }
+  
+  // Very slow fade for atmosphere
+  if (frame % 3 === 0) {
+    ctx.fillStyle = 'rgba(10, 10, 15, 0.003)';
+    ctx.fillRect(0, 0, W, H);
+  }
+  
+  particles = particles.filter(p => !p.dead);
+  particles.push(...newParticles);
+  
+  // Auto-seed if empty
+  if (particles.length < 3 && frame % 60 === 0) {
+    spawn(W * 0.2 + Math.random() * W * 0.6, H * 0.2 + Math.random() * H * 0.6, Math.random() * Math.PI * 2);
+  }
+  
+  document.getElementById('stats').textContent = `particles: ${particles.length} | frame: ${frame}`;
+}
+
+function loop() {
+  update();
+  requestAnimationFrame(loop);
+}
+
+reset();
+loop();
+</script>
+</body>
+</html>
