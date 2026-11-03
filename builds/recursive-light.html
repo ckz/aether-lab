@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recursive Light</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #05050f;
+    color: #aaa;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0; left: 0;
+  }
+  #ui {
+    position: fixed;
+    top: 16px; left: 16px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #title {
+    font-size: 13px;
+    color: #c9a0ff;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  #subtitle {
+    font-size: 10px;
+    color: #555;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+  }
+  #controls {
+    pointer-events: auto;
+    font-size: 10px;
+    color: #777;
+    line-height: 1.8;
+    background: rgba(5, 5, 15, 0.7);
+    padding: 10px 12px;
+    border-radius: 4px;
+    border: 1px solid rgba(120, 100, 200, 0.15);
+  }
+  #controls span.key { color: #c4a0ff; }
+  #palette-indicator {
+    margin-top: 8px;
+    font-size: 10px;
+    color: #555;
+  }
+  #count {
+    margin-top: 4px;
+    font-size: 9px;
+    color: #444;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div id="title">◈ Recursive Light</div>
+  <div id="subtitle">recursive kaleidoscope</div>
+  <div id="controls">
+    <span class="key">CLICK</span> plant seed &nbsp; <span class="key">DRAG</span> paint seeds<br>
+    <span class="key">1-5</span> palette &nbsp; <span class="key">S</span> save PNG &nbsp; <span class="key">C</span> clear
+  </div>
+  <div id="palette-indicator">palette: <span id="pal-name">aurora</span></div>
+  <div id="count">seeds: <span id="seed-count">0</span></div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Palettes ---
+const palettes = {
+  aurora: ['#00ffaa','#00aaff','#8855ff','#ff44aa','#44ffcc','#88ff88'],
+  ember:  ['#ff4400','#ff8800','#ffcc00','#ff2200','#ffaa44','#ffeebb'],
+  neon:   ['#ff00ff','#00ffff','#ffff00','#ff0088','#88ff00','#ff4400'],
+  frost:  ['#88ddff','#aaddff','#ccf0ff','#88ccff','#ffffff','#66bbee'],
+  cosmic: ['#4400ff','#8800ff','#ff00ff','#0044ff','#ff44ff','#8844ff'],
+};
+let currentPalette = 'aurora';
+let palette = palettes[currentPalette];
+
+document.getElementById('pal-name').textContent = currentPalette;
+
+function setPalette(name) {
+  if (palettes[name]) {
+    currentPalette = name;
+    palette = palettes[name];
+    document.getElementById('pal-name').textContent = name;
+  }
+}
+
+// --- Seeds ---
+let seeds = [];
+let animTime = 0;
+
+class Seed {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.birth = animTime;
+    this.lifespan = 800 + Math.random() * 600;
+    this.maxRadius = 30 + Math.random() * 120;
+    this.symmetry = 6 + Math.floor(Math.random() * 6); // 6-12 fold
+    this.depth = 3 + Math.floor(Math.random() * 4); // recursion depth
+    this.rotation = Math.random() * Math.PI * 2;
+    this.rotSpeed = (Math.random() - 0.5) * 0.0008;
+    this.pulseSpeed = 0.001 + Math.random() * 0.002;
+    this.colorIndex = Math.floor(Math.random() * palette.length);
+    this.phaseOffset = Math.random() * Math.PI * 2;
+    this.growing = true;
+    this.growStart = animTime;
+    this.growDuration = 600;
+    // fractal parameters
+    this.branchAngle = 0.4 + Math.random() * 0.9;
+    this.shrink = 0.5 + Math.random() * 0.2;
+    this.swayAmount = Math.random() * 0.4;
+    this.swaySpeed = 0.0005 + Math.random() * 0.001;
+  }
+
+  getAge() { return animTime - this.birth; }
+  getLifeFraction() { return this.getAge() / this.lifespan; }
+  getGrowFraction() {
+    const f = (animTime - this.growStart) / this.growDuration;
+    return Math.min(1, f);
+  }
+
+  isDead() { return this.getAge() > this.lifespan; }
+
+  draw(ctx) {
+    const age = this.getAge();
+    const grow = this.getGrowFraction();
+    const lifeFrac = this.getLifeFraction();
+
+    // fade in, sustain, fade out
+    let alpha;
+    if (lifeFrac < 0.1) alpha = lifeFrac / 0.1;
+    else if (lifeFrac > 0.7) alpha = 1 - (lifeFrac - 0.7) / 0.3;
+    else alpha = 1;
+    alpha = Math.max(0, Math.min(1, alpha));
+
+    if (alpha <= 0.001) return;
+
+    const r = this.maxRadius * grow;
+    const rot = this.rotation + age * this.rotSpeed;
+    const pulse = 1 + Math.sin(age * this.pulseSpeed + this.phaseOffset) * 0.15;
+    const sway = Math.sin(age * this.swaySpeed) * this.swayAmount;
+
+    const col = palette[this.colorIndex % palette.length];
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(rot);
+    ctx.globalAlpha = alpha;
+
+    // draw recursive fractal mandala
+    this.drawBranch(ctx, 0, 0, r * pulse, 0, this.depth, sway, col, alpha);
+
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  drawBranch(ctx, x, y, len, angle, depth, sway, color, parentAlpha) {
+    if (depth === 0 || len < 1) return;
+
+    const swayAngle = angle + Math.sin(animTime * 0.001 + depth) * sway;
+    const endX = x + Math.cos(swayAngle) * len;
+    const endY = y + Math.sin(swayAngle) * len;
+
+    // line weight decreases with depth
+    const weight = depth * 0.8;
+    const alpha = parentAlpha * (0.3 + depth * 0.15);
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(endX, endY);
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = Math.min(1, alpha);
+    ctx.lineWidth = weight;
+    ctx.stroke();
+
+    // glow at tip
+    if (depth <= 2) {
+      ctx.beginPath();
+      ctx.arc(endX, endY, weight * 1.5, 0, Math.PI * 2);
+      ctx.globalAlpha = Math.min(1, alpha * 0.4);
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+
+    // recurse: symmetric branches
+    const branchLen = len * this.shrink;
+    const branches = this.symmetry;
+    for (let i = 0; i < branches; i++) {
+      const branchAngle = swayAngle + (i / branches) * Math.PI * 2 + this.branchAngle * (depth / this.depth);
+      this.drawBranch(ctx, endX, endY, branchLen, branchAngle, depth - 1, sway, color, parentAlpha);
+    }
+  }
+}
+
+// --- Input ---
+let mouseDown = false;
+let lastPlant = 0;
+
+canvas.addEventListener('mousedown', e => {
+  mouseDown = true;
+  plantSeed(e.clientX, e.clientY);
+});
+canvas.addEventListener('mousemove', e => {
+  if (mouseDown) {
+    const now = Date.now();
+    if (now - lastPlant > 80) {
+      plantSeed(e.clientX, e.clientY);
+      lastPlant = now;
+    }
+  }
+});
+window.addEventListener('mouseup', () => mouseDown = false);
+canvas.addEventListener('touchstart', e => {
+  mouseDown = true;
+  const t = e.touches[0];
+  plantSeed(t.clientX, t.clientY);
+}, { passive: true });
+canvas.addEventListener('touchmove', e => {
+  if (mouseDown) {
+    const t = e.touches[0];
+    const now = Date.now();
+    if (now - lastPlant > 80) {
+      plantSeed(t.clientX, t.clientY);
+      lastPlant = now;
+    }
+  }
+}, { passive: true });
+window.addEventListener('touchend', () => mouseDown = false);
+
+function plantSeed(x, y) {
+  if (seeds.length > 60) seeds.shift();
+  seeds.push(new Seed(x, y));
+}
+
+document.addEventListener('keydown', e => {
+  const key = e.key.toLowerCase();
+  if (key >= '1' && key <= '5') {
+    const names = ['aurora','ember','neon','frost','cosmic'];
+    setPalette(names[parseInt(key) - 1]);
+  }
+  if (key === 's') {
+    const link = document.createElement('a');
+    link.download = 'recursive-light.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }
+  if (key === 'c') {
+    seeds = [];
+  }
+});
+
+// --- Background stars ---
+const stars = [];
+for (let i = 0; i < 200; i++) {
+  stars.push({
+    x: Math.random(),
+    y: Math.random(),
+    size: Math.random() * 1.2,
+    phase: Math.random() * Math.PI * 2,
+    speed: 0.0005 + Math.random() * 0.002,
+  });
+}
+
+function drawStars() {
+  for (const s of stars) {
+    const twinkle = 0.3 + Math.sin(animTime * s.speed + s.phase) * 0.35;
+    ctx.globalAlpha = twinkle * 0.6;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(s.x * W, s.y * H, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// --- Render loop ---
+let lastTime = performance.now();
+
+function frame(now) {
+  const dt = now - lastTime;
+  lastTime = now;
+  animTime += dt;
+
+  // dark trail fade
+  ctx.fillStyle = 'rgba(5, 5, 15, 0.18)';
+  ctx.fillRect(0, 0, W, H);
+
+  drawStars();
+
+  // update and draw seeds
+  seeds = seeds.filter(s => !s.isDead());
+  for (const s of seeds) {
+    s.draw(ctx);
+  }
+
+  document.getElementById('seed-count').textContent = seeds.length;
+
+  requestAnimationFrame(frame);
+}
+
+// initial demo seeds
+setTimeout(() => {
+  const cx = W / 2, cy = H / 2;
+  for (let i = 0; i < 3; i++) {
+    const s = new Seed(
+      cx + (Math.random() - 0.5) * 200,
+      cy + (Math.random() - 0.5) * 200
+    );
+    s.maxRadius = 80 + Math.random() * 60;
+    s.symmetry = 6 + i;
+    s.colorIndex = i;
+    seeds.push(s);
+  }
+}, 100);
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
