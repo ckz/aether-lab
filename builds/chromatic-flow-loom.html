@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chromatic Flow Loom</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+  canvas { display: block; }
+  #ui {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.6); font-size: 12px; text-align: center;
+    pointer-events: none; letter-spacing: 1px;
+    text-shadow: 0 0 8px rgba(100,180,255,0.5);
+  }
+  #title {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.4); font-size: 14px; letter-spacing: 3px;
+    pointer-events: none; text-transform: uppercase;
+    text-shadow: 0 0 12px rgba(100,180,255,0.4);
+  }
+  #palette-indicator {
+    position: fixed; top: 20px; right: 20px;
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.3);
+    pointer-events: none; transition: all 0.5s;
+  }
+  #stats {
+    position: fixed; top: 20px; left: 20px;
+    color: rgba(255,255,255,0.35); font-size: 11px;
+    pointer-events: none; line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="title">Chromatic Flow Loom</div>
+<div id="stats"></div>
+<div id="palette-indicator"></div>
+<div id="ui">
+  CLICK · plant anchor &nbsp;|&nbsp; DRAG · pull threads &nbsp;|&nbsp; SPACE · burst &nbsp;|&nbsp; 1-5 · palette &nbsp;|&nbsp; S · save PNG &nbsp;|&nbsp; C · clear
+</div>
+
+<script>
+// ─── Simplex Noise (compact 2D) ───
+class SimplexNoise {
+  constructor(seed = Math.random()) {
+    this.grad3 = [[1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],[1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],[0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]];
+    this.p = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) this.p[i] = i;
+    let s = seed * 2147483647;
+    for (let i = 255; i > 0; i--) {
+      s = (s * 16807) % 2147483647;
+      const j = s % (i + 1);
+      [this.p[i], this.p[j]] = [this.p[j], this.p[i]];
+    }
+    this.perm = new Uint8Array(512);
+    for (let i = 0; i < 512; i++) this.perm[i] = this.p[i & 255];
+  }
+  dot(g, x, y) { return g[0]*x + g[1]*y; }
+  noise2D(xin, yin) {
+    const F2 = 0.5*(Math.sqrt(3)-1), G2 = (3-Math.sqrt(3))/6;
+    const s = (xin+yin)*F2;
+    const i = Math.floor(xin+s), j = Math.floor(yin+s);
+    const t = (i+j)*G2;
+    const X0 = i-t, Y0 = j-t, x0 = xin-X0, y0 = yin-Y0;
+    const i1 = x0>y0?1:0, j1 = x0>y0?0:1;
+    const x1 = x0-i1+G2, y1 = y0-j1+G2, x2 = x0-1+2*G2, y2 = y0-1+2*G2;
+    const ii = i&255, jj = j&255;
+    const gi0 = this.perm[ii+this.perm[jj]]%12;
+    const gi1 = this.perm[ii+i1+this.perm[jj+j1]]%12;
+    const gi2 = this.perm[ii+1+this.perm[jj+1]]%12;
+    let n0=0, n1=0, n2=0;
+    let t0 = 0.5-x0*x0-y0*y0;
+    if (t0 > 0) { t0*=t0; n0 = t0*t0*this.dot(this.grad3[gi0],x0,y0); }
+    let t1 = 0.5-x1*x1-y1*y1;
+    if (t1 > 0) { t1*=t1; n1 = t1*t1*this.dot(this.grad3[gi1],x1,y1); }
+    let t2 = 0.5-x2*x2-y2*y2;
+    if (t2 > 0) { t2*=t2; n2 = t2*t2*this.dot(this.grad3[gi2],x2,y2); }
+    return 70*(n0+n1+n2);
+  }
+}
+
+// ─── Setup ───
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const simplex = new SimplexNoise(Date.now() * 0.0001);
+let time = 0;
+
+// ─── Palettes ───
+const palettes = [
+  { name: 'Aurora',  bg: [2, 4, 12],    colors: [[80,220,255],[120,255,200],[180,100,255],[255,180,80],[60,255,180]] },
+  { name: 'Ember',   bg: [8, 2, 2],     colors: [[255,120,30],[255,200,50],[200,40,20],[255,80,10],[255,160,80]] },
+  { name: 'Deep',    bg: [1, 4, 16],    colors: [[20,80,200],[60,160,255],[10,200,180],[120,100,255],[30,120,220]] },
+  { name: 'Neon',    bg: [4, 0, 8],     colors: [[255,0,128],[0,255,200],[255,255,0],[128,0,255],[0,200,255]] },
+  { name: 'Frost',   bg: [4, 6, 14],    colors: [[180,220,255],[220,240,255],[140,200,240],[255,255,255],[100,180,220]] },
+];
+let paletteIdx = 0;
+
+// ─── State ───
+let anchors = [];
+let threads = [];
+let particles = [];
+let mouse = { x: W/2, y: H/2, down: false, px: W/2, py: H/2 };
+let burstMode = false;
+let frameCount = 0;
+let lastSaveTime = 0;
+
+const MAX_THREADS = 120;
+const MAX_ANCHORS = 15;
+const THREAD_LIFE = 400;
+const NOISE_SCALE = 0.0025;
+const FLOW_SPEED = 1.2;
+
+// ─── Thread class ───
+class Thread {
+  constructor(x, y, anchorX, anchorY, color) {
+    this.x = x; this.y = y;
+    this.ax = anchorX; this.ay = anchorY;
+    this.px = x; this.py = y;
+    this.life = THREAD_LIFE + Math.random()*200;
+    this.maxLife = this.life;
+    this.color = color || palettes[paletteIdx].colors[Math.floor(Math.random()*5)];
+    this.width = 0.4 + Math.random()*1.2;
+    this.speed = 0.6 + Math.random()*1.4;
+    this.trail = [];
+    this.maxTrail = 30 + Math.floor(Math.random()*40);
+    this.wander = Math.random()*0.3;
+    this.phase = Math.random()*Math.PI*2;
+  }
+  update(dt) {
+    this.life -= dt;
+    this.phase += 0.02;
+    const nx = this.x * NOISE_SCALE;
+    const ny = this.y * NOISE_SCALE;
+    const angle = simplex.noise2D(nx + time*0.0003, ny + time*0.0003) * Math.PI * 4;
+    const wobble = simplex.noise2D(nx*3 + this.phase, ny*3 + time*0.001) * this.wander;
+    
+    let vx = Math.cos(angle + wobble) * FLOW_SPEED * this.speed;
+    let vy = Math.sin(angle + wobble) * FLOW_SPEED * this.speed;
+    
+    // Pull toward anchor
+    const dx = this.ax - this.x, dy = this.ay - this.y;
+    const dist = Math.sqrt(dx*dx+dy*dy);
+    if (dist > 8) {
+      const pull = 0.003 * this.speed;
+      vx += dx/dist * pull * dist * 0.02;
+      vy += dy/dist * pull * dist * 0.02;
+    }
+    
+    // Mouse influence
+    const mdx = mouse.x - this.x, mdy = mouse.y - this.y;
+    const mdist = Math.sqrt(mdx*mdx+mdy*mdy);
+    if (mdist < 180) {
+      const mforce = (1 - mdist/180) * 0.8;
+      if (mouse.down) {
+        vx += mdx/mdist * mforce * 2;
+        vy += mdy/mdist * mforce * 2;
+      } else {
+        vx += mdx/mdist * mforce * 0.3;
+        vy += mdy/mdist * mforce * 0.3;
+      }
+    }
+    
+    this.px = this.x; this.py = this.y;
+    this.x += vx; this.y += vy;
+    this.trail.push({x: this.x, y: this.y, life: 1});
+    if (this.trail.length > this.maxTrail) this.trail.shift();
+    this.trail.forEach(t => t.life *= 0.985);
+    return this.life > 0 && this.x > -50 && this.x < W+50 && this.y > -50 && this.y < H+50;
+  }
+  draw(ctx) {
+    const alpha = Math.min(1, this.life / this.maxLife * 2);
+    const [r,g,b] = this.color;
+    if (this.trail.length < 2) return;
+    ctx.beginPath();
+    ctx.moveTo(this.trail[0].x, this.trail[0].y);
+    for (let i = 1; i < this.trail.length; i++) {
+      ctx.lineTo(this.trail[i].x, this.trail[i].y);
+    }
+    ctx.strokeStyle = `rgba(${r},${g},${b},${alpha * 0.6})`;
+    ctx.lineWidth = this.width * alpha;
+    ctx.stroke();
+    
+    // Glow head
+    const head = this.trail[this.trail.length-1];
+    const grd = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, 6*alpha);
+    grd.addColorStop(0, `rgba(${r},${g},${b},${alpha*0.8})`);
+    grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(head.x, head.y, 6*alpha, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+// ─── Anchor class ───
+class Anchor {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.radius = 4 + Math.random()*6;
+    this.pulsePhase = Math.random()*Math.PI*2;
+    this.color = palettes[paletteIdx].colors[Math.floor(Math.random()*5)];
+    this.life = 1;
+  }
+  update(dt) {
+    this.pulsePhase += 0.04;
+    return true;
+  }
+  draw(ctx) {
+    const [r,g,b] = this.color;
+    const pulse = 0.7 + 0.3*Math.sin(this.pulsePhase);
+    const rad = this.radius * pulse;
+    const grd = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, rad*4);
+    grd.addColorStop(0, `rgba(${r},${g},${b},0.9)`);
+    grd.addColorStop(0.3, `rgba(${r},${g},${b},0.4)`);
+    grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, rad*4, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(${Math.min(255,r+80)},${Math.min(255,g+80)},${Math.min(255,b+80)},0.9)`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, rad*0.5, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+// ─── Particle (ambient) ───
+class Particle {
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random()*W; this.y = Math.random()*H;
+    this.vx = (Math.random()-0.5)*0.3; this.vy = (Math.random()-0.5)*0.3;
+    this.life = 200 + Math.random()*300; this.maxLife = this.life;
+    this.size = 0.5 + Math.random()*1.5;
+    this.color = palettes[paletteIdx].colors[Math.floor(Math.random()*5)];
+  }
+  update(dt) {
+    this.life -= dt;
+    this.x += this.vx; this.y += this.vy;
+    if (this.life <= 0 || this.x < 0 || this.x > W || this.y < 0 || this.y > H) this.reset();
+  }
+  draw(ctx) {
+    const alpha = (this.life/this.maxLife) * 0.4;
+    const [r,g,b] = this.color;
+    ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+// Init ambient particles
+for (let i = 0; i < 80; i++) particles.push(new Particle());
+
+// Seed some initial anchors
+function seedInitial() {
+  anchors.push(new Anchor(W*0.3, H*0.4));
+  anchors.push(new Anchor(W*0.7, H*0.6));
+  anchors.push(new Anchor(W*0.5, H*0.3));
+  anchors.push(new Anchor(W*0.4, H*0.7));
+  for (let a of anchors) {
+    for (let i = 0; i < 18; i++) {
+      if (threads.length < MAX_THREADS) {
+        const angle = Math.random()*Math.PI*2;
+        const dist = Math.random()*40;
+        threads.push(new Thread(a.x+Math.cos(angle)*dist, a.y+Math.sin(angle)*dist, a.x, a.y));
+      }
+    }
+  }
+}
+seedInitial();
+
+// ─── Interaction ───
+function addAnchor(x, y) {
+  if (anchors.length >= MAX_ANCHORS) anchors.shift();
+  anchors.push(new Anchor(x, y));
+  for (let i = 0; i < 20; i++) {
+    if (threads.length < MAX_THREADS) {
+      const angle = Math.random()*Math.PI*2;
+      const dist = Math.random()*35;
+      threads.push(new Thread(x+Math.cos(angle)*dist, y+Math.sin(angle)*dist, x, y));
+    }
+  }
+}
+
+function burst(x, y) {
+  for (let i = 0; i < 30; i++) {
+    if (threads.length < MAX_THREADS + 60) {
+      const angle = Math.random()*Math.PI*2;
+      const dist = Math.random()*20;
+      const t = new Thread(x+Math.cos(angle)*dist, y+Math.sin(angle)*dist, x, y);
+      t.speed *= 2.5;
+      t.maxLife = t.life = 150 + Math.random()*100;
+      threads.push(t);
+    }
+  }
+  for (let i = 0; i < 20; i++) {
+    const p = new Particle();
+    p.x = x; p.y = y;
+    const a = Math.random()*Math.PI*2;
+    p.vx = Math.cos(a)*3; p.vy = Math.sin(a)*3;
+    particles.push(p);
+  }
+}
+
+canvas.addEventListener('mousedown', e => {
+  mouse.down = true;
+  addAnchor(e.clientX, e.clientY);
+});
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mousemove', e => {
+  mouse.px = mouse.x; mouse.py = mouse.y;
+  mouse.x = e.clientX; mouse.y = e.clientY;
+  if (mouse.down) {
+    for (let i = 0; i < 3; i++) {
+      if (threads.length < MAX_THREADS + 40) {
+        const t = new Thread(mouse.x + (Math.random()-0.5)*10, mouse.y + (Math.random()-0.5)*10, mouse.x, mouse.y);
+        t.speed *= 1.8;
+        threads.push(t);
+      }
+    }
+  }
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+  addAnchor(t.clientX, t.clientY);
+}, {passive:false});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY;
+}, {passive:false});
+
+window.addEventListener('keydown', e => {
+  if (e.key === ' ') { e.preventDefault(); burst(mouse.x, mouse.y); }
+  if (e.key === 's' || e.key === 'S') savePNG();
+  if (e.key === 'c' || e.key === 'C') { threads = []; anchors = []; }
+  const num = parseInt(e.key);
+  if (num >= 1 && num <= 5) setPalette(num-1);
+});
+
+function setPalette(idx) {
+  paletteIdx = idx;
+  const dot = document.getElementById('palette-indicator');
+  const [r,g,b] = palettes[idx].colors[0];
+  dot.style.background = `rgb(${r},${g},${b})`;
+  dot.style.boxShadow = `0 0 10px rgb(${r},${g},${b})`;
+}
+
+function savePNG() {
+  const link = document.createElement('a');
+  link.download = `chromatic-flow-loom-${Date.now()}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+// ─── Render ───
+function drawBackground() {
+  const [br, bg, bb] = palettes[paletteIdx].bg;
+  ctx.fillStyle = `rgba(${br},${bg},${bb},0.15)`;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function render() {
+  const dt = 1;
+  time++;
+  frameCount++;
+  
+  drawBackground();
+  
+  // Update & draw threads
+  threads = threads.filter(t => {
+    const alive = t.update(dt);
+    if (alive) t.draw(ctx);
+    return alive;
+  });
+  
+  // Trim excess threads
+  while (threads.length > MAX_THREADS + 60) threads.shift();
+  
+  // Update & draw anchors
+  anchors.forEach(a => { a.update(dt); a.draw(ctx); });
+  
+  // Update & draw particles
+  particles = particles.filter(p => {
+    p.update(dt);
+    p.draw(ctx);
+    return p.life > 0;
+  });
+  while (particles.length > 100) particles.shift();
+  
+  // Mouse glow
+  const mgrd = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 100);
+  const [mr,mg,mb] = palettes[paletteIdx].colors[0];
+  mgrd.addColorStop(0, `rgba(${mr},${mg},${mb},0.06)`);
+  mgrd.addColorStop(1, `rgba(${mr},${mg},${mb},0)`);
+  ctx.fillStyle = mgrd;
+  ctx.beginPath();
+  ctx.arc(mouse.x, mouse.y, 100, 0, Math.PI*2);
+  ctx.fill();
+  
+  // Stats
+  document.getElementById('stats').innerHTML = 
+    `${threads.length} threads · ${anchors.length} anchors · ${palettes[paletteIdx].name}`;
+  
+  requestAnimationFrame(render);
+}
+
+// Init
+setPalette(0);
+// Full clear on start
+ctx.fillStyle = '#020410';
+ctx.fillRect(0, 0, W, H);
+render();
+</script>
+</body>
+</html>
