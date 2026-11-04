@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stellar Drift — Generative Cosmos</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000005;
+    overflow: hidden;
+    cursor: crosshair;
+    font-family: 'Courier New', monospace;
+    color: #88a;
+    height: 100vh;
+    width: 100vw;
+  }
+  canvas { display: block; }
+  #info {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    opacity: 0.35;
+    pointer-events: none;
+    z-index: 10;
+    transition: opacity 0.5s;
+  }
+  #title {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 14px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 10;
+    animation: fadeTitle 4s ease-in-out forwards;
+  }
+  @keyframes fadeTitle {
+    0%   { opacity: 0; letter-spacing: 20px; }
+    40%  { opacity: 0.6; letter-spacing: 8px; }
+    100% { opacity: 0; letter-spacing: 6px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="title">✦ Stellar Drift ✦</div>
+<div id="info">move cursor · click to seed · scroll to warp</div>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W, H, DPR;
+  let mouse = { x: -9999, y: -9999, active: false };
+  let stars = [];
+  let nebulae = [];
+  let warpMode = 0;
+  let time = 0;
+  const STAR_COUNT = 1800;
+  const NEBULA_COUNT = 5;
+
+  const palette = [
+    '#ffffff', '#ffe8c0', '#aaccff', '#ffbbaa', '#ccddff',
+    '#ffddee', '#ddeeff', '#ffeedd', '#bbddff', '#ffe8e8',
+    '#c0d8ff', '#ffe0c0', '#d0e8ff', '#ffe0f0', '#e0f0ff',
+    '#ffcc88', '#88ccff', '#ffaaaa', '#aaddff', '#ffffff'
+  ];
+
+  function resize() {
+    DPR = window.devicePixelRatio || 1;
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+
+  function createStar(x, y, force) {
+    return {
+      x: x !== undefined ? x : Math.random() * W,
+      y: y !== undefined ? y : Math.random() * H,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: (Math.random() - 0.5) * 0.3 - 0.1,
+      size: Math.random() * 1.8 + 0.2,
+      baseSize: 0,
+      color: palette[Math.floor(Math.random() * palette.length)],
+      twinkleSpeed: Math.random() * 0.03 + 0.005,
+      twinkleOffset: Math.random() * Math.PI * 2,
+      depth: Math.random() * 0.8 + 0.2,
+      trail: [],
+      maxTrail: Math.floor(Math.random() * 8) + 3,
+    };
+  }
+
+  function createNebula() {
+    return {
+      x: Math.random() * W,
+      y: Math.random() * H,
+      radius: Math.random() * 300 + 100,
+      hue: Math.random() * 360,
+      alpha: Math.random() * 0.015 + 0.005,
+      driftX: (Math.random() - 0.5) * 0.2,
+      driftY: (Math.random() - 0.5) * 0.1,
+      pulseSpeed: Math.random() * 0.002 + 0.001,
+      pulseOffset: Math.random() * Math.PI * 2,
+    };
+  }
+
+  function init() {
+    resize();
+    stars = [];
+    nebulae = [];
+    for (let i = 0; i < STAR_COUNT; i++) {
+      const s = createStar();
+      s.baseSize = s.size;
+      stars.push(s);
+    }
+    for (let i = 0; i < NEBULA_COUNT; i++) {
+      nebulae.push(createNebula());
+    }
+  }
+
+  function drawNebula(n) {
+    const pulse = 1 + Math.sin(time * n.pulseSpeed + n.pulseOffset) * 0.3;
+    const r = n.radius * pulse;
+    const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r);
+    const hue = (n.hue + time * 0.01) % 360;
+    grad.addColorStop(0, `hsla(${hue}, 60%, 40%, ${n.alpha * 1.5})`);
+    grad.addColorStop(0.4, `hsla(${hue + 30}, 50%, 30%, ${n.alpha * 0.8})`);
+    grad.addColorStop(0.7, `hsla(${hue + 60}, 40%, 20%, ${n.alpha * 0.3})`);
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fillRect(n.x - r, n.y - r, r * 2, r * 2);
+  }
+
+  function drawStar(s) {
+    const twinkle = 0.5 + 0.5 * Math.sin(time * s.twinkleSpeed + s.twinkleOffset);
+    const brightness = twinkle;
+    const size = s.size * (0.6 + 0.4 * brightness);
+
+    // trail
+    if (s.trail.length > 1 && warpMode > 0.1) {
+      ctx.beginPath();
+      ctx.moveTo(s.trail[0].x, s.trail[0].y);
+      for (let i = 1; i < s.trail.length; i++) {
+        ctx.lineTo(s.trail[i].x, s.trail[i].y);
+      }
+      const trailAlpha = warpMode * 0.3 * s.depth;
+      ctx.strokeStyle = s.color.replace(')', `, ${trailAlpha})`).replace('rgb', 'rgba');
+      ctx.lineWidth = size * 0.5;
+      ctx.stroke();
+    }
+
+    // glow
+    const glowR = size * (4 + warpMode * 8);
+    const glow = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, glowR);
+    glow.addColorStop(0, s.color + Math.floor(brightness * 60).toString(16).padStart(2, '0'));
+    glow.addColorStop(0.5, s.color + '05');
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.fillRect(s.x - glowR, s.y - glowR, glowR * 2, glowR * 2);
+
+    // core
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, size, 0, Math.PI * 2);
+    ctx.fillStyle = s.color + Math.floor(brightness * 180 + 75).toString(16).padStart(2, '0');
+    ctx.fill();
+  }
+
+  function update() {
+    time++;
+
+    // mouse influence
+    if (mouse.active) {
+      mouse.x += (mouse.x - W / 2) * 0.001;
+      mouse.y += (mouse.y - H / 2) * 0.001;
+    }
+
+    warpMode *= 0.995;
+    warpMode = Math.min(warpMode + 0.003, 1.5);
+
+    stars.forEach(s => {
+      // save trail position
+      s.trail.push({ x: s.x, y: s.y });
+      if (s.trail.length > s.maxTrail + warpMode * 15) s.trail.shift();
+
+      // flow field
+      const angle = Math.sin(s.x * 0.003 + time * 0.001) *
+                    Math.cos(s.y * 0.003 + time * 0.0008) * Math.PI * 2;
+      s.vx += Math.cos(angle) * 0.015 * s.depth;
+      s.vy += Math.sin(angle) * 0.015 * s.depth;
+
+      // mouse attraction / repulsion
+      if (mouse.active) {
+        const dx = mouse.x - s.x;
+        const dy = mouse.y - s.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 200 && dist > 0) {
+          const force = (200 - dist) / 200 * 0.3;
+          s.vx += (dx / dist) * force;
+          s.vy += (dy / dist) * force;
+        }
+      }
+
+      // damping
+      s.vx *= 0.985;
+      s.vy *= 0.985;
+
+      // warp boost
+      const speed = Math.sqrt(s.vx * s.vx + s.vy * s.vy);
+      if (speed > 2) {
+        s.vx *= 1.01;
+        s.vy *= 1.01;
+      }
+
+      s.x += s.vx * (1 + warpMode * 3);
+      s.y += s.vy * (1 + warpMode * 3);
+
+      // wrap
+      if (s.x < -50) s.x = W + 50;
+      if (s.x > W + 50) s.x = -50;
+      if (s.y < -50) s.y = H + 50;
+      if (s.y > H + 50) s.y = -50;
+    });
+
+    nebulae.forEach(n => {
+      n.x += n.driftX + Math.sin(time * 0.0003) * 0.2;
+      n.y += n.driftY + Math.cos(time * 0.0002) * 0.1;
+      if (n.x < -n.radius) n.x = W + n.radius;
+      if (n.x > W + n.radius) n.x = -n.radius;
+      if (n.y < -n.radius) n.y = H + n.radius;
+      if (n.y > H + n.radius) n.y = -n.radius;
+    });
+  }
+
+  function draw() {
+    // fade with color tint
+    const fadeAlpha = 0.08 + warpMode * 0.12;
+    ctx.fillStyle = `rgba(0, 0, 5, ${fadeAlpha})`;
+    ctx.fillRect(0, 0, W, H);
+
+    // occasional deep clear to prevent ghosting buildup
+    if (time % 600 === 0) {
+      ctx.fillStyle = 'rgba(0, 0, 5, 0.3)';
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // nebulae
+    nebulae.forEach(drawNebula);
+
+    // stars
+    stars.forEach(drawStar);
+
+    // vignette
+    const vig = ctx.createRadialGradient(W/2, H/2, H * 0.3, W/2, H/2, H * 0.8);
+    vig.addColorStop(0, 'transparent');
+    vig.addColorStop(1, 'rgba(0, 0, 5, 0.4)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function animate() {
+    update();
+    draw();
+    requestAnimationFrame(animate);
+  }
+
+  // events
+  window.addEventListener('resize', resize);
+  canvas.addEventListener('mousemove', e => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    mouse.active = true;
+  });
+  canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+  canvas.addEventListener('click', e => {
+    // seed new stars at click
+    for (let i = 0; i < 60; i++) {
+      const s = createStar(
+        e.clientX + (Math.random() - 0.5) * 80,
+        e.clientY + (Math.random() - 0.5) * 80
+      );
+      s.vx = (Math.random() - 0.5) * 3;
+      s.vy = (Math.random() - 0.5) * 3;
+      s.baseSize = s.size;
+      stars.push(s);
+    }
+    // trim excess
+    if (stars.length > 3000) stars.splice(0, stars.length - 2500);
+    warpMode = Math.min(warpMode + 0.5, 2);
+  });
+  canvas.addEventListener('wheel', e => {
+    warpMode = Math.min(warpMode + Math.abs(e.deltaY) * 0.0005, 2);
+  });
+
+  // touch support
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    mouse.x = t.clientX;
+    mouse.y = t.clientY;
+    mouse.active = true;
+  }, { passive: false });
+  canvas.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    mouse.x = t.clientX;
+    mouse.y = t.clientY;
+    mouse.active = true;
+    canvas.dispatchEvent(new MouseEvent('click', { clientX: t.clientX, clientY: t.clientY }));
+  });
+  canvas.addEventListener('touchend', () => { mouse.active = false; });
+
+  init();
+  animate();
+})();
+</script>
+</body>
+</html>

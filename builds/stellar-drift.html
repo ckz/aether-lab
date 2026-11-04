@@ -3,327 +3,325 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stellar Drift — Generative Flow Field</title>
+<title>Stellar Drift — Generative Cosmos</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #0a0a0f;
+    background: #000005;
     overflow: hidden;
-    font-family: 'Courier New', monospace;
-    color: #ccc;
     cursor: crosshair;
+    font-family: 'Courier New', monospace;
+    color: #88a;
+    height: 100vh;
+    width: 100vw;
   }
   canvas { display: block; }
   #info {
     position: fixed;
-    bottom: 20px;
+    bottom: 16px;
     left: 50%;
     transform: translateX(-50%);
-    font-size: 12px;
-    color: rgba(255,255,255,0.4);
-    text-align: center;
-    pointer-events: none;
-    letter-spacing: 1px;
-  }
-  #stats {
-    position: fixed;
-    top: 20px;
-    right: 20px;
     font-size: 11px;
-    color: rgba(255,255,255,0.3);
-    text-align: right;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    opacity: 0.35;
     pointer-events: none;
-    line-height: 1.6;
+    z-index: 10;
+    transition: opacity 0.5s;
   }
-  #controls {
+  #title {
     position: fixed;
-    top: 20px;
-    left: 20px;
-    pointer-events: all;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 14px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 10;
+    animation: fadeTitle 4s ease-in-out forwards;
   }
-  .btn {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
-    color: rgba(255,255,255,0.5);
-    padding: 6px 12px;
-    margin: 2px;
-    font-size: 11px;
-    cursor: pointer;
-    font-family: 'Courier New', monospace;
-    letter-spacing: 1px;
-    transition: all 0.3s;
-  }
-  .btn:hover {
-    background: rgba(255,255,255,0.1);
-    color: rgba(255,255,255,0.8);
-    border-color: rgba(255,255,255,0.3);
+  @keyframes fadeTitle {
+    0%   { opacity: 0; letter-spacing: 20px; }
+    40%  { opacity: 0.6; letter-spacing: 8px; }
+    100% { opacity: 0; letter-spacing: 6px; }
   }
 </style>
 </head>
 <body>
-<canvas id="canvas"></canvas>
-<div id="controls">
-  <button class="btn" onclick="resetField()">RESET</button>
-  <button class="btn" onclick="toggleMode()">MODE</button>
-  <button class="btn" onclick="changePalette()">PALETTE</button>
-</div>
-<div id="stats">
-  particles: <span id="pcount">0</span><br>
-  mode: <span id="pmode">flow</span><br>
-  palette: <span id="ppal">nebula</span>
-</div>
-<div id="info">move mouse to influence the field · click to burst</div>
-
+<canvas id="c"></canvas>
+<div id="title">✦ Stellar Drift ✦</div>
+<div id="info">move cursor · click to seed · scroll to warp</div>
 <script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  let W, H, DPR;
+  let mouse = { x: -9999, y: -9999, active: false };
+  let stars = [];
+  let nebulae = [];
+  let warpMode = 0;
+  let time = 0;
+  const STAR_COUNT = 1800;
+  const NEBULA_COUNT = 5;
 
-let W, H;
-function resize() {
-  W = canvas.width = window.innerWidth;
-  H = canvas.height = window.innerHeight;
-}
-resize();
-window.addEventListener('resize', resize);
+  const palette = [
+    '#ffffff', '#ffe8c0', '#aaccff', '#ffbbaa', '#ccddff',
+    '#ffddee', '#ddeeff', '#ffeedd', '#bbddff', '#ffe8e8',
+    '#c0d8ff', '#ffe0c0', '#d0e8ff', '#ffe0f0', '#e0f0ff',
+    '#ffcc88', '#88ccff', '#ffaaaa', '#aaddff', '#ffffff'
+  ];
 
-// ─── State ──────────────────────────────────────────────
-const PALETTES = {
-  nebula:  ['#ff6b9d', '#c44dff', '#4d7dff', '#00d4ff', '#ff6b9d'],
-  aurora:  ['#00ff88', '#00ccaa', '#4488ff', '#8844ff', '#00ff88'],
-  ember:   ['#ff4400', '#ff8800', '#ffcc00', '#ff4400', '#ff4400'],
-  ocean:   ['#0044ff', '#0088ff', '#00ccff', '#0044ff', '#0044ff'],
-  ghost:   ['#ffffff', '#aaaaff', '#ffffff', '#ffaaff', '#ffffff'],
-  mono:    ['#ffffff', '#aaaaaa', '#555555', '#aaaaaa', '#ffffff']
-};
-const PAL_NAMES = Object.keys(PALETTES);
-let palette = 0;
-let mode = 0; // 0=flow, 1=orbit, 2=wave
-
-const mouse = { x: W/2, y: H/2, active: false, click: 0 };
-
-canvas.addEventListener('mousemove', e => {
-  mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
-});
-canvas.addEventListener('click', e => {
-  mouse.click = 30;
-  for (let i = 0; i < 40; i++) {
-    particles.push(new Particle(e.clientX, e.clientY, true));
+  function resize() {
+    DPR = window.devicePixelRatio || 1;
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   }
-});
-canvas.addEventListener('mouseleave', () => { mouse.active = false; });
-canvas.addEventListener('touchmove', e => {
-  e.preventDefault();
-  mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY; mouse.active = true;
-}, { passive: false });
 
-// ─── Noise (simple value noise) ─────────────────────────
-const NOISE_SIZE = 256;
-const noiseGrid = new Float32Array(NOISE_SIZE * NOISE_SIZE);
-function initNoise() {
-  for (let i = 0; i < noiseGrid.length; i++) {
-    noiseGrid[i] = Math.random();
+  function createStar(x, y, force) {
+    return {
+      x: x !== undefined ? x : Math.random() * W,
+      y: y !== undefined ? y : Math.random() * H,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: (Math.random() - 0.5) * 0.3 - 0.1,
+      size: Math.random() * 1.8 + 0.2,
+      baseSize: 0,
+      color: palette[Math.floor(Math.random() * palette.length)],
+      twinkleSpeed: Math.random() * 0.03 + 0.005,
+      twinkleOffset: Math.random() * Math.PI * 2,
+      depth: Math.random() * 0.8 + 0.2,
+      trail: [],
+      maxTrail: Math.floor(Math.random() * 8) + 3,
+    };
   }
-}
-function smoothNoise(x, y) {
-  const ix = Math.floor(x) & (NOISE_SIZE - 1);
-  const iy = Math.floor(y) & (NOISE_SIZE - 1);
-  const fx = x - Math.floor(x);
-  const fy = y - Math.floor(y);
-  const sx = fx * fx * (3 - 2 * fx);
-  const sy = fy * fy * (3 - 2 * fy);
-  const ix1 = (ix + 1) & (NOISE_SIZE - 1);
-  const iy1 = (iy + 1) & (NOISE_SIZE - 1);
-  const a = noiseGrid[iy * NOISE_SIZE + ix];
-  const b = noiseGrid[iy * NOISE_SIZE + ix1];
-  const c = noiseGrid[iy1 * NOISE_SIZE + ix];
-  const d = noiseGrid[iy1 * NOISE_SIZE + ix1];
-  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
-}
-let noiseTime = 0;
 
-// ─── Particles ──────────────────────────────────────────
-class Particle {
-  constructor(x, y, burst) {
-    this.x = x || Math.random() * W;
-    this.y = y || Math.random() * H;
-    this.vx = 0;
-    this.vy = 0;
-    this.life = burst ? 60 + Math.random() * 60 : Infinity;
-    this.maxLife = this.life;
-    this.speed = 0.5 + Math.random() * 1.5;
-    this.size = 0.5 + Math.random() * 1.5;
-    this.hueOffset = Math.random();
-    this.trail = [];
-    this.maxTrail = 8 + Math.floor(Math.random() * 12);
+  function createNebula() {
+    return {
+      x: Math.random() * W,
+      y: Math.random() * H,
+      radius: Math.random() * 300 + 100,
+      hue: Math.random() * 360,
+      alpha: Math.random() * 0.015 + 0.005,
+      driftX: (Math.random() - 0.5) * 0.2,
+      driftY: (Math.random() - 0.5) * 0.1,
+      pulseSpeed: Math.random() * 0.002 + 0.001,
+      pulseOffset: Math.random() * Math.PI * 2,
+    };
   }
-  update() {
-    if (this.life !== Infinity) this.life--;
-    const colors = PALETTES[PAL_NAMES[palette]];
-    const col = colors[Math.floor(this.hueOffset * (colors.length - 1))];
-    this.trail.push({ x: this.x, y: this.y });
-    if (this.trail.length > this.maxTrail) this.trail.shift();
 
-    const scale = 0.003;
-    let angle;
-    if (mode === 0) { // flow
-      const n = smoothNoise(this.x * scale + noiseTime, this.y * scale + noiseTime * 0.7) * Math.PI * 4;
-      angle = n;
-    } else if (mode === 1) { // orbit
-      const cx = W / 2, cy = H / 2;
-      const dx = this.x - cx, dy = this.y - cy;
-      const dist = Math.sqrt(dx * dx + dy * dy) + 0.001;
-      angle = Math.atan2(dy, dx) + Math.PI * 0.5 + Math.sin(dist * 0.01 - noiseTime * 2) * 0.5;
-    } else { // wave
-      angle = Math.sin(this.x * 0.01 + noiseTime * 3) * Math.PI;
-      angle += Math.cos(this.y * 0.01 + noiseTime * 2) * Math.PI * 0.5;
+  function init() {
+    resize();
+    stars = [];
+    nebulae = [];
+    for (let i = 0; i < STAR_COUNT; i++) {
+      const s = createStar();
+      s.baseSize = s.size;
+      stars.push(s);
     }
-
-    let fx = Math.cos(angle) * this.speed;
-    let fy = Math.sin(angle) * this.speed;
-
-    // mouse influence
-    if (mouse.active) {
-      const dx = this.x - mouse.x;
-      const dy = this.y - mouse.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) + 1;
-      if (dist < 200) {
-        const force = (1 - dist / 200) * 2;
-        fx += (dx / dist) * force;
-        fy += (dy / dist) * force;
-      }
+    for (let i = 0; i < NEBULA_COUNT; i++) {
+      nebulae.push(createNebula());
     }
-
-    // click burst
-    if (mouse.click > 0) {
-      const dx = this.x - mouse.x;
-      const dy = this.y - mouse.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) + 1;
-      if (dist < 300) {
-        const force = (1 - dist / 300) * mouse.click * 0.3;
-        fx += (dx / dist) * force;
-        fy += (dy / dist) * force;
-      }
-    }
-
-    this.vx += (fx - this.vx) * 0.1;
-    this.vy += (fy - this.vy) * 0.1;
-    this.x += this.vx;
-    this.y += this.vy;
-
-    // wrap
-    if (this.x < 0) this.x += W;
-    if (this.x > W) this.x -= W;
-    if (this.y < 0) this.y += H;
-    if (this.y > H) this.y -= H;
-
-    return this.life > 0;
   }
-  draw() {
-    const colors = PALETTES[PAL_NAMES[palette]];
-    const col = colors[Math.floor(this.hueOffset * (colors.length - 1))];
-    const alpha = this.life === Infinity ? 0.6 : 0.6 * (this.life / this.maxLife);
 
-    // draw trail
-    if (this.trail.length > 1) {
+  function drawNebula(n) {
+    const pulse = 1 + Math.sin(time * n.pulseSpeed + n.pulseOffset) * 0.3;
+    const r = n.radius * pulse;
+    const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r);
+    const hue = (n.hue + time * 0.01) % 360;
+    grad.addColorStop(0, `hsla(${hue}, 60%, 40%, ${n.alpha * 1.5})`);
+    grad.addColorStop(0.4, `hsla(${hue + 30}, 50%, 30%, ${n.alpha * 0.8})`);
+    grad.addColorStop(0.7, `hsla(${hue + 60}, 40%, 20%, ${n.alpha * 0.3})`);
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fillRect(n.x - r, n.y - r, r * 2, r * 2);
+  }
+
+  function drawStar(s) {
+    const twinkle = 0.5 + 0.5 * Math.sin(time * s.twinkleSpeed + s.twinkleOffset);
+    const brightness = twinkle;
+    const size = s.size * (0.6 + 0.4 * brightness);
+
+    // trail
+    if (s.trail.length > 1 && warpMode > 0.1) {
       ctx.beginPath();
-      ctx.moveTo(this.trail[0].x, this.trail[0].y);
-      for (let i = 1; i < this.trail.length; i++) {
-        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+      ctx.moveTo(s.trail[0].x, s.trail[0].y);
+      for (let i = 1; i < s.trail.length; i++) {
+        ctx.lineTo(s.trail[i].x, s.trail[i].y);
       }
-      ctx.strokeStyle = col;
-      ctx.globalAlpha = alpha * 0.3;
-      ctx.lineWidth = this.size * 0.5;
+      const trailAlpha = warpMode * 0.3 * s.depth;
+      ctx.strokeStyle = s.color.replace(')', `, ${trailAlpha})`).replace('rgb', 'rgba');
+      ctx.lineWidth = size * 0.5;
       ctx.stroke();
     }
 
-    // draw head
+    // glow
+    const glowR = size * (4 + warpMode * 8);
+    const glow = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, glowR);
+    glow.addColorStop(0, s.color + Math.floor(brightness * 60).toString(16).padStart(2, '0'));
+    glow.addColorStop(0.5, s.color + '05');
+    glow.addColorStop(1, 'transparent');
+    ctx.fillStyle = glow;
+    ctx.fillRect(s.x - glowR, s.y - glowR, glowR * 2, glowR * 2);
+
+    // core
     ctx.beginPath();
-    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-    ctx.fillStyle = col;
-    ctx.globalAlpha = alpha;
+    ctx.arc(s.x, s.y, size, 0, Math.PI * 2);
+    ctx.fillStyle = s.color + Math.floor(brightness * 180 + 75).toString(16).padStart(2, '0');
     ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-}
-
-const MAX_PARTICLES = 2000;
-let particles = [];
-function initParticles() {
-  particles = [];
-  for (let i = 0; i < 1500; i++) {
-    particles.push(new Particle());
-  }
-}
-
-// ─── Background fade ────────────────────────────────────
-let bgAlpha = 0.05;
-
-// ─── Main loop ──────────────────────────────────────────
-let lastTime = performance.now();
-function loop() {
-  const now = performance.now();
-  const dt = (now - lastTime) / 1000;
-  lastTime = now;
-  noiseTime += dt * 0.3;
-
-  // fade
-  ctx.fillStyle = `rgba(10, 10, 15, ${bgAlpha})`;
-  ctx.fillRect(0, 0, W, H);
-
-  // update
-  particles = particles.filter(p => p.update());
-
-  // maintain count
-  while (particles.length < 1500) {
-    particles.push(new Particle());
-  }
-  if (particles.length > MAX_PARTICLES) {
-    particles = particles.slice(0, MAX_PARTICLES);
   }
 
-  // draw
-  for (const p of particles) p.draw();
+  function update() {
+    time++;
 
-  // click decay
-  if (mouse.click > 0) mouse.click -= dt * 3;
+    // mouse influence
+    if (mouse.active) {
+      mouse.x += (mouse.x - W / 2) * 0.001;
+      mouse.y += (mouse.y - H / 2) * 0.001;
+    }
 
-  // stats
-  document.getElementById('pcount').textContent = particles.length;
-  const MODES = ['flow', 'orbit', 'wave'];
-  document.getElementById('pmode').textContent = MODES[mode];
-  document.getElementById('ppal').textContent = PAL_NAMES[palette];
+    warpMode *= 0.995;
+    warpMode = Math.min(warpMode + 0.003, 1.5);
 
-  requestAnimationFrame(loop);
-}
+    stars.forEach(s => {
+      // save trail position
+      s.trail.push({ x: s.x, y: s.y });
+      if (s.trail.length > s.maxTrail + warpMode * 15) s.trail.shift();
 
-// ─── Controls ───────────────────────────────────────────
-function resetField() {
-  initNoise();
-  initParticles();
-  ctx.fillStyle = 'rgba(10, 10, 15, 1)';
-  ctx.fillRect(0, 0, W, H);
-}
-function toggleMode() {
-  mode = (mode + 1) % 3;
-  const MODES = ['flow', 'orbit', 'wave'];
-  document.getElementById('pmode').textContent = MODES[mode];
-  // clear for visual feedback
-  ctx.fillStyle = 'rgba(10, 10, 15, 0.3)';
-  ctx.fillRect(0, 0, W, H);
-}
-function changePalette() {
-  palette = (palette + 1) % PAL_NAMES.length;
-  document.getElementById('ppal').textContent = PAL_NAMES[palette];
-  ctx.fillStyle = 'rgba(10, 10, 15, 0.3)';
-  ctx.fillRect(0, 0, W, H);
-}
+      // flow field
+      const angle = Math.sin(s.x * 0.003 + time * 0.001) *
+                    Math.cos(s.y * 0.003 + time * 0.0008) * Math.PI * 2;
+      s.vx += Math.cos(angle) * 0.015 * s.depth;
+      s.vy += Math.sin(angle) * 0.015 * s.depth;
 
-// ─── Init ───────────────────────────────────────────────
-initNoise();
-initParticles();
-ctx.fillStyle = 'rgba(10, 10, 15, 1)';
-ctx.fillRect(0, 0, W, H);
-loop();
+      // mouse attraction / repulsion
+      if (mouse.active) {
+        const dx = mouse.x - s.x;
+        const dy = mouse.y - s.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 200 && dist > 0) {
+          const force = (200 - dist) / 200 * 0.3;
+          s.vx += (dx / dist) * force;
+          s.vy += (dy / dist) * force;
+        }
+      }
+
+      // damping
+      s.vx *= 0.985;
+      s.vy *= 0.985;
+
+      // warp boost
+      const speed = Math.sqrt(s.vx * s.vx + s.vy * s.vy);
+      if (speed > 2) {
+        s.vx *= 1.01;
+        s.vy *= 1.01;
+      }
+
+      s.x += s.vx * (1 + warpMode * 3);
+      s.y += s.vy * (1 + warpMode * 3);
+
+      // wrap
+      if (s.x < -50) s.x = W + 50;
+      if (s.x > W + 50) s.x = -50;
+      if (s.y < -50) s.y = H + 50;
+      if (s.y > H + 50) s.y = -50;
+    });
+
+    nebulae.forEach(n => {
+      n.x += n.driftX + Math.sin(time * 0.0003) * 0.2;
+      n.y += n.driftY + Math.cos(time * 0.0002) * 0.1;
+      if (n.x < -n.radius) n.x = W + n.radius;
+      if (n.x > W + n.radius) n.x = -n.radius;
+      if (n.y < -n.radius) n.y = H + n.radius;
+      if (n.y > H + n.radius) n.y = -n.radius;
+    });
+  }
+
+  function draw() {
+    // fade with color tint
+    const fadeAlpha = 0.08 + warpMode * 0.12;
+    ctx.fillStyle = `rgba(0, 0, 5, ${fadeAlpha})`;
+    ctx.fillRect(0, 0, W, H);
+
+    // occasional deep clear to prevent ghosting buildup
+    if (time % 600 === 0) {
+      ctx.fillStyle = 'rgba(0, 0, 5, 0.3)';
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // nebulae
+    nebulae.forEach(drawNebula);
+
+    // stars
+    stars.forEach(drawStar);
+
+    // vignette
+    const vig = ctx.createRadialGradient(W/2, H/2, H * 0.3, W/2, H/2, H * 0.8);
+    vig.addColorStop(0, 'transparent');
+    vig.addColorStop(1, 'rgba(0, 0, 5, 0.4)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function animate() {
+    update();
+    draw();
+    requestAnimationFrame(animate);
+  }
+
+  // events
+  window.addEventListener('resize', resize);
+  canvas.addEventListener('mousemove', e => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    mouse.active = true;
+  });
+  canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+  canvas.addEventListener('click', e => {
+    // seed new stars at click
+    for (let i = 0; i < 60; i++) {
+      const s = createStar(
+        e.clientX + (Math.random() - 0.5) * 80,
+        e.clientY + (Math.random() - 0.5) * 80
+      );
+      s.vx = (Math.random() - 0.5) * 3;
+      s.vy = (Math.random() - 0.5) * 3;
+      s.baseSize = s.size;
+      stars.push(s);
+    }
+    // trim excess
+    if (stars.length > 3000) stars.splice(0, stars.length - 2500);
+    warpMode = Math.min(warpMode + 0.5, 2);
+  });
+  canvas.addEventListener('wheel', e => {
+    warpMode = Math.min(warpMode + Math.abs(e.deltaY) * 0.0005, 2);
+  });
+
+  // touch support
+  canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    mouse.x = t.clientX;
+    mouse.y = t.clientY;
+    mouse.active = true;
+  }, { passive: false });
+  canvas.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    mouse.x = t.clientX;
+    mouse.y = t.clientY;
+    mouse.active = true;
+    canvas.dispatchEvent(new MouseEvent('click', { clientX: t.clientX, clientY: t.clientY }));
+  });
+  canvas.addEventListener('touchend', () => { mouse.active = false; });
+
+  init();
+  animate();
+})();
 </script>
 </body>
 </html>
