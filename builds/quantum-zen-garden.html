@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quantum Zen Garden</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+  #ui {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    color: rgba(200, 190, 220, 0.8);
+    font-size: 11px;
+    z-index: 10;
+    background: rgba(10, 10, 20, 0.7);
+    padding: 12px 16px;
+    border-radius: 4px;
+    border: 1px solid rgba(120, 100, 200, 0.3);
+    backdrop-filter: blur(8px);
+    max-width: 260px;
+    line-height: 1.6;
+  }
+  #ui h3 {
+    color: #c4a0ff;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: normal;
+  }
+  #ui .key {
+    color: #8af;
+    font-weight: bold;
+  }
+  #stats {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    color: rgba(200, 190, 220, 0.6);
+    font-size: 10px;
+    z-index: 10;
+    text-align: right;
+    background: rgba(10, 10, 20, 0.7);
+    padding: 8px 12px;
+    border-radius: 4px;
+    border: 1px solid rgba(120, 100, 200, 0.2);
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h3>⚛ Quantum Zen Garden</h3>
+  <span class="key">Mouse</span> — rake sand / place source<br>
+  <span class="key">Click</span> — spawn wave source<br>
+  <span class="key">Hold</span> — continuous raking<br>
+  <span class="key">Space</span> — pause/resume<br>
+  <span class="key">C</span> — clear sand<br>
+  <span class="key">M</span> — toggle mode (sand/wave)<br>
+  <span class="key">P</span> — cycle palettes<br>
+  <span class="key">S</span> — save PNG
+</div>
+<div id="stats">
+  <div id="fps">60 FPS</div>
+  <div id="mode">Mode: Sand</div>
+  <div id="particles">Particles: 0</div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+let paused = false;
+let mode = 'sand'; // 'sand' or 'wave'
+let paletteIdx = 0;
+let particles = [];
+let sandLines = [];
+let waveSources = [];
+let lastTime = performance.now();
+let frameCount = 0;
+let fps = 60;
+
+const palettes = [
+  { name: 'Aurora', bg: '#0a0a12', sand: '#1a1a2e', line: 'rgba(100, 200, 255, 0.15)', glow: 'rgba(100, 200, 255, 0.4)', particle: 'rgba(150, 220, 255, 0.8)' },
+  { name: 'Ember', bg: '#120a08', sand: '#2e1a15', line: 'rgba(255, 140, 80, 0.15)', glow: 'rgba(255, 140, 80, 0.4)', particle: 'rgba(255, 180, 120, 0.8)' },
+  { name: 'Deep', bg: '#080c12', sand: '#15202e', line: 'rgba(80, 140, 220, 0.12)', glow: 'rgba(80, 140, 220, 0.35)', particle: 'rgba(120, 180, 255, 0.7)' },
+  { name: 'Neon', bg: '#0a0a10', sand: '#1a1a28', line: 'rgba(255, 50, 200, 0.15)', glow: 'rgba(255, 50, 200, 0.4)', particle: 'rgba(255, 100, 255, 0.8)' },
+  { name: 'Frost', bg: '#0a0e12', sand: '#152028', line: 'rgba(200, 230, 255, 0.12)', glow: 'rgba(200, 230, 255, 0.35)', particle: 'rgba(220, 245, 255, 0.75)' }
+];
+
+let pal = palettes[0];
+let mouse = { x: 0, y: 0, down: false };
+let time = 0;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  initSand();
+}
+
+function initSand() {
+  sandLines = [];
+  const spacing = 12;
+  for (let y = 0; y < H; y += spacing) {
+    sandLines.push({
+      y,
+      offset: Math.random() * Math.PI * 2,
+      amplitude: 0.3 + Math.random() * 0.5,
+      frequency: 0.002 + Math.random() * 0.002,
+      disturbed: 0
+    });
+  }
+}
+
+class WaveSource {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.phase = 0;
+    this.amplitude = 1;
+    this.frequency = 0.02 + Math.random() * 0.02;
+    this.life = 1;
+    this.decay = 0.0005 + Math.random() * 0.0005;
+  }
+  update() {
+    this.phase += this.frequency;
+    this.life -= this.decay;
+    return this.life > 0;
+  }
+}
+
+class Particle {
+  constructor(x, y, vx, vy) {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.life = 1;
+    this.decay = 0.005 + Math.random() * 0.01;
+    this.size = 1 + Math.random() * 2;
+    this.color = pal.particle;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vx *= 0.99;
+    this.vy *= 0.99;
+    this.life -= this.decay;
+    return this.life > 0;
+  }
+  draw() {
+    const alpha = this.life * 0.6;
+    ctx.fillStyle = this.color.replace('0.8', alpha.toFixed(2));
+    ctx.fillRect(this.x, this.y, this.size, this.size);
+  }
+}
+
+function drawSand() {
+  ctx.fillStyle = pal.sand;
+  ctx.fillRect(0, 0, W, H);
+
+  // Base ripple pattern
+  ctx.strokeStyle = pal.line;
+  ctx.lineWidth = 1;
+
+  const t = time * 0.0003;
+
+  sandLines.forEach((line, i) => {
+    const mouseDist = mouse.down ? Math.hypot(mouse.x - W/2, mouse.y - line.y) : Infinity;
+    const influence = mouse.down ? Math.max(0, 1 - mouseDist / 200) : 0;
+
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 4) {
+      const wave1 = Math.sin(x * line.frequency + line.offset + t) * line.amplitude;
+      const wave2 = Math.sin(x * line.frequency * 1.5 + t * 1.3) * line.amplitude * 0.5;
+      const mouseWave = influence * Math.sin((x - mouse.x) * 0.05 + time * 0.01) * 8;
+      const y = line.y + wave1 + wave2 + mouseWave;
+
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  });
+
+  // Draw particles
+  particles.forEach(p => p.draw());
+
+  // Draw wave sources as glowing rings
+  waveSources.forEach(ws => {
+    const alpha = ws.life * 0.4;
+    const radius = (1 - ws.life) * 100 + 20;
+    ctx.strokeStyle = pal.glow.replace('0.4', alpha.toFixed(2));
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(ws.x, ws.y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner bright core
+    ctx.fillStyle = pal.particle.replace('0.8', (alpha * 1.5).toFixed(2));
+    ctx.beginPath();
+    ctx.arc(ws.x, ws.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawWave() {
+  ctx.fillStyle = pal.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  const gridSize = 6;
+  const t = time * 0.001;
+
+  for (let x = 0; x < W; x += gridSize) {
+    for (let y = 0; y < H; y += gridSize) {
+      let value = 0;
+
+      waveSources.forEach(ws => {
+        const dist = Math.hypot(x - ws.x, y - ws.y);
+        const wave = Math.sin(dist * ws.frequency - ws.phase) * ws.amplitude * ws.life;
+        const envelope = Math.exp(-dist * 0.003);
+        value += wave * envelope;
+      });
+
+      // Mouse as source
+      if (mouse.down) {
+        const dist = Math.hypot(x - mouse.x, y - mouse.y);
+        const wave = Math.sin(dist * 0.05 - time * 0.05) * 2;
+        const envelope = Math.exp(-dist * 0.01);
+        value += wave * envelope;
+      }
+
+      const intensity = Math.abs(value);
+      if (intensity > 0.05) {
+        const hue = (value * 60 + t * 20 + x * 0.1) % 360;
+        const alpha = Math.min(1, intensity * 0.8);
+        ctx.fillStyle = `hsla(${hue}, 70%, 60%, ${alpha})`;
+        ctx.fillRect(x, y, gridSize - 1, gridSize - 1);
+      }
+    }
+  }
+
+  // Source indicators
+  waveSources.forEach(ws => {
+    ctx.strokeStyle = pal.glow;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(ws.x, ws.y, 8, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+}
+
+function update() {
+  if (paused) return;
+
+  time++;
+
+  // Update wave sources
+  waveSources = waveSources.filter(ws => ws.update());
+
+  // Update particles
+  particles = particles.filter(p => p.update());
+
+  // Spawn particles near mouse when drawing
+  if (mouse.down && mode === 'sand') {
+    for (let i = 0; i < 3; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 0.5 + Math.random() * 1;
+      particles.push(new Particle(
+        mouse.x + (Math.random() - 0.5) * 20,
+        mouse.y + (Math.random() - 0.5) * 20,
+        Math.cos(angle) * speed,
+        Math.sin(angle) * speed
+      ));
+    }
+  }
+
+  // Spawn wave source in wave mode
+  if (mouse.down && mode === 'wave' && frameCount % 10 === 0) {
+    waveSources.push(new WaveSource(mouse.x, mouse.y));
+    if (waveSources.length > 15) waveSources.shift();
+  }
+
+  // Limit particles
+  if (particles.length > 300) {
+    particles = particles.slice(-300);
+  }
+}
+
+function draw() {
+  if (mode === 'sand') drawSand();
+  else drawWave();
+}
+
+function loop(now) {
+  const dt = now - lastTime;
+  frameCount++;
+
+  if (frameCount % 30 === 0) {
+    fps = Math.round(1000 / dt);
+    document.getElementById('fps').textContent = fps + ' FPS';
+    document.getElementById('mode').textContent = 'Mode: ' + mode.charAt(0).toUpperCase() + mode.slice(1);
+    document.getElementById('particles').textContent = 'Particles: ' + particles.length;
+  }
+
+  update();
+  draw();
+  lastTime = now;
+  requestAnimationFrame(loop);
+}
+
+// Event listeners
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+
+canvas.addEventListener('mousedown', e => {
+  mouse.down = true;
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+
+  if (mode === 'sand') {
+    sandLines.forEach(line => {
+      const mouseDist = Math.hypot(e.clientX - W/2, e.clientY - line.y);
+      if (mouseDist < 200) {
+        line.disturbed = 1;
+      }
+    });
+  }
+
+  if (mode === 'wave') {
+    waveSources.push(new WaveSource(e.clientX, e.clientY));
+    if (waveSources.length > 15) waveSources.shift();
+  }
+});
+
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mouseleave', () => mouse.down = false);
+
+document.addEventListener('keydown', e => {
+  switch(e.key.toLowerCase()) {
+    case ' ':
+      e.preventDefault();
+      paused = !paused;
+      break;
+    case 'c':
+      particles = [];
+      waveSources = [];
+      initSand();
+      break;
+    case 'm':
+      mode = mode === 'sand' ? 'wave' : 'sand';
+      particles = [];
+      waveSources = [];
+      break;
+    case 'p':
+      paletteIdx = (paletteIdx + 1) % palettes.length;
+      pal = palettes[paletteIdx];
+      break;
+    case 's':
+      const link = document.createElement('a');
+      link.download = 'quantum-zen-garden.png';
+      link.href = canvas.toDataURL();
+      link.click();
+      break;
+  }
+});
+
+window.addEventListener('resize', resize);
+
+// Init
+resize();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
