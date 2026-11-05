@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gravity Golf — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #ccc;
+    font-family: 'Courier New', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  h1 {
+    font-size: 18px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    font-size: 11px;
+    letter-spacing: 2px;
+    opacity: 0.4;
+    margin-bottom: 16px;
+  }
+  canvas {
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 4px;
+    cursor: crosshair;
+    background: #0d0d14;
+    display: block;
+  }
+  .hud {
+    display: flex;
+    gap: 24px;
+    margin-top: 14px;
+    font-size: 12px;
+    letter-spacing: 1px;
+    opacity: 0.7;
+  }
+  .hud span { color: #fff; }
+  .controls {
+    margin-top: 12px;
+    font-size: 11px;
+    opacity: 0.4;
+    text-align: center;
+    line-height: 1.6;
+  }
+  .overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+  .modal {
+    background: #111;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px;
+    padding: 32px 40px;
+    text-align: center;
+    max-width: 420px;
+  }
+  .modal h2 {
+    color: #fff;
+    font-size: 16px;
+    letter-spacing: 4px;
+    margin-bottom: 12px;
+  }
+  .modal p {
+    font-size: 12px;
+    line-height: 1.7;
+    opacity: 0.7;
+    margin-bottom: 20px;
+  }
+  .modal button {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.25);
+    color: #fff;
+    padding: 10px 24px;
+    font-family: inherit;
+    font-size: 12px;
+    letter-spacing: 2px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.2s;
+  }
+  .modal button:hover {
+    background: rgba(255,255,255,0.18);
+    border-color: rgba(255,255,255,0.5);
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<h1>✦ Gravity Golf</h1>
+<p class="subtitle">AETHER LAB — MINI GAME</p>
+<canvas id="game" width="800" height="500"></canvas>
+<div class="hud">
+  <div>LEVEL: <span id="level">1</span></div>
+  <div>SHOTS: <span id="shots">0</span></div>
+  <div>BEST: <span id="best">—</span></div>
+</div>
+<div class="controls">
+  [ CLICK + DRAG TO AIM ] — [ RELEASE TO SHOOT ] — [ REACH THE STAR ]
+</div>
+
+<div id="startOverlay" class="overlay">
+  <div class="modal">
+    <h2>✦ GRAVITY GOLF</h2>
+    <p>Launch your photon from the green orb to the golden star.<br>
+    Drag to aim, release to shoot.<br>
+    Bounce off walls. Avoid red gravity wells.<br>
+    Each level gets trickier.</p>
+    <button id="startBtn">START GAME</button>
+  </div>
+</div>
+
+<div id="winOverlay" class="overlay hidden">
+  <div class="modal">
+    <h2>✦ HOLE IN!</h2>
+    <p id="winMsg">Great shot.</p>
+    <button id="nextBtn">NEXT LEVEL</button>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+let state = 'menu'; // menu, aiming, flying, won
+let level = 1;
+let shots = 0;
+let best = {};
+let ball = { x: 0, y: 0, vx: 0, vy: 0, r: 6 };
+let hole = { x: 0, y: 0, r: 10 };
+let aim = { x: 0, y: 0, active: false };
+let wells = [];
+let particles = [];
+let stars = [];
+let shake = 0;
+
+function rand(a, b) { return Math.random() * (b - a) + a; }
+
+function initLevel() {
+  // Ball starts on the left side
+  ball.x = rand(60, 140);
+  ball.y = rand(60, H - 60);
+  ball.vx = 0;
+  ball.vy = 0;
+  
+  // Hole on the right side, far from ball
+  hole.x = rand(W - 180, W - 80);
+  hole.y = rand(50, H - 50);
+  
+  // Ensure minimum distance
+  while (Math.hypot(hole.x - ball.x, hole.y - ball.y) < 300) {
+    hole.x = rand(W - 180, W - 80);
+    hole.y = rand(50, H - 50);
+  }
+  
+  // Gravity wells scale with level
+  wells = [];
+  const wellCount = Math.min(level, 6);
+  for (let i = 0; i < wellCount; i++) {
+    let wx, wy, valid;
+    do {
+      wx = rand(80, W - 80);
+      wy = rand(60, H - 60);
+      valid = Math.hypot(wx - ball.x, wy - ball.y) > 70 &&
+              Math.hypot(wx - hole.x, wy - hole.y) > 70;
+    } while (!valid);
+    wells.push({
+      x: wx, y: wy,
+      r: rand(14, 22),
+      strength: rand(30, 70) * (0.5 + level * 0.12),
+      phase: rand(0, Math.PI * 2)
+    });
+  }
+  
+  particles = [];
+  stars = [];
+  for (let i = 0; i < 60; i++) {
+    stars.push({ x: rand(0, W), y: rand(0, H), s: rand(0.3, 1.2), b: rand(0, 1) });
+  }
+  
+  state = 'aiming';
+}
+
+function update(dt) {
+  // Stars twinkle
+  stars.forEach(s => { s.b += (Math.random() - 0.5) * 0.05; s.b = Math.max(0, Math.min(1, s.b)); });
+  
+  if (state === 'flying') {
+    // Gravity wells
+    wells.forEach(w => {
+      w.phase += 0.02;
+      const dx = w.x - ball.x;
+      const dy = w.y - ball.y;
+      const dist = Math.max(30, Math.hypot(dx, dy));
+      const force = (w.strength * 50) / (dist * dist);
+      ball.vx += (dx / dist) * force * dt;
+      ball.vy += (dy / dist) * force * dt;
+    });
+    
+    ball.x += ball.vx * dt;
+    ball.y += ball.vy * dt;
+    
+    // Trail particles
+    const speed = Math.hypot(ball.vx, ball.vy);
+    if (speed > 1) {
+      particles.push({
+        x: ball.x, y: ball.y,
+        vx: (Math.random() - 0.5) * 0.5,
+        vy: (Math.random() - 0.5) * 0.5,
+        life: 1,
+        color: `hsl(${200 + speed * 8}, 80%, 60%)`
+      });
+    }
+    
+    // Wall bounce
+    if (ball.x - ball.r < 0) { ball.x = ball.r; ball.vx *= -0.75; shake = 3; }
+    if (ball.x + ball.r > W) { ball.x = W - ball.r; ball.vx *= -0.75; shake = 3; }
+    if (ball.y - ball.r < 0) { ball.y = ball.r; ball.vy *= -0.75; shake = 3; }
+    if (ball.y + ball.r > H) { ball.y = H - ball.r; ball.vy *= -0.75; shake = 3; }
+    
+    // Check hole
+    if (Math.hypot(ball.x - hole.x, ball.y - hole.y) < hole.r && speed < 6) {
+      state = 'won';
+      shots++;
+      const key = `l${level}`;
+      if (!best[key] || shots < best[key]) best[key] = shots;
+      document.getElementById('shots').textContent = shots;
+      document.getElementById('best').textContent = Object.values(best).length ? Math.min(...Object.values(best)) : '—';
+      const praise = shots === 1 ? 'HOLE IN ONE! Unreal.' : shots <= 3 ? 'Incredible shot!' : shots <= 6 ? 'Nice work.' : 'Finally.';
+      document.getElementById('winMsg').innerHTML = `${praise}<br><small style="opacity:.6">Level ${level} complete in ${shots} shot${shots>1?'s':''}.</small>`;
+      document.getElementById('winOverlay').classList.remove('hidden');
+    }
+    
+    // Stop if too slow
+    if (speed < 0.3 && state === 'flying') {
+      state = 'aiming';
+      shots++;
+      document.getElementById('shots').textContent = shots;
+    }
+    
+    shake *= 0.9;
+  }
+  
+  // Particles
+  particles.forEach(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= 0.025;
+  });
+  particles = particles.filter(p => p.life > 0);
+}
+
+function draw() {
+  ctx.save();
+  if (shake > 0.1) {
+    ctx.translate(rand(-shake, shake), rand(-shake, shake));
+  }
+  
+  // Background
+  ctx.fillStyle = '#0d0d14';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Stars
+  stars.forEach(s => {
+    ctx.fillStyle = `rgba(255,255,255,${s.b * 0.6})`;
+    ctx.fillRect(s.x, s.y, s.s, s.s);
+  });
+  
+  // Grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.02)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  
+  // Gravity wells
+  wells.forEach(w => {
+    const pulse = 1 + Math.sin(w.phase) * 0.15;
+    const r = w.r * pulse;
+    
+    // Glow
+    const grad = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, r * 3);
+    grad.addColorStop(0, 'rgba(255,60,40,0.15)');
+    grad.addColorStop(1, 'rgba(255,60,40,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(w.x, w.y, r * 3, 0, Math.PI * 2); ctx.fill();
+    
+    ctx.fillStyle = 'rgba(255,60,40,0.25)';
+    ctx.strokeStyle = 'rgba(255,100,60,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(w.x, w.y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    
+    ctx.fillStyle = '#ffaa88';
+    ctx.font = '9px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('◉', w.x, w.y + 3);
+  });
+  
+  // Hole
+  const hGrad = ctx.createRadialGradient(hole.x, hole.y, 0, hole.x, hole.y, hole.r * 2.5);
+  hGrad.addColorStop(0, 'rgba(255,200,50,0.3)');
+  hGrad.addColorStop(1, 'rgba(255,200,50,0)');
+  ctx.fillStyle = hGrad;
+  ctx.beginPath(); ctx.arc(hole.x, hole.y, hole.r * 2.5, 0, Math.PI * 2); ctx.fill();
+  
+  ctx.fillStyle = '#ffcc33';
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(hole.x, hole.y, hole.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#0d0d14';
+  ctx.font = '10px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('★', hole.x, hole.y + 3.5);
+  
+  // Particles
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+  
+  // Aim line
+  if (state === 'aiming' && aim.active) {
+    const dx = ball.x - aim.x;
+    const dy = ball.y - aim.y;
+    const len = Math.min(Math.hypot(dx, dy), 180);
+    const nx = dx / Math.hypot(dx, dy);
+    const ny = dy / Math.hypot(dx, dy);
+    
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(ball.x, ball.y);
+    ctx.lineTo(ball.x + nx * len, ball.y + ny * len);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    
+    // Power dot
+    const power = len / 180;
+    ctx.fillStyle = `hsl(${120 - power * 120}, 80%, 55%)`;
+    ctx.beginPath();
+    ctx.arc(ball.x + nx * len, ball.y + ny * len, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Ball
+  if (state !== 'menu') {
+    const bGrad = ctx.createRadialGradient(ball.x - 2, ball.y - 2, 0, ball.x, ball.y, ball.r);
+    bGrad.addColorStop(0, '#ffffff');
+    bGrad.addColorStop(1, '#44ffaa');
+    ctx.fillStyle = bGrad;
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  }
+  
+  ctx.restore();
+}
+
+let lastTime = performance.now();
+function loop(time) {
+  const dt = Math.min((time - lastTime) / 16.67, 3);
+  lastTime = time;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// Input
+canvas.addEventListener('mousedown', e => {
+  if (state !== 'aiming') return;
+  const rect = canvas.getBoundingClientRect();
+  aim.x = e.clientX - rect.left;
+  aim.y = e.clientY - rect.top;
+  aim.active = true;
+});
+
+canvas.addEventListener('mousemove', e => {
+  if (!aim.active) return;
+  const rect = canvas.getBoundingClientRect();
+  aim.x = e.clientX - rect.left;
+  aim.y = e.clientY - rect.top;
+});
+
+canvas.addEventListener('mouseup', e => {
+  if (!aim.active || state !== 'aiming') return;
+  const dx = ball.x - aim.x;
+  const dy = ball.y - aim.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 10) return;
+  const power = Math.min(dist / 180, 1) * 10;
+  const nx = dx / dist;
+  const ny = dy / dist;
+  ball.vx = nx * power;
+  ball.vy = ny * power;
+  aim.active = false;
+  state = 'flying';
+});
+
+// Touch support
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const t = e.touches[0];
+  aim.x = t.clientX - rect.left;
+  aim.y = t.clientY - rect.top;
+  aim.active = true;
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (!aim.active) return;
+  const rect = canvas.getBoundingClientRect();
+  const t = e.touches[0];
+  aim.x = t.clientX - rect.left;
+  aim.y = t.clientY - rect.top;
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  if (!aim.active || state !== 'aiming') return;
+  const dx = ball.x - aim.x;
+  const dy = ball.y - aim.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 10) return;
+  const power = Math.min(dist / 180, 1) * 10;
+  const nx = dx / dist;
+  const ny = dy / dist;
+  ball.vx = nx * power;
+  ball.vy = ny * power;
+  aim.active = false;
+  state = 'flying';
+}, { passive: false });
+
+document.getElementById('startBtn').addEventListener('click', () => {
+  document.getElementById('startOverlay').classList.add('hidden');
+  level = 1; shots = 0;
+  document.getElementById('level').textContent = level;
+  document.getElementById('shots').textContent = shots;
+  initLevel();
+});
+
+document.getElementById('nextBtn').addEventListener('click', () => {
+  document.getElementById('winOverlay').classList.add('hidden');
+  level++;
+  document.getElementById('level').textContent = level;
+  shots = 0;
+  document.getElementById('shots').textContent = shots;
+  initLevel();
+});
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
