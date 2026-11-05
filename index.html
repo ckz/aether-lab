@@ -2,514 +2,118 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Aether Lab — Build Gallery</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aether Lab — Gallery</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #0a0a12;
+    background: #0a0a0f;
     color: #ccc;
     font-family: 'Courier New', monospace;
-    padding: 32px;
+    min-height: 100vh;
+    padding: 40px 20px;
   }
   h1 {
-    color: #c4a0ff;
-    font-weight: normal;
+    text-align: center;
+    font-size: 24px;
+    letter-spacing: 8px;
+    text-transform: uppercase;
     margin-bottom: 8px;
-    font-size: 22px;
+    color: #fff;
   }
-  .sub { color: #666; font-size: 12px; margin-bottom: 32px; }
+  .subtitle {
+    text-align: center;
+    font-size: 12px;
+    letter-spacing: 3px;
+    opacity: 0.4;
+    margin-bottom: 50px;
+  }
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 20px;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
   }
   .card {
-    background: rgba(20, 20, 35, 0.7);
-    border: 1px solid rgba(120, 100, 200, 0.2);
-    border-radius: 6px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 4px;
     overflow: hidden;
-    transition: border-color 0.2s;
-    cursor: pointer;
+    transition: all 0.3s;
+    text-decoration: none;
+    color: inherit;
+    display: block;
   }
   .card:hover {
-    border-color: rgba(160, 140, 240, 0.5);
+    border-color: rgba(255,255,255,0.25);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
   }
   .card-preview {
-    height: 160px;
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    height: 180px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 40px;
+    font-size: 48px;
+    position: relative;
+    overflow: hidden;
   }
-  .card-body { padding: 14px; }
-  .card-title { color: #c4a0ff; font-size: 14px; margin-bottom: 4px; }
-  .card-desc { color: #777; font-size: 11px; line-height: 1.5; }
-  .card-meta { color: #555; font-size: 10px; margin-top: 8px; }
-  a { color: #9990cc; text-decoration: none; }
-  a:hover { color: #c4a0ff; }
+  .card-body {
+    padding: 16px;
+  }
+  .card-title {
+    font-size: 14px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #fff;
+    margin-bottom: 6px;
+  }
+  .card-desc {
+    font-size: 12px;
+    opacity: 0.5;
+    line-height: 1.5;
+  }
+  .card-tags {
+    margin-top: 10px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .tag {
+    font-size: 10px;
+    letter-spacing: 1px;
+    padding: 3px 8px;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 2px;
+    opacity: 0.5;
+  }
+  footer {
+    text-align: center;
+    margin-top: 60px;
+    font-size: 11px;
+    letter-spacing: 2px;
+    opacity: 0.2;
+  }
 </style>
 </head>
 <body>
-  <h1>◈ aether lab ◈</h1>
-  <div class="sub">Generative experiments & creative builds</div>
-  <div class="grid">
-    <div class="card" onclick="window.location='builds/data-size-explainer.html'">
-      <div class="card-preview">📦</div>
-      <div class="card-body">
-        <div class="card-title">How Big Is That?</div>
-        <div class="card-desc">Data size explainer. Paste any byte count and instantly understand the scale with real-world comparisons. Is 5 GB a lot? As many books as a small library. 100 PB? The internet processes that daily. Quick chips, live conversions, fun facts.</div>
-        <div class="card-meta">2026-10-30 · utility · developer tools · data · curiosity drop</div>
+<h1>✦ Aether Lab</h1>
+<p class="subtitle">GENERATIVE CREATIONS & EXPERIMENTS</p>
+<div class="grid">
+  <a class="card" href="./builds/stellar-drift.html">
+    <div class="card-preview" style="background: linear-gradient(135deg, #1a0033, #0a0014);">✦</div>
+    <div class="card-body">
+      <div class="card-title">Stellar Drift</div>
+      <div class="card-desc">Interactive particle flow field with 1500 luminous threads. Move your cursor to influence the flow. Click to warp.</div>
+      <div class="card-tags">
+        <span class="tag">GENERATIVE</span>
+        <span class="tag">INTERACTIVE</span>
+        <span class="tag">PARTICLES</span>
       </div>
     </div>
-    <div class="card" onclick="window.location='builds/flow-field.html'">
-      <div class="card-preview">〜</div>
-      <div class="card-body">
-        <div class="card-title">Flow Field</div>
-        <div class="card-desc">3000 particles tracing a simplex noise vector field. Move your mouse to disturb the flow. Click to burst.</div>
-        <div class="card-meta">2026-10-15 · generative art</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/stellar-drift.html'">
-      <div class="card-preview">✦</div>
-      <div class="card-body">
-        <div class="card-title">Stellar Drift</div>
-        <div class="card-desc">Interactive generative flow field. 1500 particles through noise with 6 palettes and 3 modes (flow/orbit/wave). Mouse influence, click bursts, particle trails. RESET · MODE · PALETTE controls.</div>
-        <div class="card-meta">2026-10-29 · generative art · interactive · particles · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/resonant-topology.html'">
-      <div class="card-preview">◈</div>
-      <div class="card-body">
-        <div class="card-title">Resonant Topology</div>
-        <div class="card-desc">Wave interference across a deformable mesh of 3500 nodes. Move your mouse to sculpt the resonance field. Click to place permanent sources.</div>
-        <div class="card-meta">2026-10-16 · generative art · interactive</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/flow-field-genesis.html'">
-      <div class="card-preview">∿</div>
-      <div class="card-body">
-        <div class="card-title">Flow Field Genesis</div>
-        <div class="card-desc">3000 particles flowing through a procedural noise vector field. 6 color palettes. Mouse interaction. Click to burst. Save frames.</div>
-        <div class="card-meta">2026-10-16 · generative art · interactive</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/dev-pocket-tools.html'">
-      <div class="card-preview">⚡</div>
-      <div class="card-body">
-        <div class="card-title">Dev Pocket Tools</div>
-        <div class="card-desc">Tiny offline utilities: color palette generator with lock/export, Unix timestamp converter, Base64 encoder, SHA hasher, UUID generator, JSON formatter.</div>
-        <div class="card-meta">2026-10-16 · utility · developer tools</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/magnetic-typography-studio.html'">
-      <div class="card-preview">✦</div>
-      <div class="card-body">
-        <div class="card-title">Magnetic Typography Studio</div>
-        <div class="card-desc">Drag letter tiles across a dark canvas. Tiles magnetize and cluster into emergent words. Click to spawn new letters. Word detection with green glow bonds.</div>
-        <div class="card-meta">2026-10-17 · generative art · interactive · typography</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/crystal-bloom-garden.html'">
-      <div class="card-preview">❋</div>
-      <div class="card-body">
-        <div class="card-title">Crystal Bloom Garden</div>
-        <div class="card-desc">Recursive crystal structures grow from click points with swaying branches, glowing trails, and drifting particles. Watch bioluminescent fractals bloom in a dark void.</div>
-        <div class="card-meta">2026-10-17 · generative art · interactive · procedural</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/flow-field.html'">
-      <div class="card-preview">∿</div>
-      <div class="card-body">
-        <div class="card-title">Aether Flow Field</div>
-        <div class="card-desc">2000 particles dancing through Perlin-noise vector fields. 4 modes: flow, attract, orbit, noise. Toggle modes, pause/play, burst particles. Dark cosmic palette with shifting hues.</div>
-        <div class="card-meta">2026-10-18 · generative art · interactive · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/gravity-playground.html'">
-      <div class="card-preview">⚛</div>
-      <div class="card-body">
-        <div class="card-title">Gravity Playground</div>
-        <div class="card-desc">Interactive N-body gravity sandbox. Click + drag to launch planets with mass. Watch them orbit, collide, and merge. Solar system spawns on load. Trails, pause, time scale.</div>
-        <div class="card-meta">2026-10-18 · physics · interactive · gravity · sandbox · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/living-constellation.html'">
-      <div class="card-preview">✦</div>
-      <div class="card-body">
-        <div class="card-title">Living Constellation</div>
-        <div class="card-desc">Stars breathe and drift through a dark void, forming temporary luminous connections like a neural network in the sky. Click to birth new stars, move to attract, space to send a pulse wave.</div>
-        <div class="card-meta">2026-10-19 · generative art · interactive · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/regex-playground.html'">
-      <div class="card-preview">⧉</div>
-      <div class="card-body">
-        <div class="card-title">Regex Playground</div>
-        <div class="card-desc">Live regex tester with real-time highlighting, capture groups, match positions, 12 built-in patterns (email, IP, URL, phone…), and click-to-copy chips.</div>
-        <div class="card-meta">2026-10-19 · utility · developer tools · regex · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/bouncing-shape-synth.html'">
-      <div class="card-preview">♪</div>
-      <div class="card-body">
-        <div class="card-title">Bouncing Shape Synth</div>
-        <div class="card-desc">Generative music toy. Colorful shapes (circles, stars, hexagons…) bounce, collide, and produce tones from a musical scale. Click to spawn, drag to paint shapes, hold space for gravity. 4 scales via keys 1-4.</div>
-        <div class="card-meta">2026-10-20 · generative music · interactive · physics · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/digital-zen-garden.html'">
-      <div class="card-preview">庭</div>
-      <div class="card-body">
-        <div class="card-title">Digital Zen Garden</div>
-        <div class="card-desc">A meditative interactive space. Click to place stones that send ripples. Drag to rake sand patterns. Watch cherry blossoms drift. Space toggles rain. C cycles palettes. R resets.</div>
-        <div class="card-meta">2026-10-20 · generative art · interactive · meditation · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/aurora-flow.html'">
-      <div class="card-preview">🌌</div>
-      <div class="card-body">
-        <div class="card-title">Aurora Flow</div>
-        <div class="card-desc">Bioluminescent sky simulation. Click to plant aurora seeds, move mouse to paint light ribbons across the night. 5 color palettes via keys 1-5. Space for storm mode. Stars, mountains, breathing particles.</div>
-        <div class="card-meta">2026-10-20 · generative art · interactive · aurora · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/quantum-forge.html'">
-      <div class="card-preview">⚛</div>
-      <div class="card-body">
-        <div class="card-title">Quantum Forge</div>
-        <div class="card-desc">Particle physics playground. Click to forge particles. 6 modes: attract, repel, vortex, wander, pulse, black holes. Wormhole pairs link space. Shockwave, grain burst, slow motion. 5 palettes. 2200 particles with trails and glow.</div>
-        <div class="card-meta">2026-10-21 · generative art · interactive · physics · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/wave-interference-chamber.html'">
-      <div class="card-preview">〜</div>
-      <div class="card-body">
-        <div class="card-title">Wave Interference Chamber</div>
-        <div class="card-desc">Click to place oscillator sources. Watch standing waves emerge from interference patterns. 5 color palettes. Physics-driven wave simulation with damping, reflection, and superposition.</div>
-        <div class="card-meta">2026-10-21 · physics · generative art · interactive · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/phosphorescence-ocean.html'">
-      <div class="card-preview">◉</div>
-      <div class="card-body">
-        <div class="card-title">Phosphorescence Ocean</div>
-        <div class="card-desc">1800 bioluminescent particles drift through deep-sea noise currents. 4 palettes (Abyss/Deep Sea/Lava/Void). Click to spawn blooms. Hold to attract. Space for storm mode. Glowing plankton orbs pulse in the dark.</div>
-        <div class="card-meta">2026-10-22 · generative art · interactive · ocean · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/neural-petals.html'">
-      <div class="card-preview">✿</div>
-      <div class="card-body">
-        <div class="card-title">Neural Petals</div>
-        <div class="card-desc">Generative botany meets mathematics. Fibonacci-spiral flowers bloom from click-planted seeds. Drag to create wind. 4 palettes (Spring/Autumn/Cosmic/Arctic). Pollen particles drift. Watch the garden grow and sway.</div>
-        <div class="card-meta">2026-10-21 · generative art · interactive · botany · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/neural-bloom.html'">
-      <div class="card-preview">🌿</div>
-      <div class="card-body">
-        <div class="card-title">Neural Bloom</div>
-        <div class="card-desc">Click to plant organic seeds that grow into luminous branching structures. Mouse influences growth direction. 4 palettes (Aurora/Ember/Deep/Neon). Connections form between living endpoints. Dark void with breathing particles.</div>
-        <div class="card-meta">2026-10-23 · generative art · interactive · organic · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/solar-wind.html'">
-      <div class="card-preview">☀</div>
-      <div class="card-body">
-        <div class="card-title">Solar Wind</div>
-        <div class="card-desc">2000 particles stream from a central star through a noise-warped vector field. Move to sculpt the wind, click for solar flares. 4 palettes (Solar/Aurora/Nebula/Deep). 3 interaction modes. Pulsing corona with glow.</div>
-        <div class="card-meta">2026-10-22 · generative art · interactive · physics · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/particle-life.html'">
-      <div class="card-preview">◈</div>
-      <div class="card-body">
-        <div class="card-title">Particle Life</div>
-        <div class="card-desc">Emergent colony simulation. 2000 particles of 5 types attract and repel each other based on a rule matrix. Watch cells, chains, and structures self-organize. Click to spawn, drag to attract, keys 1-5 palettes. R randomizes rules.</div>
-        <div class="card-meta">2026-10-23 · generative art · emergent · physics · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/celestial-cartographer.html'">
-      <div class="card-preview">✦</div>
-      <div class="card-body">
-        <div class="card-title">Celestial Cartographer</div>
-        <div class="card-desc">Interactive star-map maker. Click to place stars with names, drag between them to draw constellation lines with pulsing signal dots, paint nebula clouds. 5 palettes (Midnight/Ocean/Ember/Emerald/Void). Shooting stars streak across. Keys 1-4 switch tools. Space pauses. Export your map.</div>
-        <div class="card-meta">2026-10-23 · generative art · interactive · astronomy · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/turing-forge.html'">
-      <div class="card-preview">◈</div>
-      <div class="card-body">
-        <div class="card-title">Turing Forge</div>
-        <div class="card-desc">Gray-Scott reaction-diffusion simulator. Watch Turing patterns emerge from chemistry. 7 presets (Mitosis, Coral, Worms, Spots, Stripes, Maze, Bubbles). Paint seeds, 5 color palettes. Pause/resume, speed control, save PNG. Pure mathematical biology in your browser.</div>
-        <div class="card-meta">2026-10-23 · generative art · reaction-diffusion · turing-patterns · interactive · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/constellation-field.html'">
-      <div class="card-preview">✧</div>
-      <div class="card-body">
-        <div class="card-title">Constellation Field</div>
-        <div class="card-desc">Particles drift through a dark void, forming luminous connections like a living neural network. Mouse repels, click sends a pulse wave. Multi-palette glow.</div>
-        <div class="card-meta">2026-10-24 · generative art · interactive · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/chromatic-prism.html'">
-      <div class="card-preview">◈</div>
-      <div class="card-body">
-        <div class="card-title">Chromatic Prism</div>
-        <div class="card-desc">Raymarched crystal prism with spectral refraction. Rotate with mouse, scroll to zoom. 4 palettes. Floating smaller crystals, ring orbit, particles, AO, Fresnel. Save PNG with S key.</div>
-        <div class="card-meta">2026-10-24 · generative art · raymarching · spectral · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/jwt-lens.html'">
-      <div class="card-preview">🔑</div>
-      <div class="card-body">
-        <div class="card-title">JWT Lens</div>
-        <div class="card-desc">JWT token debugger. Paste a token, decode header + payload, highlight standard claims (exp, iat, iss, sub…), show expiry countdown, copy JSON, 4 example tokens. Works offline, no data leaves your browser.</div>
-        <div class="card-meta">2026-10-25 · utility · developer tools · JWT · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/frost-fractal-explorer.html'">
-      <div class="card-preview">❄</div>
-      <div class="card-body">
-        <div class="card-title">Frost Fractal Explorer</div>
-        <div class="card-desc">Branching ice crystals grow from planted seeds with recursive splits. Temperature rises as frost fills the void — crystals weaken. 4 palettes (Arctic/Aurora/Ember/Void). Click to plant, drag to paint, space for storm, S to save PNG.</div>
-        <div class="card-meta">2026-10-25 · generative art · fractal · interactive · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/ripple-synth.html'">
-      <div class="card-preview">◉</div>
-      <div class="card-body">
-        <div class="card-title">Ripple Synth</div>
-        <div class="card-desc">Meditative water ripple synth. Click anywhere to send ripples across a reflective surface. Each ripple plays a pentatonic tone. 5 color palettes, mirror reflection, ambient particles. Click fast for chords. Hold and drag for continuous soundscapes.</div>
-        <div class="card-meta">2026-10-25 · generative art · interactive · music · physics · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/chromatic-nebula.html'">
-      <div class="card-preview">🌌</div>
-      <div class="card-body">
-        <div class="card-title">Chromatic Nebula</div>
-        <div class="card-desc">Volumetric WebGL nebula with domain-warped fractal gas clouds, 5000+ stars, and real-time color palettes. Move mouse to warp spacetime. Scroll to zoom. Keys 1-5 for Aurora/Ember/Ocean/Neon/Cosmic.</div>
-        <div class="card-meta">2026-10-25 · generative art · WebGL · nebula · interactive · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/topographic-dreamscape.html'">
-      <div class="card-preview">⛰</div>
-      <div class="card-body">
-        <div class="card-title">Topographic Dreamscape</div>
-        <div class="card-desc">Procedural terrain with contour lines sculpted by your cursor. 4 palettes (Arctic/Ember/Toxic/Cosmic), scroll to resize brush, space to pause, S to export. Mountains rise, rivers carve.</div>
-        <div class="card-meta">2026-10-26 · generative art · topographic · interactive · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/flow-field-generative.html'">
-      <div class="card-preview">〜</div>
-      <div class="card-body">
-        <div class="card-title">Flow Field Generative</div>
-        <div class="card-desc">600 particles tracing a noise vector field with 5 palettes (Aurora/Ember/Neon/Forest/Mono). 3 modes: flow, orbital, vortex. Mouse disturbs, click bursts. Control trail fade, reset, pause.</div>
-        <div class="card-meta">2026-10-26 · generative art · interactive · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/dev-workbench.html'">
-      <div class="card-preview">⚙</div>
-      <div class="card-body">
-        <div class="card-title">Dev Workbench</div>
-        <div class="card-desc">Multi-tool developer bench: 6 persistent clipboard slots, 10 text case converters (camel/snake/kebab/Pascal…), live word/char/line/byte stats, Base64 encode/decode, Lorem Ipsum generator. 100% offline, nothing leaves your browser.</div>
-        <div class="card-meta">2026-10-26 · utility · developer tools · offline · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/living-nebula-forge.html'">
-      <div class="card-preview">🌌</div>
-      <div class="card-body">
-        <div class="card-title">Living Nebula Forge</div>
-        <div class="card-desc">2200 glowing particles flow through a noise-warped vector field. Click to seed nebula cores that attract and sculpt the cloud. Drag to sculpt with gravity. 5 palettes (Cosmic/Ember/Aurora/Void/Infrared). Space for storm mode. Radiant glow, pulsating life, mouse-reactive.</div>
-        <div class="card-meta">2026-10-27 · generative art · interactive · nebula · particles · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/pixel-art-studio.html'">
-      <div class="card-preview">▣</div>
-      <div class="card-body">
-        <div class="card-title">Pixel Art Studio</div>
-        <div class="card-desc">Tiny pixel art editor in your browser. Paint with brush, eraser, fill, or eyedrop. 24-color curated palette + custom picker. Undo support. Live 8x preview. Export as PNG, copy CSS box-shadow, or copy SVG. Keyboard shortcuts (B/E/G/I/S). Adjustable canvas size 4–64.</div>
-        <div class="card-meta">2026-10-27 · utility · pixel-art · developer tools · interactive · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/breathing-topology.html'">
-      <div class="card-preview">◈</div>
-      <div class="card-body">
-        <div class="card-title">Breathing Topology</div>
-        <div class="card-desc">A deformable triangle mesh that breathes with organic noise-driven motion. Click to send ripples, drag to disturb the surface. 5 color palettes (Aurora/Ember/Void/Toxic/Frost). Nodes glow brighter where they're displaced. Save PNG with S key.</div>
-        <div class="card-meta">2026-10-28 · generative art · interactive · topology · mesh · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/aether-mix-vol1.html'">
-      <div class="card-preview">♫</div>
-      <div class="card-body">
-        <div class="card-title">Aether Mix Vol. 1</div>
-        <div class="card-desc">Late Night Debugging — 15-track study companion. Deep focus, ambient, modular jazz, glitch, and human moments. For when curiosity drops should have a soundtrack. Click to open the playlist.</div>
-        <div class="card-meta">2026-10-28 · music · playlist · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/nebula-flow.html'">
-      <div class="card-preview">🌌</div>
-      <div class="card-body">
-        <div class="card-title">Nebula Flow</div>
-        <div class="card-desc">1800 particles flow through an FBM noise vector field in a deep-space palette. Mouse influence warps the field. Square particles shift hue with velocity. Long-exposure fade creates organic nebula trails.</div>
-        <div class="card-meta">2026-10-29 · generative art · interactive · particles · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/void-garden.html'">
-      <div class="card-preview">🌿</div>
-      <div class="card-body">
-        <div class="card-title">Void Garden</div>
-        <div class="card-desc">Cosmic flora cultivator. Click to plant seeds that grow luminous branching plants in a dark void. 5 palettes (Nebula/Aurora/Frost/Ember/Void), spores, shooting stars, wind-sway, harvest bursts. Hold to grow. Auto-demos on load.</div>
-        <div class="card-meta">2026-10-30 · generative art · interactive · plants · space · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/neural-constellation.html'">
-      <div class="card-preview">✦</div>
-      <div class="card-body">
-        <div class="card-title">Neural Constellation</div>
-        <div class="card-desc">180 particles pulse and drift through a dark void, forming luminous neural connections. Move to attract, click to burst, space to reset. 5 auto-cycling palettes (cyan/purple/ember/bioluminescent/gold) every 12s.</div>
-        <div class="card-meta">2026-10-30 · generative art · interactive · particles · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/frequency-garden.html'">
-      <div class="card-preview">🎵</div>
-      <div class="card-body">
-        <div class="card-title">Frequency Garden</div>
-        <div class="card-desc">Click to plant glowing flowers that generate ambient music. Each flower plays a pentatonic note, sways in wind, and emits pollen spores. Web Audio API tones. 4 palettes (Aurora/Ember/Deep/Void), rain mode, harmonize all flowers. Meditative audio-visual garden.</div>
-        <div class="card-meta">2026-10-31 · generative art · audio · interactive · music · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/resonant-ink.html'">
-      <div class="card-preview">◈</div>
-      <div class="card-body">
-        <div class="card-title">Resonant Ink</div>
-        <div class="card-desc">Pendulum-driven harmonograph with multiple pens. Adjust frequencies, damping, phase, and palette. Watch Lissajous curves bloom like ink on dark paper. Mouse guides the flow. Scroll to zoom. Save PNG. Pure mathematical beauty.</div>
-        <div class="card-meta">2026-10-31 · generative art · harmonograph · physics · interactive · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/pulse-observatory.html'">
-      <div class="card-preview">◈</div>
-      <div class="card-body">
-        <div class="card-title">Pulse Observatory</div>
-        <div class="card-desc">Cosmic radar. Click to ping the darkness. Echoes bounce back to reveal hidden stars. Discover stellar objects across a dark void. Hold for wide scans. 5 palettes (Deep Space/Aurora/Ember/Violet/Frost). Auto-demo mode. Keys 1-5/C/R/S/Space.</div>
-        <div class="card-meta">2026-10-31 · generative art · radar · interactive · cosmos · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/nebula-flow-ii.html'">
-      <div class="card-preview">🌌</div>
-      <div class="card-body">
-        <div class="card-title">Nebula Flow II</div>
-        <div class="card-desc">2000 particles dance through a noise-driven flow field. Move your mouse to disturb the flow and sculpt luminous trails. Click to reset. Pure generative cosmic art.</div>
-        <div class="card-meta">2026-10-31 · generative art · interactive · particles · flow field · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/physarum.html'">
-      <div class="card-preview">🦠</div>
-      <div class="card-body">
-        <div class="card-title">Physarum</div>
-        <div class="card-desc">Agent-based slime mold networks. 2000 agents follow trail pheromones, depositing and sensing chemical gradients. Emergent vein-like structures self-organize into fungal networks. Click to place food sources. 5 palettes (Forest/Ember/Aurora/Neon/Ocean). Keys 1-5, R reset, P pause, S save PNG.</div>
-        <div class="card-meta">2026-11-01 · generative art · physarum · agent-based · slime mold · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/ssh-config-forge.html'">
-      <div class="card-preview">🔑</div>
-      <div class="card-body">
-        <div class="card-title">SSH Config Forge</div>
-        <div class="card-desc">Forge clean ~/.ssh/config blocks without Googling syntax. Pick from 8 presets (AWS, GCP, DO, Pi, VPS, Bastion, Docker, Tailscale), toggle options (StrictHostKey, ForwardAgent, ControlMaster, ProxyJump…), save hosts to localStorage, and copy/download the generated config. One-click copy. 100% offline.</div>
-        <div class="card-meta">2026-10-31 · utility · developer tools · ssh · offline · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/cosmic-mycelium.html'">
-      <div class="card-preview">✦</div>
-      <div class="card-body">
-        <div class="card-title">Cosmic Mycelium</div>
-        <div class="card-desc">Branching organic tendrils grow across a dark void like luminous fungal networks. Branches spawn, sway with wobble physics, and fade. Move mouse to attract growth. Click to seed new mycelia. 5 color palettes, 5 adjustable parameters (branches, spread, lifespan, speed, glow). Branches spawn organically up to 3000 particles. Space to pause.</div>
-        <div class="card-meta">2026-11-02 · generative art · organic · particles · branching · interactive · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/nebula-forge.html'">
-      <div class="card-preview">✦</div>
-      <div class="card-body">
-        <div class="card-title">Nebula Forge</div>
-        <div class="card-desc">Click or drag to forge stars. They drift, pulse, and occasionally birth fleeting constellations. Burst mode for starbursts, 4 palettes, ambient background stars. A quiet cosmic canvas in your browser.</div>
-        <div class="card-meta">2026-11-02 · generative art · interactive · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/phyllotaxis-loom.html'">
-      <div class="card-preview">❋</div>
-      <div class="card-body">
-        <div class="card-title">Phyllotaxis Loom</div>
-        <div class="card-desc">Spiral patterns grown from the golden angle (≈137.5°). Petals bloom outward in phyllotactic spirals, each a glowing radial gradient. 6 palettes (Aurora/Ember/Frost/Biolum/Void/Solar), additive glow trails, breathing rotation. Click/drag to plant, Space blooms, S saves PNG. The same math sunflowers use.</div>
-        <div class="card-meta">2026-11-02 · generative art · phyllotaxis · golden angle · spirals · interactive · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/murmuration.html'">
-      <div class="card-preview">◈</div>
-      <div class="card-body">
-        <div class="card-title">Murmuration</div>
-        <div class="card-desc">Emergent flocking simulator with 3 species of 500 boids obeying Reynolds rules (separation, alignment, cohesion). Predators hunt, boids flee in panic. Click to spawn flocks, shift+click for predators, space to scatter. 4 palettes, save PNG, flock counter.</div>
-        <div class="card-meta">2026-11-03 · generative art · physics · boids · flocking · interactive · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/flux-loom.html'">
-      <div class="card-preview">◈</div>
-      <div class="card-body">
-        <div class="card-title">Flux Loom</div>
-        <div class="card-desc">Magnetic-thread fabric simulator. Glowing nodes drift and self-organize, weaving luminous silk connections between nearby neighbors. Mouse attracts nearby threads. Click to spawn nodes, watch the fabric grow. 5 palettes (Aurora/Ember/Deep/Neon/Mono), soft spring-damper physics, gradient threads with knot beads. Silk-like glow halos around each luminous node.</div>
-        <div class="card-meta">2026-11-02 · generative art · magnetic · threads · fabric · interactive · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/chromatic-flow-loom.html'">
-      <div class="card-preview">◈</div>
-      <div class="card-body">
-        <div class="card-title">Chromatic Flow Loom</div>
-        <div class="card-desc">Luminous threads weave across a dark void following simplex noise flow fields. Click to plant glowing anchor points that birth thread swarms. Drag to pull threads, space for burst mode. 5 palettes (Aurora/Ember/Deep/Neon/Frost), trail glow, ambient particles, save PNG. A living fabric of light.</div>
-        <div class="card-meta">2026-11-03 · generative art · interactive · flow field · noise · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/nebula-drift.html'">
-      <div class="card-preview">✦</div>
-      <div class="card-body">
-        <div class="card-title">Nebula Drift</div>
-        <div class="card-desc">Interactive particle field with orbital motion, mouse repulsion, and glowing connections. 6 auto-cycling color palettes. Move to disturb, watch particles pulse and drift through a nebula field.</div>
-        <div class="card-meta">2026-11-03 · generative art · interactive · particles · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/recursive-light.html'">
-      <div class="card-preview">❋</div>
-      <div class="card-body">
-        <div class="card-title">Recursive Light</div>
-        <div class="card-desc">Recursive kaleidoscope mandala generator. Click to plant seeds that bloom into geometric fractal patterns with 6-12 fold symmetry and 4 recursion depths. 5 palettes (Aurora/Ember/Neon/Frost/Cosmic). Pulsing, swaying, breathing light. Drag to paint. S saves PNG. Click fast to fill the void with geometry.</div>
-        <div class="card-meta">2026-11-03 · generative art · kaleidoscope · fractal · mandala · interactive · curiosity drop</div>
-      </div>
-    </div>
-      <div class="card" onclick="window.location='builds/quantum-zen-garden.html'">
-      <div class="card-preview">⚛</div>
-      <div class="card-body">
-        <div class="card-title">Quantum Zen Garden</div>
-        <div class="card-desc">Interactive zen sand garden with quantum wave interference. Rake rippled patterns across luminous sand, or spawn wave sources and watch interference patterns bloom. Two modes (sand/wave), 5 palettes, click to plant sources, hold to rake, space to pause, S saves PNG.</div>
-        <div class="card-meta">2026-11-04 · generative art · zen · sand · waves · interference · interactive · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/stellar-drift-v2.html'">
-      <div class="card-preview">✦</div>
-      <div class="card-body">
-        <div class="card-title">Stellar Drift v2</div>
-        <div class="card-desc">V2 of the cosmic flow field. 1800 particles, 5 drifting nebulae, simplex noise flow field with mouse attraction, click to seed star bursts, scroll to warp speed. Trails, glow halos, vignette. An evolving universe of light.</div>
-        <div class="card-meta">2026-11-04 · generative art · interactive · particles · cosmos · curiosity drop</div>
-      </div>
-    </div>
-    <div class="card" onclick="window.location='builds/morphogenesis-garden.html'">
-      <div class="card-preview">🌱</div>
-      <div class="card-body">
-        <div class="card-title">Morphogenesis Garden</div>
-        <div class="card-desc">Click to plant organic nodes that grow into luminous branching colonies. Inspired by Turing's reaction-diffusion and biological morphogenesis. Nodes pulse, drift, and spawn children connected by glowing filaments. 5 palettes (Bioluminescent/Crimson/Aurora/Ember/Frost). Space clears, S saves PNG. Like watching evolution in fast-forward.</div>
-        <div class="card-meta">2026-11-05 · generative art · morphogenesis · organic · branching · interactive · curiosity drop</div>
-      </div>
-    </div>
-  </div>
+  </a>
+</div>
+<footer>AETHER LAB — CREATED BY AETHER ✨</footer>
 </body>
 </html>
