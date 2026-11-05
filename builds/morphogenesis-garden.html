@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Morphogenesis Garden</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;overflow:hidden;font-family:'Courier New',monospace}
+canvas{display:block;cursor:crosshair}
+#ui{position:fixed;top:16px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.7);font-size:12px;text-align:center;pointer-events:none;z-index:10;letter-spacing:1px;text-shadow:0 0 8px rgba(0,200,255,0.4)}
+#controls{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:10}
+#controls button{background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.7);padding:6px 14px;border-radius:4px;font-size:11px;cursor:pointer;font-family:inherit;letter-spacing:0.5px;transition:all 0.2s}
+#controls button:hover{background:rgba(0,200,255,0.15);border-color:rgba(0,200,255,0.4);color:#fff}
+#controls button.active{background:rgba(0,200,255,0.2);border-color:rgba(0,200,255,0.5);color:#0ff}
+</style>
+</head>
+<body>
+<div id="ui">MORPHOGENESIS GARDEN — click to plant · drag to grow · space clears · S saves</div>
+<div id="controls">
+  <button onclick="setPalette(0)" class="active">Bioluminescent</button>
+  <button onclick="setPalette(1)">Crimson</button>
+  <button onclick="setPalette(2)">Aurora</button>
+  <button onclick="setPalette(3)">Ember</button>
+  <button onclick="setPalette(4)">Frost</button>
+</div>
+<canvas id="c"></canvas>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let W,H,time=0,frame=0;
+let mouse={x:0,y:0,down:false};
+let particles=[];
+let nodes=[];
+let filaments=[];
+const MAX_PARTICLES=1500,MAX_NODES=200;
+
+const palettes=[
+  {name:'Bioluminescent',bg:[2,4,8],nodes:[[0,220,255],[0,180,220],[0,255,180],[100,255,220]],filament:[0,200,255],particle:[0,255,200]},
+  {name:'Crimson',bg:[8,2,2],nodes:[[255,40,40],[255,120,60],[255,80,120],[200,30,80]],filament:[255,60,60],particle:[255,100,80]},
+  {name:'Aurora',bg:[2,6,8],nodes:[[0,255,140],[100,200,255],[140,255,200],[50,180,255]],filament:[80,255,180],particle:[120,255,220]},
+  {name:'Ember',bg:[8,5,2],nodes:[[255,180,40],[255,120,20],[255,220,100],[255,80,40]],filament:[255,160,40],particle:[255,200,80]},
+  {name:'Frost',bg:[4,6,10],nodes:[[180,220,255],[120,180,255],[200,240,255],[100,200,220]],filament:[160,210,255],particle:[200,240,255]}
+];
+let palette=palettes[0];
+
+function resize(){W=canvas.width=innerWidth;H=canvas.height=innerHeight}
+addEventListener('resize',resize);resize();
+
+// ---- Morphogen node ----
+class Node {
+  constructor(x,y,gen=0){
+    this.x=x;this.y=y;this.vx=0;this.vy=0;
+    this.gen=gen;this.life=1;this.maxLife=400+Math.random()*600;
+    this.age=0;this.size=2+Math.random()*2;
+    this.targetSize=this.size;
+    this.phase=Math.random()*Math.PI*2;
+    this.connections=[];
+    this.growing=true;this.growTimer=0;
+    this.growInterval=30+Math.random()*40;
+    this.children=0;this.maxChildren=3+Math.floor(Math.random()*4);
+  }
+  update(){
+    this.age++;this.life=1-this.age/this.maxLife;
+    this.phase+=0.02;
+    // Gentle drift
+    const nx=simplex(x*0.003,y*0.003,time*0.0003);
+    const ny=simplex(x*0.003+100,y*0.003,time*0.0003);
+    this.vx+=nx*0.03;this.vy+=ny*0.03;
+    // Mouse repulsion
+    if(mouse.down){
+      const dx=this.x-mouse.x,dy=this.y-mouse.y;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      if(d<150&&d>0){this.vx+=dx/d*0.3;this.vy+=dy/d*0.3}
+    }
+    this.vx*=0.96;this.vy*=0.96;
+    this.x+=this.vx;this.y+=this.vy;
+    // Soft boundaries
+    if(this.x<0)this.x=0;if(this.x>W)this.x=W;
+    if(this.y<0)this.y=0;if(this.y>H)this.y=H;
+    // Pulsing
+    this.targetSize=this.size*(0.8+0.2*Math.sin(this.phase));
+    this.size+=(this.targetSize-this.size)*0.1;
+    // Grow children
+    if(this.growing&&this.children<this.maxChildren){
+      this.growTimer++;
+      if(this.growTimer>this.growInterval){
+        this.growTimer=0;
+        this.birth();
+      }
+    }
+    // Fade
+    if(this.age>this.maxLife-100)this.growing=false;
+    return this.life>0;
+  }
+  birth(){
+    if(nodes.length>=MAX_NODES)return;
+    const angle=Math.random()*Math.PI*2;
+    const dist=30+Math.random()*60;
+    const nx=this.x+Math.cos(angle)*dist;
+    const ny=this.y+Math.sin(angle)*dist;
+    if(nx>20&&nx<W-20&&ny>20&&ny<H-20){
+      const child=new Node(nx,ny,this.gen+1);
+      child.size=Math.max(1.2,this.size*0.7);
+      child.maxLife=this.maxLife*0.85;
+      nodes.push(child);
+      filaments.push(new Filament(this,child));
+      this.children++;
+    }
+  }
+  draw(){
+    const ci=Math.min(this.gen%palette.nodes.length,palette.nodes.length-1);
+    const c=palette.nodes[ci];
+    const a=this.life*0.9;
+    // Glow
+    const grd=ctx.createRadialGradient(this.x,this.y,0,this.x,this.y,this.size*6);
+    grd.addColorStop(0,`rgba(${c[0]},${c[1]},${c[2]},${a*0.5})`);
+    grd.addColorStop(1,`rgba(${c[0]},${c[1]},${c[2]},0)`);
+    ctx.fillStyle=grd;ctx.beginPath();
+    ctx.arc(this.x,this.y,this.size*6,0,Math.PI*2);ctx.fill();
+    // Core
+    ctx.fillStyle=`rgba(${c[0]},${c[1]},${c[2]},${a})`;
+    ctx.beginPath();ctx.arc(this.x,this.y,this.size,0,Math.PI*2);ctx.fill();
+    // Bright center
+    ctx.fillStyle=`rgba(255,255,255,${a*0.8})`;
+    ctx.beginPath();ctx.arc(this.x,this.y,this.size*0.4,0,Math.PI*2);ctx.fill();
+  }
+}
+
+// ---- Filament (organic connection) ----
+class Filament {
+  constructor(a,b){this.a=a;this.b=b;this.life=1;this.waveOffset=Math.random()*Math.PI*2}
+  update(){
+    this.life=Math.min(this.a.life,this.b.life);
+    return this.life>0;
+  }
+  draw(){
+    const a=this.life*0.4;
+    const c=palette.filament;
+    const mx=(this.a.x+this.b.x)/2;
+    const my=(this.a.y+this.b.y)/2;
+    const dx=this.b.x-this.a.x,dy=this.b.y-this.a.y;
+    const perpX=-dy*0.15;const perpY=dx*0.15;
+    const wave=Math.sin(time*0.02+this.waveOffset)*8;
+    ctx.strokeStyle=`rgba(${c[0]},${c[1]},${c[2]},${a})`;
+    ctx.lineWidth=0.5+this.life*0.5;
+    ctx.beginPath();
+    ctx.moveTo(this.a.x,this.a.y);
+    ctx.quadraticCurveTo(mx+perpX+wave,my+perpY+wave,this.b.x,this.b.y);
+    ctx.stroke();
+  }
+}
+
+// ---- Drifting particle ----
+class Particle {
+  constructor(){this.reset()}
+  reset(){
+    this.x=Math.random()*W;this.y=Math.random()*H;
+    this.vx=(Math.random()-0.5)*0.3;this.vy=(Math.random()-0.5)*0.3;
+    this.life=Math.random();this.maxLife=200+Math.random()*300;
+    this.age=0;this.size=0.5+Math.random()*1;
+  }
+  update(){
+    this.age++;this.life=1-this.age/this.maxLife;
+    if(this.life<=0)this.reset();
+    const nx=simplex(this.x*0.005,this.y*0.005,time*0.001);
+    const ny=simplex(this.x*0.005+50,this.y*0.005,time*0.001);
+    this.vx+=nx*0.02;this.vy+=ny*0.02;
+    this.vx*=0.99;this.vy*=0.99;
+    this.x+=this.vx;this.y+=this.vy;
+    if(this.x<0||this.x>W||this.y<0||this.y>H)this.reset();
+  }
+  draw(){
+    const c=palette.particle;
+    const a=this.life*0.3;
+    ctx.fillStyle=`rgba(${c[0]},${c[1]},${c[2]},${a})`;
+    ctx.beginPath();ctx.arc(this.x,this.y,this.size,0,Math.PI*2);ctx.fill();
+  }
+}
+
+// ---- Simplex-like noise (simplified) ----
+function simplex(x,y,t){
+  const v=Math.sin(x*1.2+t*0.7)*Math.cos(y*0.9+t*0.5)+Math.sin((x+y)*0.8+t*0.3)*0.5;
+  return v*0.5;
+}
+
+function plantSeed(x,y){
+  if(nodes.length>=MAX_NODES)return;
+  const n=new Node(x,y,0);
+  nodes.push(n);
+  // Spawn burst particles
+  for(let i=0;i<15;i++){
+    if(particles.length<MAX_PARTICLES){
+      const p=new Particle();
+      p.x=x;p.y=y;
+      const a=Math.random()*Math.PI*2;
+      const s=Math.random()*3;
+      p.vx=Math.cos(a)*s;p.vy=Math.sin(a)*s;
+      particles.push(p);
+    }
+  }
+}
+
+// ---- Controls ----
+function setPalette(i){
+  palette=palettes[i];
+  document.querySelectorAll('#controls button').forEach((b,j)=>b.classList.toggle('active',j===i));
+}
+
+addEventListener('keydown',e=>{
+  if(e.code==='Space'){nodes=[];filaments=[];e.preventDefault()}
+  if(e.code==='KeyS'){
+    const link=document.createElement('a');
+    link.download='morphogenesis-garden.png';
+    link.href=canvas.toDataURL();link.click();
+  }
+});
+
+canvas.addEventListener('mousedown',e=>{mouse.down=true;plantSeed(e.clientX,e.clientY)});
+canvas.addEventListener('mousemove',e=>{
+  mouse.x=e.clientX;mouse.y=e.clientY;
+  if(mouse.down&&frame%8===0)plantSeed(e.clientX,e.clientY);
+});
+addEventListener('mouseup',()=>mouse.down=false);
+canvas.addEventListener('touchstart',e=>{
+  e.preventDefault();mouse.down=true;
+  const t=e.touches[0];mouse.x=t.clientX;mouse.y=t.clientY;
+  plantSeed(t.clientX,t.clientY);
+},{passive:false});
+canvas.addEventListener('touchmove',e=>{
+  e.preventDefault();const t=e.touches[0];
+  mouse.x=t.clientX;mouse.y=t.clientY;
+  if(frame%8===0)plantSeed(t.clientX,t.clientY);
+},{passive:false});
+canvas.addEventListener('touchend',()=>mouse.down=false);
+
+// Seed initial nodes
+function seedInitial(){
+  const cx=W/2,cy=H/2;
+  for(let ring=0;ring<3;ring++){
+    const count=3+ring*2;
+    for(let i=0;i<count;i++){
+      const a=(i/count)*Math.PI*2+ring*0.5;
+      const r=60+ring*50;
+      const nx=cx+Math.cos(a)*r;
+      const ny=cy+Math.sin(a)*r;
+      const n=new Node(nx,ny,ring);
+      n.size=Math.max(1.5,3-ring*0.5);
+      nodes.push(n);
+    }
+  }
+  const root=new Node(cx,cy,0);root.size=4;root.maxLife=9999;
+  nodes.push(root);
+}
+
+// ---- Render loop ----
+function render(){
+  time++;frame++;
+  // Fade
+  const bg=palette.bg;
+  ctx.fillStyle=`rgba(${bg[0]},${bg[1]},${bg[2]},0.12)`;
+  ctx.fillRect(0,0,W,H);
+
+  // Update & draw filaments
+  filaments=filaments.filter(f=>{
+    if(!f.update())return false;
+    f.draw();return true;
+  });
+
+  // Update & draw nodes
+  nodes=nodes.filter(n=>{
+    if(!n.update())return false;
+    n.draw();return true;
+  });
+
+  // Ambient particles
+  if(particles.length<300){
+    for(let i=0;i<2;i++){const p=new Particle();particles.push(p)}
+  }
+  particles.forEach(p=>{p.update();p.draw()});
+  particles=particles.filter(p=>p.life>0);
+
+  // Global breathing pulse
+  if(frame%120===0&&nodes.length<20){
+    const cx=W/2+Math.sin(time*0.005)*100;
+    const cy=H/2+Math.cos(time*0.007)*100;
+    if(nodes.length<MAX_NODES){
+      nodes.push(new Node(cx,cy,0));
+    }
+  }
+
+  requestAnimationFrame(render);
+}
+
+seedInitial();
+// Pre-populate ambient particles
+for(let i=0;i<200;i++){const p=new Particle();particles.push(p)}
+render();
+</script>
+</body>
+</html>
