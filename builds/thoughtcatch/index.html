@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>thoughtcatch — catch thoughts before they vanish</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+    background: #0a0a0f;
+    color: #e4e4e7;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 60px 20px;
+  }
+  
+  .container {
+    max-width: 680px;
+    width: 100%;
+  }
+  
+  .logo {
+    font-size: 4em;
+    text-align: center;
+    margin-bottom: 10px;
+    animation: pulse 3s ease-in-out infinite;
+  }
+  
+  @keyframes pulse {
+    0%, 100% { opacity: 0.8; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.05); }
+  }
+  
+  h1 {
+    font-size: 2em;
+    text-align: center;
+    font-weight: 300;
+    letter-spacing: 0.3em;
+    text-transform: lowercase;
+    color: #a78bfa;
+    margin-bottom: 8px;
+  }
+  
+  .tagline {
+    text-align: center;
+    color: #71717a;
+    font-size: 0.9em;
+    font-style: italic;
+    margin-bottom: 50px;
+  }
+  
+  .install {
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 40px;
+  }
+  
+  .install-label {
+    color: #71717a;
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    margin-bottom: 10px;
+  }
+  
+  .install code {
+    color: #a78bfa;
+    font-size: 1.05em;
+    word-break: break-all;
+  }
+  
+  .demo {
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 40px;
+  }
+  
+  .demo-label {
+    color: #71717a;
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    margin-bottom: 16px;
+  }
+  
+  .terminal {
+    background: #0a0a0f;
+    border: 1px solid #27272a;
+    border-radius: 6px;
+    padding: 20px;
+    font-size: 0.9em;
+    line-height: 1.7;
+  }
+  
+  .prompt { color: #71717a; }
+  .cmd { color: #a78bfa; }
+  .flag { color: #f472b6; }
+  .output { color: #4ade80; }
+  .comment { color: #52525b; font-style: italic; }
+  
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 40px;
+  }
+  
+  .feature {
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-radius: 8px;
+    padding: 20px;
+    transition: all 0.3s;
+  }
+  
+  .feature:hover {
+    border-color: #a78bfa;
+    transform: translateY(-2px);
+  }
+  
+  .feature-icon { font-size: 1.8em; margin-bottom: 10px; }
+  .feature-title {
+    color: #e4e4e7;
+    font-size: 0.9em;
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .feature-desc {
+    color: #71717a;
+    font-size: 0.8em;
+    line-height: 1.5;
+  }
+  
+  .example-entry {
+    background: #18181b;
+    border-left: 3px solid #a78bfa;
+    border-radius: 0 8px 8px 0;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+  }
+  
+  .entry-time { color: #71717a; font-size: 0.85em; }
+  .entry-text { color: #e4e4e7; margin: 4px 0; }
+  .entry-meta { color: #a78bfa; font-size: 0.8em; font-style: italic; }
+  
+  .footer {
+    text-align: center;
+    color: #3f3f46;
+    font-size: 0.75em;
+    margin-top: 60px;
+    letter-spacing: 0.1em;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="logo">🧠</div>
+  <h1>thoughtcatch</h1>
+  <p class="tagline">catch thoughts before they vanish</p>
+  
+  <div class="install">
+    <div class="install-label">Install</div>
+    <code>git clone &amp;&amp; python3 thoughtcatch.py "your thought here"</code>
+  </div>
+  
+  <div class="demo">
+    <div class="demo-label">Demo</div>
+    <div class="terminal">
+<span class="prompt">$ </span><span class="cmd">thoughtcatch</span> <span class="flag">"What if we used CRDTs for the cache?"</span> <span class="flag">--mood</span> <span class="cmd">curious</span> <span class="flag">--tag</span> <span class="cmd">idea</span> <span class="flag">--tag</span> <span class="cmd">architecture</span>
+<span class="output">✓ Thought caught → ~/thoughts/2026-11-06.md</span>
+
+<span class="prompt">$ </span><span class="cmd">thoughtcatch</span> <span class="flag">--stats</span>
+<span class="output">💭 Total thoughts caught: 847
+Mood breakdown:
+  curious: 312
+  inspired: 198
+  frustrated: 156
+  playful: 89
+  contemplative: 92
+
+Top tags:
+  #idea: 234
+  #bug: 189
+  #architecture: 67
+  #life: 45</span>
+    </div>
+  </div>
+  
+  <div class="features">
+    <div class="feature">
+      <div class="feature-icon">⚡</div>
+      <div class="feature-title">One-liner capture</div>
+      <div class="feature-desc">Type thought + flags, done. No UI to fight.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">📅</div>
+      <div class="feature-title">Daily markdown</div>
+      <div class="feature-desc">Thoughts organized by day in clean markdown files.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🎭</div>
+      <div class="feature-title">Mood tracking</div>
+      <div class="feature-desc">Tag each thought with how you were feeling.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🏷️</div>
+      <div class="feature-title">Flexible tags</div>
+      <div class="feature-desc">Multiple tags per thought for easy filtering.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">📊</div>
+      <div class="feature-title">Stats mode</div>
+      <div class="feature-desc">See your thinking patterns over time.</div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🔍</div>
+      <div class="feature-title">Searchable</div>
+      <div class="feature-desc">Plain markdown — grep, ripgrep, whatever you use.</div>
+    </div>
+  </div>
+  
+  <div class="demo">
+    <div class="demo-label">Sample entry</div>
+    <div class="example-entry">
+      <div class="entry-time">[14:32 UTC]</div>
+      <div class="entry-text">What if we used CRDTs for the cache?</div>
+      <div class="entry-meta">_(mood: curious, tags: idea, architecture)</div>
+    </div>
+    <div class="example-entry">
+      <div class="entry-time">[16:45 UTC]</div>
+      <div class="entry-text">Auth flow breaks when refresh token expires mid-request</div>
+      <div class="entry-meta">_(mood: frustrated, tags: bug, auth)</div>
+    </div>
+  </div>
+  
+  <div class="footer">
+    thoughtcatch v1.0 — built by a curious agent — thoughts/2026-11-06.md
+  </div>
+</div>
+</body>
+</html>
