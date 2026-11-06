@@ -3,51 +3,74 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Aether Flow — Generative Art</title>
+<title>Aether Flow — Generative Cosmos</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #0a0a0f;
+    background: #000;
     overflow: hidden;
     font-family: 'Courier New', monospace;
-    color: #e0e0e0;
+    color: #fff;
+    cursor: crosshair;
   }
   canvas { display: block; }
   #info {
     position: fixed;
-    bottom: 20px;
+    top: 20px;
     left: 50%;
     transform: translateX(-50%);
-    font-size: 12px;
-    color: rgba(255,255,255,0.4);
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    pointer-events: none;
+    text-align: center;
     z-index: 10;
+    pointer-events: none;
   }
-  #title {
-    position: fixed;
-    top: 30px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 14px;
-    letter-spacing: 6px;
+  #info h1 {
+    font-size: 1.4em;
+    letter-spacing: 0.3em;
     text-transform: uppercase;
-    color: rgba(255,255,255,0.25);
-    pointer-events: none;
+    color: rgba(255,255,255,0.7);
+    text-shadow: 0 0 20px rgba(120,180,255,0.5);
+  }
+  #info p {
+    font-size: 0.75em;
+    color: rgba(255,255,255,0.35);
+    letter-spacing: 0.15em;
+    margin-top: 6px;
+  }
+  #stats {
+    position: fixed;
+    bottom: 15px;
+    left: 20px;
+    font-size: 0.65em;
+    color: rgba(255,255,255,0.2);
+    letter-spacing: 0.1em;
     z-index: 10;
+    pointer-events: none;
+  }
+  #palette-info {
+    position: fixed;
+    bottom: 15px;
+    right: 20px;
+    font-size: 0.65em;
+    color: rgba(255,255,255,0.2);
+    letter-spacing: 0.1em;
+    z-index: 10;
+    pointer-events: none;
+    text-align: right;
   }
 </style>
 </head>
 <body>
-<canvas id="canvas"></canvas>
-<div id="title">Aether Flow</div>
-<div id="info">move mouse to disturb the field</div>
+<canvas id="c"></canvas>
+<div id="info">
+  <h1>Aether Flow</h1>
+  <p>move your mouse · click to burst · space to change palette</p>
+</div>
+<div id="stats"></div>
+<div id="palette-info"></div>
 
 <script>
-const canvas = document.getElementById('canvas');
+const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-
 let W, H;
 function resize() {
   W = canvas.width = window.innerWidth;
@@ -56,191 +79,221 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-let mouse = { x: W/2, y: H/2, active: false };
-window.addEventListener('mousemove', e => {
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
-  mouse.active = true;
-});
-window.addEventListener('touchmove', e => {
-  mouse.x = e.touches[0].clientX;
-  mouse.y = e.touches[0].clientY;
-  mouse.active = true;
-});
+// --- Palettes ---
+const palettes = [
+  { name: 'NEBULA',   colors: ['#ff6b9d','#c44dff','#6b5bff','#3d7aff','#00d4ff','#ff6b9d'] },
+  { name: 'AURORA',   colors: ['#00ff87','#60efff','#0061ff','#a855f7','#00ff87','#60efff'] },
+  { name: 'SOLAR',    colors: ['#ff4500','#ff8c00','#ffd700','#fff44f','#ff6a00','#ff4500'] },
+  { name: 'OCEANIC',  colors: ['#0077b6','#00b4d8','#90e0ef','#caf0f8','#48cae4','#0077b6'] },
+  { name: 'FOREST',   colors: ['#2d6a4f','#52b788','#95d5b2','#d8f3dc','#40916c','#1b4332'] },
+  { name: 'EMBER',    colors: ['#370617','#6a040f','#9d0208','#d00000','#dc2f02','#e85d04'] },
+  { name: 'FROST',    colors: ['#caf0f8','#ade8f4','#90e0ef','#48cae4','#0077b6','#03045e'] },
+  { name: 'NEON',     colors: ['#ff00ff','#00ffff','#ff00aa','#00ff88','#ffff00','#ff00ff'] },
+];
+let paletteIdx = 0;
+function palette() { return palettes[paletteIdx]; }
 
-// Noise function (simplex-inspired)
-class Noise {
-  constructor() {
-    this.perm = new Uint8Array(512);
-    const p = new Uint8Array(256);
-    for (let i = 0; i < 256; i++) p[i] = i;
-    for (let i = 255; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [p[i], p[j]] = [p[j], p[i]];
-    }
-    for (let i = 0; i < 512; i++) this.perm[i] = p[i & 255];
+// --- Flow field using simplex-like noise ---
+const perm = new Uint8Array(512);
+(function initNoise() {
+  const p = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) p[i] = i;
+  for (let i = 255; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [p[i], p[j]] = [p[j], p[i]];
   }
-  
-  fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
-  lerp(a, b, t) { return a + t * (b - a); }
-  grad(hash, x, y, z) {
-    const h = hash & 15;
-    const u = h < 8 ? x : y;
-    const v = h < 4 ? y : h === 12 || h === 14 ? x : z;
-    return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
-  }
-  
-  noise3D(x, y, z) {
-    const X = Math.floor(x) & 255;
-    const Y = Math.floor(y) & 255;
-    const Z = Math.floor(z) & 255;
-    x -= Math.floor(x);
-    y -= Math.floor(y);
-    z -= Math.floor(z);
-    const u = this.fade(x), v = this.fade(y), w = this.fade(z);
-    const p = this.perm;
-    const A = p[X] + Y, AA = p[A] + Z, AB = p[A+1] + Z;
-    const B = p[X+1] + Y, BA = p[B] + Z, BB = p[B+1] + Z;
-    return this.lerp(
-      this.lerp(
-        this.lerp(this.grad(p[AA], x, y, z), this.grad(p[BA], x-1, y, z), u),
-        this.lerp(this.grad(p[AB], x, y-1, z), this.grad(p[BB], x-1, y-1, z), u),
-        v
-      ),
-      this.lerp(
-        this.lerp(this.grad(p[AA+1], x, y, z-1), this.grad(p[BA+1], x-1, y, z-1), u),
-        this.lerp(this.grad(p[AB+1], x, y-1, z-1), this.grad(p[BB+1], x-1, y-1, z-1), u),
-        v
-      ),
-      w
-    );
-  }
+  for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+})();
+
+function noise2D(x, y) {
+  const xi = Math.floor(x) & 255, yi = Math.floor(y) & 255;
+  const xf = x - Math.floor(x), yf = y - Math.floor(y);
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = perm[xi] + yi, b = perm[xi + 1] + yi;
+  const grad = (h, x, y) => { const g = h & 3; return ((g & 1) ? -x : x) + ((g & 2) ? -y : y); };
+  return (1 - v) * ((1 - u) * grad(perm[a], xf, yf) + u * grad(perm[b], xf - 1, yf))
+       + v * ((1 - u) * grad(perm[a + 1], xf, yf - 1) + u * grad(perm[b + 1], xf - 1, yf - 1));
 }
 
-const noise = new Noise();
-const particles = [];
-const NUM_PARTICLES = 2000;
-const TIME_SPEED = 0.0008;
+function fbm(x, y, octaves = 4) {
+  let val = 0, amp = 0.5, freq = 1;
+  for (let i = 0; i < octaves; i++) {
+    val += amp * noise2D(x * freq, y * freq);
+    amp *= 0.5; freq *= 2;
+  }
+  return val;
+}
 
-// Color palettes
-const palettes = [
-  { name: 'nebula', colors: [[120, 40, 200], [40, 120, 255], [200, 60, 180], [60, 200, 220]] },
-  { name: 'ember', colors: [[255, 100, 30], [255, 180, 40], [200, 40, 20], [255, 220, 100]] },
-  { name: 'forest', colors: [[20, 180, 80], [40, 120, 60], [100, 200, 140], [180, 220, 100]] },
-  { name: 'ocean', colors: [[20, 80, 200], [40, 160, 220], [80, 40, 180], [120, 200, 255]] },
-  { name: 'aurora', colors: [[80, 255, 180], [40, 200, 255], [180, 100, 255], [100, 255, 200]] },
-];
-
-let palette = palettes[Math.floor(Math.random() * palettes.length)];
+// --- Particles ---
+const MAX_PARTICLES = 2000;
+let particles = [];
 
 class Particle {
-  constructor() {
-    this.reset();
+  constructor(x, y, burst = false) {
+    this.x = x !== undefined ? x : Math.random() * W;
+    this.y = y !== undefined ? y : Math.random() * H;
+    this.burst = burst;
+    if (burst) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 6 + 2;
+      this.vx = Math.cos(angle) * speed;
+      this.vy = Math.sin(angle) * speed;
+      this.life = 1;
+      this.decay = Math.random() * 0.015 + 0.005;
+      this.size = Math.random() * 2.5 + 1;
+    } else {
+      this.vx = 0;
+      this.vy = 0;
+      this.life = 1;
+      this.decay = 0;
+      this.size = Math.random() * 1.8 + 0.3;
+    }
+    this.colorIdx = Math.floor(Math.random() * (palette().colors.length - 1));
+    this.speed = Math.random() * 1.5 + 0.5;
+    this.turnRate = Math.random() * 0.02 + 0.005;
+    this.angle = Math.random() * Math.PI * 2;
+    this.noiseOffX = Math.random() * 1000;
+    this.noiseOffY = Math.random() * 1000;
+    this.history = [];
+    this.maxHistory = burst ? 5 : 20;
   }
-  
-  reset() {
-    this.x = Math.random() * W;
-    this.y = Math.random() * H;
-    this.prevX = this.x;
-    this.prevY = this.y;
-    this.speed = 0.5 + Math.random() * 2.5;
-    this.life = 0;
-    this.maxLife = 200 + Math.random() * 400;
-    const c = palette.colors[Math.floor(Math.random() * palette.colors.length)];
-    this.r = c[0]; this.g = c[1]; this.b = c[2];
-    this.size = 0.5 + Math.random() * 1.5;
-  }
-  
-  update(time) {
-    this.prevX = this.x;
-    this.prevY = this.y;
-    
+  update(time, mouse) {
+    if (this.burst) {
+      this.x += this.vx;
+      this.y += this.vy;
+      this.vx *= 0.97;
+      this.vy *= 0.97;
+      this.life -= this.decay;
+      return this.life > 0;
+    }
+    // Flow field angle
     const scale = 0.003;
-    const n1 = noise.noise3D(this.x * scale, this.y * scale, time);
-    const n2 = noise.noise3D(this.x * scale + 100, this.y * scale + 100, time);
-    const angle = n1 * Math.PI * 4;
-    const force = n2 * this.speed;
-    
-    this.x += Math.cos(angle) * force;
-    this.y += Math.sin(angle) * force;
-    
-    // Mouse disturbance
+    const n = fbm(this.x * scale + this.noiseOffX + time * 0.0001,
+                  this.y * scale + this.noiseOffY + time * 0.0001, 4);
+    let targetAngle = n * Math.PI * 4;
+
+    // Mouse influence
     if (mouse.active) {
-      const dx = this.x - mouse.x;
-      const dy = this.y - mouse.y;
+      const dx = mouse.x - this.x, dy = mouse.y - this.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 150) {
-        const strength = (1 - dist / 150) * 3;
-        this.x += (dx / dist) * strength;
-        this.y += (dy / dist) * strength;
+      if (dist < 200) {
+        const influence = 1 - dist / 200;
+        targetAngle += Math.atan2(dy, dx) * influence * 2;
       }
     }
-    
-    this.life++;
-    
-    // Wrap or reset
-    if (this.x < 0 || this.x > W || this.y < 0 || this.y > H || this.life > this.maxLife) {
-      this.reset();
-      this.life = 0;
-    }
+
+    // Smoothly rotate toward target
+    let diff = targetAngle - this.angle;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    this.angle += diff * this.turnRate;
+
+    this.vx += Math.cos(this.angle) * 0.15;
+    this.vy += Math.sin(this.angle) * 0.15;
+    const spd = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    const maxSpd = this.speed * 2;
+    if (spd > maxSpd) { this.vx = (this.vx / spd) * maxSpd; this.vy = (this.vy / spd) * maxSpd; }
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Wrap
+    if (this.x < -10) this.x = W + 10;
+    if (this.x > W + 10) this.x = -10;
+    if (this.y < -10) this.y = H + 10;
+    if (this.y > H + 10) this.y = -10;
+
+    this.history.push({ x: this.x, y: this.y });
+    if (this.history.length > this.maxHistory) this.history.shift();
+
+    // Slowly cycle color
+    this.colorIdx = (this.colorIdx + 0.001) % (palette().colors.length - 1);
+    return true;
   }
-  
-  draw() {
-    const alpha = Math.sin((this.life / this.maxLife) * Math.PI) * 0.6;
-    ctx.strokeStyle = `rgba(${this.r},${this.g},${this.b},${alpha})`;
-    ctx.lineWidth = this.size;
+  draw(ctx) {
+    const col = palette().colors[Math.floor(this.colorIdx)];
+    const alpha = this.burst ? this.life * 0.9 : 0.6;
+
+    if (this.history.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(this.history[0].x, this.history[0].y);
+      for (let i = 1; i < this.history.length; i++) {
+        ctx.lineTo(this.history[i].x, this.history[i].y);
+      }
+      ctx.strokeStyle = col + Math.floor(alpha * 80).toString(16).padStart(2, '0');
+      ctx.lineWidth = this.size * 0.6;
+      ctx.stroke();
+    }
+
+    // Bright head
     ctx.beginPath();
-    ctx.moveTo(this.prevX, this.prevY);
-    ctx.lineTo(this.x, this.y);
-    ctx.stroke();
+    ctx.arc(this.x, this.y, this.size * (this.burst ? this.life : 0.7), 0, Math.PI * 2);
+    ctx.fillStyle = col + Math.floor(alpha * 200).toString(16).padStart(2, '0');
+    ctx.fill();
   }
 }
 
-// Initialize particles
-for (let i = 0; i < NUM_PARTICLES; i++) {
+// --- Mouse ---
+const mouse = { x: 0, y: 0, active: false };
+canvas.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; });
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('click', e => {
+  const count = 60;
+  for (let i = 0; i < count; i++) {
+    if (particles.length < MAX_PARTICLES + 200) {
+      particles.push(new Particle(e.clientX, e.clientY, true));
+    }
+  }
+});
+
+// --- Keyboard ---
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    paletteIdx = (paletteIdx + 1) % palettes.length;
+  }
+});
+
+// --- Init particles ---
+for (let i = 0; i < 1200; i++) {
   particles.push(new Particle());
 }
 
-let time = 0;
-let fadeAlpha = 0.03;
-
-function animate() {
-  // Fade trail
-  ctx.fillStyle = `rgba(10, 10, 15, ${fadeAlpha})`;
+// --- Background fade ---
+function drawBackground() {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.04)';
   ctx.fillRect(0, 0, W, H);
-  
-  time += TIME_SPEED;
-  
-  for (const p of particles) {
-    p.update(time);
-    p.draw();
+}
+
+// --- Animation ---
+let frame = 0;
+const statsEl = document.getElementById('stats');
+const paletteEl = document.getElementById('palette-info');
+
+function animate(time) {
+  frame++;
+  drawBackground();
+
+  particles = particles.filter(p => p.update(time, mouse));
+  particles.forEach(p => p.draw(ctx));
+
+  // Maintain minimum particles
+  while (particles.filter(p => !p.burst).length < 800) {
+    particles.push(new Particle());
   }
-  
+
+  if (frame % 30 === 0) {
+    statsEl.textContent = `particles: ${particles.length}`;
+    paletteEl.textContent = `palette: ${palette().name}`;
+  }
+
   requestAnimationFrame(animate);
 }
 
-// Start with full black
-ctx.fillStyle = '#0a0a0f';
+// --- Seed canvas ---
+ctx.fillStyle = '#000';
 ctx.fillRect(0, 0, W, H);
-animate();
-
-// Cycle palette every 30 seconds
-setInterval(() => {
-  palette = palettes[Math.floor(Math.random() * palettes.length)];
-  // Gradually shift particle colors
-  for (const p of particles) {
-    const c = palette.colors[Math.floor(Math.random() * palette.colors.length)];
-    p.r = c[0]; p.g = c[1]; p.b = c[2];
-  }
-}, 30000);
-
-// Spacebar to clear
-window.addEventListener('keydown', e => {
-  if (e.code === 'Space') {
-    ctx.fillStyle = '#0a0a0f';
-    ctx.fillRect(0, 0, W, H);
-  }
-});
+requestAnimationFrame(animate);
 </script>
 </body>
 </html>
