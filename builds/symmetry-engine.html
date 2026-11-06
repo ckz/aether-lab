@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Symmetry Engine — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #05050a;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #aaa;
+  }
+  canvas { display: block; }
+  .controls {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    background: rgba(5,5,10,0.85);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    padding: 18px 22px;
+    backdrop-filter: blur(10px);
+    min-width: 240px;
+  }
+  .controls h2 {
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #fff;
+    margin-bottom: 14px;
+    font-weight: normal;
+  }
+  .control-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 11px;
+    letter-spacing: 1px;
+  }
+  .control-row label { opacity: 0.6; }
+  .control-row input[type="range"] {
+    width: 110px;
+    accent-color: #a78bfa;
+    cursor: pointer;
+  }
+  .control-row select {
+    background: rgba(255,255,255,0.06);
+    color: #ccc;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 3px;
+    padding: 3px 8px;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .hint {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    letter-spacing: 2px;
+    opacity: 0.25;
+    z-index: 10;
+  }
+  .stats {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    opacity: 0.2;
+    text-align: right;
+    z-index: 10;
+  }
+</style>
+</head>
+<body>
+
+<div class="controls">
+  <h2>✦ Symmetry Engine</h2>
+  <div class="control-row">
+    <label>SYMMETRY</label>
+    <input type="range" id="symmetry" min="3" max="24" value="8">
+  </div>
+  <div class="control-row">
+    <label>DENSITY</label>
+    <input type="range" id="density" min="1" max="5" value="3">
+  </div>
+  <div class="control-row">
+    <label>SPEED</label>
+    <input type="range" id="speed" min="1" max="10" value="4">
+  </div>
+  <div class="control-row">
+    <label>PALETTE</label>
+    <select id="palette">
+      <option value="cosmic">Cosmic</option>
+      <option value="aurora">Aurora</option>
+      <option value="ember">Ember</option>
+      <option value="ocean">Ocean</option>
+      <option value="mono">Mono</option>
+      <option value="rainbow">Rainbow</option>
+    </select>
+  </div>
+  <div class="control-row">
+    <label>TRAIL</label>
+    <input type="range" id="trail" min="1" max="30" value="8">
+  </div>
+</div>
+
+<div class="hint">MOVE MOUSE · CLICK TO BURST · SPACE TO RANDOMIZE</div>
+<div class="stats" id="stats"></div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H, cx, cy;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const palettes = {
+  cosmic:  [[120,80,220],[200,140,255],[80,40,180],[160,100,240],[40,20,100],[220,180,255]],
+  aurora:  [[0,220,130],[0,180,255],[80,255,200],[0,120,180],[120,255,180],[0,80,160]],
+  ember:   [[255,80,20],[255,160,40],[200,40,10],[255,200,60],[180,20,0],[255,120,30]],
+  ocean:   [[0,60,180],[0,140,220],[20,200,200],[0,40,120],[60,180,255],[0,100,160]],
+  mono:    [[200,200,200],[160,160,160],[255,255,255],[120,120,120],[220,220,220],[180,180,180]],
+  rainbow: [[255,60,60],[60,255,60],[60,60,255],[255,255,60],[255,60,255],[60,255,255]]
+};
+
+const state = {
+  symmetry: 8,
+  density: 3,
+  speed: 4,
+  palette: 'cosmic',
+  trail: 8,
+  mouseX: cx,
+  mouseY: cy,
+  time: 0,
+  burst: 0,
+  autoAngle: 0
+};
+
+const sliders = document.getElementById('symmetry');
+const densityEl = document.getElementById('density');
+const speedEl = document.getElementById('speed');
+const paletteEl = document.getElementById('palette');
+const trailEl = document.getElementById('trail');
+
+sliders.addEventListener('input', e => state.symmetry = +e.target.value);
+densityEl.addEventListener('input', e => state.density = +e.target.value);
+speedEl.addEventListener('input', e => state.speed = +e.target.value);
+paletteEl.addEventListener('input', e => state.palette = e.target.value);
+trailEl.addEventListener('input', e => state.trail = +e.target.value);
+
+canvas.addEventListener('mousemove', e => {
+  state.mouseX = e.clientX;
+  state.mouseY = e.clientY;
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  state.mouseX = e.touches[0].clientX;
+  state.mouseY = e.touches[0].clientY;
+}, { passive: false });
+
+canvas.addEventListener('click', () => { state.burst = 1; });
+
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    state.symmetry = 3 + Math.floor(Math.random() * 20);
+    sliders.value = state.symmetry;
+    const pkeys = Object.keys(palettes);
+    state.palette = pkeys[Math.floor(Math.random() * pkeys.length)];
+    paletteEl.value = state.palette;
+    state.density = 1 + Math.floor(Math.random() * 5);
+    densityEl.value = state.density;
+  }
+});
+
+const particles = [];
+
+class Particle {
+  constructor(burst = false) {
+    this.reset(burst);
+  }
+  reset(burst = false) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = burst ? Math.random() * 30 : Math.random() * 120;
+    this.x = Math.cos(angle) * dist;
+    this.y = Math.sin(angle) * dist;
+    this.vx = (Math.random() - 0.5) * 2;
+    this.vy = (Math.random() - 0.5) * 2;
+    this.life = burst ? 0.5 + Math.random() * 1.5 : 2 + Math.random() * 4;
+    this.maxLife = this.life;
+    this.size = 1 + Math.random() * 3;
+    this.hueOff = Math.random();
+    this.palIdx = Math.floor(Math.random() * 6);
+  }
+  update(dt) {
+    const dx = state.mouseX - cx;
+    const dy = state.mouseY - cy;
+    const mdx = this.x - dx;
+    const mdy = this.y - dy;
+    const mDist = Math.sqrt(mdx * mdx + mdy * mdy) + 1;
+    const force = 800 / (mDist * mDist + 100);
+    this.vx += (mdx / mDist) * force * dt * 0.3;
+    this.vy += (mdy / mDist) * force * dt * 0.3;
+
+    const t = state.time * 0.0005 * state.speed;
+    const nx = Math.sin(this.y * 0.008 + t) * Math.cos(this.x * 0.006 + t * 0.7);
+    const ny = Math.cos(this.x * 0.007 + t * 0.8) * Math.sin(this.y * 0.009 + t * 0.6);
+    this.vx += nx * dt * 0.4;
+    this.vy += ny * dt * 0.4;
+
+    this.vx *= 0.985;
+    this.vy *= 0.985;
+    this.x += this.vx * dt * 60;
+    this.y += this.vy * dt * 60;
+    this.life -= dt;
+
+    if (this.life <= 0 || Math.abs(this.x) > W || Math.abs(this.y) > H) {
+      this.reset(state.burst > 0.5);
+    }
+  }
+}
+
+for (let i = 0; i < 300; i++) {
+  particles.push(new Particle());
+}
+
+function getColor(particle, alpha) {
+  const pal = palettes[state.palette];
+  const c = pal[particle.palIdx % pal.length];
+  const lifeRatio = particle.life / particle.maxLife;
+  const a = alpha * lifeRatio;
+  return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+}
+
+function draw() {
+  const alpha = state.trail / 80;
+  ctx.fillStyle = `rgba(5,5,10,${alpha})`;
+  ctx.fillRect(0, 0, W, H);
+
+  const sym = state.symmetry;
+  const step = (Math.PI * 2) / sym;
+
+  ctx.globalCompositeOperation = 'lighter';
+
+  for (const p of particles) {
+    const px = cx + p.x;
+    const py = cy + p.y;
+
+    for (let s = 0; s < sym; s++) {
+      const angle = step * s + state.autoAngle;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const rx = cx + (p.x * cos - p.y * sin);
+      const ry = cy + (p.x * sin + p.y * cos);
+      const rxm = cx + (p.x * cos + p.y * sin);
+      const rym = cy + (p.x * sin - p.y * cos);
+
+      const col = getColor(p, 0.7);
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(rx, ry, p.size, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = getColor(p, 0.35);
+      ctx.beginPath();
+      ctx.arc(rxm, rym, p.size * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+let last = performance.now();
+let frames = 0, fps = 0, lastFpsUpdate = 0;
+
+function loop(now) {
+  let dt = (now - last) / 1000;
+  last = now;
+  if (dt > 0.1) dt = 0.1;
+
+  frames++;
+  if (now - lastFpsUpdate > 1000) {
+    fps = frames;
+    frames = 0;
+    lastFpsUpdate = now;
+  }
+
+  state.time += dt * 1000;
+  state.autoAngle += dt * 0.1 * (state.speed / 4);
+
+  if (state.burst > 0) {
+    for (let i = 0; i < 40; i++) {
+      const p = new Particle(true);
+      p.vx *= 2;
+      p.vy *= 2;
+      particles.push(p);
+    }
+    state.burst = Math.max(0, state.burst - dt * 2);
+  }
+
+  while (particles.length > 500) particles.shift();
+
+  const count = state.density * 60;
+  while (particles.length < count) {
+    particles.push(new Particle());
+  }
+  while (particles.length > count + 50) particles.shift();
+
+  for (const p of particles) p.update(dt);
+
+  draw();
+
+  document.getElementById('stats').textContent =
+    `FPS ${fps}\nPARTICLES ${particles.length}\nSYMMETRY ${sym}`;
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
