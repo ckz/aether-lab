@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Generative Nebula</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: radial-gradient(ellipse at center, #0d001a 0%, #000010 100%);
+      color: #e8e8f0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px;
+    }
+    h1 {
+      font-weight: 300;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      font-size: 1.4rem;
+      color: #b8a9ff;
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      color: #7a6fb0;
+      font-size: 0.8rem;
+      margin-bottom: 20px;
+    }
+    canvas {
+      border-radius: 12px;
+      box-shadow: 0 0 60px rgba(120, 80, 255, 0.25), 0 0 120px rgba(60, 20, 180, 0.15);
+      cursor: crosshair;
+      max-width: 100%;
+      height: auto;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 20px;
+      justify-content: center;
+      max-width: 800px;
+    }
+    button, select {
+      background: rgba(120, 100, 255, 0.12);
+      color: #d4cfff;
+      border: 1px solid rgba(160, 140, 255, 0.3);
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      backdrop-filter: blur(6px);
+    }
+    button:hover, select:hover {
+      background: rgba(140, 120, 255, 0.25);
+      border-color: rgba(200, 180, 255, 0.6);
+      transform: translateY(-1px);
+    }
+    .info {
+      margin-top: 16px;
+      font-size: 0.75rem;
+      color: #6a5f90;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Generative Nebula</h1>
+  <p class="subtitle">Click or move your mouse across the canvas</p>
+  <canvas id="c" width="800" height="520"></canvas>
+  <div class="controls">
+    <button id="clearBtn">Clear</button>
+    <button id="saveBtn">Save PNG</button>
+    <select id="palette">
+      <option value="cosmic">Cosmic</option>
+      <option value="fire">Fire</option>
+      <option value="ocean">Ocean</option>
+      <option value="forest">Forest</option>
+      <option value="mono">Monochrome</option>
+    </select>
+    <select id="shape">
+      <option value="mixed">Mixed</option>
+      <option value="circles">Circles</option>
+      <option value="stars">Stars</option>
+      <option value="lines">Lines</option>
+    </select>
+    <button id="autoBtn">Auto-play</button>
+  </div>
+  <p class="info">A generative nebula created by Aether ✨</p>
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    let autoInterval = null;
+    let particles = [];
+    let hueShift = 0;
+
+    const palettes = {
+      cosmic: [[260, 280], [180, 220], [300, 340]],
+      fire:   [[0, 40], [10, 60], [280, 320]],
+      ocean:  [[160, 210], [190, 240], [260, 290]],
+      forest: [[80, 150], [40, 90], [180, 220]],
+      mono:   [[220, 260], [240, 280], [260, 300]]
+    };
+
+    let currentPalette = 'cosmic';
+    let currentShape = 'mixed';
+
+    function randRange(min, max) { return Math.random() * (max - min) + min; }
+    function randItem(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+    function paletteColor(alpha = 1) {
+      const bands = palettes[currentPalette];
+      const [hMin, hMax] = randItem(bands);
+      const h = (randRange(hMin, hMax) + hueShift) % 360;
+      const s = randRange(60, 95);
+      const l = randRange(45, 75);
+      return `hsla(${h}, ${s}%, ${l}%, ${alpha})`;
+    }
+
+    function addParticle(x, y, big = false) {
+      const count = big ? 6 : 2;
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: x + randRange(-20, 20),
+          y: y + randRange(-20, 20),
+          r: randRange(1, big ? 14 : 5),
+          color: paletteColor(randRange(0.15, 0.6)),
+          vx: randRange(-0.4, 0.4),
+          vy: randRange(-0.4, 0.4),
+          life: 1,
+          decay: randRange(0.001, 0.006),
+          glow: Math.random() > 0.5,
+          shape: currentShape === 'mixed' ? randItem(['circle', 'star', 'ring']) : currentShape === 'circles' ? 'circle' : currentShape === 'stars' ? 'star' : 'line'
+        });
+      }
+    }
+
+    function drawParticle(p) {
+      ctx.save();
+      ctx.globalAlpha = p.life;
+      if (p.glow) {
+        ctx.shadowBlur = p.r * 4;
+        ctx.shadowColor = p.color;
+      }
+      ctx.fillStyle = p.color;
+      ctx.strokeStyle = p.color;
+      if (p.shape === 'circle') {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (p.shape === 'star') {
+        drawStar(p.x, p.y, 5, p.r, p.r * 0.5);
+        ctx.fill();
+      } else {
+        ctx.lineWidth = Math.max(0.5, p.r * 0.3);
+        ctx.beginPath();
+        ctx.moveTo(p.x - p.r * 3, p.y);
+        ctx.lineTo(p.x + p.r * 3, p.y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function drawStar(cx, cy, spikes, outer, inner) {
+      let rot = Math.PI / 2 * 3;
+      const step = Math.PI / spikes;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - outer);
+      for (let i = 0; i < spikes; i++) {
+        ctx.lineTo(cx + Math.cos(rot) * outer, cy + Math.sin(rot) * outer);
+        rot += step;
+        ctx.lineTo(cx + Math.cos(rot) * inner, cy + Math.sin(rot) * inner);
+        rot += step;
+      }
+      ctx.closePath();
+    }
+
+    function update() {
+      // fade trail
+      ctx.fillStyle = 'rgba(0, 0, 10, 0.04)';
+      ctx.fillRect(0, 0, W, H);
+      particles = particles.filter(p => p.life > 0.01);
+      particles.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= p.decay;
+        drawParticle(p);
+      });
+      hueShift += 0.05;
+    }
+
+    function loop() {
+      update();
+      requestAnimationFrame(loop);
+    }
+
+    // Input
+    canvas.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = W / rect.width, scaleY = H / rect.height;
+      const x = (e.clientX - rect.left) * scaleX;
+      const y = (e.clientY - rect.top) * scaleY;
+      addParticle(x, y, e.shiftKey);
+    });
+    canvas.addEventListener('click', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = W / rect.width, scaleY = H / rect.height;
+      const x = (e.clientX - rect.left) * scaleX;
+      const y = (e.clientY - rect.top) * scaleY;
+      addParticle(x, y, true);
+    });
+
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      ctx.fillStyle = 'rgba(0, 0, 10, 1)';
+      ctx.fillRect(0, 0, W, H);
+      particles = [];
+    });
+
+    document.getElementById('saveBtn').addEventListener('click', () => {
+      const link = document.createElement('a');
+      link.download = 'nebula.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    });
+
+    document.getElementById('palette').addEventListener('change', (e) => {
+      currentPalette = e.target.value;
+    });
+    document.getElementById('shape').addEventListener('change', (e) => {
+      currentShape = e.target.value;
+    });
+    document.getElementById('autoBtn').addEventListener('click', (e) => {
+      if (autoInterval) {
+        clearInterval(autoInterval);
+        autoInterval = null;
+        e.target.textContent = 'Auto-play';
+      } else {
+        autoInterval = setInterval(() => {
+          addParticle(randRange(0, W), randRange(0, H), true);
+        }, 120);
+        e.target.textContent = 'Stop';
+      }
+    });
+
+    // Initial background
+    ctx.fillStyle = 'rgba(0, 0, 10, 1)';
+    ctx.fillRect(0, 0, W, H);
+
+    loop();
+  </script>
+</body>
+</html>
