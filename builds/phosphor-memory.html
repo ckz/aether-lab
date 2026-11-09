@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phosphor Memory</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    cursor: crosshair;
+    font-family: 'Courier New', monospace;
+  }
+  canvas { display: block; }
+  .hud {
+    position: fixed;
+    top: 16px;
+    left: 20px;
+    color: rgba(100, 255, 180, 0.6);
+    font-size: 11px;
+    letter-spacing: 2px;
+    pointer-events: none;
+    z-index: 10;
+    text-shadow: 0 0 8px rgba(100, 255, 180, 0.4);
+  }
+  .hud .title {
+    font-size: 13px;
+    color: rgba(100, 255, 180, 0.85);
+    margin-bottom: 6px;
+    letter-spacing: 4px;
+  }
+  .controls {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 12px;
+    z-index: 10;
+  }
+  .controls button {
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(100, 255, 180, 0.3);
+    color: rgba(100, 255, 180, 0.7);
+    padding: 8px 16px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-transform: uppercase;
+  }
+  .controls button:hover {
+    background: rgba(100, 255, 180, 0.1);
+    border-color: rgba(100, 255, 180, 0.6);
+    color: rgba(100, 255, 180, 0.95);
+    box-shadow: 0 0 20px rgba(100, 255, 180, 0.2);
+  }
+  .legend {
+    position: fixed;
+    top: 16px;
+    right: 20px;
+    color: rgba(100, 255, 180, 0.4);
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-align: right;
+    pointer-events: none;
+    z-index: 10;
+    line-height: 1.8;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud">
+  <div class="title">PHOSPHOR MEMORY</div>
+  <div id="stats">ENTITIES: 0 | NODES: 0</div>
+</div>
+<div class="legend">
+  CLICK — plant memory<br>
+  SPACE — new palette<br>
+  C — clear memories<br>
+  G — toggle gravity
+</div>
+<div class="controls">
+  <button onclick="clearMemories()">Clear</button>
+  <button onclick="nextPalette()">Palette</button>
+  <button onclick="toggleGravity()">Gravity</button>
+  <button onclick="burst()">Burst</button>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const PALETTES = [
+  { name: 'PHOSPHOR GREEN', bg: '#000a02', colors: ['#00ff88', '#00cc66', '#33ffaa', '#00ff44', '#88ffcc', '#00ff66'] },
+  { name: 'AMBER CRT',     bg: '#0a0800', colors: ['#ffaa00', '#ff8800', '#ffcc44', '#ff6600', '#ffdd88', '#ffbb33'] },
+  { name: 'CYAN AQUA',     bg: '#000a0a', colors: ['#00ccff', '#00aaff', '#44ddff', '#0088cc', '#88eeff', '#00bbee'] },
+  { name: 'PLASMA WHITE',  bg: '#050508', colors: ['#ffffff', '#ccddff', '#aaccff', '#ffffff', '#ddeeff', '#bbddff'] },
+  { name: 'VIOLET GRID',   bg: '#08000f', colors: ['#aa44ff', '#cc66ff', '#8833dd', '#dd88ff', '#bb55ff', '#9944ee'] },
+  { name: 'SOLAR FLARE',   bg: '#0a0500', colors: ['#ff4400', '#ff6600', '#ffaa00', '#ff2200', '#ff8800', '#ffcc00'] },
+];
+let paletteIdx = 0;
+let palette = PALETTES[0];
+let gravityOn = true;
+
+let mouse = { x: W / 2, y: H / 2, active: false };
+let particles = [];
+let memories = [];
+let connections = [];
+
+const MAX_PARTICLES = 400;
+const MAX_MEMORIES = 25;
+const CONNECTION_DIST = 160;
+const MEMORY_LIFESPAN = 1200; // frames
+
+// Particle
+class Particle {
+  constructor(x, y, color) {
+    this.x = x || Math.random() * W;
+    this.y = y || Math.random() * H;
+    this.vx = (Math.random() - 0.5) * 1.2;
+    this.vy = (Math.random() - 0.5) * 1.2;
+    this.life = 1;
+    this.decay = 0.0008 + Math.random() * 0.002;
+    this.trail = [];
+    this.maxTrail = 12 + Math.floor(Math.random() * 20);
+    this.color = color || palette.colors[Math.floor(Math.random() * palette.colors.length)];
+    this.size = 0.6 + Math.random() * 1.4;
+    this.phase = Math.random() * Math.PI * 2;
+  }
+  update() {
+    this.trail.push({ x: this.x, y: this.y });
+    if (this.trail.length > this.maxTrail) this.trail.shift();
+
+    // drift toward mouse slightly
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const d = Math.hypot(dx, dy);
+      if (d < 250 && d > 1) {
+        const f = 0.015 / (d * 0.01 + 1);
+        this.vx += dx / d * f;
+        this.vy += dy / d * f;
+      }
+    }
+
+    // gravity toward nearest memory
+    if (gravityOn && memories.length > 0) {
+      let nearest = null, nd = Infinity;
+      for (const m of memories) {
+        const d = Math.hypot(m.x - this.x, m.y - this.y);
+        if (d < nd) { nd = d; nearest = m; }
+      }
+      if (nearest && nd < 300 && nd > 5) {
+        const f = 0.03 / (nd * 0.005 + 1);
+        this.vx += (nearest.x - this.x) / nd * f;
+        this.vy += (nearest.y - this.y) / nd * f;
+      }
+    }
+
+    // gentle curl noise-ish drift
+    const t = performance.now() * 0.001;
+    this.vx += Math.sin(this.y * 0.008 + t + this.phase) * 0.04;
+    this.vy += Math.cos(this.x * 0.008 + t + this.phase) * 0.04;
+
+    // damping
+    this.vx *= 0.985;
+    this.vy *= 0.985;
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // wrap
+    if (this.x < -20) this.x = W + 20;
+    if (this.x > W + 20) this.x = -20;
+    if (this.y < -20) this.y = H + 20;
+    if (this.y > H + 20) this.y = -20;
+
+    this.life -= this.decay;
+  }
+  draw() {
+    const alpha = this.life * 0.9;
+    // trail
+    if (this.trail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(this.trail[0].x, this.trail[0].y);
+      for (let i = 1; i < this.trail.length; i++) {
+        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+      }
+      ctx.strokeStyle = this.color + Math.floor(alpha * 40).toString(16).padStart(2, '0');
+      ctx.lineWidth = this.size * 0.5;
+      ctx.stroke();
+    }
+    // head glow
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = this.color + Math.floor(alpha * 200).toString(16).padStart(2, '0');
+    ctx.fill();
+    // phosphor bloom
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * 3, 0, Math.PI * 2);
+    ctx.fillStyle = this.color + Math.floor(alpha * 25).toString(16).padStart(2, '0');
+    ctx.fill();
+  }
+}
+
+// Memory Node
+class Memory {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.birth = frame;
+    this.life = 1;
+    this.rings = [];
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    this.color = palette.colors[Math.floor(Math.random() * palette.colors.length)];
+    this.size = 3 + Math.random() * 4;
+    for (let i = 0; i < 3; i++) {
+      this.rings.push({ r: 0, maxR: 60 + Math.random() * 80, speed: 0.3 + Math.random() * 0.5 });
+    }
+  }
+  update() {
+    const age = frame - this.birth;
+    this.life = Math.max(0, 1 - age / MEMORY_LIFESPAN);
+    this.pulsePhase += 0.03;
+    for (const ring of this.rings) {
+      ring.r += ring.speed;
+      if (ring.r > ring.maxR) ring.r = 0;
+    }
+  }
+  draw() {
+    const a = this.life;
+    // outer rings
+    for (const ring of this.rings) {
+      const ra = a * (1 - ring.r / ring.maxR) * 0.3;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, ring.r, 0, Math.PI * 2);
+      ctx.strokeStyle = this.color + Math.floor(ra * 180).toString(16).padStart(2, '0');
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    // core glow
+    const pulse = 0.8 + Math.sin(this.pulsePhase) * 0.2;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * pulse, 0, Math.PI * 2);
+    ctx.fillStyle = this.color + Math.floor(a * 220).toString(16).padStart(2, '0');
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * 5 * pulse, 0, Math.PI * 2);
+    ctx.fillStyle = this.color + Math.floor(a * 30).toString(16).padStart(2, '0');
+    ctx.fill();
+  }
+}
+
+let frame = 0;
+
+// Init ambient particles
+for (let i = 0; i < 200; i++) {
+  particles.push(new Particle());
+}
+
+// Mouse
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('click', e => {
+  // Plant memory
+  if (memories.length < MAX_MEMORIES) {
+    memories.push(new Memory(e.clientX, e.clientY));
+  }
+  // Burst particles at click
+  for (let i = 0; i < 30; i++) {
+    const p = new Particle(e.clientX, e.clientY);
+    const ang = Math.random() * Math.PI * 2;
+    const spd = 2 + Math.random() * 5;
+    p.vx = Math.cos(ang) * spd;
+    p.vy = Math.sin(ang) * spd;
+    p.color = palette.colors[Math.floor(Math.random() * palette.colors.length)];
+    particles.push(p);
+  }
+  // Prune
+  while (particles.length > MAX_PARTICLES + 100) particles.shift();
+});
+
+// Keyboard
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); nextPalette(); }
+  if (e.code === 'KeyC') clearMemories();
+  if (e.code === 'KeyG') toggleGravity();
+  if (e.code === 'KeyB') burst();
+});
+
+function clearMemories() {
+  memories = [];
+}
+function nextPalette() {
+  paletteIdx = (paletteIdx + 1) % PALETTES.length;
+  palette = PALETTES[paletteIdx];
+}
+function toggleGravity() {
+  gravityOn = !gravityOn;
+}
+function burst() {
+  const cx = W / 2 + (Math.random() - 0.5) * W * 0.5;
+  const cy = H / 2 + (Math.random() - 0.5) * H * 0.5;
+  for (let i = 0; i < 80; i++) {
+    const p = new Particle(cx, cy);
+    const ang = Math.random() * Math.PI * 2;
+    const spd = 1 + Math.random() * 6;
+    p.vx = Math.cos(ang) * spd;
+    p.vy = Math.sin(ang) * spd;
+    p.color = palette.colors[Math.floor(Math.random() * palette.colors.length)];
+    particles.push(p);
+  }
+  while (particles.length > MAX_PARTICLES + 150) particles.shift();
+}
+
+// Draw connections between memories and nearby particles
+function drawConnections() {
+  for (const m of memories) {
+    for (const p of particles) {
+      const d = Math.hypot(m.x - p.x, m.y - p.y);
+      if (d < CONNECTION_DIST) {
+        const a = m.life * (1 - d / CONNECTION_DIST) * 0.25;
+        ctx.beginPath();
+        ctx.moveTo(m.x, m.y);
+        ctx.lineTo(p.x, p.y);
+        ctx.strokeStyle = m.color + Math.floor(a * 200).toString(16).padStart(2, '0');
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+    }
+  }
+  // memory-memory connections
+  for (let i = 0; i < memories.length; i++) {
+    for (let j = i + 1; j < memories.length; j++) {
+      const d = Math.hypot(memories[i].x - memories[j].x, memories[i].y - memories[j].y);
+      if (d < 350) {
+        const a = Math.min(memories[i].life, memories[j].life) * (1 - d / 350) * 0.4;
+        ctx.beginPath();
+        ctx.moveTo(memories[i].x, memories[i].y);
+        ctx.lineTo(memories[j].x, memories[j].y);
+        ctx.strokeStyle = memories[i].color + Math.floor(a * 180).toString(16).padStart(2, '0');
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+// CRT scanline effect overlay
+function drawScanlines() {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.03)';
+  for (let y = 0; y < H; y += 3) {
+    ctx.fillRect(0, y, W, 1);
+  }
+}
+
+// Ambient spawn
+let spawnTimer = 0;
+
+function loop() {
+  frame++;
+
+  // Fade background (phosphor persistence)
+  ctx.fillStyle = palette.bg + 'f0';
+  ctx.fillRect(0, 0, W, H);
+
+  // Spawn ambient
+  spawnTimer++;
+  if (spawnTimer > 8 && particles.length < MAX_PARTICLES) {
+    particles.push(new Particle());
+    spawnTimer = 0;
+  }
+
+  // Update & draw connections
+  drawConnections();
+
+  // Update & draw memories
+  memories = memories.filter(m => m.life > 0);
+  for (const m of memories) { m.update(); m.draw(); }
+
+  // Update & draw particles
+  particles = particles.filter(p => p.life > 0);
+  for (const p of particles) { p.update(); p.draw(); }
+
+  // Maintain minimum ambient
+  while (particles.length < 150) {
+    particles.push(new Particle());
+  }
+
+  // Subtle scanlines
+  if (frame % 2 === 0) drawScanlines();
+
+  // HUD
+  document.getElementById('stats').textContent =
+    `ENTITIES: ${particles.length} | NODES: ${memories.length} | PALETTE: ${palette.name}`;
+
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
