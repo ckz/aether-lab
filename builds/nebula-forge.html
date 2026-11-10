@@ -1,214 +1,386 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Aether's Nebula Forge</title>
 <style>
-  html,body{margin:0;height:100%;background:#05060f;color:#d8deff;font-family:system-ui,sans-serif;overflow:hidden}
-  #wrap{position:relative;width:100vw;height:100vh}
-  canvas{display:block;width:100%;height:100%}
-  .hud{position:absolute;left:16px;top:16px;pointer-events:none;text-shadow:0 1px 4px #000}
-  h1{margin:0;font-size:18px;letter-spacing:.15em;text-transform:uppercase;color:#a7b6ff}
-  p{margin:6px 0 0;font-size:12px;opacity:.8;max-width:52ch}
-  .controls{position:absolute;right:16px;bottom:16px;display:flex;gap:8px;pointer-events:auto}
-  button{background:rgba(255,255,255,.07);color:#d8deff;border:1px solid rgba(255,255,255,.14);padding:8px 12px;border-radius:999px;backdrop-filter:blur(6px);cursor:pointer;font-size:12px}
-  button:hover{background:rgba(255,255,255,.14)}
-  .toast{position:absolute;left:50%;top:18px;transform:translateX(-50%);background:rgba(20,22,40,.65);border:1px solid rgba(255,255,255,.1);backdrop-filter:blur(10px);padding:8px 14px;border-radius:999px;opacity:0;transition:opacity .4s;pointer-events:none}
-  .toast.show{opacity:1}
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(ellipse at center, #0a0a1a 0%, #000010 100%);
+    min-height: 100vh;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    color: #c8d6e5;
+    overflow-x: hidden;
+  }
+  header {
+    text-align: center;
+    padding: 24px 16px 8px;
+  }
+  header h1 {
+    font-size: 2rem;
+    background: linear-gradient(90deg, #a29bfe, #74b9ff, #ffeaa7);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: 2px;
+  }
+  header p {
+    font-size: 0.9rem;
+    opacity: 0.7;
+    margin-top: 6px;
+  }
+  #canvas-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 1100px;
+    margin: 12px auto;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 0 40px rgba(116, 185, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    cursor: crosshair;
+    background: #000010;
+  }
+  .controls {
+    max-width: 1100px;
+    margin: 16px auto;
+    padding: 0 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+  }
+  .panel {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 14px 16px;
+    backdrop-filter: blur(6px);
+  }
+  .panel h3 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: #74b9ff;
+    margin-bottom: 10px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 8px 0;
+    font-size: 0.82rem;
+  }
+  input[type=range] { flex: 1; margin: 0 10px; accent-color: #a29bfe; }
+  .val { width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
+  .palette {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  .swatch {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform 0.15s;
+  }
+  .swatch:hover { transform: scale(1.15); }
+  .swatch.active { border-color: #fff; box-shadow: 0 0 10px rgba(255,255,255,0.4); }
+  .buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  button {
+    background: rgba(162, 155, 254, 0.15);
+    color: #c8d6e5;
+    border: 1px solid rgba(162, 155, 254, 0.3);
+    padding: 7px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: all 0.2s;
+  }
+  button:hover { background: rgba(162, 155, 254, 0.3); }
+  .stats {
+    position: absolute;
+    top: 10px;
+    left: 14px;
+    font-size: 0.72rem;
+    opacity: 0.55;
+    pointer-events: none;
+  }
+  .hint {
+    text-align: center;
+    font-size: 0.78rem;
+    opacity: 0.5;
+    margin: 6px 0 22px;
+  }
 </style>
 </head>
 <body>
-<div id="wrap">
-  <canvas id="c"></canvas>
-  <div class="hud">
-    <h1>✦ Nebula Forge</h1>
-    <p>Click or drag to forge stars. They drift, pulse, and occasionally birth fleeting constellations.</p>
-  </div>
-  <div class="controls">
-    <button id="clearBtn">Clear</button>
-    <button id="burstBtn">Burst</button>
-    <button id="themeBtn">Shift Palette</button>
-  </div>
-  <div class="toast" id="toast">Constellation formed</div>
+
+<header>
+  <h1>✦ Aether's Nebula Forge ✦</h1>
+  <p>Click and drag to paint the cosmos. Watch particles dance.</p>
+</header>
+
+<div id="canvas-wrap">
+  <canvas id="nebula"></canvas>
+  <div class="stats" id="stats"></div>
 </div>
 
-<script>
-const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
-let W, H, dpr = Math.min(window.devicePixelRatio || 1, 2);
+<div class="controls">
+  <div class="panel">
+    <h3>Particles</h3>
+    <div class="row">
+      <span>Density</span>
+      <input id="density" type="range" min="1" max="9" value="4">
+      <span class="val" id="densityVal">4</span>
+    </div>
+    <div class="row">
+      <span>Size</span>
+      <input id="size" type="range" min="1" max="12" value="4">
+      <span class="val" id="sizeVal">4</span>
+    </div>
+    <div class="row">
+      <span>Life</span>
+      <input id="life" type="range" min="30" max="300" value="120">
+      <span class="val" id="lifeVal">120</span>
+    </div>
+    <div class="row">
+      <span>Gravity</span>
+      <input id="gravity" type="range" min="-50" max="50" value="0">
+      <span class="val" id="gravityVal">0</span>
+    </div>
+  </div>
 
+  <div class="panel">
+    <h3>Color Palette</h3>
+    <div class="palette" id="palette"></div>
+  </div>
+
+  <div class="panel">
+    <h3>Mode</h3>
+    <div class="buttons">
+      <button id="modePaint">🎨 Paint</button>
+      <button id="modeAttract">🧲 Attract</button>
+      <button id="modeRepel">💥 Repel</button>
+    </div>
+    <div class="buttons" style="margin-top:8px;">
+      <button id="btnBurst">💫 Burst</button>
+      <button id="btnClear">🧹 Clear</button>
+      <button id="btnSave">📸 Save</button>
+    </div>
+  </div>
+</div>
+
+<p class="hint">Tip: Try Attract mode with Gravity down for swirling galaxies. Use Save to download your creation.</p>
+
+<script>
+const canvas = document.getElementById('nebula');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('canvas-wrap');
+const statsEl = document.getElementById('stats');
+
+let W, H, dpr;
 function resize() {
-  W = window.innerWidth;
-  H = window.innerHeight;
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = wrap.clientWidth;
+  H = Math.min(560, window.innerHeight * 0.55);
   canvas.width = W * dpr;
   canvas.height = H * dpr;
-  ctx.setTransform(dpr,0,0,dpr,0,0);
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
-window.addEventListener('resize', resize);
 resize();
+window.addEventListener('resize', resize);
 
-const palettes = [
-  { bg:'#05060f', stars:['#a7b6ff','#ffb6e1','#ffd8a8','#c8e6ff','#ffffff'] },
-  { bg:'#1a0510', stars:['#ff7eb6','#ff758c','#ffaaa5','#ffd2e8','#ffffff'] },
-  { bg:'#021a12', stars:['#7affc8','#a8ffd8','#c8ffe0','#7affdb','#ffffff'] },
-  { bg:'#1a1505', stars:['#ffd27a','#ffb84d','#ffe0a8','#ffd27a','#ffffff'] }
+const PALETTES = [
+  { name: 'Nebula', colors: ['#a29bfe','#74b9ff','#ffeaa7','#fab1a0','#55efc4'] },
+  { name: 'Sunset', colors: ['#ff6b6b','#feca57','#ff9ff3','#f368e0','#ffdd59'] },
+  { name: 'Ocean', colors: ['#00cec9','#0984e3','#81ecec','#74b9ff','#a29bfe'] },
+  { name: 'Ember', colors: ['#ff4500','#ff8c00','#ffd700','#ff6347','#ffa07a'] },
+  { name: 'Forest', colors: ['#00b894','#55efc4','#81ecec','#00cec9','#fdcb6e'] },
+  { name: 'Monochrome', colors: ['#ffffff','#dfe6e9','#b2bec3','#636e72','#2d3436'] },
+  { name: 'Candy', colors: ['#fd79a8','#e84393','#a29bfe','#6c5ce7','#ffeaa7'] },
+  { name: 'Cosmic', colors: ['#2d1b69','#7c3aed','#c084fc','#f0abfc','#fef3c7'] },
 ];
-let palette = palettes[0];
 
-class Star {
-  constructor(x,y){
-    this.x = x ?? Math.random()*W;
-    this.y = y ?? Math.random()*H;
-    this.r = Math.random()*1.6 + 0.4;
-    this.vx = (Math.random()-0.5)*0.15;
-    this.vy = (Math.random()-0.5)*0.15;
-    this.life = 1;
-    this.decay = Math.random()*0.0006 + 0.0003;
-    this.pulse = Math.random()*Math.PI*2;
-    this.color = palette.stars[Math.floor(Math.random()*palette.stars.length)];
-  }
-  tick(){
-    this.x += this.vx;
-    this.y += this.vy;
-    this.pulse += 0.04;
-    this.life -= this.decay;
-    if(this.x < -20) this.x = W+20;
-    if(this.x > W+20) this.x = -20;
-    if(this.y < -20) this.y = H+20;
-    if(this.y > H+20) this.y = -20;
-  }
-  draw(){
-    const a = this.life * (0.55 + Math.sin(this.pulse)*0.45);
-    ctx.globalAlpha = Math.max(0,a);
-    ctx.fillStyle = this.color;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.r, 0, Math.PI*2);
-    ctx.fill();
-    if(this.r > 1.2){
-      ctx.globalAlpha = Math.max(0,a*0.25);
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, this.r*3.2, 0, Math.PI*2);
-      ctx.fill();
-    }
-  }
+let paletteIdx = 0;
+let palette = PALETTES[0].colors;
+const paletteEl = document.getElementById('palette');
+function renderPalette() {
+  paletteEl.innerHTML = '';
+  PALETTES.forEach((p, i) => {
+    const s = document.createElement('div');
+    s.className = 'swatch' + (i === paletteIdx ? ' active' : '');
+    s.style.background = `linear-gradient(135deg, ${p.colors.slice(0,2).join(',')})`;
+    s.title = p.name;
+    s.onclick = () => { paletteIdx = i; palette = p.colors; renderPalette(); };
+    paletteEl.appendChild(s);
+  });
 }
+renderPalette();
 
-let stars = [];
-let dragging = false;
-let last = {x:0,y:0};
-let toastTimer;
+let mode = 'paint';
+document.getElementById('modePaint').onclick = () => mode = 'paint';
+document.getElementById('modeAttract').onclick = () => mode = 'attract';
+document.getElementById('modeRepel').onclick = () => mode = 'repel';
 
-function showToast(msg){
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=>t.classList.remove('show'), 1800);
-}
-
-function addStar(x,y,count=1){
-  for(let i=0;i<count;i++){
-    const jitter = 60;
-    stars.push(new Star(
-      x + (Math.random()-0.5)*jitter,
-      y + (Math.random()-0.5)*jitter
-    ));
-  }
-}
-
-canvas.addEventListener('mousedown', e => { dragging = true; addStar(e.clientX, e.clientY, 4); });
-canvas.addEventListener('mousemove', e => {
-  if(dragging) addStar(e.clientX, e.clientY, 2);
-  last = {x:e.clientX,y:e.clientY};
+const cfg = {
+  density: +document.getElementById('density').value,
+  size: +document.getElementById('size').value,
+  life: +document.getElementById('life').value,
+  gravity: +document.getElementById('gravity').value / 100,
+};
+['density','size','life','gravity'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('input', () => {
+    cfg[id] = +el.value / (id === 'gravity' ? 100 : 1);
+    document.getElementById(id + 'Val').textContent = el.value;
+  });
 });
-canvas.addEventListener('mouseup', () => dragging = false);
+
+let particles = [];
+let mouse = { x: -9999, y: -9999, down: false };
+
+function randomColor() {
+  return palette[Math.floor(Math.random() * palette.length)];
+}
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1,3), 16);
+  const g = parseInt(hex.slice(3,5), 16);
+  const b = parseInt(hex.slice(5,7), 16);
+  return { r, g, b };
+}
+
+function spawn(x, y, count, burst) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = burst ? (Math.random() * 4 + 2) : (Math.random() * 1.2 + 0.2);
+    const c = randomColor();
+    const rgb = hexToRgb(c);
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: cfg.life + (Math.random() - 0.5) * 40,
+      maxLife: cfg.life,
+      size: (Math.random() * cfg.size + 0.5),
+      color: c,
+      r: rgb.r, g: rgb.g, b: rgb.b,
+    });
+  }
+}
+
+canvas.addEventListener('mousedown', e => {
+  mouse.down = true;
+  const r = canvas.getBoundingClientRect();
+  mouse.x = e.clientX - r.left;
+  mouse.y = e.clientY - r.top;
+  spawn(mouse.x, mouse.y, cfg.density * 2);
+});
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  mouse.x = e.clientX - r.left;
+  mouse.y = e.clientY - r.top;
+  if (mouse.down) spawn(mouse.x, mouse.y, cfg.density);
+});
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mouseleave', () => { mouse.down = false; mouse.x = -9999; });
+
 canvas.addEventListener('touchstart', e => {
-  dragging = true;
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
   const t = e.touches[0];
-  addStar(t.clientX, t.clientY, 4);
-}, {passive:true});
+  mouse.x = t.clientX - r.left;
+  mouse.y = t.clientY - r.top;
+  mouse.down = true;
+  spawn(mouse.x, mouse.y, cfg.density * 2);
+}, { passive: false });
 canvas.addEventListener('touchmove', e => {
-  if(dragging){
-    const t = e.touches[0];
-    addStar(t.clientX, t.clientY, 2);
-  }
-}, {passive:true});
-canvas.addEventListener('touchend', () => dragging = false);
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  const t = e.touches[0];
+  mouse.x = t.clientX - r.left;
+  mouse.y = t.clientY - r.top;
+  spawn(mouse.x, mouse.y, cfg.density);
+}, { passive: false });
+canvas.addEventListener('touchend', () => mouse.down = false);
 
-document.getElementById('clearBtn').onclick = () => { stars = []; };
-document.getElementById('burstBtn').onclick = () => {
-  const cx = W/2, cy = H/2;
-  for(let i=0;i<220;i++){
-    const ang = Math.random()*Math.PI*2;
-    const speed = Math.random()*2.6 + 0.4;
-    const s = new Star(cx,cy);
-    s.vx = Math.cos(ang)*speed;
-    s.vy = Math.sin(ang)*speed;
-    s.r = Math.random()*2.2 + 0.5;
-    stars.push(s);
-  }
-  showToast('Starburst forged!');
+document.getElementById('btnClear').onclick = () => {
+  particles = [];
+  ctx.fillStyle = '#000010';
+  ctx.fillRect(0, 0, W, H);
 };
-document.getElementById('themeBtn').onclick = () => {
-  palette = palettes[(palettes.indexOf(palette)+1)%palettes.length];
-  document.body.style.background = palette.bg;
+document.getElementById('btnBurst').onclick = () => {
+  spawn(W / 2, H / 2, 300, true);
+};
+document.getElementById('btnSave').onclick = () => {
+  const link = document.createElement('a');
+  link.download = 'nebula-' + Date.now() + '.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
 };
 
-// ambient background stars
-for(let i=0;i<120;i++) stars.push(new Star());
+function update() {
+  // Fade
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = 'rgba(0, 0, 16, 0.06)';
+  ctx.fillRect(0, 0, W, H);
 
-// constellations
-let constellations = [];
-function maybeConstellation(){
-  if(Math.random() > 0.00025) return;
-  const cx = Math.random()*W;
-  const cy = Math.random()*H;
-  const count = Math.floor(Math.random()*5)+3;
-  const pts = [];
-  for(let i=0;i<count;i++) pts.push({x:cx+(Math.random()-0.5)*220, y:cy+(Math.random()-0.5)*220});
-  constellations.push({pts, age:0, max:600 + Math.random()*400});
-  showToast('Constellation formed');
-}
+  ctx.globalCompositeOperation = 'lighter';
 
-let frame = 0;
-function loop(){
-  ctx.clearRect(0,0,W,H);
-  frame++;
-  stars = stars.filter(s => s.life > 0);
-  for(const s of stars){ s.tick(); s.draw(); }
-  ctx.globalAlpha = 1;
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
 
-  // constellation lines
-  for(let i=constellations.length-1;i>=0;i--){
-    const c = constellations[i];
-    c.age++;
-    const a = c.age < 60 ? c.age/60 : c.age > c.max ? Math.max(0, (c.max-c.age)/120) : 1;
-    ctx.globalAlpha = a*0.35;
-    ctx.strokeStyle = '#a7b6ff';
-    ctx.lineWidth = 0.8;
-    ctx.beginPath();
-    for(let j=0;j<c.pts.length;j++){
-      const p = c.pts[j];
-      if(j===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);
+    if (mouse.down && mouse.x > 0) {
+      const dx = mouse.x - p.x;
+      const dy = mouse.y - p.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) + 1;
+      if (dist < 220) {
+        const f = (mode === 'attract' ? 0.35 : mode === 'repel' ? -0.6 : 0) / dist;
+        p.vx += dx * f;
+        p.vy += dy * f;
+      }
     }
-    ctx.stroke();
-    if(c.age > c.max) constellations.splice(i,1);
+
+    p.vy += cfg.gravity;
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vx *= 0.995;
+    p.vy *= 0.995;
+    p.life--;
+
+    if (p.life <= 0 || p.x < -50 || p.x > W + 50 || p.y < -50 || p.y > H + 50) {
+      particles.splice(i, 1);
+      continue;
+    }
+
+    const alpha = Math.min(1, p.life / (p.maxLife * 0.5));
+    const radius = p.size * alpha;
+    if (radius < 0.1) continue;
+
+    const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, radius);
+    grad.addColorStop(0, `rgba(${p.r},${p.g},${p.b},${alpha})`);
+    grad.addColorStop(1, `rgba(${p.r},${p.g},${p.b},0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+    ctx.fill();
   }
-  ctx.globalAlpha = 1;
 
-  maybeConstellation();
+  // Soft cap
+  if (particles.length > 6000) particles.splice(0, particles.length - 6000);
 
-  // faint radial vignette
-  const g = ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.2,W/2,H/2,Math.max(W,H)*0.75);
-  g.addColorStop(0,'rgba(5,6,15,0)');
-  g.addColorStop(1,'rgba(5,6,15,0.55)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0,0,W,H);
-
-  requestAnimationFrame(loop);
+  statsEl.textContent = `particles: ${particles.length}`;
+  requestAnimationFrame(update);
 }
-loop();
+update();
 </script>
 </body>
 </html>
