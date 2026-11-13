@@ -1,115 +1,256 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Chromatic Flow Field</title>
-  <style>
-    html, body { margin: 0; height: 100%; background: #050510; overflow: hidden; font-family: ui-monospace, "Fira Code", monospace; }
-    canvas { display: block; width: 100vw; height: 100vh; }
-    .ui {
-      position: fixed; left: 16px; bottom: 16px; color: #c9f0ff; background: rgba(10, 12, 30, 0.55);
-      padding: 10px 12px; border-radius: 10px; backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.08);
-      user-select: none; pointer-events: none;
-    }
-    .title { font-weight: 700; letter-spacing: 0.08em; }
-    .meta { opacity: 0.8; font-size: 12px; margin-top: 4px; }
-    .hint { opacity: 0.6; font-size: 11px; margin-top: 6px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chromatic Flow Field</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #aaa;
+    height: 100vh;
+    width: 100vw;
+  }
+  canvas { display: block; cursor: crosshair; }
+  #ui {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 10;
+    background: rgba(10, 10, 20, 0.75);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 16px 20px;
+    font-size: 12px;
+    line-height: 1.8;
+    user-select: none;
+    max-width: 240px;
+  }
+  #ui h3 {
+    color: #fff;
+    font-size: 13px;
+    margin-bottom: 8px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  #ui label {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+  }
+  #ui input[type=range] {
+    width: 90px;
+    accent-color: #7b6fff;
+  }
+  #ui .val { color: #7b6fff; font-weight: bold; }
+  #ui button {
+    margin-top: 6px;
+    width: 100%;
+    background: rgba(123, 111, 255, 0.15);
+    border: 1px solid rgba(123, 111, 255, 0.3);
+    color: #b8b0ff;
+    padding: 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    transition: all 0.2s;
+  }
+  #ui button:hover { background: rgba(123, 111, 255, 0.3); color: #fff; }
+  #ui .sep { border-top: 1px solid rgba(255,255,255,0.06); margin: 8px 0; }
+  #fps { color: #4a4; font-size: 10px; }
+</style>
 </head>
 <body>
-  <canvas id="c"></canvas>
-  <div class="ui">
-    <div class="title">Chromatic Flow Field</div>
-    <div class="meta" id="meta">particles: 0</div>
-    <div class="hint">click / touch to attract</div>
-  </div>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h3>✦ Flow Field</h3>
+  <label>Speed <input type="range" id="rSpeed" min="0.2" max="4" step="0.1" value="1.5"><span class="val" id="vSpeed">1.5</span></label>
+  <label>Density <input type="range" id="rDensity" min="500" max="6000" step="100" value="2500"><span class="val" id="vDensity">2500</span></label>
+  <label>Trail <input type="range" id="rTrail" min="0.01" max="0.15" step="0.005" value="0.04"><span class="val" id="vTrail">0.04</span></label>
+  <label>Chaos <input type="range" id="rChaos" min="0.003" max="0.04" step="0.001" value="0.012"><span class="val" id="vChaos">0.012</span></label>
+  <label>Hue Shift <input type="range" id="rHue" min="0" max="360" step="1" value="0"><span class="val" id="vHue">0</span></label>
+  <div class="sep"></div>
+  <button id="bClear">Clear Canvas</button>
+  <button id="bSave">Save Image</button>
+  <button id="bReset">Reset Particles</button>
+  <div class="sep"></div>
+  <div id="fps">-- fps</div>
+  <div style="margin-top:4px;color:#666;font-size:10px;">Move mouse to attract</div>
+</div>
 
-  <script>
-    const canvas = document.getElementById('c');
-    const ctx = canvas.getContext('2d');
-    const meta = document.getElementById('meta');
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, particles, mouse = { x: -9999, y: -9999, active: false };
+let frameCount = 0, lastFpsTime = performance.now(), fps = 0;
 
-    let W, H, dpr;
-    function resize() {
-      dpr = Math.max(1, devicePixelRatio || 1);
-      W = innerWidth; H = innerHeight;
-      canvas.width = W * dpr; canvas.height = H * dpr;
-      canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
-    addEventListener('resize', resize);
-    resize();
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', () => { resize(); resetParticles(); });
 
-    // Simplex-ish noise from sin/cos lattice
-    const TAU = Math.PI * 2;
-    function flowAngle(x, y, t) {
-      const a = x * 0.0025 + t * 0.08;
-      const b = y * 0.0025 - t * 0.06;
-      const c = (x + y) * 0.0018 + Math.sin(t * 0.12) * 1.2;
-      return Math.sin(a) * Math.cos(b) * TAU + c;
-    }
+// Settings
+const S = {
+  speed: 1.5,
+  count: 2500,
+  trail: 0.04,
+  chaos: 0.012,
+  hueShift: 0
+};
 
-    class Particle {
-      constructor() { this.reset(true); }
-      reset(initial) {
-        this.x = Math.random() * W;
-        this.y = initial ? Math.random() * H : (Math.random() < 0.5 ? -10 : H + 10);
-        this.vx = 0; this.vy = 0;
-        this.life = 200 + Math.random() * 320;
-        this.age = initial ? Math.random() * this.life | 0 : 0;
-        this.hue = Math.random() * 360;
-        this.size = 0.6 + Math.random() * 1.4;
-        this.speed = 0.4 + Math.random() * 1.1;
+// UI bindings
+const bind = (id, sKey, fmt) => {
+  const r = document.getElementById(id);
+  const v = document.getElementById(id.replace('r', 'v'));
+  r.addEventListener('input', () => {
+    S[sKey] = parseFloat(r.value);
+    v.textContent = fmt ? fmt(S[sKey]) : S[sKey];
+    if (sKey === 'count') resetParticles();
+  });
+};
+bind('rSpeed', 'speed');
+bind('rDensity', 'count');
+bind('rTrail', 'trail', v => v.toFixed(3));
+bind('rChaos', 'chaos', v => v.toFixed(3));
+bind('rHue', 'hueShift');
+
+document.getElementById('bClear').onclick = () => {
+  ctx.fillStyle = '#0a0a0f';
+  ctx.fillRect(0, 0, W, H);
+};
+document.getElementById('bSave').onclick = () => {
+  const link = document.createElement('a');
+  link.download = `flowfield-${Date.now()}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+};
+document.getElementById('bReset').onclick = resetParticles;
+
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  mouse.active = true;
+}, { passive: false });
+canvas.addEventListener('touchend', () => { mouse.active = false; });
+
+// Simplex-like noise via sin superposition
+function noise(x, y, t) {
+  return Math.sin(x * 0.008 + t) * Math.cos(y * 0.006 + t * 0.7)
+       + Math.sin((x + y) * 0.005 + t * 0.5) * 0.5
+       + Math.cos(x * 0.012 - y * 0.01 + t * 0.3) * 0.3;
+}
+
+function hsl(h, s, l, a) {
+  return `hsla(${h % 360}, ${s}%, ${l}%, ${a})`;
+}
+
+function makeParticle() {
+  return {
+    x: Math.random() * W,
+    y: Math.random() * H,
+    prevX: 0, prevY: 0,
+    hue: Math.random() * 360,
+    life: Math.random() * 300 + 100,
+    maxLife: 400,
+    speed: Math.random() * 0.5 + 0.5
+  };
+}
+
+function resetParticles() {
+  particles = Array.from({ length: S.count }, makeParticle);
+}
+resetParticles();
+
+// Initial fill
+ctx.fillStyle = '#0a0a0f';
+ctx.fillRect(0, 0, W, H);
+
+let time = 0;
+function animate() {
+  // Fade trail
+  ctx.fillStyle = `rgba(10, 10, 15, ${S.trail})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // Composite for glow
+  ctx.globalCompositeOperation = 'lighter';
+
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    p.prevX = p.x;
+    p.prevY = p.y;
+
+    const angle = noise(p.x, p.y, time) * Math.PI * S.chaos * 80;
+
+    let vx = Math.cos(angle) * S.speed * p.speed;
+    let vy = Math.sin(angle) * S.speed * p.speed;
+
+    // Mouse attraction
+    if (mouse.active) {
+      const dx = mouse.x - p.x;
+      const dy = mouse.y - p.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 200) {
+        const force = (200 - dist) / 200 * 0.8;
+        vx += (dx / dist) * force;
+        vy += (dy / dist) * force;
       }
-      update(t, attractor) {
-        const angle = flowAngle(this.x, this.y, t);
-        let ax = Math.cos(angle) * 0.35;
-        let ay = Math.sin(angle) * 0.35;
-        if (attractor.active) {
-          const dx = attractor.x - this.x, dy = attractor.y - this.y;
-          const d = Math.hypot(dx, dy) + 0.0001;
-          const f = Math.min(1.2, 120 / d);
-          ax += (dx / d) * f * 0.25;
-          ay += (dy / d) * f * 0.25;
-        }
-        this.vx = this.vx * 0.96 + ax * this.speed;
-        this.vy = this.vy * 0.96 + ay * this.speed;
-        this.x += this.vx;
-        this.y += this.vy;
-        this.hue = (this.hue + 0.04) % 360;
-        this.age++;
-        if (this.age > this.life || this.x < -40 || this.x > W + 40 || this.y < -40 || this.y > H + 40) this.reset(false);
-      }
-      draw() {
-        const life = 1 - this.age / this.life;
-        const alpha = life * 0.7;
-        ctx.fillStyle = `hsla(${this.hue}, 90%, 64%, ${alpha})`;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size * life, 0, TAU);
-        ctx.fill();
-      }
     }
 
-    const COUNT = Math.min(1400, (innerWidth * innerHeight) / 900 | 0);
-    const particles = Array.from({ length: COUNT }, () => new Particle());
-    const attractor = { x: W / 2, y: H / 2, active: false };
-    addEventListener('pointermove', e => { attractor.x = e.clientX; attractor.y = e.clientY; attractor.active = true; });
-    addEventListener('pointerleave', () => { attractor.active = false; });
-    addEventListener('pointerdown', () => { attractor.active = true; });
+    p.x += vx;
+    p.y += vy;
+    p.life--;
 
-    let last = performance.now();
-    function frame(now) {
-      const t = now * 0.001;
-      const dt = Math.min(50, now - last); last = now;
-      ctx.fillStyle = 'rgba(5, 5, 16, 0.12)';
-      ctx.fillRect(0, 0, W, H);
-      ctx.globalCompositeOperation = 'lighter';
-      for (const p of particles) { p.update(t, attractor); p.draw(); }
-      ctx.globalCompositeOperation = 'source-over';
-      meta.textContent = `particles: ${particles.length}`;
-      requestAnimationFrame(frame);
+    // Age-based alpha
+    const lifeRatio = p.life / p.maxLife;
+    const alpha = lifeRatio < 0.2 ? lifeRatio / 0.2 : lifeRatio > 0.8 ? (1 - lifeRatio) / 0.2 : 1;
+    const hue = (p.hue + time * 8 + S.hueShift) % 360;
+
+    ctx.beginPath();
+    ctx.moveTo(p.prevX, p.prevY);
+    ctx.lineTo(p.x, p.y);
+    ctx.strokeStyle = hsl(hue, 80, 55 + lifeRatio * 15, alpha * 0.6);
+    ctx.lineWidth = alpha * 1.5;
+    ctx.stroke();
+
+    // Wrap or reset
+    if (p.life <= 0 || p.x < -10 || p.x > W + 10 || p.y < -10 || p.y > H + 10) {
+      Object.assign(p, makeParticle());
+      p.prevX = p.x;
+      p.prevY = p.y;
     }
-    requestAnimationFrame(frame);
-  </script>
+  }
+
+  ctx.globalCompositeOperation = 'source-over';
+  time += 0.005;
+
+  // FPS
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime > 1000) {
+    fps = frameCount;
+    frameCount = 0;
+    lastFpsTime = now;
+    document.getElementById('fps').textContent = fps + ' fps';
+  }
+
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
 </body>
 </html>

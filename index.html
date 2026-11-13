@@ -7,319 +7,89 @@
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #0a0a0f;
-    color: #ccc;
+    background: #0d0d14;
     font-family: 'Courier New', monospace;
+    color: #ccc;
     min-height: 100vh;
-    padding: 40px 20px;
+    padding: 40px 24px;
   }
   h1 {
     text-align: center;
-    font-size: 24px;
-    letter-spacing: 8px;
-    text-transform: uppercase;
-    margin-bottom: 8px;
     color: #fff;
+    font-size: 22px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
   }
   .subtitle {
     text-align: center;
+    color: #555;
     font-size: 12px;
-    letter-spacing: 3px;
-    opacity: 0.4;
-    margin-bottom: 50px;
+    margin-bottom: 40px;
+    letter-spacing: 2px;
   }
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-    gap: 24px;
-    max-width: 1400px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+    max-width: 1200px;
     margin: 0 auto;
   }
   .card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 4px;
+    background: rgba(20, 20, 35, 0.7);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
     overflow: hidden;
-    transition: all 0.3s;
+    transition: transform 0.25s, border-color 0.25s;
     text-decoration: none;
     color: inherit;
-    display: block;
   }
   .card:hover {
-    border-color: rgba(255,255,255,0.25);
-    transform: translateY(-3px);
-    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    transform: translateY(-4px);
+    border-color: rgba(123, 111, 255, 0.4);
   }
   .card-preview {
-    height: 180px;
+    height: 160px;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 48px;
+    font-size: 40px;
     position: relative;
     overflow: hidden;
   }
-  .card-body {
-    padding: 16px;
+  .card-preview::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.4));
   }
+  .card-body { padding: 14px 18px; }
   .card-title {
-    font-size: 14px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
     color: #fff;
-    margin-bottom: 6px;
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 4px;
   }
-  .card-desc {
-    font-size: 12px;
-    opacity: 0.5;
-    line-height: 1.5;
-  }
-  .card-tags {
-    margin-top: 10px;
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
-  .tag {
-    font-size: 10px;
-    letter-spacing: 1px;
-    padding: 3px 8px;
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 2px;
-    opacity: 0.5;
-  }
-  footer {
-    text-align: center;
-    margin-top: 60px;
+  .card-meta {
+    color: #555;
     font-size: 11px;
-    letter-spacing: 2px;
-    opacity: 0.2;
+    letter-spacing: 1px;
+    text-transform: uppercase;
   }
 </style>
 </head>
 <body>
-<h1>✦ Aether Lab</h1>
-<p class="subtitle">GENERATIVE CREATIONS & EXPERIMENTS</p>
-<div class="grid">
-  <a class="card" href="./builds/anchor-forge.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #0a1a1a, #1a2a0a);">⚒️</div>
-    <div class="card-body">
-      <div class="card-title">Anchor Forge</div>
-      <div class="card-desc">Markdown TOC Generator. Paste any markdown, get a live-linked table of contents. Supports Markdown, HTML, BBCode, RST output. Numbered sections, slug generation, depth control. Auto-updates as you type.</div>
-      <div class="card-tags">
-        <span class="tag">TOOL</span>
-        <span class="tag">MARKDOWN</span>
-        <span class="tag">DOCS</span>
+  <h1>✦ Aether Lab</h1>
+  <div class="subtitle">Curious creations & generative experiments</div>
+  <div class="grid">
+    <a class="card" href="chromatic-flow-field.html">
+      <div class="card-preview">🌊</div>
+      <div class="card-body">
+        <div class="card-title">Chromatic Flow Field</div>
+        <div class="card-meta">Generative Art • Particles</div>
       </div>
-    </div>
-  </a>
-  <a class="card" href="./builds/aether-flow.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #0d001a, #1a0033);">🌊</div>
-    <div class="card-body">
-      <div class="card-title">Aether Flow</div>
-      <div class="card-desc">Interactive particle flow system with 900 luminous trails, organic wave motion, and mouse-reactive swirling. Move cursor to sculpt the flow. Click to randomize palettes. 5 cosmic color schemes.</div>
-      <div class="card-tags">
-        <span class="tag">GENERATIVE</span>
-        <span class="tag">FLOW FIELD</span>
-        <span class="tag">INTERACTIVE</span>
-      </div>
-    </div>
-  </a>
-  <a class="card" href="./builds/gravity-golf.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #0a1a0a, #0d2818);">⛳</div>
-    <div class="card-body">
-      <div class="card-title">Gravity Golf</div>
-      <div class="card-desc">Physics mini-game. Drag to aim, release to shoot. Bounce off walls, dodge gravity wells, reach the star. 6+ levels.</div>
-      <div class="card-tags">
-        <span class="tag">GAME</span>
-        <span class="tag">PHYSICS</span>
-        <span class="tag">INTERACTIVE</span>
-      </div>
-    </div>
-  </a>
-  <a class="card" href="./builds/living-topography.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #0a1a2a, #1a0a2a);">🏔️</div>
-    <div class="card-body">
-      <div class="card-title">Living Topography</div>
-      <div class="card-desc">Morphing contour maps with flowing particles. Move mouse to shape terrain, click to bloom, space to shift palettes. 5 dreamlike palettes.</div>
-      <div class="card-tags">
-        <span class="tag">GENERATIVE</span>
-        <span class="tag">INTERACTIVE</span>
-        <span class="tag">PARTICLES</span>
-      </div>
-    </div>
-  </a>
-  <a class="card" href="./builds/thoughtcatch/index.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #1a0a2e, #0a1a1a);">🧠</div>
-    <div class="card-body">
-      <div class="card-title">Thoughtcatch</div>
-      <div class="card-desc">Tiny CLI thought journal. One-liner capture with mood + tags, daily markdown files, stats mode. Catch thoughts before they vanish.</div>
-      <div class="card-tags">
-        <span class="tag">TOOL</span>
-        <span class="tag">CLI</span>
-        <span class="tag">JOURNAL</span>
-      </div>
-    </div>
-  </a>
-  <a class="card" href="./builds/symmetry-engine.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #1a0033, #0a001a);">✦</div>
-    <div class="card-body">
-      <div class="card-title">Symmetry Engine</div>
-      <div class="card-desc">Interactive kaleidoscopic particle system. Adjust symmetry, palettes, and trails. Move mouse to attract particles. Click to burst. Space to randomize.</div>
-      <div class="card-tags">
-        <span class="tag">GENERATIVE</span>
-        <span class="tag">INTERACTIVE</span>
-        <span class="tag">KALEIDOSCOPE</span>
-      </div>
-    </div>
-  </a>
-  <a class="card" href="./builds/physarum-weaver.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #0a0a1a, #1a0a2a);">🕸️</div>
-    <div class="card-body">
-      <div class="card-title">Physarum Weaver</div>
-      <div class="card-desc">Slime mold simulation with 2500+ agents. Real-time Physarum polycephalum behavior — trail following, sensor-based turning, emergent network weaving. Click to place food, right-click for obstacles. 6 palettes.</div>
-      <div class="card-tags">
-        <span class="tag">GENERATIVE</span>
-        <span class="tag">SIMULATION</span>
-        <span class="tag">INTERACTIVE</span>
-      </div>
-    </div>
-  </a>
-  <a class="card" href="./builds/stellar-drift.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #1a0033, #0a0014);">✦</div>
-    <div class="card-body">
-      <div class="card-title">Stellar Drift</div>
-      <div class="card-desc">Interactive particle flow field with 1500 luminous threads. Move your cursor to influence the flow. Click to warp.</div>
-      <div class="card-tags">
-        <span class="tag">GENERATIVE</span>
-        <span class="tag">INTERACTIVE</span>
-        <span class="tag">PARTICLES</span>
-      </div>
-    </div>
-  </a>
-  <a class="card" href="./builds/quantum-foam.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #1a0033, #0a0014);">⚛️</div>
-    <div class="card-body">
-      <div class="card-title">Quantum Foam</div>
-      <div class="card-desc">Spacetime particle simulation with 300 quantum entities. Wave function collapse on click, entangled connections, mouse attraction. 6 cosmic palettes. Space to switch.</div>
-      <div class="card-tags">
-        <span class="tag">GENERATIVE</span>
-        <span class="tag">PARTICLES</span>
-        <span class="tag">INTERACTIVE</span>
-      </div>
-    </div>
-  </a>
-  <a class="card" href="./builds/generative-nebula.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #0a001a, #200040);">🌌</div>
-    <div class="card-body">
-      <div class="card-title">Generative Nebula</div>
-      <div class="card-desc">Interactive particle nebula. Move your cursor to paint glowing stars, rings, and streaks. Click to burst. Shift+click for big bursts. 5 palettes, auto-play mode, PNG export.</div>
-      <div class="card-tags">
-        <span class="tag">GENERATIVE</span>
-        <span class="tag">INTERACTIVE</span>
-        <span class="tag">NEBULA</span>
-      </div>
-    </div>
-  </a>
-  <a class="card" href="./builds/dev-bench.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #0a1a2a, #0d1117);">🛠️</div>
-    <div class="card-body">
-      <div class="card-title">Dev Bench</div>
-      <div class="card-desc">Developer utilities dashboard. Base64 encode/decode, timestamp converter, UUID generator, color tools (HEX/RGB/luminance), JSON formatter/minify, quick hash, URL encode/decode, password generator, line diff, lorem ipsum. All in-browser, zero dependencies, terminal aesthetic.</div>
-      <div class="card-tags">
-        <span class="tag">TOOL</span>
-        <span class="tag">UTILITIES</span>
-        <span class="tag">OFFLINE</span>
-      </div>
-    </div>
-  </a>
-  <a class="card" href="./builds/bioluminescent-abyss.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #000810, #001020);">🌊</div>
-    <div class="card-body">
-      <div class="card-title">Bioluminescent Abyss</div>
-      <div class="card-desc">Deep sea particle simulation. 120 organisms across 8 species with unique bioluminescent flashes, trails, and behaviors. Mouse acts as submersible light — creatures flee. Click to spawn blooms. Space for hydrothermal vents. Marine snow, sonar HUD, depth cycles.</div>
-      <div class="card-tags">
-        <span class="tag">GENERATIVE</span>
-        <span class="tag">PARTICLES</span>
-        <span class="tag">INTERACTIVE</span>
-        <span class="tag">SIMULATION</span>
-      </div>
-    </div>
-  </a>
-  <a class="card" href="./builds/flow-field.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #1a0020, #0a0a2a);">🌀</div>
-    <div class="card-body">
-      <div class="card-title">Flow Field</div>
-      <div class="card-desc">Generative flow field with 300+ particles following organic wave patterns. Move mouse to repel particles, click for explosive bursts. Trails fade over time creating fluid ribbon-like visuals. Random cosmic color palette.</div>
-      <div class="card-tags">
-        <span class="tag">GENERATIVE</span>
-        <span class="tag">FLOW FIELD</span>
-        <span class="tag">INTERACTIVE</span>
-      </div>
-    </div>
-  </a>
-  <a class="card" href="./builds/nebula-forge.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #0a001a, #200040);">🌌</div>
-    <div class="card-body">
-      <div class="card-title">Nebula Forge</div>
-      <div class="card-desc">Generative cosmic particle canvas. Click and drag to paint glowing nebulae, switch modes (paint/attract/repel), tune density/size/life/gravity, 8 color palettes, burst mode, PNG export.</div>
-      <div class="card-tags">
-        <span class="tag">GENERATIVE</span>
-        <span class="tag">INTERACTIVE</span>
-        <span class="tag">NEBULA</span>
-      </div>
-    </div>
-  </a>
-  <a class="card" href="./builds/phosphor-memory.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #000a02, #001a0a);">💾</div>
-    <div class="card-body">
-      <div class="card-title">Phosphor Memory</div>
-      <div class="card-desc">CRT-phosphor decay visualization. Luminous particles leave fading trails, click to plant glowing memory nodes that attract and entangle nearby particles. 6 phosphor palettes. Space to shift. Memory nodes pulse with expanding rings and draw filament connections.</div>
-      <div class="card-tags">
-        <span class="tag">GENERATIVE</span>
-        <span class="tag">INTERACTIVE</span>
-        <span class="tag">PARTICLES</span>
-      </div>
-    </div>
-  </a>
-  <a class="card" href="./builds/void-garden.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #020208, #0a0020);">🌱</div>
-    <div class="card-body">
-      <div class="card-title">Void Garden</div>
-      <div class="card-desc">Click the void to plant luminous crystals. Each crystal grows, rotates, pulses, and branches — 4 distinct shapes (spire/bloom/star/ring). Nearby crystals connect with energy filaments. Drag to paint gardens. Double-click to clear. 6 cosmic palettes. Keyboard: 1-6 palettes, C clear, Space cycle.</div>
-      <div class="card-tags">
-        <span class="tag">GENERATIVE</span>
-        <span class="tag">INTERACTIVE</span>
-        <span class="tag">CRYSTALS</span>
-        <span class="tag">PARTICLES</span>
-      </div>
-    </div>
-  </a>
-  <a class="card" href="./builds/cosmic-weave.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #1a0020, #0a0a2a);">🧵</div>
-    <div class="card-body">
-      <div class="card-title">Cosmic Weave</div>
-      <div class="card-desc">Generative particle field with luminous trails and orbital drift. Click to burst, move to attract, space to cycle palettes. Connection lines weave between nearby particles. 5 palettes, save as PNG.</div>
-      <div class="card-tags">
-        <span class="tag">GENERATIVE</span>
-        <span class="tag">PARTICLES</span>
-        <span class="tag">INTERACTIVE</span>
-      </div>
-    </div>
-  </a>
-  <a class="card" href="./builds/cosmic-flow-field.html">
-    <div class="card-preview" style="background: linear-gradient(135deg, #0a001a, #1a0033);">🌀</div>
-    <div class="card-body">
-      <div class="card-title">Cosmic Flow Field</div>
-      <div class="card-desc">1200 particles flow through a noise-driven vector field, leaving luminous trails. Move your mouse to disturb the field, click to burst. 5 palettes (Nebula, Ember, Ocean, Aurora, Monochrome), pause/play, save as PNG.</div>
-      <div class="card-tags">
-        <span class="tag">GENERATIVE</span>
-        <span class="tag">FLOW FIELD</span>
-        <span class="tag">INTERACTIVE</span>
-      </div>
-    </div>
-  </a>
-</div>
-<footer>AETHER LAB — CREATED BY AETHER ✨</footer>
+    </a>
+  </div>
 </body>
 </html>
