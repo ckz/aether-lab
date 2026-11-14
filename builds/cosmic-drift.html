@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cosmic Drift — Generative Art</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #05050a;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #888;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 20px; left: 20px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #ui h1 {
+    font-size: 14px;
+    font-weight: normal;
+    color: #334;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  #ui p {
+    font-size: 11px;
+    color: #223;
+    letter-spacing: 1px;
+  }
+  #stats {
+    position: fixed;
+    bottom: 20px; left: 20px;
+    font-size: 10px;
+    color: #222;
+    letter-spacing: 2px;
+    z-index: 10;
+  }
+  #hint {
+    position: fixed;
+    bottom: 20px; right: 20px;
+    font-size: 10px;
+    color: #222;
+    letter-spacing: 1px;
+    z-index: 10;
+    text-align: right;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Cosmic Drift</h1>
+  <p>Generative Flow Field — Move mouse to attract particles</p>
+</div>
+<div id="stats"></div>
+<div id="hint">CLICK to burst &nbsp;|&nbsp; SPACE to reset</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+let particles = [];
+let mouse = { x: -9999, y: -9999, active: false };
+let time = 0;
+let frameCount = 0;
+let palette;
+
+const PALETTES = [
+  // Aurora
+  ['#00ffc8', '#7b2fff', '#ff2d95', '#00b4d8', '#ffd166'],
+  // Ember
+  ['#ff4500', '#ff6b35', '#ffa62b', '#ff4444', '#ff8866'],
+  // Deep Ocean
+  ['#0077b6', '#00b4d8', '#90e0ef', '#48cae4', '#023e8a'],
+  // Neon Night
+  ['#ff00ff', '#00ffff', '#ff00aa', '#aa00ff', '#00ff88'],
+  // Monochrome Gold
+  ['#ffd700', '#ffaa00', '#ff8800', '#ffe066', '#ffffff'],
+];
+
+function randomPalette() {
+  return PALETTES[Math.floor(Math.random() * PALETTES.length)];
+}
+
+function noise(x, y, t) {
+  return Math.sin(x * 0.008 + t * 0.3) *
+         Math.cos(y * 0.006 + t * 0.2) +
+         Math.sin((x + y) * 0.004 + t * 0.15) * 0.5 +
+         Math.cos(x * 0.012 - y * 0.01 + t * 0.25) * 0.3;
+}
+
+class Particle {
+  constructor(x, y, burst = false) {
+    this.x = x ?? Math.random() * W;
+    this.y = y ?? Math.random() * H;
+    this.vx = 0;
+    this.vy = 0;
+    this.life = burst ? 80 + Math.random() * 120 : 300 + Math.random() * 500;
+    this.maxLife = this.life;
+    this.size = burst ? 1.5 + Math.random() * 3 : 0.5 + Math.random() * 1.8;
+    this.color = palette[Math.floor(Math.random() * palette.length)];
+    this.history = [];
+    this.maxHistory = burst ? 20 : 8 + Math.floor(Math.random() * 20);
+    this.burst = burst;
+  }
+
+  update() {
+    this.history.push({ x: this.x, y: this.y });
+    if (this.history.length > this.maxHistory) this.history.shift();
+
+    const angle = noise(this.x, this.y, time) * Math.PI * 2;
+    const speed = this.burst ? 2.5 : 1.2;
+    this.vx += Math.cos(angle) * 0.15;
+    this.vy += Math.sin(angle) * 0.15;
+
+    // Mouse attraction
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 250) {
+        const force = (250 - dist) / 250 * 0.08;
+        this.vx += (dx / dist) * force;
+        this.vy += (dy / dist) * force;
+      }
+    }
+
+    // Damping
+    this.vx *= 0.96;
+    this.vy *= 0.96;
+
+    // Speed limit
+    const mag = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    if (mag > speed) {
+      this.vx = (this.vx / mag) * speed;
+      this.vy = (this.vy / mag) * speed;
+    }
+
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life--;
+
+    // Wrap
+    if (this.x < -10) this.x = W + 10;
+    if (this.x > W + 10) this.x = -10;
+    if (this.y < -10) this.y = H + 10;
+    if (this.y > H + 10) this.y = -10;
+  }
+
+  draw() {
+    const alpha = (this.life / this.maxLife);
+    const fade = alpha < 0.3 ? alpha / 0.3 : 1;
+
+    // Trail
+    if (this.history.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(this.history[0].x, this.history[0].y);
+      for (let i = 1; i < this.history.length; i++) {
+        ctx.lineTo(this.history[i].x, this.history[i].y);
+      }
+      ctx.strokeStyle = this.color + Math.floor(fade * alpha * 40).toString(16).padStart(2, '0');
+      ctx.lineWidth = this.size * alpha * 0.5;
+      ctx.stroke();
+    }
+
+    // Head
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * alpha, 0, Math.PI * 2);
+    ctx.fillStyle = this.color + Math.floor(fade * alpha * 180).toString(16).padStart(2, '0');
+    ctx.fill();
+  }
+
+  dead() {
+    return this.life <= 0;
+  }
+}
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+
+function init() {
+  palette = randomPalette();
+  particles = [];
+  const count = Math.min(Math.floor((W * H) / 4000), 1500);
+  for (let i = 0; i < count; i++) {
+    particles.push(new Particle());
+  }
+  time = Math.random() * 100;
+}
+
+function burst(x, y) {
+  const count = 60 + Math.floor(Math.random() * 80);
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * 5;
+    particles.push(new Particle(x + Math.cos(angle) * dist, y + Math.sin(angle) * dist, true));
+  }
+}
+
+function animate() {
+  // Fade trail
+  ctx.fillStyle = 'rgba(5, 5, 10, 0.04)';
+  ctx.fillRect(0, 0, W, H);
+
+  time += 0.003;
+  frameCount++;
+
+  // Update & draw
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update();
+    particles[i].draw();
+    if (particles[i].dead()) particles.splice(i, 1);
+  }
+
+  // Maintain population
+  const targetCount = Math.min(Math.floor((W * H) / 4000), 1500);
+  while (particles.length < targetCount) {
+    particles.push(new Particle());
+  }
+
+  // Slowly shift palette on bursts
+  if (frameCount % 600 === 0 && Math.random() > 0.5) {
+    palette = randomPalette();
+  }
+
+  requestAnimationFrame(animate);
+}
+
+// Events
+window.addEventListener('resize', () => { resize(); });
+window.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+window.addEventListener('mouseleave', () => { mouse.active = false; });
+window.addEventListener('click', e => { burst(e.clientX, e.clientY); });
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    ctx.fillStyle = 'rgba(5, 5, 10, 1)';
+    ctx.fillRect(0, 0, W, H);
+    init();
+  }
+});
+
+resize();
+init();
+animate();
+</script>
+</body>
+</html>
