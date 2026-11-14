@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aether Flow Fields</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #fff;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    background: rgba(10, 10, 15, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 20px;
+    backdrop-filter: blur(10px);
+    min-width: 220px;
+  }
+  #ui h1 {
+    font-size: 14px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #64ffda;
+    margin-bottom: 4px;
+  }
+  #ui p.subtitle {
+    font-size: 10px;
+    color: #666;
+    margin-bottom: 16px;
+    letter-spacing: 1px;
+  }
+  .control-group {
+    margin-bottom: 12px;
+  }
+  .control-group label {
+    display: block;
+    font-size: 10px;
+    color: #888;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .control-group input[type="range"] {
+    width: 100%;
+    accent-color: #64ffda;
+  }
+  .control-group select {
+    width: 100%;
+    background: #1a1a2e;
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.1);
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-family: 'Courier New', monospace;
+  }
+  .btn-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 14px;
+  }
+  button {
+    flex: 1;
+    background: rgba(100, 255, 218, 0.1);
+    color: #64ffda;
+    border: 1px solid rgba(100, 255, 218, 0.3);
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-family: 'Courier New', monospace;
+    transition: all 0.2s;
+  }
+  button:hover {
+    background: rgba(100, 255, 218, 0.2);
+    border-color: #64ffda;
+  }
+  #stats {
+    margin-top: 12px;
+    font-size: 10px;
+    color: #444;
+    line-height: 1.6;
+  }
+  #stats span { color: #64ffda; }
+  .hint {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: rgba(255,255,255,0.15);
+    letter-spacing: 2px;
+    pointer-events: none;
+    transition: opacity 2s;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="ui">
+  <h1>Aether Flow</h1>
+  <p class="subtitle">generative field art</p>
+
+  <div class="control-group">
+    <label>Particles: <span id="particleCountLabel">2000</span></label>
+    <input type="range" id="particleCount" min="500" max="5000" value="2000" step="100">
+  </div>
+
+  <div class="control-group">
+    <label>Speed</label>
+    <input type="range" id="speed" min="1" max="10" value="4">
+  </div>
+
+  <div class="control-group">
+    <label>Trail Length</label>
+    <input type="range" id="trail" min="1" max="20" value="8">
+  </div>
+
+  <div class="control-group">
+    <label>Color Theme</label>
+    <select id="colorTheme">
+      <option value="aurora">Aurora</option>
+      <option value="fire">Ember</option>
+      <option value="ocean">Deep Ocean</option>
+      <option value="neon">Neon Grid</option>
+      <option value="mono">Monochrome</option>
+      <option value="cosmic">Cosmic Dust</option>
+    </select>
+  </div>
+
+  <div class="control-group">
+    <label>Field Pattern</label>
+    <select id="fieldPattern">
+      <option value="perlin">Flow Field</option>
+      <option value="vortex">Vortex</option>
+      <option value="spiral">Galaxy Spiral</option>
+      <option value="waves">Wave Interference</option>
+    </select>
+  </div>
+
+  <div class="btn-row">
+    <button id="clearBtn">Clear</button>
+    <button id="resetBtn">Reset</button>
+  </div>
+
+  <div id="stats">
+    FPS: <span id="fps">0</span><br>
+    Particles: <span id="activeParticles">0</span><br>
+    Mouse: <span id="mousePos">--</span>
+  </div>
+</div>
+
+<div class="hint" id="hint">click &amp; drag to attract particles</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', () => { resize(); initParticles(); });
+
+// --- Simplex-like noise ---
+function noise(x, y, t) {
+  return Math.sin(x * 0.01 + t) * Math.cos(y * 0.01 + t * 0.7) +
+         Math.sin((x + y) * 0.007 + t * 0.5) * 0.5 +
+         Math.cos(x * 0.02 - y * 0.015 + t * 0.3) * 0.3;
+}
+
+// --- Color Themes ---
+const themes = {
+  aurora: (i, n, a) => {
+    const hue = 140 + (i / n) * 120 + a * 30;
+    return `hsla(${hue}, 80%, 60%, ${0.15 + a * 0.3})`;
+  },
+  fire: (i, n, a) => {
+    const hue = 10 + (i / n) * 30 + a * 10;
+    return `hsla(${hue}, 90%, 55%, ${0.15 + a * 0.3})`;
+  },
+  ocean: (i, n, a) => {
+    const hue = 200 + (i / n) * 40 + a * 20;
+    return `hsla(${hue}, 70%, 50%, ${0.15 + a * 0.3})`;
+  },
+  neon: (i, n, a) => {
+    const hue = (i * 137.5) % 360;
+    return `hsla(${hue}, 100%, 60%, ${0.2 + a * 0.4})`;
+  },
+  mono: (i, n, a) => {
+    const l = 50 + (i / n) * 30;
+    return `hsla(0, 0%, ${l}%, ${0.1 + a * 0.3})`;
+  },
+  cosmic: (i, n, a) => {
+    const hue = 260 + (i / n) * 80 + a * 40;
+    return `hsla(${hue}, 85%, 65%, ${0.15 + a * 0.35})`;
+  }
+};
+
+// --- Field patterns ---
+function getAngle(x, y, t, pattern) {
+  switch (pattern) {
+    case 'perlin':
+      return noise(x, y, t) * Math.PI * 2;
+    case 'vortex': {
+      const cx = W / 2, cy = H / 2;
+      const dx = x - cx, dy = y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      return Math.atan2(dy, dx) + Math.PI / 2 + Math.sin(dist * 0.005 - t) * 0.5;
+    }
+    case 'spiral': {
+      const cx = W / 2, cy = H / 2;
+      const dx = x - cx, dy = y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx);
+      return angle + Math.PI * 0.5 + dist * 0.003 + Math.sin(t * 0.5) * 0.3;
+    }
+    case 'waves': {
+      return Math.sin(x * 0.01 + t) * Math.cos(y * 0.012 + t * 0.8) * Math.PI * 2 +
+             Math.sin((x + y) * 0.005 + t * 1.2) * Math.PI;
+    }
+    default:
+      return noise(x, y, t) * Math.PI * 2;
+  }
+}
+
+// --- Particles ---
+let particles = [];
+let config = {
+  count: 2000,
+  speed: 4,
+  trail: 8,
+  theme: 'aurora',
+  pattern: 'perlin'
+};
+
+let mouse = { x: W / 2, y: H / 2, active: false };
+let time = 0;
+
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < config.count; i++) {
+    particles.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      vx: 0, vy: 0,
+      life: Math.random(),
+      maxLife: 200 + Math.random() * 300,
+      colorIndex: Math.random(),
+      size: 0.5 + Math.random() * 1.5
+    });
+  }
+}
+
+function updateParticles() {
+  const colorFn = themes[config.theme] || themes.aurora;
+
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+
+    const angle = getAngle(p.x, p.y, time * 0.01, config.pattern);
+    p.vx += Math.cos(angle) * 0.3;
+    p.vy += Math.sin(angle) * 0.3;
+
+    // Mouse attraction
+    if (mouse.active) {
+      const dx = mouse.x - p.x;
+      const dy = mouse.y - p.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 250) {
+        const force = (250 - dist) / 250 * 0.8;
+        p.vx += (dx / dist) * force;
+        p.vy += (dy / dist) * force;
+      }
+    }
+
+    // Damping
+    p.vx *= 0.96;
+    p.vy *= 0.96;
+
+    const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+    const maxSpeed = config.speed * 0.8;
+    if (speed > maxSpeed) {
+      p.vx = (p.vx / speed) * maxSpeed;
+      p.vy = (p.vy / speed) * maxSpeed;
+    }
+
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life++;
+
+    // Wrap edges
+    if (p.x < 0) p.x = W;
+    if (p.x > W) p.x = 0;
+    if (p.y < 0) p.y = H;
+    if (p.y > H) p.y = 0;
+
+    // Reset dead particles
+    if (p.life > p.maxLife) {
+      p.x = Math.random() * W;
+      p.y = Math.random() * H;
+      p.vx = 0;
+      p.vy = 0;
+      p.life = 0;
+      p.maxLife = 200 + Math.random() * 300;
+      p.colorIndex = Math.random();
+    }
+
+    // Draw trail
+    const alpha = Math.min(p.life / 30, 1) * Math.min((p.maxLife - p.life) / 50, 1);
+    const n = config.count;
+    ctx.beginPath();
+    ctx.strokeStyle = colorFn(p.colorIndex * n, n, alpha);
+    ctx.lineWidth = p.size;
+    ctx.moveTo(p.x - p.vx * config.trail, p.y - p.vy * config.trail);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+  }
+}
+
+// --- Fade effect ---
+function fade() {
+  ctx.fillStyle = `rgba(10, 10, 15, ${0.03 + (21 - config.trail) * 0.005})`;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// --- Animation loop ---
+let lastTime = performance.now();
+let frameCount = 0;
+let fpsTime = 0;
+
+function animate(now) {
+  const dt = now - lastTime;
+  lastTime = now;
+  frameCount++;
+  fpsTime += dt;
+
+  if (fpsTime > 500) {
+    document.getElementById('fps').textContent = Math.round(frameCount / (fpsTime / 1000));
+    frameCount = 0;
+    fpsTime = 0;
+  }
+
+  fade();
+  updateParticles();
+  document.getElementById('activeParticles').textContent = particles.length;
+  time++;
+  requestAnimationFrame(animate);
+}
+
+// --- Controls ---
+canvas.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  document.getElementById('mousePos').textContent = `${e.clientX}, ${e.clientY}`;
+});
+canvas.addEventListener('mousedown', () => { mouse.active = true; });
+canvas.addEventListener('mouseup', () => { mouse.active = false; });
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+
+// Touch support
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  mouse.active = true;
+}, { passive: false });
+canvas.addEventListener('touchend', () => { mouse.active = false; });
+
+document.getElementById('particleCount').addEventListener('input', (e) => {
+  config.count = parseInt(e.target.value);
+  document.getElementById('particleCountLabel').textContent = config.count;
+  initParticles();
+});
+document.getElementById('speed').addEventListener('input', (e) => {
+  config.speed = parseInt(e.target.value);
+});
+document.getElementById('trail').addEventListener('input', (e) => {
+  config.trail = parseInt(e.target.value);
+});
+document.getElementById('colorTheme').addEventListener('change', (e) => {
+  config.theme = e.target.value;
+});
+document.getElementById('fieldPattern').addEventListener('change', (e) => {
+  config.pattern = e.target.value;
+});
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  ctx.fillStyle = 'rgba(10, 10, 15, 1)';
+  ctx.fillRect(0, 0, W, H);
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  ctx.fillStyle = 'rgba(10, 10, 15, 1)';
+  ctx.fillRect(0, 0, W, H);
+  initParticles();
+  time = 0;
+});
+
+// Fade hint
+setTimeout(() => {
+  document.getElementById('hint').style.opacity = '0';
+}, 5000);
+
+// --- Init ---
+ctx.fillStyle = 'rgba(10, 10, 15, 1)';
+ctx.fillRect(0, 0, W, H);
+initParticles();
+animate(performance.now());
+</script>
+</body>
+</html>
