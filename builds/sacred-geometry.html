@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sacred Geometry — Generative Mandala</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  canvas {
+    display: block;
+    cursor: crosshair;
+  }
+  #ui {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .panel {
+    background: rgba(10, 10, 20, 0.85);
+    border: 1px solid rgba(100, 200, 255, 0.2);
+    border-radius: 8px;
+    padding: 12px 16px;
+    backdrop-filter: blur(10px);
+    font-size: 12px;
+    line-height: 1.6;
+    max-width: 260px;
+  }
+  .panel h3 {
+    font-size: 13px;
+    color: #7af;
+    margin-bottom: 6px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .panel label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel input[type="range"] {
+    width: 100px;
+    accent-color: #7af;
+  }
+  .panel select, .panel button {
+    background: rgba(30, 40, 60, 0.9);
+    border: 1px solid rgba(100, 200, 255, 0.3);
+    color: #cde;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .panel button:hover { background: rgba(50, 70, 100, 0.9); }
+  .panel .row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .panel .row button { flex: 1; }
+  #title {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: rgba(120, 180, 220, 0.5);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #fps {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    font-size: 11px;
+    color: rgba(120, 180, 220, 0.5);
+    z-index: 10;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="ui">
+  <div class="panel">
+    <h3>◈ Sacred Geometry</h3>
+    <label>Pattern
+      <select id="pattern">
+        <option value="mandala">Mandala</option>
+        <option value="flower">Flower of Life</option>
+        <option value="spiral">Sacred Spiral</option>
+        <option value="star">Star Polygon</option>
+        <option value="tree">Fractal Tree</option>
+        <option value="cosmic">Cosmic Web</option>
+      </select>
+    </label>
+    <label>Palette
+      <select id="palette">
+        <option value="cosmic">Cosmic</option>
+        <option value="aurora">Aurora</option>
+        <option value="ember">Ember</option>
+        <option value="ocean">Ocean</option>
+        <option value="mono">Monochrome</option>
+        <option value="rainbow">Rainbow</option>
+      </select>
+    </label>
+    <label>Symmetry <span id="symVal">8</span>
+      <input type="range" id="symmetry" min="3" max="24" value="8" step="1">
+    </label>
+    <label>Layers <span id="layerVal">5</span>
+      <input type="range" id="layers" min="1" max="12" value="5" step="1">
+    </label>
+    <label>Speed <span id="speedVal">1.0</span>
+      <input type="range" id="speed" min="0.1" max="3" value="1" step="0.1">
+    </label>
+    <label>Glow <span id="glowVal">0.6</span>
+      <input type="range" id="glow" min="0" max="1" value="0.6" step="0.05">
+    </label>
+    <div class="row">
+      <button id="pauseBtn">⏸ Pause</button>
+      <button id="saveBtn">💾 Save</button>
+    </div>
+    <div class="row">
+      <button id="randomBtn">🎲 Random</button>
+      <button id="clearBtn">✕ Clear</button>
+    </div>
+  </div>
+  <div class="panel" style="font-size:11px; color:#889;">
+    <b style="color:#aaf;">Controls</b><br>
+    Move mouse — attract geometry<br>
+    Click — burst spawn<br>
+    Space — pause/play<br>
+    R — randomize<br>
+    S — save PNG<br>
+    Scroll — adjust layers
+  </div>
+</div>
+
+<div id="fps"></div>
+<div id="title">Sacred Geometry — Generative Mandala</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Palettes ---
+const palettes = {
+  cosmic:  ['#ff00ff', '#00ffff', '#ff6600', '#aa00ff', '#ffffff', '#4488ff'],
+  aurora:  ['#00ff88', '#00ccff', '#88ffcc', '#22ddaa', '#aaffee', '#44ffbb'],
+  ember:   ['#ff4400', '#ff8800', '#ffcc00', '#ff2200', '#ffaa44', '#ffe0a0'],
+  ocean:   ['#0044ff', '#0088ff', '#00ccff', '#2266ff', '#44aaff', '#88ddff'],
+  mono:    ['#ffffff', '#cccccc', '#999999', '#666666', '#eeeeee', '#bbbbbb'],
+  rainbow: ['#ff0000', '#ff8800', '#ffff00', '#00ff00', '#0088ff', '#8800ff'],
+};
+
+// --- State ---
+let symmetry = 8;
+let layers = 5;
+let speed = 1.0;
+let glowIntensity = 0.6;
+let paused = false;
+let palette = 'cosmic';
+let pattern = 'mandala';
+let time = 0;
+let mouseX = cx, mouseY = cy;
+let mouseActive = false;
+let bursts = [];
+
+// --- Geometry helpers ---
+function hsl(h, s, l, a = 1) {
+  return `hsla(${((h % 360) + 360) % 360}, ${s}%, ${l}%, ${a})`;
+}
+
+function pickColor(t = 0, alpha = 1) {
+  const colors = palettes[palette];
+  const idx = Math.floor(((t * 3 + time * 0.1) % colors.length + colors.length) % colors.length);
+  const c = colors[idx];
+  // Parse hex to rgba-ish for manipulation
+  return c;
+}
+
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1,3), 16);
+  const g = parseInt(hex.slice(3,5), 16);
+  const b = parseInt(hex.slice(5,7), 16);
+  return { r, g, b };
+}
+
+function getColor(t = 0, alpha = 1) {
+  const colors = palettes[palette];
+  const idx = Math.floor(((t * 2 + time * 0.15) % colors.length + colors.length) % colors.length);
+  const { r, g, b } = hexToRgb(colors[idx]);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// --- Drawing primitives ---
+function drawPolygon(x, y, r, sides, rot = 0) {
+  ctx.beginPath();
+  for (let i = 0; i <= sides; i++) {
+    const a = (i / sides) * Math.PI * 2 + rot;
+    const px = x + Math.cos(a) * r;
+    const py = y + Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+
+function drawStar(x, y, r1, r2, points, rot = 0) {
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const a = (i / (points * 2)) * Math.PI * 2 + rot;
+    const r = i % 2 === 0 ? r1 : r2;
+    const px = x + Math.cos(a) * r;
+    const py = y + Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+
+// --- Pattern renderers ---
+function drawMandala() {
+  const baseR = Math.min(W, H) * 0.35;
+  const mouseDist = mouseActive ? Math.hypot(mouseX - cx, mouseY - cy) : 0;
+  const mouseInfluence = mouseActive ? Math.max(0, 1 - mouseDist / (baseR * 1.5)) : 0;
+
+  for (let l = 0; l < layers; l++) {
+    const layerT = l / layers;
+    const r = baseR * (0.2 + layerT * 0.8);
+    const rot = time * 0.3 * (l % 2 === 0 ? 1 : -1) * (0.5 + l * 0.2);
+    const sides = symmetry + l;
+    const pulse = Math.sin(time * 2 + l * 0.8) * 0.1 + 1;
+    const effectiveR = r * pulse * (1 + mouseInfluence * 0.3);
+
+    // Rotating polygon
+    ctx.strokeStyle = getColor(layerT + time * 0.05, 0.4 + glowIntensity * 0.4);
+    ctx.lineWidth = 1.5 - l * 0.1;
+    drawPolygon(cx, cy, effectiveR, sides, rot);
+    ctx.stroke();
+
+    // Inner star
+    if (l > 0) {
+      ctx.strokeStyle = getColor(layerT + 0.3 + time * 0.08, 0.3 + glowIntensity * 0.3);
+      ctx.lineWidth = 1;
+      drawStar(cx, cy, effectiveR * 0.6, effectiveR * 0.3, sides, -rot * 1.5);
+      ctx.stroke();
+    }
+
+    // Radial lines
+    for (let s = 0; s < symmetry; s++) {
+      const a = (s / symmetry) * Math.PI * 2 + rot * 0.5;
+      ctx.strokeStyle = getColor(layerT + s * 0.1 + time * 0.03, 0.2 + glowIntensity * 0.2);
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * effectiveR * 0.15, cy + Math.sin(a) * effectiveR * 0.15);
+      ctx.lineTo(cx + Math.cos(a) * effectiveR, cy + Math.sin(a) * effectiveR);
+      ctx.stroke();
+    }
+
+    // Dots at vertices
+    for (let s = 0; s < sides; s++) {
+      const a = (s / sides) * Math.PI * 2 + rot;
+      const px = cx + Math.cos(a) * effectiveR;
+      const py = cy + Math.sin(a) * effectiveR;
+      const dotR = 2 + Math.sin(time * 3 + s + l) * 1.5;
+      ctx.fillStyle = getColor(layerT + time * 0.1, 0.8);
+      ctx.beginPath();
+      ctx.arc(px, py, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Center glow
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, baseR * 0.15);
+  grad.addColorStop(0, getColor(time * 0.1, 0.6));
+  grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, baseR * 0.15, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawFlowerOfLife() {
+  const r = Math.min(W, H) * 0.06;
+  const baseR = r;
+  const rings = Math.min(layers + 1, 6);
+  const pulse = 1 + Math.sin(time * 1.5) * 0.05;
+
+  // Center
+  for (let ring = 0; ring < rings; ring++) {
+    const ringR = ring * baseR * 1.732;
+    const alpha = 0.5 - ring * 0.06;
+    ctx.strokeStyle = getColor(ring * 0.2 + time * 0.05, alpha);
+    ctx.lineWidth = 1.2 - ring * 0.15;
+
+    if (ring === 0) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, baseR * pulse, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      for (let i = 0; i < 6 * ring; i++) {
+        const a = (i / (6 * ring)) * Math.PI * 2 + time * 0.2 * (ring % 2 === 0 ? 1 : -1);
+        const px = cx + Math.cos(a) * ringR;
+        const py = cy + Math.sin(a) * ringR;
+        ctx.beginPath();
+        ctx.arc(px, py, baseR * pulse, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Connection lines between adjacent circles
+  ctx.strokeStyle = getColor(time * 0.08, 0.15);
+  ctx.lineWidth = 0.5;
+  for (let ring = 1; ring < rings; ring++) {
+    const ringR = ring * baseR * 1.732;
+    for (let i = 0; i < 6 * ring; i++) {
+      const a = (i / (6 * ring)) * Math.PI * 2;
+      const px = cx + Math.cos(a) * ringR;
+      const py = cy + Math.sin(a) * ringR;
+      // connect to nearest inner ring
+      const innerR = (ring - 1) * baseR * 1.732;
+      const innerA = (Math.round(i / ring) / 6) * Math.PI * 2;
+      const ipx = cx + Math.cos(innerA) * innerR;
+      const ipy = cy + Math.sin(innerA) * innerR;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(ipx, ipy);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawSacredSpiral() {
+  const maxR = Math.min(W, H) * 0.4;
+  const turns = symmetry * 0.5;
+  const points = 800;
+  const pulse = 1 + Math.sin(time) * 0.05;
+
+  for (let arm = 0; arm < symmetry; arm++) {
+    const armOffset = (arm / symmetry) * Math.PI * 2;
+    ctx.strokeStyle = getColor(arm / symmetry + time * 0.08, 0.5 + glowIntensity * 0.4);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < points; i++) {
+      const t = i / points;
+      const a = t * turns * Math.PI * 2 + armOffset + time * 0.5;
+      const r = t * maxR * pulse;
+      const px = cx + Math.cos(a) * r;
+      const py = cy + Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    // Glow dots along spiral
+    for (let i = 0; i < points; i += 20) {
+      const t = i / points;
+      const a = t * turns * Math.PI * 2 + armOffset + time * 0.5;
+      const r = t * maxR * pulse;
+      const px = cx + Math.cos(a) * r;
+      const py = cy + Math.sin(a) * r;
+      const dotR = 1.5 + Math.sin(time * 4 + i * 0.1) * 1;
+      ctx.fillStyle = getColor(arm / symmetry + t + time * 0.1, 0.7);
+      ctx.beginPath();
+      ctx.arc(px, py, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+function drawStarPolygon() {
+  const baseR = Math.min(W, H) * 0.35;
+  const points = symmetry;
+
+  for (let l = 0; l < layers; l++) {
+    const layerT = l / layers;
+    const r = baseR * (0.3 + layerT * 0.7);
+    const rot = time * 0.4 * (l % 2 === 0 ? 1 : -1);
+    const skip = Math.floor(symmetry / 2) + l;
+    const pulse = 1 + Math.sin(time * 2 + l) * 0.08;
+
+    // Draw star polygon
+    ctx.strokeStyle = getColor(layerT + time * 0.06, 0.5 + glowIntensity * 0.4);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const vertices = [];
+    for (let i = 0; i < points; i++) {
+      const a = (i / points) * Math.PI * 2 + rot;
+      vertices.push({ x: cx + Math.cos(a) * r * pulse, y: cy + Math.sin(a) * r * pulse });
+    }
+    // Connect every skip-th vertex
+    for (let i = 0; i < points; i++) {
+      const next = (i + skip) % points;
+      ctx.moveTo(vertices[i].x, vertices[i].y);
+      ctx.lineTo(vertices[next].x, vertices[next].y);
+    }
+    ctx.stroke();
+
+    // Outer ring
+    ctx.strokeStyle = getColor(layerT + 0.5 + time * 0.1, 0.2);
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+function drawFractalTree() {
+  const maxDepth = Math.min(layers + 2, 8);
+  const baseLen = Math.min(W, H) * 0.18;
+  const rotBase = Math.PI / symmetry;
+
+  function branch(x, y, len, angle, depth) {
+    if (depth > maxDepth || len < 4) return;
+    const ex = x + Math.cos(angle) * len;
+    const ey = y + Math.sin(angle) * len;
+    const t = depth / maxDepth;
+    const sway = Math.sin(time * 2 + depth * 0.5 + x * 0.01) * 0.05;
+
+    ctx.strokeStyle = getColor(t + time * 0.05, 0.4 + glowIntensity * 0.5 * (1 - t * 0.5));
+    ctx.lineWidth = Math.max(0.5, (maxDepth - depth) * 1.2);
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+
+    // Glow node at end
+    if (depth === maxDepth) {
+      ctx.fillStyle = getColor(t + 0.5, 0.7);
+      ctx.beginPath();
+      ctx.arc(ex, ey, 2 + Math.sin(time * 5 + depth) * 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const newLen = len * (0.65 + Math.sin(time + depth) * 0.05);
+    const branches = depth === 0 ? symmetry : 2;
+    for (let b = 0; b < branches; b++) {
+      const spread = branches === 1 ? 0 : (b - (branches - 1) / 2) * rotBase * 1.2;
+      branch(ex, ey, newLen, angle + spread + sway, depth + 1);
+    }
+  }
+
+  branch(cx, H * 0.75, baseLen, -Math.PI / 2, 0);
+}
+
+function drawCosmicWeb() {
+  const nodes = [];
+  const count = 60 + layers * 20;
+  const maxR = Math.min(W, H) * 0.4;
+
+  // Generate / update node positions
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2 + time * 0.1 * (i % 2 === 0 ? 1 : -1);
+    const r = maxR * (0.2 + 0.8 * Math.abs(Math.sin(i * 1.7 + time * 0.3)));
+    const wobble = Math.sin(time * 2 + i * 0.5) * 20;
+    nodes.push({
+      x: cx + Math.cos(a) * (r + wobble),
+      y: cy + Math.sin(a) * (r + wobble),
+      size: 2 + Math.sin(time * 3 + i) * 1.5,
+    });
+  }
+
+  // Connection lines
+  const threshold = 100 + layers * 15;
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const d = Math.hypot(nodes[i].x - nodes[j].x, nodes[i].y - nodes[j].y);
+      if (d < threshold) {
+        const alpha = (1 - d / threshold) * 0.4 * glowIntensity;
+        ctx.strokeStyle = getColor(i / count + time * 0.05, alpha);
+        ctx.lineWidth = 0.6;
+        ctx.beginPath();
+        ctx.moveTo(nodes[i].x, nodes[i].y);
+        ctx.lineTo(nodes[j].x, nodes[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Nodes
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.size * 3);
+    const col = getColor(i / count + time * 0.1, 0.8);
+    grad.addColorStop(0, col);
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, n.size * 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = getColor(i / count + time * 0.1, 1);
+    ctx.beginPath();
+    ctx.arc(n.x, n.y, n.size * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// --- Burst particles ---
+class BurstParticle {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    const a = Math.random() * Math.PI * 2;
+    const sp = 2 + Math.random() * 6;
+    this.vx = Math.cos(a) * sp;
+    this.vy = Math.sin(a) * sp;
+    this.life = 1;
+    this.decay = 0.01 + Math.random() * 0.03;
+    this.color = Math.random();
+    this.size = 1 + Math.random() * 3;
+  }
+  update() {
+    this.x += this.vx * speed;
+    this.y += this.vy * speed;
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+    this.life -= this.decay * speed;
+  }
+  draw() {
+    if (this.life <= 0) return;
+    ctx.fillStyle = getColor(this.color, this.life * 0.8);
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * this.life, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// --- Main loop ---
+let lastTime = 0;
+let frameCount = 0;
+let fpsTime = 0;
+
+function animate(ts) {
+  requestAnimationFrame(animate);
+  if (paused) return;
+
+  const dt = Math.min((ts - lastTime) / 1000, 0.05);
+  lastTime = ts;
+  time += dt * speed;
+
+  // FPS
+  frameCount++;
+  if (ts - fpsTime > 1000) {
+    document.getElementById('fps').textContent = `${frameCount} fps`;
+    frameCount = 0;
+    fpsTime = ts;
+  }
+
+  // Trail fade
+  ctx.fillStyle = `rgba(10, 10, 18, ${0.08 + (1 - glowIntensity) * 0.12})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // Glow composite
+  ctx.globalCompositeOperation = glowIntensity > 0.3 ? 'lighter' : 'source-over';
+
+  // Draw selected pattern
+  switch (pattern) {
+    case 'mandala': drawMandala(); break;
+    case 'flower': drawFlowerOfLife(); break;
+    case 'spiral': drawSacredSpiral(); break;
+    case 'star': drawStarPolygon(); break;
+    case 'tree': drawFractalTree(); break;
+    case 'cosmic': drawCosmicWeb(); break;
+  }
+
+  ctx.globalCompositeOperation = 'source-over';
+
+  // Bursts
+  for (let i = bursts.length - 1; i >= 0; i--) {
+    bursts[i].update();
+    bursts[i].draw();
+    if (bursts[i].life <= 0) bursts.splice(i, 1);
+  }
+
+  // Mouse attraction particles
+  if (mouseActive) {
+    const mdx = mouseX - cx;
+    const mdy = mouseY - cy;
+    const mDist = Math.hypot(mdx, mdy);
+    if (mDist > 5) {
+      const grad = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 40);
+      grad.addColorStop(0, getColor(time * 0.2, 0.3));
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(mouseX, mouseY, 40, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// --- Input ---
+canvas.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  mouseActive = true;
+});
+canvas.addEventListener('mouseleave', () => { mouseActive = false; });
+canvas.addEventListener('click', e => {
+  for (let i = 0; i < 40; i++) bursts.push(new BurstParticle(e.clientX, e.clientY));
+});
+
+// Touch
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouseX = t.clientX;
+  mouseY = t.clientY;
+  mouseActive = true;
+}, { passive: false });
+canvas.addEventListener('touchstart', e => {
+  const t = e.touches[0];
+  mouseX = t.clientX;
+  mouseY = t.clientY;
+  mouseActive = true;
+  for (let i = 0; i < 40; i++) bursts.push(new BurstParticle(t.clientX, t.clientY));
+});
+canvas.addEventListener('touchend', () => { mouseActive = false; });
+
+// Keyboard
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space') { paused = !paused; updatePauseBtn(); }
+  if (e.code === 'KeyR') randomize();
+  if (e.code === 'KeyS') savePNG();
+});
+
+// Scroll for layers
+window.addEventListener('wheel', e => {
+  const el = document.getElementById('layers');
+  el.value = Math.max(1, Math.min(12, parseInt(el.value) + (e.deltaY > 0 ? -1 : 1)));
+  el.dispatchEvent(new Event('input'));
+});
+
+// --- UI bindings ---
+document.getElementById('pattern').addEventListener('change', e => pattern = e.target.value);
+document.getElementById('palette').addEventListener('change', e => palette = e.target.value);
+document.getElementById('symmetry').addEventListener('input', e => {
+  symmetry = parseInt(e.target.value);
+  document.getElementById('symVal').textContent = symmetry;
+});
+document.getElementById('layers').addEventListener('input', e => {
+  layers = parseInt(e.target.value);
+  document.getElementById('layerVal').textContent = layers;
+});
+document.getElementById('speed').addEventListener('input', e => {
+  speed = parseFloat(e.target.value);
+  document.getElementById('speedVal').textContent = speed.toFixed(1);
+});
+document.getElementById('glow').addEventListener('input', e => {
+  glowIntensity = parseFloat(e.target.value);
+  document.getElementById('glowVal').textContent = glowIntensity.toFixed(2);
+});
+
+function updatePauseBtn() {
+  document.getElementById('pauseBtn').textContent = paused ? '▶ Play' : '⏸ Pause';
+}
+document.getElementById('pauseBtn').addEventListener('click', () => {
+  paused = !paused;
+  updatePauseBtn();
+});
+
+function randomize() {
+  const patterns = ['mandala', 'flower', 'spiral', 'star', 'tree', 'cosmic'];
+  const pals = ['cosmic', 'aurora', 'ember', 'ocean', 'mono', 'rainbow'];
+  pattern = patterns[Math.floor(Math.random() * patterns.length)];
+  palette = pals[Math.floor(Math.random() * pals.length)];
+  symmetry = 3 + Math.floor(Math.random() * 20);
+  layers = 1 + Math.floor(Math.random() * 11);
+  document.getElementById('pattern').value = pattern;
+  document.getElementById('palette').value = palette;
+  document.getElementById('symmetry').value = symmetry;
+  document.getElementById('layers').value = layers;
+  document.getElementById('symVal').textContent = symmetry;
+  document.getElementById('layerVal').textContent = layers;
+  ctx.fillStyle = 'rgba(10, 10, 18, 1)';
+  ctx.fillRect(0, 0, W, H);
+}
+
+document.getElementById('randomBtn').addEventListener('click', randomize);
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  ctx.fillStyle = 'rgba(10, 10, 18, 1)';
+  ctx.fillRect(0, 0, W, H);
+  bursts = [];
+});
+
+function savePNG() {
+  const link = document.createElement('a');
+  link.download = `sacred-geometry-${Date.now()}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+document.getElementById('saveBtn').addEventListener('click', savePNG);
+
+// --- Init ---
+ctx.fillStyle = 'rgba(10, 10, 18, 1)';
+ctx.fillRect(0, 0, W, H);
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
