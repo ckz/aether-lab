@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Signal — Text Analysis Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d; --text: #c9d1d9;
+    --text-secondary: #8b949e; --accent: #58a6ff; --green: #3fb950;
+    --yellow: #d29922; --red: #f85149; --purple: #bc8cff; --cyan: #39d353;
+    --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--font-mono);
+    font-size: 14px; line-height: 1.6; display: flex; flex-direction: column;
+  }
+  /* Scanline overlay */
+  body::after {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 999;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px,
+      rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+  }
+  header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 14px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  .logo { font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; }
+  .logo .cursor { display: inline-block; width: 8px; height: 16px; background: var(--accent);
+    animation: blink 1s step-end infinite; vertical-align: middle; margin-left: 2px; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .subtitle { color: var(--text-secondary); font-size: 12px; }
+  .header-actions { margin-left: auto; display: flex; gap: 8px; }
+  .btn {
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    padding: 6px 14px; border-radius: 6px; font-family: inherit; font-size: 12px;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+  .btn.primary:hover { opacity: 0.9; }
+
+  main {
+    flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr;
+    gap: 1px; background: var(--border); overflow: hidden;
+  }
+  .panel {
+    background: var(--bg); padding: 16px; overflow: auto;
+  }
+  .panel-header {
+    color: var(--text-secondary); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 1.5px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+  }
+  .panel-header::before { content: '▸'; color: var(--accent); }
+
+  /* Input panel spans full width at top */
+  .input-panel {
+    grid-column: 1 / -1; background: var(--bg);
+    border-bottom: 1px solid var(--border); padding: 16px 24px;
+  }
+  textarea {
+    width: 100%; min-height: 100px; max-height: 200px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 6px; color: var(--text);
+    font-family: inherit; font-size: 13px; padding: 12px; resize: vertical;
+    outline: none; transition: border-color 0.15s;
+  }
+  textarea:focus { border-color: var(--accent); }
+  textarea::placeholder { color: #484f58; }
+
+  /* Stats grid */
+  .stats-grid {
+    grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 1px; background: var(--border); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  }
+  .stat-card {
+    background: var(--bg); padding: 14px 16px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .stat-label { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; }
+  .stat-value { font-size: 26px; font-weight: 700; color: var(--accent); line-height: 1; }
+  .stat-value.green { color: var(--green); }
+  .stat-value.yellow { color: var(--yellow); }
+  .stat-value.purple { color: var(--purple); }
+  .stat-value.cyan { color: var(--cyan); }
+  .stat-sub { font-size: 11px; color: var(--text-secondary); }
+
+  /* Metrics panel */
+  .metrics-panel { overflow-y: auto; }
+  .metric-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0; border-bottom: 1px solid #21262d;
+  }
+  .metric-row:last-child { border-bottom: none; }
+  .metric-name { color: var(--text-secondary); font-size: 13px; }
+  .metric-val { font-weight: 600; }
+  .bar-container { width: 100%; margin-top: 4px; }
+  .bar-track { height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.4s ease; }
+
+  /* Freq panel */
+  .freq-panel { overflow-y: auto; }
+  .freq-row {
+    display: grid; grid-template-columns: 30px 1fr 50px 60px; gap: 8px;
+    align-items: center; padding: 3px 0; font-size: 13px;
+  }
+  .freq-char { color: var(--accent); font-weight: 600; text-align: center; }
+  .freq-bar-wrap { height: 10px; background: #21262d; border-radius: 2px; overflow: hidden; }
+  .freq-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple));
+    border-radius: 2px; transition: width 0.3s ease; }
+  .freq-count { text-align: right; color: var(--text); }
+  .freq-pct { text-align: right; color: var(--text-secondary); font-size: 11px; }
+
+  /* Word freq */
+  .word-row {
+    display: grid; grid-template-columns: 1fr 50px 60px; gap: 8px;
+    align-items: center; padding: 3px 0; font-size: 13px;
+  }
+  .word-text { color: var(--green); }
+  .word-bar-wrap { height: 10px; background: #21262d; border-radius: 2px; overflow: hidden; }
+  .word-bar { height: 100%; background: linear-gradient(90deg, var(--green), var(--cyan));
+    border-radius: 2px; transition: width 0.3s ease; }
+  .word-count { text-align: right; color: var(--text); }
+  .word-pct { text-align: right; color: var(--text-secondary); font-size: 11px; }
+
+  .empty-state {
+    color: var(--text-secondary); text-align: center; padding: 40px 20px;
+    font-style: italic;
+  }
+
+  .readability-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px;
+    font-weight: 600; margin-top: 4px;
+  }
+  .readability-badge.easy { background: rgba(63,185,80,0.15); color: var(--green); }
+  .readability-badge.medium { background: rgba(210,153,34,0.15); color: var(--yellow); }
+  .readability-badge.hard { background: rgba(248,81,73,0.15); color: var(--red); }
+  .readability-badge.academic { background: rgba(188,140,255,0.15); color: var(--purple); }
+
+  footer {
+    background: var(--surface); border-top: 1px solid var(--border);
+    padding: 8px 24px; font-size: 11px; color: var(--text-secondary);
+    display: flex; gap: 16px;
+  }
+  footer .key { color: var(--accent); }
+
+  @media (max-width: 768px) {
+    main { grid-template-columns: 1fr; }
+    .input-panel { grid-column: 1; }
+    .stats-grid { grid-column: 1; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">signal<span class="cursor"></span></div>
+  <div class="subtitle">text analysis dashboard</div>
+  <div class="header-actions">
+    <button class="btn" onclick="loadSample()">Load Sample</button>
+    <button class="btn" onclick="clearAll()">Clear</button>
+  </div>
+</header>
+
+<main>
+  <div class="input-panel">
+    <div class="panel-header">Input Text</div>
+    <textarea id="input" placeholder="Type or paste text here to analyze…" spellcheck="false"></textarea>
+  </div>
+
+  <div class="stats-grid" id="stats">
+    <div class="stat-card"><div class="stat-label">Characters</div><div class="stat-value" id="s-chars">0</div><div class="stat-sub" id="s-chars-no-space">0 no-space</div></div>
+    <div class="stat-card"><div class="stat-label">Words</div><div class="stat-value green" id="s-words">0</div><div class="stat-sub" id="s-unique">0 unique</div></div>
+    <div class="stat-card"><div class="stat-label">Sentences</div><div class="stat-value yellow" id="s-sentences">0</div><div class="stat-sub" id="s-avg-sent">0 avg words/sent</div></div>
+    <div class="stat-card"><div class="stat-label">Paragraphs</div><div class="stat-value purple" id="s-paragraphs">0</div><div class="stat-sub" id="s-reading-time">0 min read</div></div>
+  </div>
+
+  <div class="panel metrics-panel">
+    <div class="panel-header">Metrics</div>
+    <div id="metrics-content">
+      <div class="empty-state">Start typing to see metrics…</div>
+    </div>
+  </div>
+
+  <div class="panel freq-panel">
+    <div class="panel-header">Top Characters</div>
+    <div id="freq-content">
+      <div class="empty-state">Start typing to see frequencies…</div>
+    </div>
+  </div>
+
+  <div class="panel freq-panel">
+    <div class="panel-header">Top Words</div>
+    <div id="word-content">
+      <div class="empty-state">Start typing to see word frequencies…</div>
+    </div>
+  </div>
+
+  <div class="panel metrics-panel">
+    <div class="panel-header">Readability</div>
+    <div id="readability-content">
+      <div class="empty-state">Start typing to see readability…</div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span><span class="key">Tab</span> auto-analyzes on paste</span>
+  <span><span class="key">Ctrl+A</span> select all</span>
+  <span>all processing is local — nothing leaves your browser</span>
+</footer>
+
+<script>
+const SAMPLE = `The Antikythera mechanism is the world's oldest known analog computer. Discovered in 1901 by sponge divers off the coast of Antikythera, Greece, this corroded bronze artifact contained at least thirty-five meshing gears. Researchers believe it was designed to predict astronomical positions and eclipses decades in advance.
+
+Using X-ray tomography, scientists revealed a complex system of dials and pointers capable of modeling the motions of the Sun, Moon, and five visible planets. The mechanism implements the Metonic cycle, the Saros cycle, and the Callippic cycle with remarkable precision.
+
+Perhaps most astonishing is the pin-and-slot gear arrangement, which approximates the elliptical orbit of the Moon — a mathematical insight that would not be formally described by Kepler for another seventeen hundred years. The mechanism remains the only artifact of its kind from the ancient world, suggesting that the Greeks had developed computational technology far more sophisticated than anyone previously believed possible.`;
+
+const STOP_WORDS = new Set([
+  'the','be','to','of','and','a','in','that','have','i','it','for','not','on','with',
+  'he','as','you','do','at','this','but','his','by','from','they','we','say','her','she',
+  'or','an','will','my','one','all','would','there','their','what','so','up','out','if',
+  'about','who','get','which','go','me','when','make','can','like','time','no','just','him',
+  'know','take','people','into','year','your','good','some','could','them','see','other',
+  'than','then','now','look','only','come','its','over','think','also','back','after','use',
+  'two','how','our','work','first','well','way','even','new','want','because','any','these',
+  'give','day','most','us','is','are','was','were','been','has','had','did','does','am',
+  'been','being','did','does','doing','done','shall','should','may','might','must','need',
+  'dare','ought','used','having','much','many','where','each','every','both','few','more',
+  'most','other','some','such','no','nor','not','only','own','same','so','than','too','very',
+  's','t','can','will','just','don','should','now','ve','ll','re','d','m','o'
+]);
+
+let debounce = null;
+const input = document.getElementById('input');
+
+input.addEventListener('input', () => {
+  clearTimeout(debounce);
+  debounce = setTimeout(analyze, 120);
+});
+input.addEventListener('paste', () => {
+  setTimeout(analyze, 10);
+});
+
+function clearAll() {
+  input.value = '';
+  analyze();
+  input.focus();
+}
+
+function loadSample() {
+  input.value = SAMPLE;
+  analyze();
+}
+
+function countSentences(text) {
+  if (!text.trim()) return 0;
+  const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+  return sentences.length;
+}
+
+function countParagraphs(text) {
+  if (!text.trim()) return 0;
+  return text.split(/\n\s*\n/).filter(p => p.trim().length > 0).length || 1;
+}
+
+function analyze() {
+  const text = input.value;
+  if (!text.trim()) {
+    document.getElementById('s-chars').textContent = '0';
+    document.getElementById('s-chars-no-space').textContent = '0 no-space';
+    document.getElementById('s-words').textContent = '0';
+    document.getElementById('s-unique').textContent = '0 unique';
+    document.getElementById('s-sentences').textContent = '0';
+    document.getElementById('s-avg-sent').textContent = '0 avg words/sent';
+    document.getElementById('s-paragraphs').textContent = '0';
+    document.getElementById('s-reading-time').textContent = '0 min read';
+    document.getElementById('metrics-content').innerHTML = '<div class="empty-state">Start typing to see metrics…</div>';
+    document.getElementById('freq-content').innerHTML = '<div class="empty-state">Start typing to see frequencies…</div>';
+    document.getElementById('word-content').innerHTML = '<div class="empty-state">Start typing to see word frequencies…</div>';
+    document.getElementById('readability-content').innerHTML = '<div class="empty-state">Start typing to see readability…</div>';
+    return;
+  }
+
+  const chars = text.length;
+  const charsNoSpace = text.replace(/\s/g, '').length;
+  const words = text.trim().split(/\s+/).filter(w => w.length > 0);
+  const wordCount = words.length;
+  const uniqueWords = new Set(words.map(w => w.toLowerCase().replace(/[^a-z0-9']/g, ''))).size;
+  const sentences = countSentences(text);
+  const paragraphs = countParagraphs(text);
+  const avgWordsPerSent = sentences > 0 ? (wordCount / sentences).toFixed(1) : '0';
+  const readingTime = Math.max(1, Math.ceil(wordCount / 230));
+
+  document.getElementById('s-chars').textContent = chars.toLocaleString();
+  document.getElementById('s-chars-no-space').textContent = charsNoSpace.toLocaleString() + ' no-space';
+  document.getElementById('s-words').textContent = wordCount.toLocaleString();
+  document.getElementById('s-unique').textContent = uniqueWords.toLocaleString() + ' unique';
+  document.getElementById('s-sentences').textContent = sentences.toLocaleString();
+  document.getElementById('s-avg-sent').textContent = avgWordsPerSent + ' avg words/sent';
+  document.getElementById('s-paragraphs').textContent = paragraphs.toLocaleString();
+  document.getElementById('s-reading-time').textContent = readingTime + ' min read';
+
+  // Character frequency
+  const charFreq = {};
+  const textForChars = text.toLowerCase().replace(/\s/g, '');
+  for (const c of textForChars) {
+    if (/[a-z0-9]/.test(c)) {
+      charFreq[c] = (charFreq[c] || 0) + 1;
+    }
+  }
+  const sortedChars = Object.entries(charFreq).sort((a, b) => b[1] - a[1]).slice(0, 15);
+  const maxCharFreq = sortedChars[0]?.[1] || 1;
+  const freqHtml = sortedChars.map(([c, count]) => {
+    const pct = ((count / charsNoSpace) * 100).toFixed(1);
+    const width = ((count / maxCharFreq) * 100).toFixed(0);
+    return `<div class="freq-row">
+      <div class="freq-char">${c}</div>
+      <div class="freq-bar-wrap"><div class="freq-bar" style="width:${width}%"></div></div>
+      <div class="freq-count">${count}</div>
+      <div class="freq-pct">${pct}%</div>
+    </div>`;
+  }).join('');
+  document.getElementById('freq-content').innerHTML = freqHtml;
+
+  // Word frequency
+  const wordFreq = {};
+  const cleanWords = words.map(w => w.toLowerCase().replace(/[^a-z0-9']/g, '')).filter(w => w.length > 1 && !STOP_WORDS.has(w));
+  for (const w of cleanWords) {
+    wordFreq[w] = (wordFreq[w] || 0) + 1;
+  }
+  const sortedWords = Object.entries(wordFreq).sort((a, b) => b[1] - a[1]).slice(0, 20);
+  const maxWordFreq = sortedWords[0]?.[1] || 1;
+  const wordHtml = sortedWords.map(([w, count]) => {
+    const pct = ((count / wordCount) * 100).toFixed(1);
+    const width = ((count / maxWordFreq) * 100).toFixed(0);
+    return `<div class="word-row">
+      <div class="word-text">${w}</div>
+      <div class="word-bar-wrap"><div class="word-bar" style="width:${width}%"></div></div>
+      <div class="word-count">${count}</div>
+      <div class="word-pct">${pct}%</div>
+    </div>`;
+  }).join('');
+  document.getElementById('word-content').innerHTML = wordHtml;
+
+  // Metrics
+  const avgWordLen = words.length > 0 ? (words.join('').length / words.length).toFixed(1) : 0;
+  const longestWord = words.reduce((a, b) => b.replace(/[^a-z]/gi,'').length > a.replace(/[^a-z]/gi,'').length ? b : a, '');
+  const syllables = words.reduce((sum, w) => sum + countSyllables(w), 0);
+  const fleschKincaid = wordCount > 0 && sentences > 0
+    ? (0.39 * (wordCount / sentences) + 11.8 * (syllables / wordCount) - 15.59).toFixed(1)
+    : 0;
+
+  const lexDensity = wordCount > 0 ? ((uniqueWords / wordCount) * 100).toFixed(1) : 0;
+
+  let readabilityLabel = 'N/A', readabilityClass = '';
+  if (wordCount > 10) {
+    const fk = parseFloat(fleschKincaid);
+    if (fk <= 6) { readabilityLabel = 'Easy'; readabilityClass = 'easy'; }
+    else if (fk <= 10) { readabilityLabel = 'Medium'; readabilityClass = 'medium'; }
+    else if (fk <= 14) { readabilityLabel = 'Academic'; readabilityClass = 'academic'; }
+    else { readabilityLabel = 'Dense'; readabilityClass = 'hard'; }
+  }
+
+  const metricsHtml = `
+    <div class="metric-row"><span class="metric-name">Avg word length</span><span class="metric-val" style="color:var(--cyan)">${avgWordLen} chars</span></div>
+    <div class="metric-row"><span class="metric-name">Longest word</span><span class="metric-val" style="color:var(--yellow)">${longestWord.replace(/[^a-zA-Z']/g, '') || '—'}</span></div>
+    <div class="metric-row"><span class="metric-name">Total syllables</span><span class="metric-val">${syllables}</span></div>
+    <div class="metric-row"><span class="metric-name">Lexical density</span><span class="metric-val" style="color:var(--purple)">${lexDensity}%</span></div>
+    <div class="metric-row"><span class="metric-name">Flesch-Kincaid grade</span><span class="metric-val">${fleschKincaid}</span></div>
+    <div class="metric-row"><span class="metric-name">Readability</span><span class="metric-val"><span class="readability-badge ${readabilityClass}">${readabilityLabel}</span></span></div>
+  `;
+  document.getElementById('metrics-content').innerHTML = metricsHtml;
+
+  // Readability panel
+  const readHtml = `
+    <div class="metric-row"><span class="metric-name">Flesch Reading Ease</span><span class="metric-val">${fleschKincaid}</span></div>
+    <div class="metric-row"><span class="metric-name">Grade level</span><span class="metric-val" style="color:var(--accent)">${readabilityLabel}</span></div>
+    <div class="metric-row"><span class="metric-name">Lexical density</span><span class="metric-val" style="color:var(--purple)">${lexDensity}%</span></div>
+    <div class="metric-row"><span class="metric-name">Avg syllables/word</span><span class="metric-val">${wordCount > 0 ? (syllables / wordCount).toFixed(2) : 0}</span></div>
+    <div style="margin-top:12px; padding:10px; background:var(--surface); border-radius:6px; border-left:3px solid var(--accent); font-size:12px; color:var(--text-secondary); line-height:1.5;">
+      ${getReadabilityNote(parseFloat(fleschKincaid))}
+    </div>
+  `;
+  document.getElementById('readability-content').innerHTML = readHtml;
+}
+
+function countSyllables(word) {
+  word = word.toLowerCase().replace(/[^a-z]/g, '');
+  if (word.length <= 2) return 1;
+  word = word.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '');
+  word = word.replace(/^y/, '');
+  const matches = word.match(/[aeiouy]{1,2}/g);
+  return matches ? matches.length : 1;
+}
+
+function getReadabilityNote(fk) {
+  if (isNaN(fk)) return 'Enter more text for a readability estimate.';
+  if (fk <= 5) return 'Very easy to read. Easily understood by an average 10-year-old. Conversational and accessible.';
+  if (fk <= 8) return 'Plain English. Easily understood by ages 13–15. Good for general audiences and documentation.';
+  if (fk <= 10) return 'Fairly difficult. Best understood by high school students. Common in academic writing and journalism.';
+  if (fk <= 12) return 'College-level. Typical of academic papers and technical writing. Dense but readable.';
+  if (fk <= 16) return 'Graduate-level. Very dense. Common in scholarly papers, legal documents, and philosophy.';
+  return 'Extremely difficult. Likely academic or technical prose with specialized terminology.';
+}
+</script>
+</body>
+</html>
