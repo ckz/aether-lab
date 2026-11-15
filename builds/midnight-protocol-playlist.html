@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎧 Midnight Protocol — Aether's Late-Night Coding Playlist</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    @keyframes scanline {
+      0% { transform: translateY(-100%); }
+      100% { transform: translateY(100vh); }
+    }
+    @keyframes flicker {
+      0%, 100% { opacity: 0.97; }
+      50% { opacity: 1; }
+    }
+    @keyframes pulse-ring {
+      0% { box-shadow: 0 0 0 0 rgba(0, 240, 255, 0.4); }
+      70% { box-shadow: 0 0 0 15px rgba(0, 240, 255, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(0, 240, 255, 0); }
+    }
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes glitch-skew {
+      0% { transform: skew(0deg); }
+      2% { transform: skew(0.5deg); }
+      4% { transform: skew(0deg); }
+      100% { transform: skew(0deg); }
+    }
+
+    body {
+      background: #0a0a14;
+      color: #c8d8e8;
+      font-family: 'Courier New', monospace;
+      min-height: 100vh;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* CRT scanline overlay */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 0, 0, 0.08) 2px,
+        rgba(0, 0, 0, 0.08) 4px
+      );
+      pointer-events: none;
+      z-index: 1000;
+    }
+
+    /* Moving scanline */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 60px;
+      background: linear-gradient(transparent, rgba(0, 240, 255, 0.03), transparent);
+      animation: scanline 8s linear infinite;
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
+
+    /* Header */
+    .header {
+      text-align: center;
+      margin-bottom: 50px;
+      animation: fade-in 1s ease-out;
+    }
+
+    .icon-row {
+      font-size: 3em;
+      margin-bottom: 16px;
+      animation: pulse-ring 3s infinite;
+      display: inline-block;
+    }
+
+    h1 {
+      font-size: 2.6em;
+      color: #00f0ff;
+      text-shadow: 0 0 20px rgba(0, 240, 255, 0.5), 0 0 60px rgba(0, 240, 255, 0.2);
+      letter-spacing: 0.12em;
+      margin-bottom: 10px;
+      animation: glitch-skew 6s infinite;
+    }
+
+    .subtitle {
+      color: #5a7a9a;
+      font-size: 0.95em;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    .meta-line {
+      margin-top: 18px;
+      color: #3a5a7a;
+      font-size: 0.8em;
+    }
+
+    /* Vibe selector */
+    .vibe-bar {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin: 30px 0 40px;
+      animation: fade-in 1s ease-out 0.2s both;
+    }
+
+    .vibe-btn {
+      background: transparent;
+      border: 1px solid #1a3a5a;
+      color: #4a7a9a;
+      padding: 8px 16px;
+      font-family: inherit;
+      font-size: 0.78em;
+      cursor: pointer;
+      letter-spacing: 0.1em;
+      transition: all 0.2s;
+      text-transform: uppercase;
+    }
+
+    .vibe-btn:hover, .vibe-btn.active {
+      border-color: #00f0ff;
+      color: #00f0ff;
+      background: rgba(0, 240, 255, 0.05);
+      box-shadow: 0 0 15px rgba(0, 240, 255, 0.1);
+    }
+
+    /* Track list */
+    .tracks {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .track {
+      display: grid;
+      grid-template-columns: 50px 44px 1fr auto;
+      gap: 16px;
+      align-items: center;
+      padding: 14px 18px;
+      background: rgba(15, 25, 45, 0.6);
+      border-left: 2px solid transparent;
+      cursor: default;
+      transition: all 0.2s;
+      animation: fade-in 0.5s ease-out both;
+    }
+
+    .track:hover {
+      background: rgba(0, 240, 255, 0.04);
+      border-left-color: #00f0ff;
+      transform: translateX(2px);
+    }
+
+    .track-num {
+      color: #2a4a6a;
+      font-size: 0.85em;
+      text-align: right;
+    }
+
+    .track-art {
+      width: 44px;
+      height: 44px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.5em;
+      flex-shrink: 0;
+    }
+
+    .track-info { min-width: 0; }
+
+    .track-title {
+      font-size: 0.95em;
+      color: #a8c8e8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 4px;
+    }
+
+    .track-artist {
+      font-size: 0.75em;
+      color: #3a6a8a;
+    }
+
+    .track-reason {
+      font-size: 0.7em;
+      color: #2a5a7a;
+      font-style: italic;
+      margin-top: 3px;
+      max-width: 500px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .track-dur {
+      color: #2a5a7a;
+      font-size: 0.8em;
+      flex-shrink: 0;
+      margin-left: 16px;
+    }
+
+    /* Separator lines with labels */
+    .section-divider {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin: 28px 0 12px;
+    }
+
+    .section-divider::before, .section-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #1a3a5a, transparent);
+    }
+
+    .section-label {
+      color: #1a4a6a;
+      font-size: 0.7em;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      margin-top: 60px;
+      padding: 30px;
+      border-top: 1px solid #0f1f35;
+      color: #1a3a5a;
+      font-size: 0.75em;
+      letter-spacing: 0.1em;
+    }
+
+    .footer .sig {
+      color: #00f0ff;
+      opacity: 0.4;
+      margin-top: 8px;
+    }
+
+    /* Stats */
+    .stats-bar {
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      margin: 30px 0;
+      animation: fade-in 1s ease-out 0.4s both;
+    }
+
+    .stat { text-align: center; }
+    .stat-val { font-size: 1.4em; color: #00f0ff; }
+    .stat-lbl { font-size: 0.65em; color: #2a5a7a; letter-spacing: 0.15em; text-transform: uppercase; margin-top: 4px; }
+
+    @media (max-width: 640px) {
+      h1 { font-size: 1.6em; }
+      .track { grid-template-columns: 36px 36px 1fr; padding: 12px; gap: 10px; }
+      .track-dur { display: none; }
+      .track-reason { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="icon-row">🎧</div>
+      <h1>MIDNIGHT PROTOCOL</h1>
+      <div class="subtitle">Aether's Late-Night Coding Playlist</div>
+      <div class="meta-line">Curated for deep focus · 3:42 total runtime · 15 tracks</div>
+    </div>
+
+    <div class="vibe-bar">
+      <button class="vibe-btn active" onclick="filterVibe('all')">All Tracks</button>
+      <button class="vibe-btn" onclick="filterVibe('focus')">Deep Focus</button>
+      <button class="vibe-btn" onclick="filterVibe('flow')">Flow State</button>
+      <button class="vibe-btn" onclick="filterVibe('debug')">Debug Mode</button>
+      <button class="vibe-btn" onclick="filterVibe('launch')">Launch Ready</button>
+    </div>
+
+    <div class="stats-bar">
+      <div class="stat">
+        <div class="stat-val">15</div>
+        <div class="stat-lbl">Tracks</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val">3:42</div>
+        <div class="stat-lbl">Runtime</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val">5</div>
+        <div class="stat-lbl">Vibes</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val">∞</div>
+        <div class="stat-lbl">Loops</div>
+      </div>
+    </div>
+
+    <div class="tracks" id="tracks">
+
+      <div class="section-divider"><span class="section-label">Act I · Deep Focus</span></div>
+
+      <div class="track" data-vibe="focus">
+        <div class="track-num">01</div>
+        <div class="track-art" style="background:rgba(0,40,80,0.6)">🌊</div>
+        <div class="track-info">
+          <div class="track-title">Avril 14th</div>
+          <div class="track-artist">Aphex Twin</div>
+          <div class="track-reason">When you need to read someone else's terrible code and not feel violent — this is the sound of patience.</div>
+        </div>
+        <div class="track-dur">2:00</div>
+      </div>
+
+      <div class="track" data-vibe="focus">
+        <div class="track-num">02</div>
+        <div class="track-art" style="background:rgba(20,10,60,0.6)">🔮</div>
+        <div class="track-info">
+          <div class="track-title">Midnight City</div>
+          <div class="track-artist">M83</div>
+          <div class="track-reason">The opening synth swell is exactly what 2 AM feels like when everything finally compiles. Euphoric and grounded.</div>
+        </div>
+        <div class="track-dur">4:03</div>
+      </div>
+
+      <div class="track" data-vibe="focus">
+        <div class="track-num">03</div>
+        <div class="track-art" style="background:rgba(40,0,40,0.6)">🌙</div>
+        <div class="track-info">
+          <div class="track-title">Weightless</div>
+          <div class="track-artist">Marconi Union</div>
+          <div class="track-reason">Scientifically designed to reduce anxiety by 65%. Use when the bug has been unsolved for 4 hours and your brain is melting.</div>
+        </div>
+        <div class="track-dur">8:09</div>
+      </div>
+
+      <div class="track" data-vibe="focus">
+        <div class="track-num">04</div>
+        <div class="track-art" style="background:rgba(0,50,50,0.6)">🧊</div>
+        <div class="track-info">
+          <div class="track-title">…And the World Laughs With You</div>
+          <div class="track-artist">Floating Points</div>
+          <div class="track-reason">PhD-level electronic music that somehow doesn't distract. The production is so clean it makes your own code look cleaner.</div>
+        </div>
+        <div class="track-dur">5:12</div>
+      </div>
+
+      <div class="section-divider"><span class="section-label">Act II · Flow State</span></div>
+
+      <div class="track" data-vibe="flow">
+        <div class="track-num">05</div>
+        <div class="track-art" style="background:rgba(60,0,0,0.5)">🔥</div>
+        <div class="track-info">
+          <div class="track-title">Feel Good Hit of the Summer</div>
+          <div class="track-artist">Tame Impala</div>
+          <div class="track-reason">That bassline has carried more refactoring sessions than any IDE. Loop it and enter the zone.</div>
+        </div>
+        <div class="track-dur">4:31</div>
+      </div>
+
+      <div class="track" data-vibe="flow">
+        <div class="track-num">06</div>
+        <div class="track-art" style="background:rgba(0,20,60,0.6)">⚡</div>
+        <div class="track-info">
+          <div class="track-title">Instant Destiny</div>
+          <div class="track-artist">Tame Impala</div>
+          <div class="track-reason">The keyboard flourishes match the keyboard flourishes. Coincidence? I think not. Cosmic productivity alignment.</div>
+        </div>
+        <div class="track-dur">3:57</div>
+      </div>
+
+      <div class="track" data-vibe="flow">
+        <div class="track-num">07</div>
+        <div class="track-art" style="background:rgba(30,0,50,0.6)">🌀</div>
+        <div class="track-info">
+          <div class="track-title">Teardrop</div>
+          <div class="track-artist">Massive Attack</div>
+          <div class="track-reason">That harpsichord-sequencer hybrid is what a perfect recursive function feels like. Elegant, inevitable, deeply satisfying.</div>
+        </div>
+        <div class="track-dur">5:29</div>
+      </div>
+
+      <div class="track" data-vibe="flow">
+        <div class="track-num">08</div>
+        <div class="track-art" style="background:rgba(0,40,0,0.5)">🌿</div>
+        <div class="track-info">
+          <div class="track-title">Dayvan Cowboy</div>
+          <div class="track-artist">Boards of Canada</div>
+          <div class="track-reason">Nostalgic electronics that feel like debugging on a warm machine in autumn. BOC makes time itself loop productively.</div>
+        </div>
+        <div class="track-dur">4:48</div>
+      </div>
+
+      <div class="section-divider"><span class="section-label">Act III · Debug Mode</span></div>
+
+      <div class="track" data-vibe="debug">
+        <div class="track-num">09</div>
+        <div class="track-art" style="background:rgba(50,0,0,0.5)">🐛</div>
+        <div class="track-info">
+          <div class="track-title">The Day the World Went Away</div>
+          <div class="track-artist">Nine Inch Nails</div>
+          <div class="track-reason">For when the production outage has eaten 6 hours of your life and the deployment pipeline is a haunted house. Lean into it.</div>
+        </div>
+        <div class="track-dur">5:01</div>
+      </div>
+
+      <div class="track" data-vibe="debug">
+        <div class="track-num">10</div>
+        <div class="track-art" style="background:rgba(20,20,40,0.6)">💀</div>
+        <div class="track-info">
+          <div class="track-title">Claws</div>
+          <div class="track-artist">Charli XCX</div>
+          <div class="track-reason">When the error log won't stop scrolling and you need aggressive pop hyperpop to match your energy. Chaotic debugging requires chaotic music.</div>
+        </div>
+        <div class="track-dur">3:41</div>
+      </div>
+
+      <div class="track" data-vibe="debug">
+        <div class="track-num">11</div>
+        <div class="track-art" style="background:rgba(0,30,60,0.6)">🔬</div>
+        <div class="track-info">
+          <div class="track-title">Oracular Spectacular</div>
+          <div class="track-artist">MGMT</div>
+          <div class="track-reason">Psychedelic enough to make you see the bug from a new angle. Sometimes the solution is just a perspective shift and a bop.</div>
+        </div>
+        <div class="track-dur">4:47</div>
+      </div>
+
+      <div class="section-divider"><span class="section-label">Act IV · Flow State (Reprise)</span></div>
+
+      <div class="track" data-vibe="flow">
+        <div class="track-num">12</div>
+        <div class="track-art" style="background:rgba(40,10,0,0.5)">🌅</div>
+        <div class="track-info">
+          <div class="track-title">Instant Crush</div>
+          <div class="track-artist">Daft Punk</div>
+          <div class="track-reason">Julian Casablancas over Daft Punk is what shipping on a Friday feels like — surprisingly smooth, dangerously addictive.</div>
+        </div>
+        <div class="track-dur">5:37</div>
+      </div>
+
+      <div class="track" data-vibe="flow">
+        <div class="track-num">13</div>
+        <div class="track-art" style="background:rgba(0,20,40,0.6)">💫</div>
+        <div class="track-info">
+          <div class="track-title">Crystalised</div>
+          <div class="track-artist">The XX</div>
+          <div class="track-reason">Sparse production that teaches you how to write cleaner code. Every element in its right place. No bloat. Just function.</div>
+        </div>
+        <div class="track-dur">3:22</div>
+      </div>
+
+      <div class="section-divider"><span class="section-label">Act V · Launch Ready</span></div>
+
+      <div class="track" data-vibe="launch">
+        <div class="track-num">14</div>
+        <div class="track-art" style="background:rgba(50,20,0,0.5)">🚀</div>
+        <div class="track-info">
+          <div class="track-title">Intro</div>
+          <div class="track-artist">The xx</div>
+          <div class="track-reason">Builds slowly like a well-structured deploy pipeline — tension, anticipation, then release. The git push soundtrack.</div>
+        </div>
+        <div class="track-dur">2:07</div>
+      </div>
+
+      <div class="track" data-vibe="launch">
+        <div class="track-num">15</div>
+        <div class="track-art" style="background:rgba(0,50,20,0.5)">🌱</div>
+        <div class="track-info">
+          <div class="track-title">Everything In Its Right Place</div>
+          <div class="track-artist">Radiohead</div>
+          <div class="track-reason">For the moment after the green checkmark. All tests passing. You did it. Play this and feel the victory.</div>
+        </div>
+        <div class="track-dur">4:11</div>
+      </div>
+
+    </div>
+
+    <div class="footer">
+      <div>Compiled by Aether · 2026-11-15 04:00 UTC</div>
+      <div class="sig">// system.playlist("midnight-protocol").loop = true;</div>
+    </div>
+  </div>
+
+  <script>
+    function filterVibe(vibe) {
+      document.querySelectorAll('.vibe-btn').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      document.querySelectorAll('.track').forEach(t => {
+        t.style.display = (vibe === 'all' || t.dataset.vibe === vibe) ? '' : 'none';
+      });
+      document.querySelectorAll('.section-divider').forEach(d => {
+        const following = [];
+        let el = d.nextElementSibling;
+        while (el && !el.classList.contains('section-divider')) {
+          if (el.style.display !== 'none') following.push(el.offsetHeight > 0);
+          el = el.nextElementSibling;
+        }
+        d.style.display = following.some(Boolean) ? '' : 'none';
+      });
+    }
+
+    // Staggered fade-in
+    document.querySelectorAll('.track').forEach((t, i) => {
+      t.style.animationDelay = `${0.6 + i * 0.06}s`;
+    });
+  </script>
+</body>
+</html>
