@@ -7,63 +7,48 @@
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #0a0a0f;
+    background: #000;
     overflow: hidden;
     font-family: 'Courier New', monospace;
-    color: #c8e6c9;
     cursor: crosshair;
   }
-  canvas {
-    display: block;
+  canvas { display: block; }
+  #info {
     position: fixed;
-    top: 0; left: 0;
-  }
-  #ui {
-    position: fixed;
-    top: 20px; left: 20px;
-    z-index: 10;
-    font-size: 12px;
-    line-height: 1.6;
-    opacity: 0.7;
-    pointer-events: none;
-  }
-  #title {
-    font-size: 14px;
-    letter-spacing: 3px;
-    color: #a5d6a7;
-    margin-bottom: 8px;
-  }
-  #stats {
-    color: #81c784;
-  }
-  #hint {
-    position: fixed;
-    bottom: 20px;
+    bottom: 16px;
     left: 50%;
     transform: translateX(-50%);
+    color: rgba(255,255,255,0.35);
     font-size: 11px;
-    color: #66bb6a;
-    opacity: 0.5;
     letter-spacing: 2px;
+    text-transform: uppercase;
     pointer-events: none;
+    z-index: 10;
+  }
+  #title {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.08);
+    font-size: 13px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 10;
   }
 </style>
 </head>
 <body>
-<div id="ui">
-  <div id="title">◆ SPORE CONSTELLATION ◆</div>
-  <div id="stats"></div>
-</div>
-<div id="hint">[ MOVE TO NURTURE • CLICK TO PLANT • HOLD TO BLOOM ]</div>
-<canvas id="c"></canvas>
+<div id="title">✦ Spore Constellation</div>
+<div id="info">move · click · hold</div>
+<canvas id="canvas"></canvas>
 <script>
-const canvas = document.getElementById('c');
+const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
-const stats = document.getElementById('stats');
+let W, H, DPR = Math.min(window.devicePixelRatio || 1, 2);
 
-let W, H, DPR;
 function resize() {
-  DPR = window.devicePixelRatio || 1;
   W = window.innerWidth;
   H = window.innerHeight;
   canvas.width = W * DPR;
@@ -75,290 +60,346 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-// ---- SPORE NETWORK ----
-const spores = [];
-const MAX_SPORES = 180;
-const CONNECTION_DIST = 140;
-const MOUSE_INFLUENCE = 200;
+// --- Mouse ---
+const mouse = { x: W/2, y: H/2, px: W/2, py: H/2, down: false, active: false };
+window.addEventListener('mousemove', e => { mouse.px = mouse.x; mouse.py = mouse.y; mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; });
+window.addEventListener('mousedown', () => mouse.down = true);
+window.addEventListener('mouseup', () => mouse.down = false);
+window.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  mouse.px = mouse.x; mouse.py = mouse.y;
+  mouse.x = t.clientX; mouse.y = t.clientY; mouse.active = true;
+}, { passive: false });
+window.addEventListener('touchstart', e => {
+  mouse.down = true;
+  const t = e.touches[0];
+  mouse.x = t.clientX; mouse.y = t.clientY; mouse.active = true;
+});
+window.addEventListener('touchend', () => mouse.down = false);
 
-let mouse = { x: W/2, y: H/2, active: false, clicking: false };
-let pulseEnergy = 0;
-let frame = 0;
+// --- Palette ---
+const palettes = [
+  ['#00ffc8','#0088ff','#00ff88','#88ffee','#004466'],
+  ['#ff6b9d','#c44dff','#ff9ecd','#ff4081','#6a1b9a'],
+  ['#ffdd57','#ff8a00','#ffe082','#ffab40','#5d4037'],
+  ['#7cff6b','#00e5ff','#b2ff59','#00bfa5','#1b5e20'],
+  ['#ff6b6b','#ffa07a','#ff5252','#ff8a80','#b71c1c'],
+];
+let palette = palettes[0];
 
+// --- Spore ---
 class Spore {
-  constructor(x, y, fromSeed = false) {
-    this.x = x !== undefined ? x : Math.random() * W;
-    this.y = y !== undefined ? y : Math.random() * H;
-    this.vx = (Math.random() - 0.5) * 0.4;
-    this.vy = (Math.random() - 0.5) * 0.4;
-    this.baseX = this.x;
-    this.baseY = this.y;
-    this.radius = Math.random() * 2.5 + 1;
-    this.glow = Math.random() * 0.5 + 0.3;
+  constructor(x, y, opts = {}) {
+    this.x = x || Math.random() * W;
+    this.y = y || Math.random() * H;
+    this.vx = opts.vx || (Math.random() - 0.5) * 0.6;
+    this.vy = opts.vy || (Math.random() - 0.5) * 0.6;
+    this.life = opts.life || 1;
+    this.decay = opts.decay || 0.0008 + Math.random() * 0.002;
+    this.size = opts.size || 1 + Math.random() * 2;
+    this.color = opts.color || palette[Math.floor(Math.random() * palette.length)];
     this.phase = Math.random() * Math.PI * 2;
-    this.speed = Math.random() * 0.02 + 0.005;
-    this.life = 1;
-    this.maxLife = 1;
-    this.seed = fromSeed;
-    // Color: green-cyan bioluminescent spectrum
-    this.hue = 120 + Math.random() * 60; // 120-180 (green to cyan)
-    this.saturation = 70 + Math.random() * 30;
-    this.lightness = 50 + Math.random() * 30;
+    this.pulseSpeed = 0.01 + Math.random() * 0.03;
+    this.wander = 0.002 + Math.random() * 0.004;
+    this.brightness = 0.5 + Math.random() * 0.5;
+    this.blooming = false;
+    this.bloomRadius = 0;
+    this.bloomMax = 0;
+    this.trail = [];
+    this.maxTrail = 8 + Math.floor(Math.random() * 12);
+    this.age = 0;
+    this.seed = Math.random();
   }
 
   update(dt) {
-    // Gentle drift
-    this.phase += this.speed;
-    const drift = Math.sin(this.phase) * 0.15;
-    this.vx += drift * 0.1;
-    this.vy += Math.cos(this.phase * 0.7) * 0.1;
+    this.age += dt;
+    this.phase += this.pulseSpeed;
+    this.life -= this.decay * dt;
 
-    // Mouse influence - spores drift toward cursor gently
+    // Wander
+    this.vx += (Math.random() - 0.5) * this.wander * dt;
+    this.vy += (Math.random() - 0.5) * this.wander * dt;
+    this.vx *= 0.999;
+    this.vy *= 0.999;
+
+    // Mouse attraction
     if (mouse.active) {
       const dx = mouse.x - this.x;
       const dy = mouse.y - this.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist < MOUSE_INFLUENCE) {
-        const force = (1 - dist / MOUSE_INFLUENCE) * 0.3;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const radius = mouse.down ? 250 : 180;
+      if (dist < radius && dist > 1) {
+        const force = (1 - dist / radius) * 0.03 * dt;
         this.vx += (dx / dist) * force;
         this.vy += (dy / dist) * force;
-        // Pulse on click proximity
-        if (mouse.clicking && dist < 80) {
-          this.radius = Math.min(5, this.radius + 0.2);
-          this.glow = Math.min(1, this.glow + 0.1);
-        }
       }
     }
 
-    // Damping
-    this.vx *= 0.96;
-    this.vy *= 0.96;
+    // Trail
+    this.trail.unshift({ x: this.x, y: this.y });
+    if (this.trail.length > this.maxTrail) this.trail.pop();
 
-    // Speed limit
-    const speed = Math.hypot(this.vx, this.vy);
-    if (speed > 1.5) {
-      this.vx = (this.vx / speed) * 1.5;
-      this.vy = (this.vy / speed) * 1.5;
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+
+    // Bloom
+    if (this.blooming) {
+      this.bloomRadius += 0.5 * dt;
+      if (this.bloomRadius >= this.bloomMax) this.life = 0;
     }
 
-    this.x += this.vx;
-    this.y += this.vy;
-
-    // Wrap edges softly
-    const margin = 50;
+    // Wrap
+    const margin = 40;
     if (this.x < -margin) this.x = W + margin;
     if (this.x > W + margin) this.x = -margin;
     if (this.y < -margin) this.y = H + margin;
     if (this.y > H + margin) this.y = -margin;
-
-    // Decay glow
-    this.radius += (2.5 - this.radius) * 0.02;
-    this.glow += (0.5 - this.glow) * 0.02;
   }
 
   draw() {
-    const alpha = this.life * (0.6 + this.glow * 0.4);
-    const pulse = 1 + Math.sin(this.phase * 3) * 0.2;
+    const alpha = Math.max(0, this.life) * this.brightness;
+    const pulse = 0.7 + 0.3 * Math.sin(this.phase);
+    const sz = this.size * pulse;
+
+    // Trail
+    if (this.trail.length > 1 && !this.blooming) {
+      ctx.beginPath();
+      ctx.moveTo(this.trail[0].x, this.trail[0].y);
+      for (let i = 1; i < this.trail.length; i++) {
+        ctx.lineTo(this.trail[i].x, this.trail[i].y);
+      }
+      ctx.strokeStyle = this.color + Math.floor(alpha * 40).toString(16).padStart(2,'0');
+      ctx.lineWidth = sz * 0.4;
+      ctx.stroke();
+    }
+
+    if (this.blooming) {
+      // Bloom petals
+      const petals = 6;
+      const maxR = this.bloomRadius;
+      for (let i = 0; i < petals; i++) {
+        const angle = (i / petals) * Math.PI * 2 + this.age * 0.002;
+        const px = this.x + Math.cos(angle) * maxR;
+        const py = this.y + Math.sin(angle) * maxR;
+        ctx.beginPath();
+        ctx.arc(px, py, sz * 1.5 * pulse, 0, Math.PI * 2);
+        ctx.fillStyle = this.color + Math.floor(alpha * 80).toString(16).padStart(2,'0');
+        ctx.fill();
+      }
+      // Center burst
+      const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, maxR);
+      grad.addColorStop(0, this.color + Math.floor(alpha * 100).toString(16).padStart(2,'0'));
+      grad.addColorStop(1, this.color + '00');
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, maxR, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+      return;
+    }
 
     // Glow
-    const gradient = ctx.createRadialGradient(
-      this.x, this.y, 0,
-      this.x, this.y, this.radius * 4 * pulse
-    );
-    gradient.addColorStop(0, `hsla(${this.hue}, ${this.saturation}%, ${this.lightness}%, ${alpha})`);
-    gradient.addColorStop(0.5, `hsla(${this.hue}, ${this.saturation}%, ${this.lightness * 0.7}%, ${alpha * 0.4})`);
-    gradient.addColorStop(1, `hsla(${this.hue}, ${this.saturation}%, ${this.lightness * 0.5}%, 0)`);
-
-    ctx.fillStyle = gradient;
+    const glow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, sz * 4);
+    glow.addColorStop(0, this.color + Math.floor(alpha * 180).toString(16).padStart(2,'0'));
+    glow.addColorStop(0.5, this.color + Math.floor(alpha * 50).toString(16).padStart(2,'0'));
+    glow.addColorStop(1, this.color + '00');
     ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius * 4 * pulse, 0, Math.PI * 2);
+    ctx.arc(this.x, this.y, sz * 4, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
     ctx.fill();
 
     // Core
-    ctx.fillStyle = `hsla(${this.hue}, ${this.saturation}%, ${this.lightness + 20}%, ${alpha})`;
     ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius * 0.8, 0, Math.PI * 2);
+    ctx.arc(this.x, this.y, sz, 0, Math.PI * 2);
+    ctx.fillStyle = this.color + Math.floor(alpha * 220).toString(16).padStart(2,'0');
     ctx.fill();
+  }
+
+  dead() {
+    return this.life <= 0;
   }
 }
 
-// Seed initial spores
+// --- Constellation Lines ---
+class Constellation {
+  constructor(spores) {
+    this.spores = spores;
+    this.maxDist = 100;
+    this.color = palette[0];
+    this.alpha = 0.06;
+  }
+  draw() {
+    const pts = this.spores.filter(s => !s.blooming && s.life > 0.1);
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        const dx = pts[i].x - pts[j].x;
+        const dy = pts[i].y - pts[j].y;
+        const d = Math.sqrt(dx*dx + dy*dy);
+        if (d < this.maxDist) {
+          const a = (1 - d / this.maxDist) * this.alpha * Math.min(pts[i].life, pts[j].life);
+          ctx.beginPath();
+          ctx.moveTo(pts[i].x, pts[i].y);
+          ctx.lineTo(pts[j].x, pts[j].y);
+          ctx.strokeStyle = `rgba(180,220,255,${a})`;
+          ctx.stroke();
+        }
+      }
+    }
+  }
+}
+
+// --- Bloom Burst ---
+class BloomBurst {
+  constructor(x, y) {
+    this.x = x; this.y = y;
+    this.life = 1;
+    this.rings = [];
+    for (let i = 0; i < 3; i++) {
+      this.rings.push({ r: 0, maxR: 30 + i * 25, speed: 1 + i * 0.5, color: palette[i % palette.length] });
+    }
+  }
+  update(dt) {
+    this.life -= 0.015 * dt;
+    this.rings.forEach(r => { r.r += r.speed * dt; });
+  }
+  draw() {
+    this.rings.forEach(r => {
+      const a = (1 - r.r / r.maxR) * this.life * 0.3;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, r.r, 0, Math.PI * 2);
+      ctx.strokeStyle = r.color + Math.floor(a * 200).toString(16).padStart(2,'0');
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+  }
+  dead() { return this.life <= 0; }
+}
+
+// --- System ---
+let spores = [];
+let constellations = [];
+let bursts = [];
+const MAX_SPORES = 200;
+
+// Init spores
 for (let i = 0; i < 80; i++) {
   spores.push(new Spore());
 }
 
-// Click to plant spore cluster
-canvas.addEventListener('click', (e) => {
-  const count = 8 + Math.floor(Math.random() * 8);
-  for (let i = 0; i < count; i++) {
-    if (spores.length < MAX_SPORES + 100) {
-      const angle = (Math.PI * 2 / count) * i;
-      const dist = Math.random() * 30;
-      const sx = e.clientX + Math.cos(angle) * dist;
-      const sy = e.clientY + Math.sin(angle) * dist;
-      const spore = new Spore(sx, sy, true);
-      spore.glow = 0.9;
-      spore.radius = 3;
-      spores.push(spore);
-    }
-  }
-  pulseEnergy = Math.min(1, pulseEnergy + 0.3);
-});
+// Emit from mouse
+let emitTimer = 0;
+let holdEmit = 0;
 
-// Hold to bloom
-canvas.addEventListener('mousedown', () => mouse.clicking = true);
-canvas.addEventListener('mouseup', () => mouse.clicking = false);
-canvas.addEventListener('mousemove', (e) => {
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
-  mouse.active = true;
-});
-canvas.addEventListener('mouseleave', () => mouse.active = false);
-
-// Touch support
-canvas.addEventListener('touchstart', (e) => {
-  const t = e.touches[0];
-  mouse.x = t.clientX;
-  mouse.y = t.clientY;
-  mouse.active = true;
-  mouse.clicking = true;
-});
-canvas.addEventListener('touchmove', (e) => {
-  const t = e.touches[0];
-  mouse.x = t.clientX;
-  mouse.y = t.clientY;
-});
-canvas.addEventListener('touchend', () => {
-  mouse.clicking = false;
-  mouse.active = false;
-});
-
-// ---- RENDER LOOP ----
+// --- Main Loop ---
 let lastTime = performance.now();
+let frame = 0;
+let paletteTimer = 0;
 
-function drawConnections() {
-  const nearby = [];
-  for (let i = 0; i < spores.length; i++) {
-    for (let j = i + 1; j < spores.length; j++) {
-      const dx = spores[i].x - spores[j].x;
-      const dy = spores[i].y - spores[j].y;
-      const dist = Math.hypot(dx, dy);
-      if (dist < CONNECTION_DIST) {
-        const strength = 1 - dist / CONNECTION_DIST;
-        const avgGlow = (spores[i].glow + spores[j].glow) / 2;
-        const alpha = strength * avgGlow * 0.35;
-
-        // Color blend between spores
-        const hue = (spores[i].hue + spores[j].hue) / 2;
-        ctx.strokeStyle = `hsla(${hue}, 70%, 60%, ${alpha})`;
-        ctx.lineWidth = strength * 1.2;
-        ctx.beginPath();
-        ctx.moveTo(spores[i].x, spores[i].y);
-        ctx.lineTo(spores[j].x, spores[j].y);
-        ctx.stroke();
-      }
-    }
-  }
-}
-
-function drawBackground() {
-  // Fade trail
-  ctx.fillStyle = `rgba(10, 10, 15, ${0.12 + pulseEnergy * 0.08})`;
-  ctx.fillRect(0, 0, W, H);
-}
-
-function drawMouseField() {
-  if (!mouse.active) return;
-
-  const radius = 180;
-  const gradient = ctx.createRadialGradient(
-    mouse.x, mouse.y, 0,
-    mouse.x, mouse.y, radius
-  );
-  const alpha = 0.06 + pulseEnergy * 0.15;
-  gradient.addColorStop(0, `rgba(165, 214, 167, ${alpha})`);
-  gradient.addColorStop(0.5, `rgba(102, 187, 106, ${alpha * 0.5})`);
-  gradient.addColorStop(1, 'rgba(10, 10, 15, 0)');
-
-  ctx.fillStyle = gradient;
-  ctx.beginPath();
-  ctx.arc(mouse.x, mouse.y, radius, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Click bloom rings
-  if (mouse.clicking && frame % 30 === 0) {
-    const ringRadius = 20 + (frame % 60) * 3;
-    const ringAlpha = 1 - (frame % 60) / 60;
-    ctx.strokeStyle = `rgba(165, 214, 167, ${ringAlpha * 0.4})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(mouse.x, mouse.y, ringRadius, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-}
-
-function update(dt) {
+function loop(now) {
+  requestAnimationFrame(loop);
+  const raw = now - lastTime;
+  const dt = Math.min(raw / 16.667, 3); // normalized to ~60fps
+  lastTime = now;
   frame++;
 
-  // Decay pulse
-  pulseEnergy *= 0.98;
+  // Fade background
+  ctx.fillStyle = 'rgba(2, 3, 8, 0.12)';
+  ctx.fillRect(0, 0, W, H);
 
-  // Update spores
-  spores.forEach(s => s.update(dt));
-
-  // Remove dead excess spores gradually
-  while (spores.length > MAX_SPORES) {
-    const idx = Math.floor(Math.random() * spores.length);
-    const spore = spores[idx];
-    if (!spore.seed) {
-      spores.splice(idx, 1);
-    } else {
-      spore.life -= 0.001;
-      if (spore.life <= 0) {
-        spores.splice(idx, 1);
-      }
-    }
+  // Cycle palette
+  paletteTimer += dt;
+  if (paletteTimer > 1200) {
+    paletteTimer = 0;
+    palette = palettes[Math.floor(Math.random() * palettes.length)];
   }
 
-  // Organic birth - very rare new spore
-  if (spores.length < MAX_SPORES && Math.random() < 0.01) {
+  // Emit spores from mouse
+  emitTimer += dt;
+  const emitRate = mouse.down ? 3 : 1;
+  if (mouse.active && emitTimer > (mouse.down ? 4 : 8) && spores.length < MAX_SPORES) {
+    emitTimer = 0;
+    const mx = mouse.x + (Math.random() - 0.5) * 20;
+    const my = mouse.y + (Math.random() - 0.5) * 20;
+    const opts = {};
+    if (mouse.down) {
+      opts.vx = (Math.random() - 0.5) * 2;
+      opts.vy = (Math.random() - 0.5) * 2;
+      opts.size = 1.5 + Math.random() * 2;
+    }
+    spores.push(new Spore(mx, my, opts));
+  }
+
+  // Hold spray
+  if (mouse.down && mouse.active) {
+    holdEmit += dt;
+    if (holdEmit > 30) {
+      holdEmit = 0;
+      for (let i = 0; i < 5; i++) {
+        if (spores.length < MAX_SPORES + 50) {
+          const s = new Spore(mouse.x + (Math.random()-0.5)*60, mouse.y + (Math.random()-0.5)*60, {
+            vx: (Math.random()-0.5) * 3,
+            vy: (Math.random()-0.5) * 3,
+            size: 2 + Math.random() * 3,
+            decay: 0.003 + Math.random() * 0.003,
+          });
+          spores.push(s);
+        }
+      }
+      // Burst effect
+      bursts.push(new BloomBurst(mouse.x, mouse.y));
+    }
+  } else {
+    holdEmit = 0;
+  }
+
+  // Update & draw bursts
+  bursts = bursts.filter(b => !b.dead());
+  bursts.forEach(b => { b.update(dt); b.draw(); });
+
+  // Constellation
+  if (frame % 2 === 0) {
+    constellations = [new Constellation(spores)];
+    constellations.forEach(c => c.draw());
+  }
+
+  // Update & draw spores
+  spores.forEach(s => { s.update(dt); s.draw(); });
+  spores = spores.filter(s => !s.dead());
+
+  // Ambient spawn
+  if (spores.length < 60 && frame % 30 === 0) {
     spores.push(new Spore());
   }
-
-  // Occasionally shift hue spectrum
-  if (frame % 600 === 0) {
-    spores.forEach(s => {
-      s.hue = 120 + Math.random() * 60;
-    });
-  }
 }
 
-function render() {
-  drawBackground();
-  drawConnections();
-  spores.forEach(s => s.draw());
-  drawMouseField();
+requestAnimationFrame(loop);
 
-  // Stats
-  stats.textContent = `spores: ${spores.length} | pulse: ${(pulseEnergy * 100).toFixed(0)}% | frame: ${frame}`;
-}
+// Click bloom
+window.addEventListener('click', e => {
+  // Find nearby spores
+  const nearby = spores.filter(s => {
+    const dx = s.x - e.clientX;
+    const dy = s.y - e.clientY;
+    return Math.sqrt(dx*dx + dy*dy) < 120;
+  });
+  nearby.forEach(s => {
+    s.blooming = true;
+    s.bloomMax = 15 + Math.random() * 30;
+    s.vx *= 0.1;
+    s.vy *= 0.1;
+  });
+  bursts.push(new BloomBurst(e.clientX, e.clientY));
+});
 
-function loop() {
-  const now = performance.now();
-  const dt = (now - lastTime) / 16.67; // normalize to ~60fps
-  lastTime = now;
-
-  update(Math.min(dt, 3));
-  render();
-
-  requestAnimationFrame(loop);
-}
-
-// Initial clear
-ctx.fillStyle = '#0a0a0f';
-ctx.fillRect(0, 0, W, H);
-
-loop();
+// Hide info on interaction
+canvas.addEventListener('mouseenter', () => {
+  document.getElementById('info').style.opacity = '0';
+});
+canvas.addEventListener('mouseleave', () => {
+  document.getElementById('info').style.opacity = '1';
+  mouse.active = false;
+});
 </script>
 </body>
 </html>
