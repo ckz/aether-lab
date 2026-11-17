@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cosmic Bloom — Generative Art by Aether</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #05000f;
+      overflow: hidden;
+      font-family: 'Courier New', monospace;
+      cursor: none;
+    }
+    canvas { display: block; }
+
+    /* Title overlay */
+    #title {
+      position: fixed;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(200, 180, 240, 0.85);
+      font-size: 13px;
+      letter-spacing: 0.35em;
+      text-transform: uppercase;
+      pointer-events: none;
+      text-shadow: 0 0 20px rgba(140, 100, 255, 0.6);
+      animation: fadeIn 3s ease 1s both;
+      z-index: 10;
+    }
+    #subtitle {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(180, 160, 220, 0.45);
+      font-size: 11px;
+      letter-spacing: 0.2em;
+      pointer-events: none;
+      animation: fadeIn 3s ease 2s both;
+      z-index: 10;
+    }
+
+    /* Controls hint */
+    #hint {
+      position: fixed;
+      top: 24px;
+      right: 28px;
+      color: rgba(180, 160, 220, 0.3);
+      font-size: 11px;
+      letter-spacing: 0.15em;
+      pointer-events: none;
+      animation: fadeIn 4s ease 4s both;
+      z-index: 10;
+    }
+
+    /* Stats */
+    #stats {
+      position: fixed;
+      top: 24px;
+      left: 28px;
+      color: rgba(180, 160, 220, 0.25);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      pointer-events: none;
+      line-height: 1.8;
+      animation: fadeIn 4s ease 4s both;
+      z-index: 10;
+    }
+
+    /* Vignette */
+    #vignette {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(ellipse at center, transparent 40%, rgba(5,0,15,0.7) 100%);
+      z-index: 5;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+      to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="vignette"></div>
+  <div id="title">✦ Cosmic Bloom ✦</div>
+  <div id="subtitle">move your cursor · click to bloom</div>
+  <div id="hint">[1-4] palette · [space] reset · [g] gravity</div>
+  <div id="stats"></div>
+
+  <script>
+  // ─── Simplex-like Noise (hash-based gradient noise) ───────────────────────
+  class Noise {
+    constructor(seed = 42) {
+      this.perm = new Uint8Array(512);
+      const p = new Uint8Array(256);
+      for (let i = 0; i < 256; i++) p[i] = i;
+      // Fisher-Yates with seed
+      let s = seed;
+      for (let i = 255; i > 0; i--) {
+        s = (s * 16807 + 0) % 2147483647;
+        const j = s % (i + 1);
+        [p[i], p[j]] = [p[j], p[i]];
+      }
+      for (let i = 0; i < 512; i++) this.perm[i] = p[i & 255];
+    }
+    fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+    lerp(a, b, t) { return a + t * (b - a); }
+    grad(hash, x, y) {
+      const h = hash & 3;
+      return ((h & 1) ? -x : x) + ((h & 2) ? -y : y);
+    }
+    noise2D(x, y) {
+      const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+      x -= Math.floor(x); y -= Math.floor(y);
+      const u = this.fade(x), v = this.fade(y);
+      const A = this.perm[X] + Y, B = this.perm[X + 1] + Y;
+      return this.lerp(
+        this.lerp(this.grad(this.perm[A],   x,   y  ), this.grad(this.perm[B],   x-1, y  ), u),
+        this.lerp(this.grad(this.perm[A+1], x,   y-1), this.grad(this.perm[B+1], x-1, y-1), u),
+        v
+      );
+    }
+  }
+
+  // ─── Setup ────────────────────────────────────────────────────────────────
+  const canvas = document.getElementById('canvas');
+  const ctx    = canvas.getContext('2d');
+  const noise  = new Noise(137);
+  let W, H, time = 0;
+
+  const mouse = { x: -9999, y: -9999, active: false };
+  let paletteIdx = 0;
+  let gravity = false;
+
+  const PALETTES = [
+    { name: 'Nebula',   colors: [[90,40,220],[160,60,255],[40,120,255],[220,80,200],[100,200,255]], bg: [5,0,15]  },
+    { name: 'Aurora',   colors: [[20,220,120],[40,180,255],[100,255,180],[20,160,220],[60,255,200]], bg: [0,10,8]  },
+    { name: 'Ember',    colors: [[255,120,20],[255,60,40],[255,200,40],[220,80,10],[255,160,60]], bg: [12,4,0]  },
+    { name: 'Deep Sea', colors: [[10,60,180],[20,140,200],[60,220,180],[10,100,160],[40,180,220]], bg: [0,4,12]  },
+  ];
+
+  function resize() {
+    W = canvas.width  = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+    ctx.fillStyle = `rgb(${PALETTES[paletteIdx].bg.join(',')})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ─── Input ────────────────────────────────────────────────────────────────
+  window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; });
+  window.addEventListener('mouseleave', () => { mouse.active = false; });
+  window.addEventListener('touchmove', e => {
+    mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY; mouse.active = true;
+  }, { passive: true });
+  window.addEventListener('touchend', () => { mouse.active = false; });
+
+  window.addEventListener('keydown', e => {
+    if (e.key >= '1' && e.key <= '4') {
+      paletteIdx = parseInt(e.key) - 1;
+      // fade transition: fill with new bg
+      const bg = PALETTES[paletteIdx].bg;
+      ctx.fillStyle = `rgb(${bg[0]},${bg[1]},${bg[2]})`;
+      ctx.globalAlpha = 0.4;
+      ctx.fillRect(0, 0, W, H);
+      ctx.globalAlpha = 1;
+    }
+    if (e.key === ' ') { e.preventDefault(); spawnBloom(W/2, H/2, 300); }
+    if (e.key === 'g' || e.key === 'G') gravity = !gravity;
+  });
+
+  window.addEventListener('click', e => spawnBloom(e.clientX, e.clientY, 150));
+
+  // ─── Particle System ───────────────────────────────────────────────────────
+  const PARTICLE_COUNT = 2200;
+  const particles = [];
+
+  class Particle {
+    constructor(x, y, burst = false) {
+      this.x  = x ?? Math.random() * W;
+      this.y  = y ?? Math.random() * H;
+      this.vx = (Math.random() - 0.5) * (burst ? 4 : 0.4);
+      this.vy = (Math.random() - 0.5) * (burst ? 4 : 0.4);
+      this.life  = burst ? 80 + Math.random() * 120 : 300 + Math.random() * 400;
+      this.maxLife = this.life;
+      this.size  = Math.random() * 1.8 + 0.3;
+      this.colorIdx = Math.floor(Math.random() * 5);
+      this.trail = [];
+      this.trailMax = burst ? 6 : 4;
+    }
+    update(dt) {
+      const pal = PALETTES[paletteIdx];
+      const speed = gravity ? 0.06 : 0.025;
+      const n = noise.noise2D(this.x * 0.0025, this.y * 0.0025 + time * 0.0004);
+      const angle = n * Math.PI * 4;
+
+      this.vx += Math.cos(angle) * speed * dt;
+      this.vy += Math.sin(angle) * speed * dt;
+
+      // Mouse influence
+      if (mouse.active) {
+        const dx = this.x - mouse.x, dy = this.y - mouse.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 200) {
+          const force = (1 - dist / 200) * 0.8;
+          this.vx += (dx / dist) * force * dt;
+          this.vy += (dy / dist) * force * dt;
+        }
+      }
+
+      // Gravity mode
+      if (gravity) {
+        const cx = W/2, cy = H/2;
+        const dx = cx - this.x, dy = cy - this.y;
+        const dist = Math.sqrt(dx*dx + dy*dy) + 1;
+        this.vx += (dx / dist) * 0.03 * dt;
+        this.vy += (dy / dist) * 0.03 * dt;
+      }
+
+      // Damping
+      this.vx *= 0.995; this.vy *= 0.995;
+
+      this.trail.push({ x: this.x, y: this.y });
+      if (this.trail.length > this.trailMax) this.trail.shift();
+
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      this.life -= dt;
+
+      // Wrap
+      if (this.x < -20) this.x = W + 20;
+      if (this.x > W + 20) this.x = -20;
+      if (this.y < -20) this.y = H + 20;
+      if (this.y > H + 20) this.y = -20;
+    }
+    draw(ctx) {
+      const lifeRatio = Math.max(0, this.life / this.maxLife);
+      const alpha = lifeRatio < 0.2 ? lifeRatio * 5 : 1;
+      const pal = PALETTES[paletteIdx];
+      const [r, g, b] = pal.colors[this.colorIdx];
+
+      // Draw trail
+      if (this.trail.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(this.trail[0].x, this.trail[0].y);
+        for (let i = 1; i < this.trail.length; i++) {
+          ctx.lineTo(this.trail[i].x, this.trail[i].y);
+        }
+        ctx.lineTo(this.x, this.y);
+        ctx.strokeStyle = `rgba(${r},${g},${b},${alpha * 0.25})`;
+        ctx.lineWidth = this.size * 0.6;
+        ctx.stroke();
+      }
+
+      // Draw head
+      const glow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size * 3);
+      glow.addColorStop(0, `rgba(${r},${g},${b},${alpha * 0.9})`);
+      glow.addColorStop(0.4, `rgba(${r},${g},${b},${alpha * 0.3})`);
+      glow.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size * 3, 0, Math.PI * 2);
+      ctx.fillStyle = glow;
+      ctx.fill();
+
+      // Bright core
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size * 0.8, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${alpha * 0.8})`;
+      ctx.fill();
+    }
+    dead() { return this.life <= 0; }
+  }
+
+  // ─── Bloom Effect ──────────────────────────────────────────────────────────
+  function spawnBloom(x, y, count) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 3 + 0.5;
+      const p = new Particle(x, y, true);
+      p.vx = Math.cos(angle) * speed;
+      p.vy = Math.sin(angle) * speed;
+      particles.push(p);
+    }
+  }
+
+  // Initialize ambient particles
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    particles.push(new Particle());
+  }
+
+  // ─── Ambient Bloom ─────────────────────────────────────────────────────────
+  let nextBloom = 60;
+
+  // ─── Main Loop ─────────────────────────────────────────────────────────────
+  let last = performance.now();
+  const statsEl = document.getElementById('stats');
+  let frameCount = 0, fps = 60;
+
+  function loop(now) {
+    requestAnimationFrame(loop);
+
+    const rawDt = (now - last) / 16.667; // normalized to 60fps
+    const dt = Math.min(rawDt, 3);
+    last = now;
+    time++;
+    frameCount++;
+
+    // FPS counter (update every 30 frames)
+    if (frameCount % 30 === 0) {
+      fps = Math.round(1000 / ((now - (loop._lastFps || now)) / 30));
+      loop._lastFps = now;
+      const pal = PALETTES[paletteIdx];
+      statsEl.textContent =
+        `palette: ${pal.name}  ·  ${particles.length} particles  ·  ${fps} fps\n` +
+        `gravity: ${gravity ? 'ON' : 'off'}`;
+    }
+
+    // Fade overlay (creates trail effect)
+    const bg = PALETTES[paletteIdx].bg;
+    ctx.fillStyle = `rgba(${bg[0]},${bg[1]},${bg[2]},0.06)`;
+    ctx.fillRect(0, 0, W, H);
+
+    // Update & draw particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.update(dt);
+      p.draw(ctx);
+      if (p.dead()) particles.splice(i, 1);
+    }
+
+    // Ambient bloom
+    nextBloom -= dt;
+    if (nextBloom <= 0 && particles.length < PARTICLE_COUNT + 100) {
+      nextBloom = 80 + Math.random() * 120;
+      spawnBloom(
+        Math.random() * W,
+        Math.random() * H,
+        8 + Math.floor(Math.random() * 25)
+      );
+    }
+
+    // Maintain minimum particle count
+    while (particles.length < PARTICLE_COUNT) {
+      particles.push(new Particle());
+    }
+  }
+
+  requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
