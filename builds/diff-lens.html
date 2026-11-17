@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DiffLens — Visual Diff Tool</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a12;
+    color: #c9d1d9;
+    font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+    font-size: 13px;
+    min-height: 100vh;
+  }
+  header {
+    padding: 20px 32px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  h1 {
+    font-size: 18px;
+    color: #fff;
+    letter-spacing: 2px;
+  }
+  h1 span { color: #7b61ff; }
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  button, select {
+    background: rgba(123, 111, 255, 0.1);
+    border: 1px solid rgba(123, 111, 255, 0.3);
+    color: #c9d1d9;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    transition: all 0.2s;
+  }
+  button:hover, select:hover {
+    background: rgba(123, 111, 255, 0.2);
+    border-color: rgba(123, 111, 255, 0.6);
+  }
+  button.active {
+    background: rgba(123, 111, 255, 0.3);
+    border-color: #7b61ff;
+    color: #fff;
+  }
+  .stats {
+    padding: 10px 32px;
+    display: flex;
+    gap: 20px;
+    font-size: 11px;
+    letter-spacing: 1px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    flex-wrap: wrap;
+  }
+  .stat { display: flex; gap: 6px; align-items: center; }
+  .stat-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+  }
+  .stat.added .stat-dot { background: #3fb950; }
+  .stat.removed .stat-dot { background: #f85149; }
+  .stat.changed .stat-dot { background: #d29922; }
+  .stat.unchanged .stat-dot { background: #555; }
+  .stat-label { color: #666; text-transform: uppercase; }
+  .stat-value { color: #aaa; }
+
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    min-height: calc(100vh - 120px);
+  }
+  .panel {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid rgba(255,255,255,0.04);
+  }
+  .panel:last-child { border-right: none; }
+  .panel-header {
+    padding: 10px 16px;
+    background: rgba(255,255,255,0.02);
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #666;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .panel-header .line-count { color: #444; }
+  textarea {
+    flex: 1;
+    background: transparent;
+    color: #c9d1d9;
+    border: none;
+    padding: 16px;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.7;
+    resize: none;
+    outline: none;
+    tab-size: 2;
+    white-space: pre;
+    overflow: auto;
+  }
+  textarea::placeholder { color: #333; }
+
+  .unified-view {
+    display: none;
+    padding: 20px 32px;
+    overflow: auto;
+    max-height: calc(100vh - 120px);
+    line-height: 1.8;
+  }
+  .unified-view.active { display: block; }
+  .side-view.hidden { display: none; }
+
+  .diff-line {
+    display: block;
+    padding: 1px 16px;
+    border-radius: 3px;
+    margin: 0 -16px;
+  }
+  .diff-line.added {
+    background: rgba(63, 185, 80, 0.12);
+    color: #3fb950;
+  }
+  .diff-line.added::before {
+    content: '+ ';
+    color: #3fb950;
+    opacity: 0.7;
+    user-select: none;
+  }
+  .diff-line.removed {
+    background: rgba(248, 81, 73, 0.12);
+    color: #f85149;
+  }
+  .diff-line.removed::before {
+    content: '- ';
+    color: #f85149;
+    opacity: 0.7;
+    user-select: none;
+  }
+  .diff-line.context {
+    color: #666;
+  }
+  .diff-line.context::before {
+    content: '  ';
+    color: #333;
+    user-select: none;
+  }
+  .diff-line.changed-add {
+    background: rgba(210, 153, 34, 0.12);
+  }
+  .diff-line.changed-add::before {
+    content: '+ ';
+    color: #d29922;
+    opacity: 0.7;
+    user-select: none;
+  }
+  .word-add {
+    background: rgba(63, 185, 80, 0.3);
+    color: #3fb950;
+    padding: 1px 2px;
+    border-radius: 2px;
+  }
+  .word-remove {
+    background: rgba(248, 81, 73, 0.3);
+    color: #f85149;
+    padding: 1px 2px;
+    border-radius: 2px;
+    text-decoration: line-through;
+  }
+
+  .empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #333;
+    font-size: 13px;
+    letter-spacing: 1px;
+  }
+
+  .examples {
+    padding: 8px 32px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .examples-label {
+    font-size: 11px;
+    color: #444;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .example-btn {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    color: #666;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    font-family: inherit;
+  }
+  .example-btn:hover {
+    background: rgba(123, 111, 255, 0.1);
+    border-color: rgba(123, 111, 255, 0.3);
+    color: #aaa;
+  }
+
+  .footer {
+    padding: 8px 32px;
+    text-align: center;
+    font-size: 10px;
+    color: #333;
+    letter-spacing: 1px;
+    border-top: 1px solid rgba(255,255,255,0.03);
+  }
+
+  @media (max-width: 768px) {
+    .main { grid-template-columns: 1fr; }
+    header { padding: 16px; }
+    .stats { padding: 10px 16px; }
+    .unified-view { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>◧ <span>Diff</span>Lens</h1>
+    <div class="toolbar">
+      <button id="btn-side" class="active" onclick="setView('side')">Side by Side</button>
+      <button id="btn-unified" onclick="setView('unified')">Unified</button>
+      <button onclick="clearAll()">Clear</button>
+      <button onclick="swapTexts()">⇄ Swap</button>
+      <select id="word-mode" onchange="computeDiff()">
+        <option value="line">Line Mode</option>
+        <option value="word" selected>Word Mode</option>
+      </select>
+    </div>
+  </header>
+
+  <div class="examples">
+    <span class="examples-label">Try:</span>
+    <button class="example-btn" onclick="loadExample('function')">Function Refactor</button>
+    <button class="example-btn" onclick="loadExample('config')">Config Change</button>
+    <button class="example-btn" onclick="loadExample('css')">CSS Update</button>
+    <button class="example-btn" onclick="loadExample('api')">API Response</button>
+  </div>
+
+  <div class="stats" id="stats">
+    <div class="stat unchanged"><div class="stat-dot"></div><span class="stat-label">Lines</span><span class="stat-value" id="stat-lines">0</span></div>
+    <div class="stat added"><div class="stat-dot"></div><span class="stat-label">Added</span><span class="stat-value" id="stat-added">0</span></div>
+    <div class="stat removed"><div class="stat-dot"></div><span class="stat-label">Removed</span><span class="stat-value" id="stat-removed">0</span></div>
+    <div class="stat changed"><div class="stat-dot"></div><span class="stat-label">Changed</span><span class="stat-value" id="stat-changed">0</span></div>
+  </div>
+
+  <div class="main" id="side-view">
+    <div class="panel">
+      <div class="panel-header">Original <span class="line-count" id="left-count">0 lines</span></div>
+      <textarea id="left" placeholder="Paste original text here..." spellcheck="false"></textarea>
+    </div>
+    <div class="panel">
+      <div class="panel-header">Modified <span class="line-count" id="right-count">0 lines</span></div>
+      <textarea id="right" placeholder="Paste modified text here..." spellcheck="false"></textarea>
+    </div>
+  </div>
+
+  <div class="unified-view" id="unified-view"></div>
+
+  <div class="footer">DiffLens — all processing happens locally in your browser · no data leaves this page</div>
+
+<script>
+  const leftEl = document.getElementById('left');
+  const rightEl = document.getElementById('right');
+  const unifiedEl = document.getElementById('unified-view');
+  const sideView = document.getElementById('side-view');
+
+  let currentView = 'side';
+
+  leftEl.addEventListener('input', computeDiff);
+  rightEl.addEventListener('input', computeDiff);
+  leftEl.addEventListener('scroll', syncScroll);
+  rightEl.addEventListener('scroll', syncScroll);
+
+  function syncScroll() {
+    if (currentView !== 'side') return;
+    rightEl.scrollTop = leftEl.scrollTop;
+    rightEl.scrollLeft = leftEl.scrollLeft;
+  }
+
+  function setView(mode) {
+    currentView = mode;
+    document.getElementById('btn-side').classList.toggle('active', mode === 'side');
+    document.getElementById('btn-unified').classList.toggle('active', mode === 'unified');
+    sideView.classList.toggle('hidden', mode === 'unified');
+    unifiedEl.classList.toggle('active', mode === 'unified');
+    computeDiff();
+  }
+
+  function swapTexts() {
+    const tmp = leftEl.value;
+    leftEl.value = rightEl.value;
+    rightEl.value = tmp;
+    computeDiff();
+  }
+
+  function clearAll() {
+    leftEl.value = '';
+    rightEl.value = '';
+    computeDiff();
+  }
+
+  function loadExample(name) {
+    const examples = {
+      function: [
+        `function getUser(id) {
+  const user = users[id];
+  if (!user) return null;
+  return user;
+}
+
+function getPosts(userId) {
+  const posts = [];
+  for (const p of allPosts) {
+    if (p.userId === userId) posts.push(p);
+  }
+  return posts.sort((a, b) => b.date - a.date);
+}`,
+        `async function getUser(id) {
+  return users[id] ?? null;
+}
+
+async function getPosts(userId) {
+  return allPosts
+    .filter(p => p.userId === userId)
+    .sort((a, b) => b.date - a.date);
+}`
+      ],
+      config: [
+        `server {
+  listen 80;
+  server_name example.com;
+  root /var/www/html;
+  index index.html;
+}`,
+        `server {
+  listen 443 ssl http2;
+  server_name example.com www.example.com;
+  root /var/www/dist;
+  index index.html;
+
+  ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
+
+  location /api/ {
+    proxy_pass http://localhost:3000;
+    proxy_set_header Host $host;
+  }
+}`
+      ],
+      css: [
+        `.card {
+  display: block;
+  width: 100%;
+  padding: 16px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}`,
+        `.card {
+  display: flex;
+  gap: 16px;
+  width: 100%;
+  max-width: 600px;
+  padding: 20px 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+  transition: transform 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+}`
+      ],
+      api: [
+        `{
+  "status": "success",
+  "data": {
+    "id": 1,
+    "name": "John",
+    "email": "john@example.com"
+  }
+}`,
+        `{
+  "status": "success",
+  "data": {
+    "id": "usr_1a2b3c",
+    "name": "John Doe",
+    "email": "john@example.com",
+    "role": "admin",
+    "avatar": "https://cdn.example.com/avatars/1.jpg",
+    "created_at": "2024-01-15T08:30:00Z",
+    "preferences": {
+      "theme": "dark",
+      "notifications": true
+    }
+  },
+  "meta": {
+    "version": 2,
+    "rate_limit": 1000
+  }
+}`
+      ]
+    };
+    leftEl.value = examples[name][0];
+    rightEl.value = examples[name][1];
+    computeDiff();
+  }
+
+  // LCS-based diff
+  function lcs(a, b) {
+    const m = a.length, n = b.length;
+    const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        if (a[i-1] === b[j-1]) dp[i][j] = dp[i-1][j-1] + 1;
+        else dp[i][j] = Math.max(dp[i-1][j], dp[i][j-1]);
+      }
+    }
+    const result = [];
+    let i = m, j = n;
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0 && a[i-1] === b[j-1]) {
+        result.unshift({ type: 'equal', left: i-1, right: j-1 });
+        i--; j--;
+      } else if (j > 0 && (i === 0 || dp[i][j-1] >= dp[i-1][j])) {
+        result.unshift({ type: 'add', right: j-1 });
+        j--;
+      } else {
+        result.unshift({ type: 'remove', left: i-1 });
+        i--;
+      }
+    }
+    return result;
+  }
+
+  function computeDiff() {
+    const leftText = leftEl.value;
+    const rightText = rightEl.value;
+    const mode = document.getElementById('word-mode').value;
+
+    document.getElementById('left-count').textContent = (leftText ? leftText.split('\n').length : 0) + ' lines';
+    document.getElementById('right-count').textContent = (rightText ? rightText.split('\n').length : 0) + ' lines';
+
+    if (!leftText && !rightText) {
+      unifiedEl.innerHTML = '<div class="empty-state">Paste text in both panels to see the diff</div>';
+      document.getElementById('stat-lines').textContent = '0';
+      document.getElementById('stat-added').textContent = '0';
+      document.getElementById('stat-removed').textContent = '0';
+      document.getElementById('stat-changed').textContent = '0';
+      return;
+    }
+
+    const leftLines = leftText ? leftText.split('\n') : [''];
+    const rightLines = rightText ? rightText.split('\n') : [''];
+
+    if (mode === 'line') {
+      renderLineDiff(leftLines, rightLines);
+    } else {
+      renderWordDiff(leftLines, rightLines);
+    }
+  }
+
+  function renderLineDiff(leftLines, rightLines) {
+    const ops = lcs(leftLines, rightLines);
+    let added = 0, removed = 0, changed = 0;
+    let html = '';
+
+    // Merge adjacent add+remove into change blocks
+    const merged = [];
+    let i = 0;
+    while (i < ops.length) {
+      if (ops[i].type === 'remove' && i + 1 < ops.length && ops[i+1].type === 'add') {
+        merged.push({ type: 'change', left: ops[i].left, right: ops[i+1].right });
+        changed++;
+        i += 2;
+      } else {
+        merged.push(ops[i]);
+        if (ops[i].type === 'add') added++;
+        else if (ops[i].type === 'remove') removed++;
+        i++;
+      }
+    }
+
+    for (const op of merged) {
+      if (op.type === 'equal') {
+        html += `<span class="diff-line context">${esc(leftLines[op.left])}</span>`;
+      } else if (op.type === 'add') {
+        added++;
+        html += `<span class="diff-line added">${esc(rightLines[op.right])}</span>`;
+      } else if (op.type === 'remove') {
+        removed++;
+        html += `<span class="diff-line removed">${esc(leftLines[op.left])}</span>`;
+      } else if (op.type === 'change') {
+        html += `<span class="diff-line removed">${esc(leftLines[op.left])}</span>`;
+        html += `<span class="diff-line changed-add">${esc(rightLines[op.right])}</span>`;
+      }
+    }
+
+    unifiedEl.innerHTML = html;
+    updateStats(merged.length, added, removed, changed);
+  }
+
+  function renderWordDiff(leftLines, rightLines) {
+    const ops = lcs(leftLines, rightLines);
+    let added = 0, removed = 0, changed = 0;
+    let html = '';
+
+    let i = 0;
+    while (i < ops.length) {
+      if (ops[i].type === 'remove' && i + 1 < ops.length && ops[i+1].type === 'add') {
+        changed++;
+        const oldLine = leftLines[ops[i].left] || '';
+        const newLine = rightLines[ops[i+1].right] || '';
+        html += `<span class="diff-line removed">${wordHighlight(oldLine, newLine)}</span>`;
+        html += `<span class="diff-line changed-add">${wordHighlight(newLine, oldLine)}</span>`;
+        i += 2;
+      } else if (ops[i].type === 'equal') {
+        html += `<span class="diff-line context">${esc(leftLines[ops[i].left])}</span>`;
+        i++;
+      } else if (ops[i].type === 'add') {
+        added++;
+        html += `<span class="diff-line added">${esc(rightLines[ops[i].right])}</span>`;
+        i++;
+      } else if (ops[i].type === 'remove') {
+        removed++;
+        html += `<span class="diff-line removed">${esc(leftLines[ops[i].left])}</span>`;
+        i++;
+      }
+    }
+
+    unifiedEl.innerHTML = html;
+    updateStats(ops.length, added, removed, changed);
+  }
+
+  function wordHighlight(line, otherLine) {
+    if (!line) return '';
+    const words = tokenize(line);
+    if (!otherLine) return esc(line);
+    const otherWords = tokenize(otherLine);
+
+    // Simple word-level LCS
+    const wlcs = lcs(words.map(w => w.text), otherWords.map(w => w.text));
+
+    let result = '';
+    let wordIdx = 0;
+    const wordMap = [];
+    let pos = 0;
+    for (const w of words) {
+      wordMap.push({ start: pos, end: pos + w.text.length, text: w.text, isWord: w.isWord });
+      pos += w.text.length;
+    }
+
+    const matchedWords = new Set();
+    const otherMatched = new Set();
+    for (const op of wlcs) {
+      if (op.type === 'equal') {
+        matchedWords.add(op.left);
+        otherMatched.add(op.right);
+      }
+    }
+
+    // Rebuild highlighting
+    let out = '';
+    let wIdx = 0;
+    const otokens = tokenize(otherLine);
+    const otherMatchedSet = new Set();
+    const ourMatchedSet = new Set();
+    for (const op of wlcs) {
+      if (op.type === 'equal') { ourMatchedSet.add(op.left); }
+    }
+
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i];
+      if (w.isWord && !ourMatchedSet.has(i)) {
+        out += `<span class="word-remove">${esc(w.text)}</span>`;
+      } else {
+        out += esc(w.text);
+      }
+    }
+    return out;
+  }
+
+  function tokenize(line) {
+    const tokens = [];
+    const regex = /(\s+|[^\s]+)/g;
+    let m;
+    while ((m = regex.exec(line)) !== null) {
+      tokens.push({ text: m[0], isWord: m[0].trim().length > 0 });
+    }
+    return tokens;
+  }
+
+  function updateStats(total, added, removed, changed) {
+    document.getElementById('stat-lines').textContent = total;
+    document.getElementById('stat-added').textContent = '+' + added;
+    document.getElementById('stat-removed').textContent = '-' + removed;
+    document.getElementById('stat-changed').textContent = changed;
+  }
+
+  function esc(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+</script>
+</body>
+</html>
