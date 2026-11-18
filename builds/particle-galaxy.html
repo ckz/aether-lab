@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Particle Galaxy</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    color: #fff;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #controls {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    background: rgba(10, 10, 30, 0.85);
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid rgba(100, 150, 255, 0.3);
+    backdrop-filter: blur(10px);
+    z-index: 10;
+    min-width: 260px;
+  }
+  #controls h2 {
+    font-size: 16px;
+    margin-bottom: 15px;
+    color: #a0d0ff;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  .control-group {
+    margin-bottom: 12px;
+  }
+  .control-group label {
+    display: block;
+    font-size: 11px;
+    color: #8899bb;
+    margin-bottom: 5px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .control-group input[type="range"] {
+    width: 100%;
+    accent-color: #6090ff;
+  }
+  .control-group .value {
+    font-size: 11px;
+    color: #aaccff;
+    float: right;
+  }
+  button {
+    background: rgba(60, 100, 200, 0.3);
+    border: 1px solid rgba(100, 150, 255, 0.5);
+    color: #a0d0ff;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    margin: 3px;
+    transition: all 0.2s;
+  }
+  button:hover {
+    background: rgba(80, 130, 255, 0.4);
+    border-color: rgba(150, 200, 255, 0.8);
+  }
+  #stats {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    font-size: 11px;
+    color: rgba(150, 180, 220, 0.7);
+    background: rgba(10, 10, 30, 0.6);
+    padding: 10px 15px;
+    border-radius: 8px;
+  }
+  #hint {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    font-size: 11px;
+    color: rgba(150, 180, 220, 0.5);
+    text-align: right;
+  }
+</style>
+</head>
+<body>
+<canvas id="galaxy"></canvas>
+
+<div id="controls">
+  <h2>🌌 Particle Galaxy</h2>
+  
+  <div class="control-group">
+    <label>Particles <span class="value" id="countVal">1500</span></label>
+    <input type="range" id="count" min="200" max="3000" value="1500" step="100">
+  </div>
+  
+  <div class="control-group">
+    <label>Gravity <span class="value" id="gravVal">0.3</span></label>
+    <input type="range" id="gravity" min="0" max="1" value="0.3" step="0.05">
+  </div>
+  
+  <div class="control-group">
+    <label>Mouse Force <span class="value" id="mouseVal">150</span></label>
+    <input type="range" id="mouseForce" min="0" max="500" value="150" step="10">
+  </div>
+  
+  <div class="control-group">
+    <label>Trail Length <span class="value" id="trailVal">0.08</span></label>
+    <input type="range" id="trail" min="0.01" max="0.3" value="0.08" step="0.01">
+  </div>
+  
+  <div class="control-group">
+    <label>Color Theme</label>
+    <div>
+      <button onclick="setTheme('nebula')">Nebula</button>
+      <button onclick="setTheme('fire')">Fire</button>
+      <button onclick="setTheme('ocean')">Ocean</button>
+      <button onclick="setTheme('aurora')">Aurora</button>
+    </div>
+  </div>
+  
+  <div class="control-group">
+    <button onclick="resetGalaxy()">⟳ Reset</button>
+    <button onclick="burst()">💥 Burst</button>
+  </div>
+</div>
+
+<div id="stats">
+  FPS: <span id="fps">60</span> | Particles: <span id="pcount">1500</span>
+</div>
+
+<div id="hint">
+  Click & drag to attract<br>
+  Hold Shift to repel<br>
+  Scroll to adjust gravity
+</div>
+
+<script>
+const canvas = document.getElementById('galaxy');
+const ctx = canvas.getContext('2d');
+
+let W, H, particles = [];
+let mouse = { x: null, y: null, down: false, repel: false };
+let config = {
+  count: 1500,
+  gravity: 0.3,
+  mouseForce: 150,
+  trail: 0.08,
+  theme: 'nebula'
+};
+
+const themes = {
+  nebula: ['#ff6b9d', '#c44dff', '#4d7dff', '#ff4d8d', '#9d4dff', '#4dc8ff', '#ff9d4d'],
+  fire: ['#ff4400', '#ff8800', '#ffcc00', '#ff6600', '#ffaa00', '#ff2200', '#ffdd44'],
+  ocean: ['#0066ff', '#00aaff', '#00ffff', '#0088ff', '#44ccff', '#0066cc', '#88eeff'],
+  aurora: ['#00ff88', '#00ffcc', '#88ff00', '#00ccff', '#44ffaa', '#00ff66', '#66ffdd']
+};
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+
+class Particle {
+  constructor(x, y, vx, vy) {
+    this.x = x || Math.random() * W;
+    this.y = y || Math.random() * H;
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 0.2 + Math.random() * 0.8;
+    this.vx = vx !== undefined ? vx : Math.cos(angle) * speed;
+    this.vy = vy !== undefined ? vy : Math.sin(angle) * speed;
+    this.radius = 0.5 + Math.random() * 1.5;
+    this.color = themes[config.theme][Math.floor(Math.random() * themes[config.theme].length)];
+    this.life = 1;
+    this.decay = 0.0001 + Math.random() * 0.0003;
+  }
+
+  update() {
+    // Center gravity
+    const cx = W / 2, cy = H / 2;
+    const dx = cx - this.x, dy = cy - this.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) + 1;
+    const force = config.gravity * 50 / dist;
+    this.vx += (dx / dist) * force * 0.01;
+    this.vy += (dy / dist) * force * 0.01;
+
+    // Mouse interaction
+    if (mouse.x !== null && mouse.down) {
+      const mdx = mouse.x - this.x, mdy = mouse.y - this.y;
+      const mdist = Math.sqrt(mdx * mdx + mdy * mdy) + 1;
+      if (mdist < config.mouseForce * 3) {
+        const mforce = (mouse.repel ? -1 : 1) * config.mouseForce / (mdist + 1);
+        this.vx += (mdx / mdist) * mforce * 0.02;
+        this.vy += (mdy / mdist) * mforce * 0.02;
+      }
+    }
+
+    // Damping
+    this.vx *= 0.999;
+    this.vy *= 0.999;
+
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= this.decay;
+
+    // Wrap edges
+    if (this.x < 0) this.x = W;
+    if (this.x > W) this.x = 0;
+    if (this.y < 0) this.y = H;
+    if (this.y > H) this.y = 0;
+
+    // Respawn if dead
+    if (this.life <= 0) {
+      this.x = Math.random() * W;
+      this.y = Math.random() * H;
+      this.vx = (Math.random() - 0.5) * 0.5;
+      this.vy = (Math.random() - 0.5) * 0.5;
+      this.life = 1;
+      this.color = themes[config.theme][Math.floor(Math.random() * themes[config.theme].length)];
+    }
+  }
+
+  draw() {
+    const alpha = this.life * 0.8;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fillStyle = this.color + Math.floor(alpha * 255).toString(16).padStart(2, '0');
+    ctx.fill();
+  }
+}
+
+function init() {
+  particles = [];
+  for (let i = 0; i < config.count; i++) {
+    // Spiral galaxy distribution
+    const angle = Math.random() * Math.PI * 2;
+    const radius = Math.random() * Math.min(W, H) * 0.4;
+    const spiral = angle + radius * 0.005;
+    const x = W / 2 + Math.cos(spiral) * radius + (Math.random() - 0.5) * 50;
+    const y = H / 2 + Math.sin(spiral) * radius + (Math.random() - 0.5) * 50;
+    const orbitalSpeed = 0.5 / (radius * 0.01 + 0.5);
+    const p = new Particle(x, y, -Math.sin(spiral) * orbitalSpeed, Math.cos(spiral) * orbitalSpeed);
+    particles.push(p);
+  }
+}
+
+function burst() {
+  const cx = mouse.x || W / 2, cy = mouse.y || H / 2;
+  for (let i = 0; i < 100; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 2 + Math.random() * 5;
+    particles.push(new Particle(cx, cy, Math.cos(angle) * speed, Math.sin(angle) * speed));
+  }
+  // Trim excess
+  while (particles.length > config.count + 200) {
+    particles.shift();
+  }
+}
+
+function setTheme(name) {
+  config.theme = name;
+  particles.forEach(p => {
+    p.color = themes[name][Math.floor(Math.random() * themes[name].length)];
+  });
+}
+
+function resetGalaxy() {
+  init();
+}
+
+let lastTime = performance.now(), frameCount = 0, fps = 60;
+
+function animate() {
+  // Trail effect
+  ctx.fillStyle = `rgba(0, 0, 0, ${config.trail})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // Draw center glow
+  const gradient = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, 150);
+  const themeColor = themes[config.theme][0];
+  gradient.addColorStop(0, themeColor + '15');
+  gradient.addColorStop(1, 'transparent');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, W, H);
+
+  particles.forEach(p => {
+    p.update();
+    p.draw();
+  });
+
+  // FPS counter
+  frameCount++;
+  const now = performance.now();
+  if (now - lastTime >= 1000) {
+    fps = frameCount;
+    frameCount = 0;
+    lastTime = now;
+    document.getElementById('fps').textContent = fps;
+    document.getElementById('pcount').textContent = particles.length;
+  }
+
+  requestAnimationFrame(animate);
+}
+
+// Event listeners
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+canvas.addEventListener('mousedown', e => {
+  mouse.down = true;
+  mouse.repel = e.shiftKey;
+});
+canvas.addEventListener('mouseup', () => mouse.down = false);
+canvas.addEventListener('mouseleave', () => { mouse.down = false; mouse.x = null; });
+canvas.addEventListener('wheel', e => {
+  config.gravity = Math.max(0, Math.min(1, config.gravity - e.deltaY * 0.001));
+  document.getElementById('gravity').value = config.gravity;
+  document.getElementById('gravVal').textContent = config.gravity.toFixed(2);
+});
+
+// Controls
+document.getElementById('count').addEventListener('input', e => {
+  config.count = parseInt(e.target.value);
+  document.getElementById('countVal').textContent = config.count;
+  if (particles.length < config.count) {
+    while (particles.length < config.count) {
+      particles.push(new Particle());
+    }
+  }
+});
+document.getElementById('gravity').addEventListener('input', e => {
+  config.gravity = parseFloat(e.target.value);
+  document.getElementById('gravVal').textContent = config.gravity.toFixed(2);
+});
+document.getElementById('mouseForce').addEventListener('input', e => {
+  config.mouseForce = parseInt(e.target.value);
+  document.getElementById('mouseVal').textContent = config.mouseForce;
+});
+document.getElementById('trail').addEventListener('input', e => {
+  config.trail = parseFloat(e.target.value);
+  document.getElementById('trailVal').textContent = config.trail.toFixed(2);
+});
+
+window.addEventListener('resize', () => {
+  resize();
+  init();
+});
+
+// Initialize
+resize();
+init();
+animate();
+</script>
+</body>
+</html>
