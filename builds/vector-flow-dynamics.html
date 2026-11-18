@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vector Flow Dynamics — Generative Art</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #05050a;
+    color: #e0e0e0;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+  }
+  canvas { display: block; cursor: crosshair; }
+  .panel {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    background: rgba(8, 8, 14, 0.88);
+    border: 1px solid #2a2a3a;
+    border-radius: 10px;
+    padding: 18px 22px;
+    font-size: 12px;
+    z-index: 10;
+    backdrop-filter: blur(12px);
+    min-width: 210px;
+  }
+  .panel h2 {
+    font-size: 13px;
+    margin-bottom: 14px;
+    color: #fff;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 9px 0;
+  }
+  .row label {
+    font-size: 10px;
+    color: #888;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+  .row input[type="range"] {
+    width: 90px;
+    accent-color: #c084fc;
+  }
+  .row input[type="color"] {
+    width: 26px;
+    height: 20px;
+    border: 1px solid #444;
+    background: none;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  .btn {
+    width: 100%;
+    margin-top: 10px;
+    padding: 8px;
+    background: #12121f;
+    border: 1px solid #6d28d9;
+    color: #c084fc;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: all 0.25s;
+  }
+  .btn:hover {
+    background: #c084fc;
+    color: #05050a;
+    box-shadow: 0 0 20px rgba(192, 132, 252, 0.3);
+  }
+  .stats {
+    font-size: 10px;
+    color: #555;
+    margin-top: 10px;
+    text-align: center;
+    letter-spacing: 1px;
+  }
+  .hint {
+    position: fixed;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: #333;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<div class="panel">
+  <h2>◈ Vector Flow</h2>
+  <div class="row">
+    <label>Agents</label>
+    <input type="range" id="agents" min="50" max="2000" value="600">
+  </div>
+  <div class="row">
+    <label>Speed</label>
+    <input type="range" id="speed" min="1" max="25" value="10">
+  </div>
+  <div class="row">
+    <label>Chaos</label>
+    <input type="range" id="chaos" min="1" max="60" value="20">
+  </div>
+  <div class="row">
+    <label>Trail</label>
+    <input type="range" id="trail" min="1" max="30" value="8">
+  </div>
+  <div class="row">
+    <label>Color A</label>
+    <input type="color" id="colorA" value="#c084fc">
+  </div>
+  <div class="row">
+    <label>Color B</label>
+    <input type="color" id="colorB" value="#22d3ee">
+  </div>
+  <button class="btn" id="reset">↻ New Seed</button>
+  <button class="btn" id="save">⬇ Export PNG</button>
+  <div class="stats" id="stats"></div>
+</div>
+<div class="hint">Move to guide · Click to scatter</div>
+<canvas id="c"></canvas>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  ctx.fillStyle = '#05050a';
+  ctx.fillRect(0, 0, W, H);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Value noise
+class ValueNoise {
+  constructor(seed) {
+    this.cells = new Map();
+    this.rng = this.mulberry32(seed || Math.floor(Math.random() * 999999));
+  }
+  mulberry32(a) {
+    return () => {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  hash(x, y) {
+    const key = `${x},${y}`;
+    if (!this.cells.has(key)) {
+      this.cells.set(key, this.rng());
+    }
+    return this.cells.get(key);
+  }
+  smooth(t) { return t * t * (3 - 2 * t); }
+  get(x, y) {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    const xf = x - xi, yf = y - yi;
+    const sx = this.smooth(xf), sy = this.smooth(yf);
+    const n00 = this.hash(xi, yi);
+    const n10 = this.hash(xi + 1, yi);
+    const n01 = this.hash(xi, yi + 1);
+    const n11 = this.hash(xi + 1, yi + 1);
+    const nx0 = n00 + (n10 - n00) * sx;
+    const nx1 = n01 + (n11 - n01) * sx;
+    return nx0 + (nx1 - nx0) * sy;
+  }
+}
+
+let noise = new ValueNoise();
+let agents = [];
+let mouse = { x: -9999, y: -9999, active: false, repel: false };
+
+const settings = {
+  get count() { return +document.getElementById('agents').value; },
+  get speed() { return +document.getElementById('speed').value / 800; },
+  get chaos() { return +document.getElementById('chaos').value / 1000; },
+  get trail() { return +document.getElementById('trail').value / 100 },
+  get colorA() { return document.getElementById('colorA').value; },
+  get colorB() { return document.getElementById('colorB').value; },
+};
+
+function hexRgb(hex) {
+  const v = parseInt(hex.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+class Agent {
+  constructor() { this.spawn(true); }
+  spawn(init) {
+    this.x = init ? Math.random() * W : Math.random() * W;
+    this.y = init ? Math.random() * H : Math.random() * H;
+    this.px = this.x; this.py = this.y;
+    this.vx = 0; this.vy = 0;
+    this.life = 150 + Math.random() * 200;
+  }
+  update() {
+    const n = noise.get(this.x * settings.chaos, this.y * settings.chaos);
+    const angle = n * Math.PI * 6;
+    this.vx += Math.cos(angle) * settings.speed;
+    this.vy += Math.sin(angle) * settings.speed;
+    const mag = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    const maxV = settings.speed * 4;
+    if (mag > maxV) {
+      this.vx = (this.vx / mag) * maxV;
+      this.vy = (this.vy / mag) * maxV;
+    }
+    this.px = this.x; this.py = this.y;
+    this.x += this.vx; this.y += this.vy;
+
+    if (mouse.active) {
+      const dx = mouse.x - this.x, dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 180) {
+        const f = (180 - dist) / 180 * 0.4;
+        const dir = mouse.repel ? -1 : 1;
+        this.vx += (dx / dist) * f * dir * 2;
+        this.vy += (dy / dist) * f * dir * 2;
+      }
+    }
+    this.life--;
+    if (this.life <= 0 || this.x < -50 || this.x > W + 50 || this.y < -50 || this.y > H + 50) {
+      this.spawn(false);
+      this.px = this.x; this.py = this.y;
+    }
+  }
+  draw() {
+    const t = (Math.sin(this.x * 0.003) + Math.cos(this.y * 0.003)) * 0.5 + 0.5;
+    const [r1, g1, b1] = hexRgb(settings.colorA);
+    const [r2, g2, b2] = hexRgb(settings.colorB);
+    const r = Math.round(lerp(r1, r2, t));
+    const g = Math.round(lerp(g1, g2, t));
+    const b = Math.round(lerp(b1, b2, t));
+    const alpha = Math.min(1, this.life / 60) * 0.55;
+    ctx.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(this.px, this.py);
+    ctx.lineTo(this.x, this.y);
+    ctx.stroke();
+  }
+}
+
+function initAgents() {
+  const count = settings.count;
+  agents = [];
+  for (let i = 0; i < count; i++) agents.push(new Agent());
+  ctx.fillStyle = '#05050a';
+  ctx.fillRect(0, 0, W, H);
+}
+
+function frame() {
+  ctx.fillStyle = `rgba(5,5,10,${settings.trail})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // Adjust agent count dynamically
+  while (agents.length < settings.count) agents.push(new Agent());
+  if (agents.length > settings.count) agents.length = settings.count;
+
+  for (const a of agents) { a.update(); a.draw(); }
+  document.getElementById('stats').textContent = `${agents.length} agents`;
+  requestAnimationFrame(frame);
+}
+
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('mousedown', () => { mouse.rerepel = true; });
+canvas.addEventListener('mouseup', () => { mouse.repel = false; });
+
+document.getElementById('reset').addEventListener('click', () => {
+  noise = new ValueNoise();
+  initAgents();
+});
+document.getElementById('save').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.download = 'vector-flow.png';
+  a.href = canvas.toDataURL();
+  a.click();
+});
+
+initAgents();
+frame();
+</script>
+</body>
+</html>
