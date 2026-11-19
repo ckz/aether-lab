@@ -6,225 +6,244 @@
 <title>Neural Cosmos — Generative Art</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #0a0a0f;
+  html, body {
+    width: 100%; height: 100%;
     overflow: hidden;
+    background: #000;
     font-family: 'Courier New', monospace;
     cursor: crosshair;
   }
   canvas { display: block; }
-  #ui {
+  #info {
     position: fixed;
     bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
-    color: rgba(255,255,255,0.4);
+    color: rgba(120, 200, 255, 0.7);
     font-size: 12px;
     letter-spacing: 2px;
-    text-transform: uppercase;
     pointer-events: none;
-    z-index: 10;
+    text-transform: uppercase;
+    text-shadow: 0 0 10px rgba(80, 160, 255, 0.5);
   }
   #title {
     position: fixed;
     top: 30px;
     left: 50%;
     transform: translateX(-50%);
-    color: rgba(255,255,255,0.08);
+    color: rgba(180, 220, 255, 0.6);
     font-size: 14px;
-    letter-spacing: 8px;
-    text-transform: uppercase;
+    letter-spacing: 6px;
     pointer-events: none;
-    z-index: 10;
-    white-space: nowrap;
+    text-transform: uppercase;
+    text-shadow: 0 0 20px rgba(100, 180, 255, 0.4);
   }
 </style>
 </head>
 <body>
-<div id="title">Neural Cosmos</div>
 <canvas id="canvas"></canvas>
-<div id="ui">move mouse to create · click to burst · scroll to shift</div>
-
+<div id="title">Neural Cosmos</div>
+<div id="info">move your mouse to influence the field</div>
 <script>
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
+(() => {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  let W, H, dpr;
+  let mouse = { x: -9999, y: -9999, vx: 0, vy: 0, active: false };
+  let particles = [];
+  const PARTICLE_COUNT = 140;
+  const CONNECTION_DIST = 160;
+  const MOUSE_RADIUS = 200;
+  const MOUSE_FORCE = 0.04;
 
-let W, H;
-function resize() {
-  W = canvas.width = window.innerWidth;
-  H = canvas.height = window.innerHeight;
-}
-resize();
-window.addEventListener('resize', resize);
-
-const mouse = { x: W/2, y: H/2, active: false };
-window.addEventListener('mousemove', e => {
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
-  mouse.active = true;
-});
-window.addEventListener('mouseleave', () => mouse.active = false);
-window.addEventListener('click', e => burst(e.clientX, e.clientY));
-window.addEventListener('touchmove', e => {
-  e.preventDefault();
-  mouse.x = e.touches[0].clientX;
-  mouse.y = e.touches[0].clientY;
-  mouse.active = true;
-}, { passive: false });
-window.addEventListener('touchstart', e => {
-  burst(e.touches[0].clientX, e.touches[0].clientY);
-});
-
-const PALETTES = [
-  ['#00d4ff', '#7b2fff', '#ff2d95', '#00ffc8'],
-  ['#ff6b35', '#f7c548', '#2dd4bf', '#6366f1'],
-  ['#f43f5e', '#8b5cf6', '#06b6d4', '#84cc16'],
-  ['#e879f9', '#3b82f6', '#10b981', '#f97316'],
-];
-let palette = PALETTES[0];
-let hueShift = 0;
-window.addEventListener('wheel', e => {
-  hueShift += e.deltaY * 0.01;
-  const idx = Math.floor(Math.abs(hueShift) % PALETTES.length);
-  palette = PALETTES[idx];
-});
-
-const MAX_NODES = 180;
-const CONNECTION_DIST = 140;
-const MOUSE_RADIUS = 200;
-
-class Node {
-  constructor(x, y, burst) {
-    this.x = x || Math.random() * W;
-    this.y = y || Math.random() * H;
-    this.vx = burst ? (Math.random() - 0.5) * 6 : (Math.random() - 0.5) * 0.5;
-    this.vy = burst ? (Math.random() - 0.5) * 6 : (Math.random() - 0.5) * 0.5;
-    this.radius = burst ? Math.random() * 3 + 1 : Math.random() * 2 + 0.5;
-    this.color = palette[Math.floor(Math.random() * palette.length)];
-    this.life = 1;
-    this.decay = burst ? 0.008 + Math.random() * 0.01 : 0;
-    this.pulsePhase = Math.random() * Math.PI * 2;
-    this.pulseSpeed = 0.02 + Math.random() * 0.03;
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
-  update() {
-    this.x += this.vx;
-    this.y += this.vy;
-    this.vx *= 0.98;
-    this.vy *= 0.98;
-    if (!mouse.active) {
-      this.vx += (Math.random() - 0.5) * 0.05;
-      this.vy += (Math.random() - 0.5) * 0.05;
+
+  class Particle {
+    constructor() {
+      this.x = Math.random() * W;
+      this.y = Math.random() * H;
+      this.vx = (Math.random() - 0.5) * 0.6;
+      this.vy = (Math.random() - 0.5) * 0.6;
+      this.baseRadius = Math.random() * 2 + 1;
+      this.radius = this.baseRadius;
+      this.hue = Math.random() * 60 + 200; // blue-cyan range
+      this.pulse = Math.random() * Math.PI * 2;
+      this.pulseSpeed = Math.random() * 0.02 + 0.005;
     }
-    // Wrap
-    if (this.x < -50) this.x = W + 50;
-    if (this.x > W + 50) this.x = -50;
-    if (this.y < -50) this.y = H + 50;
-    if (this.y > H + 50) this.y = -50;
-    this.life -= this.decay;
-    this.pulsePhase += this.pulseSpeed;
-  }
-  draw() {
-    const pulse = 1 + Math.sin(this.pulsePhase) * 0.3;
-    const alpha = this.life * (0.6 + Math.sin(this.pulsePhase) * 0.4);
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius * pulse, 0, Math.PI * 2);
-    ctx.fillStyle = this.color;
-    ctx.globalAlpha = alpha;
-    ctx.fill();
-    // glow
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius * pulse * 3, 0, Math.PI * 2);
-    ctx.fillStyle = this.color;
-    ctx.globalAlpha = alpha * 0.1;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-}
 
-let nodes = [];
-for (let i = 0; i < 80; i++) nodes.push(new Node());
+    update() {
+      // drift
+      this.x += this.vx;
+      this.y += this.vy;
 
-function burst(x, y) {
-  const count = 25;
-  for (let i = 0; i < count; i++) {
-    if (nodes.length < MAX_NODES + count) {
-      nodes.push(new Node(x, y, true));
+      // soft boundary wrap
+      if (this.x < -50) this.x = W + 50;
+      if (this.x > W + 50) this.x = -50;
+      if (this.y < -50) this.y = H + 50;
+      if (this.y > H + 50) this.y = -50;
+
+      // mouse influence
+      if (mouse.active) {
+        const dx = mouse.x - this.x;
+        const dy = mouse.y - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < MOUSE_RADIUS) {
+          const force = (1 - dist / MOUSE_RADIUS) * MOUSE_FORCE;
+          this.vx += dx * force;
+          this.vy += dy * force;
+          this.radius = this.baseRadius + (1 - dist / MOUSE_RADIUS) * 3;
+        } else {
+          this.radius += (this.baseRadius - this.radius) * 0.05;
+        }
+      } else {
+        this.radius += (this.baseRadius - this.radius) * 0.05;
+      }
+
+      // damping
+      this.vx *= 0.995;
+      this.vy *= 0.995;
+
+      // speed cap
+      const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+      if (speed > 2.5) {
+        this.vx = (this.vx / speed) * 2.5;
+        this.vy = (this.vy / speed) * 2.5;
+      }
+
+      // pulse
+      this.pulse += this.pulseSpeed;
+    }
+
+    draw() {
+      const glow = 0.6 + Math.sin(this.pulse) * 0.4;
+      const alpha = 0.4 + glow * 0.5;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${this.hue}, 80%, 70%, ${alpha})`;
+      ctx.fill();
+
+      // outer glow
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius * 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${this.hue}, 80%, 60%, ${alpha * 0.15})`;
+      ctx.fill();
     }
   }
-}
 
-let frame = 0;
-function animate() {
-  // Fade trail
-  ctx.fillStyle = 'rgba(10, 10, 15, 0.12)';
-  ctx.fillRect(0, 0, W, H);
-
-  // Add ambient nodes
-  if (nodes.length < 80 && frame % 10 === 0) {
-    nodes.push(new Node());
+  function init() {
+    resize();
+    particles = [];
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      particles.push(new Particle());
+    }
   }
 
-  // Mouse gravity
-  nodes.forEach(n => {
-    if (mouse.active) {
-      const dx = mouse.x - n.x;
-      const dy = mouse.y - n.y;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist < MOUSE_RADIUS) {
-        const force = (MOUSE_RADIUS - dist) / MOUSE_RADIUS * 0.02;
-        n.vx += dx * force;
-        n.vy += dy * force;
+  function drawConnections() {
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const dx = particles[i].x - particles[j].x;
+        const dy = particles[i].y - particles[j].y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < CONNECTION_DIST) {
+          const alpha = (1 - dist / CONNECTION_DIST) * 0.25;
+          const hue = (particles[i].hue + particles[j].hue) / 2;
+          ctx.beginPath();
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(particles[j].x, particles[j].y);
+          ctx.strokeStyle = `hsla(${hue}, 70%, 65%, ${alpha})`;
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
       }
     }
+
+    // mouse connections
+    if (mouse.active) {
+      for (let i = 0; i < particles.length; i++) {
+        const dx = mouse.x - particles[i].x;
+        const dy = mouse.y - particles[i].y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < MOUSE_RADIUS) {
+          const alpha = (1 - dist / MOUSE_RADIUS) * 0.4;
+          const hue = particles[i].hue;
+          ctx.beginPath();
+          ctx.moveTo(mouse.x, mouse.y);
+          ctx.lineTo(particles[i].x, particles[i].y);
+          ctx.strokeStyle = `hsla(${hue}, 90%, 75%, ${alpha})`;
+          ctx.lineWidth = 0.8;
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
+  let time = 0;
+  function animate() {
+    time += 0.005;
+    
+    // fade trail
+    ctx.fillStyle = 'rgba(2, 4, 12, 0.15)';
+    ctx.fillRect(0, 0, W, H);
+
+    // subtle background nebula shifts
+    const grad = ctx.createRadialGradient(
+      W * 0.5 + Math.sin(time) * 100, H * 0.5 + Math.cos(time * 0.7) * 80, 0,
+      W * 0.5, H * 0.5, Math.max(W, H) * 0.7
+    );
+    grad.addColorStop(0, 'rgba(20, 40, 80, 0.03)');
+    grad.addColorStop(0.5, 'rgba(10, 20, 50, 0.02)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    particles.forEach(p => p.update());
+    drawConnections();
+    particles.forEach(p => p.draw());
+
+    requestAnimationFrame(animate);
+  }
+
+  // events
+  window.addEventListener('resize', () => {
+    resize();
   });
 
-  // Update & cull
-  nodes = nodes.filter(n => n.life > 0);
-  nodes.forEach(n => n.update());
+  window.addEventListener('mousemove', (e) => {
+    mouse.vx = e.clientX - mouse.x;
+    mouse.vy = e.clientY - mouse.y;
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+    mouse.active = true;
+  });
 
-  // Connections
-  for (let i = 0; i < nodes.length; i++) {
-    for (let j = i + 1; j < nodes.length; j++) {
-      const dx = nodes[i].x - nodes[j].x;
-      const dy = nodes[i].y - nodes[j].y;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist < CONNECTION_DIST) {
-        const alpha = (1 - dist / CONNECTION_DIST) * 0.3;
-        ctx.beginPath();
-        ctx.moveTo(nodes[i].x, nodes[i].y);
-        ctx.lineTo(nodes[j].x, nodes[j].y);
-        ctx.strokeStyle = `rgba(100, 200, 255, ${alpha})`;
-        ctx.lineWidth = 0.5;
-        ctx.stroke();
-      }
-    }
-  }
+  window.addEventListener('mouseleave', () => {
+    mouse.active = false;
+  });
 
-  // Mouse connections
-  if (mouse.active) {
-    nodes.forEach(n => {
-      const dx = mouse.x - n.x;
-      const dy = mouse.y - n.y;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist < MOUSE_RADIUS) {
-        const alpha = (1 - dist / MOUSE_RADIUS) * 0.5;
-        ctx.beginPath();
-        ctx.moveTo(n.x, n.y);
-        ctx.lineTo(mouse.x, mouse.y);
-        ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
-        ctx.lineWidth = 0.3;
-        ctx.stroke();
-      }
-    });
-  }
+  window.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    const t = e.touches[0];
+    mouse.x = t.clientX;
+    mouse.y = t.clientY;
+    mouse.active = true;
+  }, { passive: false });
 
-  // Draw
-  nodes.forEach(n => n.draw());
+  window.addEventListener('touchend', () => {
+    mouse.active = false;
+  });
 
-  frame++;
-  requestAnimationFrame(animate);
-}
-animate();
+  init();
+  animate();
+})();
 </script>
 </body>
 </html>
