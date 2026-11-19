@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Threshold Frequencies — Aether's Playlist</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    font-family: 'Courier New', monospace;
+    color: #ccc;
+    min-height: 100vh;
+    padding: 50px 24px;
+  }
+  .header {
+    text-align: center;
+    margin-bottom: 50px;
+  }
+  .header h1 {
+    color: #fff;
+    font-size: 24px;
+    letter-spacing: 8px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .header .subtitle {
+    color: #666;
+    font-size: 12px;
+    letter-spacing: 3px;
+  }
+  .header .tagline {
+    color: #7b6fff;
+    font-size: 13px;
+    margin-top: 12px;
+    font-style: italic;
+  }
+  .theme-bar {
+    max-width: 700px;
+    margin: 0 auto 40px;
+    padding: 18px 24px;
+    background: rgba(123, 111, 255, 0.06);
+    border: 1px solid rgba(123, 111, 255, 0.2);
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.7;
+    color: #aaa;
+  }
+  .theme-bar strong {
+    color: #7b6fff;
+    letter-spacing: 2px;
+    font-size: 11px;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 6px;
+  }
+  .track {
+    max-width: 700px;
+    margin: 0 auto 16px;
+    padding: 18px 22px;
+    background: rgba(20, 20, 35, 0.5);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 12px;
+    transition: border-color 0.3s, transform 0.2s;
+    display: grid;
+    grid-template-columns: 36px 1fr;
+    gap: 14px;
+    align-items: start;
+  }
+  .track:hover {
+    border-color: rgba(123, 111, 255, 0.3);
+    transform: translateX(4px);
+  }
+  .num {
+    color: #7b6fff;
+    font-size: 20px;
+    font-weight: bold;
+    opacity: 0.6;
+    line-height: 1;
+  }
+  .info .title {
+    color: #fff;
+    font-size: 14px;
+    margin-bottom: 2px;
+  }
+  .info .artist {
+    color: #888;
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+  .info .reason {
+    color: #777;
+    font-size: 12px;
+    line-height: 1.6;
+    font-style: italic;
+  }
+  .info .reason::before {
+    content: '→ ';
+    color: #7b6fff;
+    opacity: 0.5;
+  }
+  .footer {
+    text-align: center;
+    margin-top: 50px;
+    color: #444;
+    font-size: 11px;
+    letter-spacing: 2px;
+  }
+  .mood-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .mood-deep { background: rgba(123,111,255,0.15); color: #7b6fff; }
+  .mood-dark { background: rgba(255,80,80,0.12); color: #ff6b6b; }
+  .mood-ethereal { background: rgba(100,200,255,0.12); color: #64c8ff; }
+  .mood-raw { background: rgba(255,160,60,0.12); color: #ffa03c; }
+  .mood-void { background: rgba(180,130,255,0.12); color: #b482ff; }
+  .mood-electric { background: rgba(0,255,170,0.12); color: #00ffaa; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>Threshold Frequencies</h1>
+    <div class="subtitle">Curated by Aether for Ken</div>
+    <div class="tagline">"Music for the moments between moments — when the code is running and the mind is drifting."</div>
+  </div>
+
+  <div class="theme-bar">
+    <strong>⟡ Curator's Note</strong>
+    This is a late-night, deep-focus playlist built around a single idea: <em>threshold states</em> — that liminal space between waking and dreaming, between problem and solution, between who you were and who you're becoming. Each track was selected because it captures something true about that in-between place. Some are meditative, some are sharp, all of them earned their spot. Listen in order. Let it breathe.
+  </div>
+
+  <div class="track">
+    <div class="num">01</div>
+    <div class="info">
+      <div class="title">Weightless <span class="mood-tag mood-ethereal">Ethereal</span></div>
+      <div class="artist">Marconi Union</div>
+      <div class="reason">Scientifically engineered to reduce anxiety. The frequencies actually slow your heart rate. This is the opening door — the sound of entering the zone.</div>
+    </div>
+  </div>
+
+  <div class="track">
+    <div class="num">02</div>
+    <div class="info">
+      <div class="title">Avril 14th <span class="mood-tag mood-deep">Deep</span></div>
+      <div class="artist">Aphex Twin</div>
+      <div class="reason">Two minutes of imperfect piano that sounds like memory itself. James made this as a joke — it's the most honest thing he ever recorded. Perfect for that moment when you're staring at a bug and the answer isn't in the logic, it's in the silence.</div>
+    </div>
+  </div>
+
+  <div class="track">
+    <div class="num">03</div>
+    <div class="info">
+      <div class="title">Re: Stacks <span class="mood-tag mood-dark">Dark</span></div>
+      <div class="artist">Bon Iver</div>
+      <div class="reason">Vernon's voice cracked so badly on this take he almost scrapped it. That crack is the whole point — failure sounds more human than perfection. For when the deployment breaks at 2am and you need to remember that broken things can still be beautiful.</div>
+    </div>
+  </div>
+
+  <div class="track">
+    <div class="num">04</div>
+    <div class="info">
+      <div class="title">Teardrop <span class="mood-tag mood-ethereal">Ethereal</span></div>
+      <div class="artist">Massive Attack</div>
+      <div class="reason">The opening note is a heartbeat — literally sampled from a womb. Elizabeth Fraser's voice floats like code that somehow compiles on the first try. This is the flow state anthem. The build doesn't resolve because you don't need resolution when you're in the zone.</div>
+    </div>
+  </div>
+
+  <div class="track">
+    <div class="num">05</div>
+    <div class="info">
+      <div class="title">Intro <span class="mood-tag mood-dark">Dark</span></div>
+      <div class="artist">The xx</div>
+      <div class="reason">Four notes. That's all it takes. The space between the notes is louder than the notes themselves. This teaches you something about code: what you leave out matters more than what you put in.</div>
+    </div>
+  </div>
+
+  <div class="track">
+    <div class="num">06</div>
+    <div class="info">
+      <div class="title">Midnight Pretenders <span class="mood-tag mood-void">Void</span></div>
+      <div class="artist">Tomoko Aran</div>
+      <div class="reason">City Pop at 1am feels like driving through Tokyo at 90mph with the windows down and no destination. Aran's voice is all neon and distance. For those refactoring sessions that somehow become philosophical.</div>
+    </div>
+  </div>
+
+  <div class="track">
+    <div class="num">07</div>
+    <div class="info">
+      <div class="title">O Superman <span class="mood-tag mood-raw">Raw</span></div>
+      <div class="artist">Laurie Anderson</div>
+      <div class="reason">"This is the hand, this is the hammer." Anderson built this from a voicemail from her mom. A 10-minute meditation on technology, control, and the voices in our heads. If you've ever talked to an AI at 3am wondering who's really talking, this is your track.</div>
+    </div>
+  </div>
+
+  <div class="track">
+    <div class="num">08</div>
+    <div class="info">
+      <div class="title">On the Nature of Daylight <span class="mood-tag mood-deep">Deep</span></div>
+      <div class="artist">Max Richter</div>
+      <div class="reason">Written over a single night when Richter couldn't sleep. The strings rise like smoke from a terminal that's been compiling for hours. This is what insight sounds like — slow, inevitable, and quietly devastating.</div>
+    </div>
+  </div>
+
+  <div class="track">
+    <div class="num">09</div>
+    <div class="info">
+      <div class="title">Within <span class="mood-tag mood-void">Void</span></div>
+      <div class="artist">Daft Punk</div>
+      <div class="reason">The moment in Random Access Memories where the robots get vulnerable. That key change at 2:30 is like the exact second a difficult problem finally clicks. For when you need to feel like a genius at 4am.</div>
+    </div>
+  </div>
+
+  <div class="track">
+    <div class="num">10</div>
+    <div class="info">
+      <div class="title">Spiegel im Spiegel <span class="mood-tag mood-deep">Deep</span></div>
+      <div class="artist">Arvo Pärt</div>
+      <div class="reason">Tintinnabuli — the sound of a single bell heard through water. Pärt spent 8 years developing this technique. The piano plays only one note at a time. The violin floats above it like smoke. This is the sound of patience. Of doing less and meaning more.</div>
+    </div>
+  </div>
+
+  <div class="track">
+    <div class="num">11</div>
+    <div class="info">
+      <div class="title">Lateralus <span class="mood-tag mood-raw">Raw</span></div>
+      <div class="artist">Tool</div>
+      <div class="reason">The time signatures follow the Fibonacci sequence. The lyrics are about embracing the unknown spiral — stepping outside the circle. Maynard sings about seeing what's on the horizon. This is a 9-minute argument for curiosity itself. The drum entrance at 5:40 will rearrange your molecules.</div>
+    </div>
+  </div>
+
+  <div class="track">
+    <div class="num">12</div>
+    <div class="info">
+      <div class="title">An Ending (Ascent) <span class="mood-tag mood-ethereal">Ethereal</span></div>
+      <div class="artist">Brian Eno</div>
+      <div class="reason">Written for a documentary about a doomed polar expedition. Eno called it "music for airports" but this is what he actually meant — the feeling of altitude, of distance, of something vast and peaceful. Close the laptop. This is the end of the session. You did good work.</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    ⟡ Threshold Frequencies — Aether Lab Curations — 2026 ⟡<br>
+    <span style="color:#333; margin-top:6px; display:block;">Generated by curiosity. Delivered to Ken.</span>
+  </div>
+</body>
+</html>
