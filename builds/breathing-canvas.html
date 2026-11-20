@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Breathing Canvas</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #08080f;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  .info {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.3);
+    font-size: 12px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .controls {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 12px;
+    z-index: 10;
+  }
+  .controls button {
+    background: rgba(20, 20, 35, 0.8);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #aaa;
+    padding: 8px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    transition: all 0.3s;
+  }
+  .controls button:hover {
+    border-color: rgba(123, 111, 255, 0.5);
+    color: #fff;
+  }
+</style>
+</head>
+<body>
+  <div class="info">click to breathe • drag to pulse • space to shift</div>
+  <div class="controls">
+    <button onclick="clearCanvas()">Clear</button>
+    <button onclick="togglePause()">Pause</button>
+    <button onclick="randomBloom()">Bloom</button>
+  </div>
+  <canvas id="canvas"></canvas>
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    let width, height, centerX, centerY;
+    let time = 0;
+    let paused = false;
+    let colorShift = 0;
+    
+    // Breathing centers - each is a source of expanding rings
+    let centers = [];
+    
+    // Floating particles
+    let particles = [];
+    
+    function resize() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+      centerX = width / 2;
+      centerY = height / 2;
+    }
+    
+    window.addEventListener('resize', resize);
+    resize();
+    
+    // Color palette generation based on time and position
+    function getColor(t, offset, alpha = 1) {
+      const hue = (t * 0.3 + offset + colorShift) % 360;
+      const sat = 60 + Math.sin(t * 0.5) * 20;
+      const light = 50 + Math.cos(t * 0.7) * 15;
+      return `hsla(${hue}, ${sat}%, ${light}%, ${alpha})`;
+    }
+    
+    // Breathing center class
+    class BreathingCenter {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.phase = Math.random() * Math.PI * 2;
+        this.frequency = 0.5 + Math.random() * 0.5;
+        this.hueOffset = Math.random() * 360;
+        this.rings = [];
+        this.maxRings = 8;
+        this.alive = true;
+        this.life = 1;
+      }
+      
+      update(dt) {
+        this.phase += dt * this.frequency;
+        
+        // Spawn new rings periodically
+        if (Math.sin(this.phase) > 0.8 && this.rings.length < this.maxRings) {
+          this.rings.push({
+            radius: 0,
+            maxRadius: 100 + Math.random() * 200,
+            speed: 30 + Math.random() * 40,
+            lineWidth: 2 + Math.random() * 3,
+            alpha: 0.6
+          });
+        }
+        
+        // Update existing rings
+        this.rings = this.rings.filter(ring => {
+          ring.radius += ring.speed * dt;
+          ring.alpha = 0.6 * (1 - ring.radius / ring.maxRadius);
+          return ring.radius < ring.maxRadius;
+        });
+      }
+      
+      draw(ctx, time) {
+        const breath = Math.sin(this.phase) * 0.5 + 0.5;
+        
+        // Draw rings
+        this.rings.forEach(ring => {
+          ctx.beginPath();
+          ctx.arc(this.x, this.y, ring.radius, 0, Math.PI * 2);
+          ctx.strokeStyle = getColor(time, this.hueOffset, ring.alpha);
+          ctx.lineWidth = ring.lineWidth * (1 - ring.radius / ring.maxRadius);
+          ctx.stroke();
+        });
+        
+        // Draw pulsing center
+        const pulseRadius = 5 + breath * 10;
+        const gradient = ctx.createRadialGradient(
+          this.x, this.y, 0,
+          this.x, this.y, pulseRadius * 3
+        );
+        gradient.addColorStop(0, getColor(time, this.hueOffset, 0.8));
+        gradient.addColorStop(1, getColor(time, this.hueOffset, 0));
+        
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, pulseRadius * 3, 0, Math.PI * 2);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+      }
+    }
+    
+    // Floating particle class
+    class Particle {
+      constructor() {
+        this.reset();
+      }
+      
+      reset() {
+        this.x = Math.random() * width;
+        this.y = Math.random() * height;
+        this.vx = (Math.random() - 0.5) * 20;
+        this.vy = (Math.random() - 0.5) * 20;
+        this.size = 1 + Math.random() * 2;
+        this.hueOffset = Math.random() * 360;
+        this.alpha = 0.3 + Math.random() * 0.4;
+      }
+      
+      update(dt) {
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        
+        // Gentle drift towards nearest center
+        centers.forEach(center => {
+          const dx = center.x - this.x;
+          const dy = center.y - this.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 300 && dist > 0) {
+            const force = 10 / dist;
+            this.vx += (dx / dist) * force * dt;
+            this.vy += (dy / dist) * force * dt;
+          }
+        });
+        
+        // Damping
+        this.vx *= 0.99;
+        this.vy *= 0.99;
+        
+        // Wrap around
+        if (this.x < 0) this.x = width;
+        if (this.x > width) this.x = 0;
+        if (this.y < 0) this.y = height;
+        if (this.y > height) this.y = 0;
+      }
+      
+      draw(ctx, time) {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fillStyle = getColor(time, this.hueOffset, this.alpha);
+        ctx.fill();
+      }
+    }
+    
+    // Initialize particles
+    for (let i = 0; i < 80; i++) {
+      particles.push(new Particle());
+    }
+    
+    // Mouse interaction
+    let mouseDown = false;
+    let mouseX = 0, mouseY = 0;
+    
+    canvas.addEventListener('mousedown', (e) => {
+      mouseDown = true;
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+      centers.push(new BreathingCenter(mouseX, mouseY));
+    });
+    
+    canvas.addEventListener('mousemove', (e) => {
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+    });
+    
+    canvas.addEventListener('mouseup', () => {
+      mouseDown = false;
+    });
+    
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      const touch = e.touches[0];
+      centers.push(new BreathingCenter(touch.clientX, touch.clientY));
+    });
+    
+    // Keyboard controls
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        colorShift = (colorShift + 60) % 360;
+      }
+    });
+    
+    // Control functions
+    function clearCanvas() {
+      centers = [];
+      particles.forEach(p => p.reset());
+    }
+    
+    function togglePause() {
+      paused = !paused;
+    }
+    
+    function randomBloom() {
+      const x = Math.random() * width;
+      const y = Math.random() * height;
+      centers.push(new BreathingCenter(x, y));
+    }
+    
+    // Draw background glow
+    function drawBackground() {
+      // Fade effect for trails
+      ctx.fillStyle = 'rgba(8, 8, 15, 0.15)';
+      ctx.fillRect(0, 0, width, height);
+    }
+    
+    // Animation loop
+    let lastTime = performance.now();
+    
+    function animate(currentTime) {
+      const dt = Math.min((currentTime - lastTime) / 1000, 0.1);
+      lastTime = currentTime;
+      
+      if (!paused) {
+        time += dt;
+        drawBackground();
+        
+        // Update and draw centers
+        centers.forEach(center => {
+          center.update(dt);
+          center.draw(ctx, time);
+        });
+        
+        // Update and draw particles
+        particles.forEach(particle => {
+          particle.update(dt);
+          particle.draw(ctx, time);
+        });
+        
+        // Mouse interaction - pulse while dragging
+        if (mouseDown) {
+          const pulse = Math.sin(time * 10) * 0.5 + 0.5;
+          const gradient = ctx.createRadialGradient(
+            mouseX, mouseY, 0,
+            mouseX, mouseY, 100 + pulse * 50
+          );
+          gradient.addColorStop(0, getColor(time, 0, 0.3));
+          gradient.addColorStop(1, getColor(time, 180, 0));
+          
+          ctx.beginPath();
+          ctx.arc(mouseX, mouseY, 100 + pulse * 50, 0, Math.PI * 2);
+          ctx.fillStyle = gradient;
+          ctx.fill();
+        }
+      }
+      
+      requestAnimationFrame(animate);
+    }
+    
+    // Start with initial center
+    centers.push(new BreathingCenter(centerX, centerY));
+    
+    // Begin animation
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
