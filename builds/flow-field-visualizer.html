@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aether Flow Field</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0f; overflow: hidden; font-family: 'Courier New', monospace; }
+  canvas { display: block; }
+  #info {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font-size: 12px; letter-spacing: 2px;
+    text-transform: uppercase; pointer-events: none;
+    transition: opacity 3s;
+  }
+  #title {
+    position: fixed; top: 30px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.8); font-size: 14px; letter-spacing: 6px;
+    text-transform: uppercase; pointer-events: none;
+    text-shadow: 0 0 20px rgba(120, 200, 255, 0.5);
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="title">Aether Flow Field</div>
+<div id="info">move mouse to influence the flow</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, particles, mouse, time;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+mouse = { x: W / 2, y: H / 2, active: false };
+window.addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+});
+window.addEventListener('touchmove', e => {
+  mouse.x = e.touches[0].clientX; mouse.y = e.touches[0].clientY; mouse.active = true;
+});
+
+// Simplex-like noise approximation using sin layers
+function noise(x, y, z) {
+  return Math.sin(x * 1.2 + z * 0.3) * Math.cos(y * 0.9 + z * 0.2) +
+         Math.sin(x * 0.5 - y * 0.7 + z * 0.15) * 0.5 +
+         Math.cos(x * 2.1 + y * 1.3 + z * 0.4) * 0.25;
+}
+
+class Particle {
+  constructor() { this.reset(); }
+  reset() {
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.vx = 0; this.vy = 0;
+    this.life = Math.random() * 200 + 100;
+    this.maxLife = this.life;
+    this.hue = Math.random() * 60 + 180; // cyan-blue-purple range
+    this.size = Math.random() * 1.5 + 0.5;
+  }
+  update(t) {
+    const scale = 0.003;
+    const n = noise(this.x * scale, this.y * scale, t * 0.4);
+    const angle = n * Math.PI * 4;
+
+    let fx = Math.cos(angle) * 0.8;
+    let fy = Math.sin(angle) * 0.8;
+
+    // Mouse influence
+    if (mouse.active) {
+      const dx = this.x - mouse.x;
+      const dy = this.y - mouse.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const radius = 200;
+      if (dist < radius) {
+        const force = (1 - dist / radius) * 3;
+        fx += (dx / dist) * force;
+        fy += (dy / dist) * force;
+      }
+    }
+
+    this.vx = this.vx * 0.95 + fx * 0.05;
+    this.vy = this.vy * 0.95 + fy * 0.05;
+
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life--;
+
+    // Wrap around edges
+    if (this.x < 0) this.x = W;
+    if (this.x > W) this.x = 0;
+    if (this.y < 0) this.y = H;
+    if (this.y > H) this.y = 0;
+
+    if (this.life <= 0) this.reset();
+  }
+  draw(ctx) {
+    const alpha = (this.life / this.maxLife) * 0.7;
+    ctx.fillStyle = `hsla(${this.hue}, 80%, 60%, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function init() {
+  particles = [];
+  const count = Math.min(W * H / 4000, 3000);
+  for (let i = 0; i < count; i++) particles.push(new Particle());
+}
+
+function animate() {
+  // Fade trail
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.08)';
+  ctx.fillRect(0, 0, W, H);
+
+  time += 0.01;
+  particles.forEach(p => { p.update(time); p.draw(ctx); });
+
+  requestAnimationFrame(animate);
+}
+
+init();
+animate();
+
+// Fade info text
+setTimeout(() => { document.getElementById('info').style.opacity = '0'; }, 5000);
+</script>
+</body>
+</html>
