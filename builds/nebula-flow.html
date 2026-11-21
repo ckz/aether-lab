@@ -18,189 +18,157 @@
     bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
-    color: rgba(255, 255, 255, 0.5);
+    color: rgba(255,255,255,0.4);
     font-size: 12px;
     letter-spacing: 2px;
     text-transform: uppercase;
     pointer-events: none;
     z-index: 10;
   }
-  #title {
+  #stats {
     position: fixed;
-    top: 30px;
-    left: 50%;
-    transform: translateX(-50%);
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 14px;
-    letter-spacing: 4px;
-    text-transform: uppercase;
+    top: 20px;
+    right: 20px;
+    color: rgba(255,255,255,0.3);
+    font-size: 11px;
+    text-align: right;
     pointer-events: none;
     z-index: 10;
-    text-shadow: 0 0 20px rgba(100, 200, 255, 0.5);
   }
 </style>
 </head>
 <body>
-<div id="title">✦ Nebula Flow ✦</div>
-<div id="info">move your mouse to shape the flow</div>
 <canvas id="canvas"></canvas>
+<div id="info">move mouse to influence the flow</div>
+<div id="stats"></div>
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
+const stats = document.getElementById('stats');
 
-let width, height;
-let particles = [];
-let mouse = { x: 0, y: 0, active: false };
-let time = 0;
-
-const CONFIG = {
-  particleCount: 2000,
-  baseSpeed: 1.2,
-  trailAlpha: 0.03,
-  colorSpeed: 0.0003,
-  noiseScale: 0.003,
-  mouseRadius: 200,
-  mouseForce: 0.8
-};
-
+let W, H;
 function resize() {
-  width = canvas.width = window.innerWidth;
-  height = canvas.height = window.innerHeight;
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
 }
 resize();
 window.addEventListener('resize', resize);
 
-canvas.addEventListener('mousemove', e => {
+let mouse = { x: W / 2, y: H / 2, active: false };
+window.addEventListener('mousemove', e => {
   mouse.x = e.clientX;
   mouse.y = e.clientY;
   mouse.active = true;
 });
-canvas.addEventListener('mouseleave', () => {
-  mouse.active = false;
-});
-canvas.addEventListener('touchmove', e => {
-  mouse.x = e.touches[0].clientX;
-  mouse.y = e.touches[0].clientY;
-  mouse.active = true;
-});
-canvas.addEventListener('touchend', () => {
-  mouse.active = false;
-});
+window.addEventListener('mouseleave', () => mouse.active = false);
 
-// Simplex-like noise approximation
-function noise(x, y, z) {
-  const p = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453;
-  return (p - Math.floor(p)) * 2 - 1;
-}
-
-function flowField(x, y, t) {
-  const angle = noise(x * CONFIG.noiseScale, y * CONFIG.noiseScale, t * 0.5) * Math.PI * 4;
-  return angle;
+// Simplex-like noise using sin
+function noise(x, y, t) {
+  return Math.sin(x * 0.01 + t) * Math.cos(y * 0.012 - t * 0.7) +
+         Math.sin((x + y) * 0.008 + t * 0.5) * 0.5 +
+         Math.cos(x * 0.02 - y * 0.01 + t * 0.3) * 0.3;
 }
 
 class Particle {
   constructor() {
     this.reset();
   }
-
   reset() {
-    this.x = Math.random() * width;
-    this.y = Math.random() * height;
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
     this.vx = 0;
     this.vy = 0;
-    this.life = Math.random() * 300 + 100;
-    this.maxLife = this.life;
-    this.hueOffset = Math.random() * 60 - 30;
+    this.life = Math.random() * 200 + 100;
+    this.age = 0;
+    this.hue = Math.random() * 60 + 200; // blue-purple range
+    this.size = Math.random() * 1.5 + 0.5;
   }
-
   update(t) {
-    const angle = flowField(this.x, this.y, t);
-    this.vx += Math.cos(angle) * 0.1;
-    this.vy += Math.sin(angle) * 0.1;
+    const angle = noise(this.x, this.y, t) * Math.PI * 2;
+    this.vx += Math.cos(angle) * 0.3;
+    this.vy += Math.sin(angle) * 0.3;
 
     // Mouse influence
     if (mouse.active) {
-      const dx = this.x - mouse.x;
-      const dy = this.y - mouse.y;
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < CONFIG.mouseRadius) {
-        const force = (1 - dist / CONFIG.mouseRadius) * CONFIG.mouseForce;
-        this.vx += (dx / dist) * force;
-        this.vy += (dy / dist) * force;
+      if (dist < 200) {
+        const force = (200 - dist) / 200;
+        this.vx += dx / dist * force * 0.8;
+        this.vy += dy / dist * force * 0.8;
       }
     }
 
-    // Speed limit
-    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-    const maxSpeed = CONFIG.baseSpeed * 3;
-    if (speed > maxSpeed) {
-      this.vx = (this.vx / speed) * maxSpeed;
-      this.vy = (this.vy / speed) * maxSpeed;
-    }
-
+    this.vx *= 0.96;
+    this.vy *= 0.96;
     this.x += this.vx;
     this.y += this.vy;
-    this.life--;
+    this.age++;
 
-    // Wrap around
-    if (this.x < 0) this.x = width;
-    if (this.x > width) this.x = 0;
-    if (this.y < 0) this.y = height;
-    if (this.y > height) this.y = 0;
+    // Wrap
+    if (this.x < 0) this.x = W;
+    if (this.x > W) this.x = 0;
+    if (this.y < 0) this.y = H;
+    if (this.y > H) this.y = 0;
 
-    if (this.life <= 0) this.reset();
+    if (this.age > this.life) this.reset();
   }
-
-  draw(t) {
-    const lifeRatio = this.life / this.maxLife;
-    const alpha = Math.sin(lifeRatio * Math.PI) * 0.6;
-    const hue = (180 + this.hueOffset + t * 50) % 360;
+  draw(ctx) {
+    const alpha = Math.sin((this.age / this.life) * Math.PI) * 0.6;
     const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-    const saturation = 70 + speed * 20;
-    const lightness = 50 + speed * 15;
-
+    const hue = this.hue + speed * 20;
+    ctx.fillStyle = `hsla(${hue}, 80%, 60%, ${alpha})`;
     ctx.beginPath();
-    ctx.moveTo(this.x, this.y);
-    ctx.lineTo(this.x - this.vx * 2, this.y - this.vy * 2);
-    ctx.strokeStyle = `hsla(${hue}, ${saturation}%, ${lightness}%, ${alpha})`;
-    ctx.lineWidth = 1 + speed * 0.5;
-    ctx.stroke();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 
-// Initialize particles
-for (let i = 0; i < CONFIG.particleCount; i++) {
+const particles = [];
+const NUM_PARTICLES = 2000;
+for (let i = 0; i < NUM_PARTICLES; i++) {
   particles.push(new Particle());
 }
 
-// Initial black fill
-ctx.fillStyle = '#000';
-ctx.fillRect(0, 0, width, height);
+let time = 0;
+let lastFrame = performance.now();
+let fps = 0;
 
-function animate() {
-  // Fade effect for trails
-  ctx.fillStyle = `rgba(0, 0, 0, ${CONFIG.trailAlpha})`;
-  ctx.fillRect(0, 0, width, height);
+function animate(now) {
+  const dt = (now - lastFrame) / 1000;
+  lastFrame = now;
+  fps = fps * 0.95 + (1 / Math.max(dt, 0.001)) * 0.05;
 
-  time += CONFIG.colorSpeed;
+  // Fade trail
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.04)';
+  ctx.fillRect(0, 0, W, H);
 
-  // Update and draw particles
-  for (let particle of particles) {
-    particle.update(time);
-    particle.draw(time);
+  time += 0.005;
+
+  for (const p of particles) {
+    p.update(time);
+    p.draw(ctx);
   }
 
+  // Draw nebula glow at mouse position
+  if (mouse.active) {
+    const grd = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 150);
+    grd.addColorStop(0, 'rgba(100, 140, 255, 0.02)');
+    grd.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(mouse.x - 150, mouse.y - 150, 300, 300);
+  }
+
+  stats.textContent = `particles ${NUM_PARTICLES} · ${Math.round(fps)} fps`;
   requestAnimationFrame(animate);
 }
 
-animate();
+// Initial clear
+ctx.fillStyle = '#000';
+ctx.fillRect(0, 0, W, H);
 
-// Click to reset with new random seed
-canvas.addEventListener('click', () => {
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, width, height);
-  particles.forEach(p => p.reset());
-});
+requestAnimationFrame(animate);
 </script>
 </body>
 </html>
