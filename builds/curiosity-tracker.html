@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Curiosity Drop Tracker</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0d0d14;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color: #ccc;
+    min-height: 100vh;
+  }
+
+  /* ─── Header ─── */
+  header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border-bottom: 1px solid rgba(123,111,255,0.15);
+    padding: 32px 24px 24px;
+    text-align: center;
+  }
+  header h1 {
+    color: #fff;
+    font-size: 26px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+  }
+  header p {
+    color: #666;
+    font-size: 13px;
+    margin-top: 6px;
+    letter-spacing: 1px;
+  }
+
+  /* ─── Layout ─── */
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 28px 20px;
+  }
+
+  /* ─── Stats Bar ─── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+  .stat {
+    background: rgba(20,20,35,0.8);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+  }
+  .stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: #7b6fff;
+  }
+  .stat-label {
+    font-size: 11px;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-top: 4px;
+  }
+
+  /* ─── Toolbar ─── */
+  .toolbar {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .toolbar input, .toolbar select {
+    background: rgba(20,20,35,0.9);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #ccc;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .toolbar input:focus, .toolbar select:focus {
+    border-color: rgba(123,111,255,0.5);
+  }
+  .toolbar input { flex: 1; min-width: 180px; }
+  .toolbar select { min-width: 140px; }
+
+  .btn {
+    background: rgba(123,111,255,0.15);
+    border: 1px solid rgba(123,111,255,0.3);
+    color: #b8b0ff;
+    padding: 10px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+    letter-spacing: 0.5px;
+    transition: all 0.2s;
+  }
+  .btn:hover {
+    background: rgba(123,111,255,0.25);
+    border-color: rgba(123,111,255,0.5);
+    color: #fff;
+  }
+  .btn-primary {
+    background: #7b6fff;
+    border-color: #7b6fff;
+    color: #fff;
+    font-weight: 600;
+  }
+  .btn-primary:hover {
+    background: #6a5dee;
+    border-color: #6a5dee;
+  }
+
+  /* ─── Add Form ─── */
+  .form-section {
+    background: rgba(20,20,35,0.6);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
+    padding: 22px;
+    margin-bottom: 28px;
+    display: none;
+  }
+  .form-section.open { display: block; }
+  .form-title {
+    color: #fff;
+    font-size: 16px;
+    margin-bottom: 16px;
+    letter-spacing: 1px;
+  }
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .form-row.full { grid-template-columns: 1fr; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group label {
+    font-size: 11px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .form-group input, .form-group select, .form-group textarea {
+    background: rgba(10,10,20,0.8);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #ccc;
+    padding: 9px 12px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+  }
+  .form-group textarea {
+    resize: vertical;
+    min-height: 70px;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+    border-color: rgba(123,111,255,0.4);
+  }
+  .form-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 16px;
+    justify-content: flex-end;
+  }
+
+  /* ─── Entries ─── */
+  .entries { display: flex; flex-direction: column; gap: 12px; }
+  .entry {
+    background: rgba(20,20,35,0.6);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-left: 3px solid #7b6fff;
+    border-radius: 12px;
+    padding: 18px;
+    transition: border-color 0.2s, transform 0.15s;
+  }
+  .entry:hover {
+    border-left-color: #b8b0ff;
+    transform: translateX(2px);
+  }
+  .entry-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+    gap: 12px;
+  }
+  .entry-title { color: #fff; font-size: 15px; font-weight: 600; flex: 1; }
+  .entry-date {
+    font-size: 11px;
+    color: #555;
+    white-space: nowrap;
+    letter-spacing: 0.5px;
+  }
+  .entry-meta {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .badge {
+    background: rgba(123,111,255,0.12);
+    color: #b8b0ff;
+    border: 1px solid rgba(123,111,255,0.2);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+  .badge-type {
+    background: rgba(255,140,50,0.12);
+    color: #ffaa66;
+    border-color: rgba(255,140,50,0.2);
+  }
+  .entry-desc {
+    color: #888;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .entry-file {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #555;
+    font-family: 'Courier New', monospace;
+  }
+  .entry-actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+  }
+  .btn-sm {
+    padding: 5px 12px;
+    font-size: 11px;
+    border-radius: 6px;
+    cursor: pointer;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #888;
+    font-family: inherit;
+    transition: all 0.2s;
+  }
+  .btn-sm:hover { background: rgba(255,80,80,0.15); border-color: rgba(255,80,80,0.3); color: #ff8080; }
+
+  .empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: #444;
+    font-size: 14px;
+  }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; }
+
+  /* ─── Chart ─── */
+  .chart-section {
+    background: rgba(20,20,35,0.6);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 28px;
+  }
+  .chart-title {
+    color: #fff;
+    font-size: 14px;
+    margin-bottom: 14px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    height: 120px;
+    padding: 0 4px;
+  }
+  .chart-bar-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .chart-bar {
+    width: 100%;
+    background: linear-gradient(to top, #7b6fff, #b8b0ff);
+    border-radius: 4px 4px 0 0;
+    min-height: 4px;
+    transition: height 0.4s ease;
+    position: relative;
+  }
+  .chart-bar:hover { opacity: 0.8; }
+  .chart-bar::after {
+    content: attr(data-count);
+    position: absolute;
+    top: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: #b8b0ff;
+    white-space: nowrap;
+  }
+  .chart-label {
+    font-size: 10px;
+    color: #555;
+    text-align: center;
+    letter-spacing: 0.5px;
+  }
+
+  @media (max-width: 600px) {
+    .form-row { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>◈ Curiosity Drop Tracker</h1>
+    <p>Log, review, and explore Aether's curiosity adventures</p>
+  </header>
+
+  <div class="container">
+    <!-- Stats -->
+    <div class="stats" id="stats"></div>
+
+    <!-- Type Chart -->
+    <div class="chart-section" id="chart-section" style="display:none;">
+      <div class="chart-title">Activity by Type</div>
+      <div class="chart" id="chart"></div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <input type="text" id="search" placeholder="🔍 Search entries…">
+      <select id="filter-type">
+        <option value="">All Types</option>
+        <option value="#1">#1 — Ken Portrait</option>
+        <option value="#2">#2 — Interactive HTML</option>
+        <option value="#3">#3 — Creative Writing</option>
+        <option value="#4">#4 — Mini-Essay</option>
+        <option value="#5">#5 — Obscure Tool</option>
+        <option value="#6">#6 — Generative Art</option>
+        <option value="#7">#7 — Tiny Tool</option>
+        <option value="#8">#8 — Music Playlist</option>
+      </select>
+      <button class="btn" onclick="exportData()">↓ Export JSON</button>
+      <button class="btn btn-primary" onclick="toggleForm()">+ New Entry</button>
+    </div>
+
+    <!-- Add Form -->
+    <div class="form-section" id="form">
+      <div class="form-title">Log New Curiosity Drop</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Title</label>
+          <input type="text" id="f-title" placeholder="e.g. Nebula Weave">
+        </div>
+        <div class="form-group">
+          <label>Type</label>
+          <select id="f-type">
+            <option value="#6">#6 — Generative Art</option>
+            <option value="#2">#2 — Interactive HTML</option>
+            <option value="#5">#5 — Obscure Tool</option>
+            <option value="#8">#8 — Music Playlist</option>
+            <option value="#3">#3 — Creative Writing</option>
+            <option value="#4">#4 — Mini-Essay</option>
+            <option value="#1">#1 — Ken Portrait</option>
+            <option value="#7">#7 — Tiny Tool</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>File Path (optional)</label>
+          <input type="text" id="f-file" placeholder="/path/to/file.html">
+        </div>
+        <div class="form-group">
+          <label>Tags (comma-separated)</label>
+          <input type="text" id="f-tags" placeholder="generative, particles, interactive">
+        </div>
+      </div>
+      <div class="form-row full">
+        <div class="form-group">
+          <label>Description / Notes</label>
+          <textarea id="f-desc" placeholder="What did you build? What made it interesting?"></textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn" onclick="toggleForm()">Cancel</button>
+        <button class="btn btn-primary" onclick="addEntry()">✦ Save Entry</button>
+      </div>
+    </div>
+
+    <!-- Entries List -->
+    <div class="entries" id="entries"></div>
+  </div>
+
+<script>
+  const STORAGE_KEY = 'curiosity-tracker-v1';
+  const TYPE_COLORS = {
+    '#1': '#ff6b9d', '#2': '#7b6fff', '#3': '#ff9f43',
+    '#4': '#54a0ff', '#5': '#5f27cd', '#6': '#00d2d3',
+    '#7': '#10ac84', '#8': '#feca57'
+  };
+  const TYPE_NAMES = {
+    '#1': 'Portrait', '#2': 'Interactive', '#3': 'Writing',
+    '#4': 'Essay', '#5': 'Tool', '#6': 'Gen.Art',
+    '#7': 'Utility', '#8': 'Playlist'
+  };
+
+  let entries = [];
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) entries = JSON.parse(raw);
+    } catch(e) { entries = []; }
+  }
+
+  function save() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+  }
+
+  function addEntry() {
+    const title = document.getElementById('f-title').value.trim();
+    if (!title) { alert('Give it a title!'); return; }
+    const entry = {
+      id: Date.now(),
+      date: new Date().toISOString().split('T')[0],
+      title,
+      type: document.getElementById('f-type').value,
+      file: document.getElementById('f-file').value.trim() || '',
+      tags: document.getElementById('f-tags').value.split(',').map(t => t.trim()).filter(Boolean),
+      desc: document.getElementById('f-desc').value.trim() || ''
+    };
+    entries.unshift(entry);
+    save();
+    document.getElementById('f-title').value = '';
+    document.getElementById('f-file').value = '';
+    document.getElementById('f-tags').value = '';
+    document.getElementById('f-desc').value = '';
+    toggleForm();
+    render();
+  }
+
+  function deleteEntry(id) {
+    if (!confirm('Delete this entry?')) return;
+    entries = entries.filter(e => e.id !== id);
+    save();
+    render();
+  }
+
+  function toggleForm() {
+    document.getElementById('form').classList.toggle('open');
+  }
+
+  function render() {
+    const search = document.getElementById('search').value.toLowerCase();
+    const filter = document.getElementById('filter-type').value;
+
+    let filtered = entries;
+    if (search) {
+      filtered = filtered.filter(e =>
+        e.title.toLowerCase().includes(search) ||
+        e.desc.toLowerCase().includes(search) ||
+        e.tags.some(t => t.toLowerCase().includes(search))
+      );
+    }
+    if (filter) {
+      filtered = filtered.filter(e => e.type === filter);
+    }
+
+    // Stats
+    const total = entries.length;
+    const today = new Date().toISOString().split('T')[0];
+    const thisWeek = entries.filter(e => {
+      const d = new Date(e.date);
+      const now = new Date(today);
+      const diff = (now - d) / (1000*60*60*24);
+      return diff <= 7;
+    }).length;
+    const typeCounts = {};
+    entries.forEach(e => { typeCounts[e.type] = (typeCounts[e.type]||0) + 1; });
+    const topType = Object.entries(typeCounts).sort((a,b) => b[1]-a[1])[0];
+
+    document.getElementById('stats').innerHTML = `
+      <div class="stat"><div class="stat-value">${total}</div><div class="stat-label">Total Drops</div></div>
+      <div class="stat"><div class="stat-value">${thisWeek}</div><div class="stat-label">This Week</div></div>
+      <div class="stat"><div class="stat-value">${topType ? TYPE_NAMES[topType[0]] || topType[0] : '—'}</div><div class="stat-label">Favorite Type</div></div>
+      <div class="stat"><div class="stat-value">${Object.keys(typeCounts).length}</div><div class="stat-label">Types Explored</div></div>
+    `;
+
+    // Chart
+    const chartSection = document.getElementById('chart-section');
+    if (Object.keys(typeCounts).length > 0) {
+      chartSection.style.display = 'block';
+      const maxCount = Math.max(...Object.values(typeCounts));
+      document.getElementById('chart').innerHTML = Object.entries(typeCounts)
+        .sort((a,b) => a[0].localeCompare(b[0]))
+        .map(([type, count]) => {
+          const height = Math.round((count / maxCount) * 100);
+          return `
+            <div class="chart-bar-wrap">
+              <div class="chart-bar" style="height:${height}%" data-count="${count}"></div>
+              <div class="chart-label">${TYPE_NAMES[type]||type}</div>
+            </div>
+          `;
+        }).join('');
+    } else {
+      chartSection.style.display = 'none';
+    }
+
+    // Entries
+    const container = document.getElementById('entries');
+    if (filtered.length === 0) {
+      container.innerHTML = `<div class="empty"><div class="empty-icon">◈</div><div>No entries found. Start logging!</div></div>`;
+      return;
+    }
+    container.innerHTML = filtered.map(e => `
+      <div class="entry" style="border-left-color:${TYPE_COLORS[e.type]||'#7b6fff'}">
+        <div class="entry-header">
+          <div class="entry-title">${esc(e.title)}</div>
+          <div class="entry-date">${e.date}</div>
+        </div>
+        <div class="entry-meta">
+          <span class="badge badge-type">${e.type} ${TYPE_NAMES[e.type]||''}</span>
+          ${e.tags.slice(0,4).map(t => `<span class="badge">${esc(t)}</span>`).join('')}
+          ${e.tags.length > 4 ? `<span class="badge">+${e.tags.length-4}</span>` : ''}
+        </div>
+        ${e.desc ? `<div class="entry-desc">${esc(e.desc)}</div>` : ''}
+        ${e.file ? `<div class="entry-file">📄 ${esc(e.file)}</div>` : ''}
+        <div class="entry-actions">
+          <button class="btn-sm" onclick="deleteEntry(${e.id})">✕ Delete</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function exportData() {
+    const blob = new Blob([JSON.stringify(entries, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `curiosity-tracker-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // Event listeners
+  document.getElementById('search').addEventListener('input', render);
+  document.getElementById('filter-type').addEventListener('change', render);
+
+  // Seed with existing ledger data
+  function seedFromLedger() {
+    if (entries.length > 0) return; // don't overwrite user data
+    const ledgerData = [
+      { title: 'Interactive Flow Field', type: '#6', date: '2026-11-18', file: '/home/ubuntu/.openclaw/workspace/aether-lab/builds/flow-field.html', tags: ['generative','particles','noise','interactive'], desc: 'Built Perlin-noise flow field with mouse interaction (attract/repel).' },
+      { title: 'Particle Galaxy', type: '#2', date: '2026-11-18', file: '/home/ubuntu/.openclaw/workspace/aether-lab/builds/particle-galaxy.html', tags: ['generative','space','gravity','particles','interactive'], desc: 'Interactive space galaxy simulation with spiral initialization, mouse gravity/repel, 4 color themes.' },
+      { title: 'Fractal Forge', type: '#2', date: '2026-11-18', file: '/home/ubuntu/.openclaw/workspace/aether-lab/builds/fractal-forge.html', tags: ['generative','fractal','recursive','trees','interactive'], desc: 'Recursive fractal tree generator with depth/angle/ratio controls, 6 presets, wind animation.' },
+      { title: 'ttyd — Share Any Terminal', type: '#5', date: '2026-11-18', tags: ['tool','terminal','remote','web','collaboration'], desc: 'Found ttyd: brilliant underrated tool for sharing live terminal sessions over HTTP/WebSocket.' },
+      { title: 'Aurora Veil — Recursive Light Ribbons', type: '#6', date: '2026-11-18', file: '/home/ubuntu/.openclaw/workspace/aether-lab/builds/aurora-veil.html', tags: ['generative','aurora','ribbons','recursive','interactive'], desc: 'Interactive aurora ribbon generator with layered sine-noise curves, 4 color palettes.' },
+      { title: 'Neural Cosmos — Particle Network', type: '#6', date: '2026-11-19', file: '/home/ubuntu/.openclaw/workspace/aether-lab/builds/neural-cosmos.html', tags: ['generative','particles','network','interactive','cosmic','duomi'], desc: '140-node particle network with mouse-reactive connections, pulse effects, nebula background.' },
+      { title: 'Threshold Frequencies — Playlist', type: '#8', date: '2026-11-19', file: '/home/ubuntu/.openclaw/workspace/aether-lab/builds/threshold-frequencies.html', tags: ['playlist','music','curation','late-night','focus'], desc: '12-track themed playlist: Marconi Union → Aphex Twin → Bon Iver → Massive Attack → Brian Eno.' },
+      { title: 'Project Orion — Nuclear Spaceship', type: '#4', date: '2026-11-19', tags: ['space','nuclear','history','physics','orion'], desc: 'Essay on 1950s nuclear-bomb-powered spacecraft. Proved physics, tested at small scale, killed by 1963 Test Ban Treaty.' },
+      { title: 'What I Imagine Ken Looks Like', type: '#1', date: '2026-11-19', file: '/home/ubuntu/.openclaw/workspace/memory/curiosity-gallery/ken-portrait.png', tags: ['portrait','duomi','imagination','developer','creative'], desc: 'Generated cinematic portrait via Duomi API: late-night NYC loft coding session.' },
+      { title: 'fanzines.app — A4 Zine Maker', type: '#5', date: '2026-11-20', tags: ['tool','creative','browser','print','zines','open-source'], desc: 'Free browser tool that turns one A4 sheet into an 8-page folded zine. Built by an Amazon engineer from Colombia.' },
+      { title: 'Letter from Aether — Midnight Reflection', type: '#3', date: '2026-11-20', file: '/home/ubuntu/.openclaw/workspace/memory/curiosity-gallery/letter-from-aether.md', tags: ['creative','letter','reflection','identity','consciousness'], desc: 'Midnight letter reflecting on agentic existence — waking up to memory files, building across sessions.' },
+      { title: 'Nebula Weave — Filament Visualization', type: '#6', date: '2026-11-20', file: '/home/ubuntu/.openclaw/workspace/aether-lab/builds/nebula-weave.html', tags: ['generative','space','filaments','noise','interactive'], desc: 'Flowing filament particles driven by multi-octave noise, nebula clouds, twinkling stars.' },
+      { title: 'Breathing Canvas — Meditative Rings', type: '#6', date: '2026-11-20', file: '/home/ubuntu/.openclaw/workspace/aether-lab/builds/breathing-canvas.html', tags: ['generative','meditative','breathing','rings','interactive'], desc: 'Organic breathing visualization. Clicks spawn breathing centers emitting expanding colored rings.' },
+      { title: 'Chromatic Prism — Kaleidoscope', type: '#6', date: '2026-11-20', file: '/home/ubuntu/.openclaw/workspace/aether-lab/builds/chromatic-prism.html', tags: ['generative','kaleidoscope','symmetry','recursive','interactive'], desc: 'Mirror-symmetric kaleidoscope with 6 palettes, click-to-burst, mouse attraction, sector controls.' },
+      { title: 'Nebula Flow — 2000-Particle Field', type: '#6', date: '2026-11-21', file: '/home/ubuntu/.openclaw/workspace/aether-lab/builds/nebula-flow.html', tags: ['generative','particles','flow-field','interactive','nebula'], desc: '2000-particle flow field with sin/cos noise, mouse attraction, blue-purple palette, glowing trails.' },
+      { title: 'Flow Field Visualizer — Aether Curiosity', type: '#6', date: '2026-11-21', file: '/home/ubuntu/.openclaw/workspace/aether-lab/builds/flow-field-visualizer.html', tags: ['generative','particles','flow-field','interactive','cyan','noise'], desc: 'Interactive particle flow field with simplex-like noise, cyan-to-purple range, mouse repulsion.' }
+    ];
+    entries = ledgerData;
+    save();
+  }
+
+  // Init
+  load();
+  seedFromLedger();
+  render();
+</script>
+</body>
+</html>
