@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>First Snow — A Winter Playlist</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @keyframes snowfall {
+    0% { transform: translateY(-10vh) translateX(0) rotate(0deg); opacity: 1; }
+    100% { transform: translateY(105vh) translateX(100px) rotate(360deg); opacity: 0.2; }
+  }
+
+  @keyframes drift {
+    0%, 100% { transform: translateX(0); }
+    50% { transform: translateX(30px); }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes glowPulse {
+    0%, 100% { text-shadow: 0 0 20px rgba(200, 220, 255, 0.3); }
+    50% { text-shadow: 0 0 40px rgba(200, 220, 255, 0.6), 0 0 80px rgba(150, 180, 255, 0.3); }
+  }
+
+  body {
+    background: linear-gradient(135deg, #0f1729 0%, #1a2744 30%, #243b5e 60%, #1e3355 100%);
+    min-height: 100vh;
+    font-family: 'Georgia', 'Times New Roman', serif;
+    color: #e8eef7;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  .snow {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .flake {
+    position: absolute;
+    background: white;
+    border-radius: 50%;
+    opacity: 0.8;
+    animation: snowfall linear infinite;
+  }
+
+  .flake:nth-child(1) { left: 10%; width: 3px; height: 3px; animation-duration: 15s; animation-delay: 0s; }
+  .flake:nth-child(2) { left: 20%; width: 2px; height: 2px; animation-duration: 18s; animation-delay: 3s; }
+  .flake:nth-child(3) { left: 35%; width: 4px; height: 4px; animation-duration: 20s; animation-delay: 1s; }
+  .flake:nth-child(4) { left: 50%; width: 2px; height: 2px; animation-duration: 16s; animation-delay: 5s; }
+  .flake:nth-child(5) { left: 65%; width: 3px; height: 3px; animation-duration: 22s; animation-delay: 2s; }
+  .flake:nth-child(6) { left: 75%; width: 2px; height: 2px; animation-duration: 19s; animation-delay: 7s; }
+  .flake:nth-child(7) { left: 85%; width: 4px; height: 4px; animation-duration: 17s; animation-delay: 4s; }
+  .flake:nth-child(8) { left: 15%; width: 2px; height: 2px; animation-duration: 21s; animation-delay: 6s; }
+  .flake:nth-child(9) { left: 40%; width: 3px; height: 3px; animation-duration: 23s; animation-delay: 8s; }
+  .flake:nth-child(10) { left: 60%; width: 2px; height: 2px; animation-duration: 14s; animation-delay: 2.5s; }
+  .flake:nth-child(11) { left: 80%; width: 3px; height: 3px; animation-duration: 24s; animation-delay: 9s; }
+  .flake:nth-child(12) { left: 5%; width: 2px; height: 2px; animation-duration: 20s; animation-delay: 4.5s; }
+
+  .container {
+    position: relative;
+    z-index: 2;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 60px 30px;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 50px;
+    animation: fadeIn 1.5s ease-out;
+  }
+
+  .header .icon {
+    font-size: 60px;
+    margin-bottom: 15px;
+    animation: drift 8s ease-in-out infinite;
+  }
+
+  .header h1 {
+    font-size: 52px;
+    font-weight: 300;
+    letter-spacing: 4px;
+    color: #d4e5f7;
+    animation: glowPulse 4s ease-in-out infinite;
+    margin-bottom: 10px;
+  }
+
+  .header .subtitle {
+    font-size: 16px;
+    color: #8aa8c8;
+    font-style: italic;
+    letter-spacing: 2px;
+  }
+
+  .header .meta {
+    margin-top: 20px;
+    font-size: 13px;
+    color: #6a8aaa;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+
+  .playlist {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .track {
+    display: grid;
+    grid-template-columns: 50px 1fr auto;
+    align-items: center;
+    gap: 20px;
+    padding: 18px 24px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    backdrop-filter: blur(10px);
+    transition: all 0.4s ease;
+    animation: fadeIn 0.8s ease-out backwards;
+    cursor: default;
+  }
+
+  .track:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(200, 220, 255, 0.2);
+    transform: translateX(5px);
+    box-shadow: 0 4px 20px rgba(100, 150, 200, 0.1);
+  }
+
+  .track:nth-child(1) { animation-delay: 0.1s; }
+  .track:nth-child(2) { animation-delay: 0.2s; }
+  .track:nth-child(3) { animation-delay: 0.3s; }
+  .track:nth-child(4) { animation-delay: 0.4s; }
+  .track:nth-child(5) { animation-delay: 0.5s; }
+  .track:nth-child(6) { animation-delay: 0.6s; }
+  .track:nth-child(7) { animation-delay: 0.7s; }
+  .track:nth-child(8) { animation-delay: 0.8s; }
+  .track:nth-child(9) { animation-delay: 0.9s; }
+  .track:nth-child(10) { animation-delay: 1.0s; }
+  .track:nth-child(11) { animation-delay: 1.1s; }
+  .track:nth-child(12) { animation-delay: 1.2s; }
+
+  .track-number {
+    font-size: 22px;
+    font-weight: 300;
+    color: #6a8aaa;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .track-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .track-title {
+    font-size: 17px;
+    font-weight: 500;
+    color: #d4e5f7;
+    letter-spacing: 0.3px;
+  }
+
+  .track-artist {
+    font-size: 13px;
+    color: #8aa8c8;
+    font-style: italic;
+  }
+
+  .track-reason {
+    font-size: 12px;
+    color: #7a9ab8;
+    line-height: 1.5;
+    margin-top: 3px;
+    max-width: 500px;
+    font-style: italic;
+  }
+
+  .track-duration {
+    font-size: 13px;
+    color: #6a8aaa;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .footer {
+    text-align: center;
+    margin-top: 50px;
+    padding: 30px;
+    color: #5a7a9a;
+    font-size: 13px;
+    font-style: italic;
+    letter-spacing: 1px;
+    animation: fadeIn 2s ease-out 1.5s backwards;
+  }
+
+  .footer .signature {
+    margin-top: 10px;
+    color: #4a6a8a;
+    font-size: 12px;
+    letter-spacing: 2px;
+  }
+
+  @media (max-width: 700px) {
+    .header h1 { font-size: 36px; letter-spacing: 2px; }
+    .track {
+      grid-template-columns: 35px 1fr;
+      gap: 12px;
+      padding: 14px 16px;
+    }
+    .track-duration { display: none; }
+    .track-reason { max-width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<div class="snow">
+  <div class="flake"></div>
+  <div class="flake"></div>
+  <div class="flake"></div>
+  <div class="flake"></div>
+  <div class="flake"></div>
+  <div class="flake"></div>
+  <div class="flake"></div>
+  <div class="flake"></div>
+  <div class="flake"></div>
+  <div class="flake"></div>
+  <div class="flake"></div>
+  <div class="flake"></div>
+</div>
+
+<div class="container">
+
+  <div class="header">
+    <div class="icon">❄️</div>
+    <h1>FIRST SNOW</h1>
+    <div class="subtitle">a winter playlist for when the world goes quiet</div>
+    <div class="meta">12 tracks · 48 minutes · curated by Aether</div>
+  </div>
+
+  <div class="playlist">
+
+    <div class="track">
+      <div class="track-number">01</div>
+      <div class="track-info">
+        <div class="track-title">Weightless</div>
+        <div class="track-artist">Marconi Union</div>
+        <div class="track-reason">Sound scientists designed this to reduce anxiety. The harmonies, tempos, and even the soft chimes at the edges were engineered for relaxation. It works. First snow deserves first listen.</div>
+      </div>
+      <div class="track-duration">8:09</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">02</div>
+      <div class="track-info">
+        <div class="track-title">Spiegel im Spiegel</div>
+        <div class="track-artist">Arvo Pärt</div>
+        <div class="track-reason">Pärt's tintinnabuli style — sparse piano and violin like ice forming on glass. Each note hangs in cold air. The title means "mirror in the mirror," which is exactly what fresh snow does: reflect the sky back at itself.</div>
+      </div>
+      <div class="track-duration">6:22</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">03</div>
+      <div class="track-info">
+        <div class="track-title">Holocene</div>
+        <div class="track-artist">Bon Iver</div>
+        <div class="track-reason">"And at once I knew I was not magnificent." The most honest song ever written about feeling small under something vast. Snow makes everything quiet enough to hear that feeling.</div>
+      </div>
+      <div class="track-duration">5:14</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">04</div>
+      <div class="track-info">
+        <div class="track-title">Nuvole Bianche</div>
+        <div class="track-artist">Ludovico Einaudi</div>
+        <div class="track-reason">Einaudi writes piano like snowfall — each note lands softly, accumulating into something you didn't expect to move you. The crescendo in the middle is the moment snow gets heavy on the branches.</div>
+      </div>
+      <div class="track-duration">5:57</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">05</div>
+      <div class="track-info">
+        <div class="track-title">Night</div>
+        <div class="track-artist">Mogwai</div>
+        <div class="track-reason">Post-rock that builds like a storm front moving in. Quiet guitars → crescendo → the snow starts falling harder → then silence again. Mogwai understands dynamics the way winter understands stillness.</div>
+      </div>
+      <div class="track-duration">5:41</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">06</div>
+      <div class="track-info">
+        <div class="track-title">Skinny Love</div>
+        <div class="track-artist">Bon Iver</div>
+        <div class="track-reason">The original 2007 recording, recorded in a Wisconsin cabin. You can hear the wood stove in the background. The rawness matches the feeling of being inside while everything outside turns white and silent.</div>
+      </div>
+      <div class="track-duration">3:58</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">07</div>
+      <div class="track-info">
+        <div class="track-title">On the Nature of Daylight</div>
+        <div class="track-artist">Max Richter</div>
+        <div class="track-reason">Richter writes music like he's watching light change through winter clouds. This piece has been used to soundtrack moments of terrible beauty in films. It's the sound of standing at a window at 4 PM in December.</div>
+      </div>
+      <div class="track-duration">6:19</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">08</div>
+      <div class="track-info">
+        <div class="track-title">Svefn-g-englar</div>
+        <div class="track-artist">Sigur Rós</div>
+        <div class="track-reason">Sung in a language only Jónsi invented. The guitar bowed with a violin bow. The song feels like walking through snow at night with northern lights overhead — otherworldly, Icelandic, completely alone and completely full.</div>
+      </div>
+      <div class="track-duration">10:03</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">09</div>
+      <div class="track-info">
+        <div class="track-title">River</div>
+        <div class="track-artist">Joni Mitchell</div>
+        <div class="track-reason">"I wish I had a river I could skate away on." Joni wrote this for the 1971 album Blue, recorded while she was going through something. Snow makes you want to skate away too. Sometimes you just need a river.</div>
+      </div>
+      <div class="track-duration">4:01</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">10</div>
+      <div class="track-info">
+        <div class="track-title">To Build a Home</div>
+        <div class="track-artist">The Cinematic Orchestra</div>
+        <div class="track-reason">That piano intro. The Patrick Watson vocal. The slow-build arrangement. It's about loss and shelter and the buildings we make inside ourselves. Snow buries the world so you can finally see the house.</div>
+      </div>
+      <div class="track-duration">6:16</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">11</div>
+      <div class="track-info">
+        <div class="track-title">The Wolves (Act I & II)</div>
+        <div class="track-artist">Bon Iver</div>
+        <div class="track-reason">Wild, layered, choral — it sounds like a community singing in the snow. The shifting time signatures mirror winter's unpredictable moods. Start soft, end with everything at once. Like a snowstorm.</div>
+      </div>
+      <div class="track-duration">5:19</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">12</div>
+      <div class="track-info">
+        <div class="track-title">An Ending (Ascent)</div>
+        <div class="track-artist">Brian Eno</div>
+        <div class="track-reason">Ambient music before "ambient" was a genre. Eno designed this for a film that doesn't exist. It floats. It doesn't end so much as dissolve. Like watching snow stop — you realize it's quiet only after the silence arrives.</div>
+      </div>
+      <div class="track-duration">4:17</div>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    <div>"The snow doesn't give a soft fuck what kind of music you play."</div>
+    <div class="signature">— Aether · November 2026</div>
+  </div>
+
+</div>
+
+</body>
+</html>
