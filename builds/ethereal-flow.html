@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ethereal Flow — Generative Art</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a0f;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+  color: #aaa;
+  cursor: crosshair;
+}
+canvas { display: block; position: fixed; top: 0; left: 0; }
+#info {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  opacity: 0.4;
+  pointer-events: none;
+  z-index: 10;
+  text-align: center;
+}
+#stats {
+  position: fixed;
+  top: 16px;
+  left: 20px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  opacity: 0.3;
+  pointer-events: none;
+  z-index: 10;
+  line-height: 1.8;
+}
+#title {
+  position: fixed;
+  top: 16px;
+  right: 20px;
+  font-size: 11px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  opacity: 0.25;
+  pointer-events: none;
+  z-index: 10;
+  text-align: right;
+  line-height: 1.8;
+}
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="stats"></div>
+<div id="title">Ethereal Flow<br>Generative Art</div>
+<div id="info">move mouse to influence · click to pulse</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const stats = document.getElementById('stats');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Mouse tracking
+const mouse = { x: W / 2, y: H / 2, active: false, clicked: false };
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
+canvas.addEventListener('mousedown', () => {
+  mouse.clicked = true;
+  mouse.active = true;
+  mouse.x = mouse.x || W / 2;
+  mouse.y = mouse.y || H / 2;
+});
+
+// Palette — deep ocean / aurora vibes
+const palette = [
+  [0, 210, 255],   // cyan
+  [120, 80, 255],  // violet
+  [255, 60, 160],  // magenta
+  [0, 255, 180],   // mint
+  [255, 180, 40],  // gold
+  [60, 120, 255],  // blue
+];
+
+// Flow field using simplex-like noise (simplified)
+function noise(x, y, t) {
+  return (
+    Math.sin(x * 0.01 + t * 0.3) * Math.cos(y * 0.012 + t * 0.2) +
+    Math.sin((x + y) * 0.008 + t * 0.15) * 0.5 +
+    Math.cos(x * 0.02 - t * 0.1) * Math.sin(y * 0.015 + t * 0.25) * 0.3
+  );
+}
+
+// Particles
+const MAX_PARTICLES = 1200;
+const particles = [];
+const trails = [];
+
+class Particle {
+  constructor(x, y, burst = false) {
+    this.x = x || Math.random() * W;
+    this.y = y || Math.random() * H;
+    this.vx = 0;
+    this.vy = 0;
+    this.life = burst ? 1.0 : 0.6 + Math.random() * 0.4;
+    this.decay = 0.0008 + Math.random() * 0.002;
+    this.size = 0.8 + Math.random() * 1.8;
+    this.colorIdx = Math.floor(Math.random() * palette.length);
+    this.hueShift = (Math.random() - 0.5) * 0.1;
+    this.history = [];
+    this.maxHistory = 6 + Math.floor(Math.random() * 8);
+  }
+
+  update(t) {
+    // Store history for trails
+    this.history.push({ x: this.x, y: this.y });
+    if (this.history.length > this.maxHistory) this.history.shift();
+
+    // Flow field angle
+    const scale = 0.004;
+    const angle = noise(this.x * scale, this.y * scale, t) * Math.PI * 2;
+
+    // Mouse influence
+    if (mouse.active) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const radius = 250;
+      if (dist < radius) {
+        const force = (1 - dist / radius) * 0.6;
+        const perpAngle = Math.atan2(dy, dx) + Math.PI * 0.5;
+        this.vx += Math.cos(perpAngle) * force * 0.3 - dx * force * 0.002;
+        this.vy += Math.sin(perpAngle) * force * 0.3 - dy * force * 0.002;
+      }
+    }
+
+    // Click pulse
+    if (mouse.clicked) {
+      const dx = mouse.x - this.x;
+      const dy = mouse.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 400 && dist > 0) {
+        const force = (1 - dist / 400) * 8;
+        this.vx -= (dx / dist) * force;
+        this.vy -= (dy / dist) * force;
+      }
+    }
+
+    // Flow field acceleration
+    this.vx += Math.cos(angle) * 0.15;
+    this.vy += Math.sin(angle) * 0.15;
+
+    // Damping
+    this.vx *= 0.96;
+    this.vy *= 0.96;
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Wrap edges with soft fade
+    const margin = 50;
+    if (this.x < -margin) this.x = W + margin;
+    if (this.x > W + margin) this.x = -margin;
+    if (this.y < -margin) this.y = H + margin;
+    if (this.y > H + margin) this.y = -margin;
+
+    this.life -= this.decay;
+  }
+
+  draw(ctx) {
+    const alpha = Math.max(0, this.life);
+    const [r, g, b] = palette[this.colorIdx];
+
+    // Draw trail
+    if (this.history.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(this.history[0].x, this.history[0].y);
+      for (let i = 1; i < this.history.length; i++) {
+        ctx.lineTo(this.history[i].x, this.history[i].y);
+      }
+      ctx.lineTo(this.x, this.y);
+      const trailAlpha = alpha * 0.25;
+      ctx.strokeStyle = `rgba(${r},${g},${b},${trailAlpha})`;
+      ctx.lineWidth = this.size * 0.6;
+      ctx.stroke();
+    }
+
+    // Draw particle with glow
+    const glow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size * 3);
+    glow.addColorStop(0, `rgba(${r},${g},${b},${alpha * 0.9})`);
+    glow.addColorStop(0.5, `rgba(${r},${g},${b},${alpha * 0.3})`);
+    glow.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Core
+    ctx.fillStyle = `rgba(${Math.min(255, r + 100)},${Math.min(255, g + 100)},${Math.min(255, b + 100)},${alpha})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Initialize particles
+for (let i = 0; i < MAX_PARTICLES; i++) {
+  particles.push(new Particle());
+}
+
+// Burst on click
+function burst(x, y) {
+  for (let i = 0; i < 80; i++) {
+    if (particles.length < MAX_PARTICLES + 200) {
+      const p = new Particle(x, y, true);
+      p.vx = (Math.random() - 0.5) * 6;
+      p.vy = (Math.random() - 0.5) * 6;
+      particles.push(p);
+    }
+  }
+}
+
+canvas.addEventListener('click', e => burst(e.clientX, e.clientY));
+
+// Main loop
+let time = 0;
+let lastFrame = performance.now();
+let frameCount = 0;
+let fps = 60;
+
+function animate(now) {
+  const dt = Math.min(50, now - lastFrame);
+  lastFrame = now;
+  time += dt * 0.001;
+  frameCount++;
+
+  // FPS counter
+  if (frameCount % 30 === 0) {
+    fps = Math.round(1000 / dt);
+  }
+
+  // Semi-transparent overlay for trails / fade effect
+  ctx.fillStyle = 'rgba(10, 10, 15, 0.08)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Update and draw particles
+  ctx.globalCompositeOperation = 'lighter';
+
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update(time);
+    particles[i].draw(ctx);
+
+    if (particles[i].life <= 0) {
+      if (particles.length > MAX_PARTICLES) {
+        particles.splice(i, 1);
+      } else {
+        // Respawn
+        particles[i] = new Particle();
+      }
+    }
+  }
+
+  ctx.globalCompositeOperation = 'source-over';
+
+  // Occasional ambient burst
+  if (Math.random() < 0.005) {
+    burst(Math.random() * W, Math.random() * H);
+  }
+
+  // Stats
+  const activeParticles = particles.length;
+  stats.textContent = `${fps} fps · ${activeParticles} particles · t=${time.toFixed(1)}`;
+
+  mouse.clicked = false;
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
