@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pulse — Breathing Timer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: radial-gradient(ellipse at center, #0a0a1a 0%, #000 100%);
+    font-family: 'Courier New', monospace;
+    color: #ccc;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    user-select: none;
+  }
+  canvas#bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+  }
+  .content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 28px;
+  }
+  h1 {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 14px;
+    letter-spacing: 8px;
+    text-transform: uppercase;
+    font-weight: normal;
+  }
+  #timerCanvas {
+    display: block;
+    cursor: pointer;
+  }
+  .breath-text {
+    color: rgba(200, 220, 255, 0.9);
+    font-size: 18px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    transition: opacity 0.6s;
+    min-height: 28px;
+    text-align: center;
+  }
+  .controls {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  button {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #ccc;
+    padding: 10px 22px;
+    border-radius: 30px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    transition: all 0.3s;
+  }
+  button:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.35);
+    color: #fff;
+  }
+  button.active {
+    background: rgba(100, 180, 255, 0.2);
+    border-color: rgba(100, 180, 255, 0.6);
+    color: #cde8ff;
+  }
+  .session-info {
+    color: #444;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-align: center;
+  }
+  .quote {
+    color: #2a2a3a;
+    font-size: 11px;
+    font-style: italic;
+    letter-spacing: 1px;
+    text-align: center;
+    max-width: 400px;
+    line-height: 1.6;
+  }
+  .hint {
+    color: #2a2a3a;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+  <canvas id="bg"></canvas>
+  <div class="content">
+    <h1>✦ Pulse ✦</h1>
+    <canvas id="timerCanvas" width="420" height="420"></canvas>
+    <div class="breath-text" id="breathText"></div>
+    <div class="controls" id="controls">
+      <button id="btnStart">▶ Begin</button>
+      <button id="btnPause" style="display:none">❚❚ Pause</button>
+      <button id="btnReset">↻ Reset</button>
+    </div>
+    <div class="session-info" id="sessionInfo"></div>
+    <div class="hint">click center to start • space to pause</div>
+    <div class="quote" id="quote"></div>
+  </div>
+
+<script>
+// === CONFIG ===
+const BREATH_PATTERNS = {
+  'box':    { name: 'Box Breath',   phases: [
+              { label: 'Breathe In',  duration: 4000 },
+              { label: 'Hold',         duration: 4000 },
+              { label: 'Breathe Out',  duration: 4000 },
+              { label: 'Hold',         duration: 4000 } ] },
+  'calm':   { name: 'Calm',        phases: [
+              { label: 'Breathe In',  duration: 5000 },
+              { label: 'Hold',         duration: 2000 },
+              { label: 'Breathe Out',  duration: 7000 } ] },
+  'energize': { name: 'Energize', phases: [
+              { label: 'Breathe In',  duration: 3000 },
+              { label: 'Breathe Out',  duration: 3000 } ] },
+  'deep':   { name: 'Deep',        phases: [
+              { label: 'Breathe In',  duration: 6000 },
+              { label: 'Hold',         duration: 4000 },
+              { label: 'Breathe Out',  duration: 8000 } ] },
+};
+const QUOTES = [
+  "The wound is the place where the Light enters you. — Rumi",
+  "Breath is the bridge which connects life to consciousness.",
+  "In the midst of movement and chaos, keep stillness inside of you.",
+  "Feel the feelings, watch the thoughts. You are the sky.",
+  "The present moment is filled with joy and happiness. — Thich Nhat Hanh",
+  "Quiet the mind, and the soul will speak. — Ma Jaya Sati Bhagavati",
+  "Breathe in deeply to bring your mind home to your body.",
+  "Almost everything will work again if you unplug it for a few minutes.",
+  "Peace comes from within. Do not seek it without. — Buddha",
+  "The mind is everything. What you think you become. — Buddha",
+];
+
+// === STATE ===
+let state = {
+  running: false,
+  paused: false,
+  currentPattern: 'box',
+  phaseIndex: 0,
+  phaseElapsed: 0,
+  totalElapsed: 0,
+  sessions: 0,
+  totalBreaths: 0,
+  breathCount: 0,
+  sessionSeconds: 0,
+  lastTimestamp: null,
+};
+
+// === DOM ===
+const bgCanvas = document.getElementById('bg');
+const bgCtx = bgCanvas.getContext('2d');
+const tCanvas = document.getElementById('timerCanvas');
+const tCtx = tCanvas.getContext('2d');
+const breathText = document.getElementById('breathText');
+const sessionInfo = document.getElementById('sessionInfo');
+const quoteEl = document.getElementById('quote');
+const btnStart = document.getElementById('btnStart');
+const btnPause = document.getElementById('btnPause');
+
+// === RESIZE ===
+function resizeBg() {
+  bgCanvas.width = window.innerWidth;
+  bgCanvas.height = window.innerHeight;
+}
+resizeBg();
+window.addEventListener('resize', resizeBg);
+
+// === STARS BACKGROUND ===
+const stars = Array.from({ length: 180 }, () => ({
+  x: Math.random() * window.innerWidth,
+  y: Math.random() * window.innerHeight,
+  r: Math.random() * 1.5 + 0.3,
+  twinkle: Math.random() * Math.PI * 2,
+  speed: Math.random() * 0.02 + 0.005,
+}));
+
+function drawStars(time) {
+  bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+  stars.forEach(s => {
+    s.twinkle += s.speed;
+    const alpha = 0.3 + 0.5 * Math.abs(Math.sin(s.twinkle));
+    bgCtx.fillStyle = `rgba(180,200,255,${alpha})`;
+    bgCtx.beginPath();
+    bgCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    bgCtx.fill();
+  });
+}
+
+// === PULSE RING STATE ===
+let pulseProgress = 0; // 0 to 1, represents current breath phase completion
+let targetPulse = 0.5;
+let currentPulse = 0.5;
+let glowIntensity = 0;
+let targetGlow = 0.3;
+let particles = [];
+let rings = [];
+
+// === BREATH CYCLE ===
+function getCurrentPhase() {
+  const pattern = BREATH_PATTERNS[state.currentPattern];
+  const phase = pattern.phases[state.phaseIndex];
+  const duration = phase.duration;
+  const t = Math.min(state.phaseElapsed / duration, 1.0);
+  return { ...phase, t, duration, totalDuration: pattern.phases.reduce((a, p) => a + p.duration, 0) };
+}
+
+function advancePhase(dt) {
+  state.phaseElapsed += dt;
+  const phase = getCurrentPhase();
+  if (state.phaseElapsed >= phase.duration) {
+    state.phaseElapsed = 0;
+    state.phaseIndex++;
+    const pattern = BREATH_PATTERNS[state.currentPattern];
+    if (state.phaseIndex >= pattern.phases.length) {
+      state.phaseIndex = 0;
+      state.totalBreaths++;
+      state.breathCount++;
+      // Spawn a ring on breath completion
+      spawnRing();
+    }
+  }
+}
+
+// === RINGS & PARTICLES ===
+function spawnRing() {
+  rings.push({ radius: 60, alpha: 0.6, maxRadius: 190, speed: 1.2 + Math.random() * 0.5 });
+  for (let i = 0; i < 12; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 0.3 + Math.random() * 0.7;
+    particles.push({
+      x: Math.cos(angle) * 60,
+      y: Math.sin(angle) * 60,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1.0,
+      decay: 0.003 + Math.random() * 0.005,
+      size: 1 + Math.random() * 1.5,
+      hue: 200 + Math.random() * 40,
+    });
+  }
+}
+
+function spawnClickParticles(x, y) {
+  for (let i = 0; i < 20; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 0.5 + Math.random() * 2;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 1.0,
+      decay: 0.005 + Math.random() * 0.01,
+      size: 1 + Math.random() * 2,
+      hue: 190 + Math.random() * 60,
+    });
+  }
+  rings.push({ radius: 30, alpha: 0.9, maxRadius: 180, speed: 2.0 });
+}
+
+// === DRAW Main Circle ===
+function drawPulseCircle(time) {
+  const W = tCanvas.width, H = tCanvas.height;
+  const cx = W / 2, cy = H / 2;
+  const baseRadius = 65;
+  const maxExpand = 55;
+
+  // Smooth pulse interpolation
+  const phase = getCurrentPhase();
+  const easeIn = phase.t < 0.5 ? 2 * phase.t * phase.t : -1 + (4 - 2 * phase.t) * phase.t;
+  const target = phase.label.includes('In') ? baseRadius + maxExpand * easeIn :
+                 phase.label.includes('Out') ? baseRadius + maxExpand * (1 - easeIn) :
+                 baseRadius + maxExpand * (phase.label.includes('Hold') && state.phaseIndex % 2 === 1 ? 1 : 0.5);
+  currentPulse += (target - currentPulse) * 0.08;
+  const r = currentPulse;
+
+  // Glow intensity
+  targetGlow = phase.label.includes('In') ? 0.8 : phase.label.includes('Out') ? 0.2 : 0.5;
+  glowIntensity += (targetGlow - glowIntensity) * 0.05;
+
+  tCtx.clearRect(0, 0, W, H);
+
+  // Outer ambient glow
+  const grad = tCtx.createRadialGradient(cx, cy, r * 0.6, cx, cy, r * 2.5);
+  const glowAlpha = 0.08 + glowIntensity * 0.12;
+  grad.addColorStop(0, `rgba(100,180,255,${glowAlpha})`);
+  grad.addColorStop(0.5, `rgba(60,120,220,${glowAlpha * 0.4})`);
+  grad.addColorStop(1, 'rgba(0,0,40,0)');
+  tCtx.fillStyle = grad;
+  tCtx.beginPath();
+  tCtx.arc(cx, cy, r * 2.5, 0, Math.PI * 2);
+  tCtx.fill();
+
+  // Main ring
+  tCtx.strokeStyle = `rgba(140,200,255,${0.4 + glowIntensity * 0.4})`;
+  tCtx.lineWidth = 2.5;
+  tCtx.shadowBlur = 20 + glowIntensity * 25;
+  tCtx.shadowColor = 'rgba(100,180,255,0.8)';
+  tCtx.beginPath();
+  tCtx.arc(cx, cy, r, 0, Math.PI * 2);
+  tCtx.stroke();
+  tCtx.shadowBlur = 0;
+
+  // Inner subtle fill
+  const innerGrad = tCtx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  innerGrad.addColorStop(0, `rgba(100,180,255,${0.03 + glowIntensity * 0.05})`);
+  innerGrad.addColorStop(1, 'rgba(80,150,255,0)');
+  tCtx.fillStyle = innerGrad;
+  tCtx.beginPath();
+  tCtx.arc(cx, cy, r, 0, Math.PI * 2);
+  tCtx.fill();
+
+  // Orbiting dot
+  const orbitAngle = time * 0.0008;
+  const dotX = cx + Math.cos(orbitAngle) * r;
+  const dotY = cy + Math.sin(orbitAngle) * r;
+  tCtx.fillStyle = 'rgba(200,230,255,0.95)';
+  tCtx.shadowBlur = 15;
+  tCtx.shadowColor = 'rgba(150,200,255,1)';
+  tCtx.beginPath();
+  tCtx.arc(dotX, dotY, 3.5, 0, Math.PI * 2);
+  tCtx.fill();
+  tCtx.shadowBlur = 0;
+
+  // Time display in center
+  const totalPhases = BREATH_PATTERNS[state.currentPattern].phases.length;
+  const cycleProgress = (state.phaseIndex + phase.t) / totalPhases;
+  const cycleFraction = cycleProgress.toFixed(2);
+  const displaySec = Math.floor(state.sessionSeconds / 60);
+  const displayMin = state.sessionSeconds % 60;
+  const timeStr = `${String(displayMin).padStart(2,'0')}:${String(displaySec).padStart(2,'0')}`;
+
+  tCtx.fillStyle = 'rgba(200,220,255,0.7)';
+  tCtx.font = '13px Courier New';
+  tCtx.textAlign = 'center';
+  tCtx.fillText(timeStr, cx, cy + 5);
+
+  // Tick marks around
+  for (let i = 0; i < 60; i++) {
+    const a = (i / 60) * Math.PI * 2 - Math.PI / 2;
+    const len = i % 5 === 0 ? 10 : 4;
+    const x1 = cx + Math.cos(a) * (r + 12);
+    const y1 = cy + Math.sin(a) * (r + 12);
+    const x2 = cx + Math.cos(a) * (r + 12 + len);
+    const y2 = cy + Math.sin(a) * (r + 12 + len);
+    tCtx.strokeStyle = i % 5 === 0 ? 'rgba(200,220,255,0.4)' : 'rgba(200,220,255,0.15)';
+    tCtx.lineWidth = 1;
+    tCtx.beginPath();
+    tCtx.moveTo(x1, y1);
+    tCtx.lineTo(x2, y2);
+    tCtx.stroke();
+  }
+}
+
+// === Animation Loop ===
+let lastTime = 0;
+function animate(timestamp) {
+  const dt = lastTime ? Math.min((timestamp - lastTime) / 1000, 0.1) : 0;
+  lastTime = timestamp;
+
+  if (state.running && !state.paused) {
+    state.totalElapsed += dt;
+    state.sessionSeconds += dt;
+    advancePhase(dt);
+    updateBreathText();
+    updateSessionInfo();
+  }
+
+  drawStars(timestamp);
+  drawPulseCircle(timestamp);
+
+  // Update & draw rings
+  rings = rings.filter(ring => {
+    ring.radius += ring.speed;
+    ring.alpha *= 0.985;
+    if (ring.alpha < 0.01) return false;
+    tCtx.strokeStyle = `rgba(120,200,255,${ring.alpha * 0.5})`;
+    tCtx.lineWidth = 1;
+    tCtx.beginPath();
+    tCtx.arc(tCanvas.width / 2, tCanvas.height / 2, ring.radius, 0, Math.PI * 2);
+    tCtx.stroke();
+    return true;
+  });
+
+  // Update & draw particles
+  particles = particles.filter(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= p.decay;
+    if (p.life <= 0) return false;
+    tCtx.fillStyle = `hsla(${p.hue}, 80%, 70%, ${p.life * 0.7})`;
+    tCtx.beginPath();
+    tCtx.arc(tCanvas.width / 2 + p.x, tCanvas.height / 2 + p.y, p.size * p.life, 0, Math.PI * 2);
+    tCtx.fill();
+    return true;
+  });
+
+  requestAnimationFrame(animate);
+}
+
+// === UI ===
+function updateBreathText() {
+  if (!state.running || state.paused) {
+    breathText.textContent = '';
+    return;
+  }
+  const phase = getCurrentPhase();
+  breathText.textContent = `${phase.label}`;
+  breathText.style.opacity = 0.7 + phase.t * 0.3;
+}
+
+function updateSessionInfo() {
+  const min = Math.floor(state.sessionSeconds / 60);
+  const sec = Math.floor(state.sessionSeconds % 60);
+  sessionInfo.textContent = `Session ${state.sessions} · ${min}m ${sec}s · ${state.breathCount} breaths`;
+}
+
+function setQuote() {
+  quoteEl.textContent = `"${QUOTES[Math.floor(Math.random() * QUOTES.length)]}"`;
+}
+
+// === CONTROLS ===
+function startSession() {
+  state.running = true;
+  state.paused = false;
+  state.phaseIndex = 0;
+  state.phaseElapsed = 0;
+  state.breathCount = 0;
+  state.sessionSeconds = 0;
+  state.lastTimestamp = performance.now();
+  btnStart.style.display = 'none';
+  btnPause.style.display = 'inline-block';
+  setQuote();
+}
+
+function pauseSession() {
+  state.paused = !state.paused;
+  btnPause.textContent = state.paused ? '▶ Resume' : '❚❚ Pause';
+  breathText.textContent = state.paused ? 'Paused' : '';
+}
+
+function resetSession() {
+  state.running = false;
+  state.paused = false;
+  state.phaseIndex = 0;
+  state.phaseElapsed = 0;
+  state.breathCount = 0;
+  state.sessionSeconds = 0;
+  currentPulse = 0.5;
+  btnStart.style.display = 'inline-block';
+  btnStart.textContent = '▶ Begin';
+  btnPause.style.display = 'none';
+  btnPause.textContent = '❚❚ Pause';
+  breathText.textContent = '';
+  sessionInfo.textContent = '';
+}
+
+function cyclePattern() {
+  const keys = Object.keys(BREATH_PATTERNS);
+  const idx = (keys.indexOf(state.currentPattern) + 1) % keys.length;
+  state.currentPattern = keys[idx];
+  state.phaseIndex = 0;
+  state.phaseElapsed = 0;
+  updatePatternButtons();
+}
+
+function updatePatternButtons() {
+  document.querySelectorAll('.pattern-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.pattern === state.currentPattern);
+  });
+}
+
+// === EVENT LISTENERS ===
+btnStart.addEventListener('click', startSession);
+btnPause.addEventListener('click', pauseSession);
+document.getElementById('btnReset').addEventListener('click', resetSession);
+tCanvas.addEventListener('click', (e) => {
+  if (!state.running) {
+    startSession();
+    const rect = tCanvas.getBoundingClientRect();
+    spawnClickParticles(e.clientX - rect.left - tCanvas.width / 2, e.clientY - rect.top - tCanvas.height / 2);
+  }
+});
+
+// Pattern selector
+const patternControls = document.createElement('div');
+patternControls.className = 'controls';
+Object.entries(BREATH_PATTERNS).forEach(([key, p]) => {
+  const btn = document.createElement('button');
+  btn.className = 'pattern-btn';
+  btn.dataset.pattern = key;
+  btn.textContent = p.name;
+  btn.addEventListener('click', cyclePattern);
+  patternControls.appendChild(btn);
+});
+document.getElementById('controls').after(patternControls);
+updatePatternButtons();
+
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (!state.running) startSession();
+    else pauseSession();
+  }
+});
+
+// === START ===
+setQuote();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
