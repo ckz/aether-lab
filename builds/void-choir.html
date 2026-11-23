@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Void Choir — Ambient Synth Canvas</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    font-family: 'Courier New', monospace;
+    color: #ccc;
+    overflow: hidden;
+    height: 100vh;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 10, 15, 0.95);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    transition: opacity 0.8s;
+  }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+  #overlay h1 {
+    color: #fff;
+    font-size: 28px;
+    letter-spacing: 8px;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+  }
+  #overlay p {
+    color: #666;
+    font-size: 13px;
+    margin-bottom: 30px;
+    letter-spacing: 2px;
+  }
+  #start-btn {
+    background: transparent;
+    border: 1px solid rgba(123, 111, 255, 0.5);
+    color: #fff;
+    padding: 14px 32px;
+    font-family: inherit;
+    font-size: 14px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.3s;
+  }
+  #start-btn:hover {
+    background: rgba(123, 111, 255, 0.15);
+    border-color: rgba(123, 111, 255, 0.9);
+  }
+  #hint {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #444;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 5;
+  }
+</style>
+</head>
+<body>
+  <div id="overlay">
+    <h1>Void Choir</h1>
+    <p>An ambient synth canvas</p>
+    <button id="start-btn">Enter the Void</button>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="hint">Click & drag to sing • Scroll to shift scale • Space to clear</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('overlay');
+  const startBtn = document.getElementById('start-btn');
+  const hint = document.getElementById('hint');
+
+  let W, H;
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // Audio
+  let audioCtx = null;
+  let masterGain = null;
+  const reverbBuffer = (() => {
+    const len = audioCtx ? audioCtx.sampleRate * 2.5 : 0;
+    // Will be created after audio context starts
+    return null;
+  })();
+
+  function initAudio() {
+    if (audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.3;
+
+    // Create reverb
+    const convolver = audioCtx.createConvolver();
+    const rate = audioCtx.sampleRate;
+    const length = rate * 2.5;
+    const impulse = audioCtx.createBuffer(2, length, rate);
+    for (let c = 0; c < 2; c++) {
+      const data = impulse.getChannelData(c);
+      for (let i = 0; i < length; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2.2);
+      }
+    }
+    convolver.buffer = impulse;
+
+    const dryGain = audioCtx.createGain();
+    dryGain.gain.value = 0.6;
+    const wetGain = audioCtx.createGain();
+    wetGain.gain.value = 0.4;
+
+    masterGain.connect(dryGain);
+    dryGain.connect(audioCtx.destination);
+    masterGain.connect(convolver);
+    convolver.connect(wetGain);
+    wetGain.connect(audioCtx.destination);
+  }
+
+  // Pentatonic scales across octaves
+  const scaleIntervals = [0, 2, 4, 7, 9]; // major pentatonic
+  const baseFreq = 110; // A2
+
+  function noteFromPosition(x, y) {
+    const normalizedX = x / W;
+    const octave = Math.floor(normalizedX * 4); // 4 octaves
+    const degree = Math.floor((normalizedX * 4 % 1) * scaleIntervals.length);
+    const semitones = octave * 12 + scaleIntervals[degree];
+    return baseFreq * Math.pow(2, semitones / 12);
+  }
+
+  function playNote(freq, velocity = 0.5) {
+    if (!audioCtx) return;
+    const now = audioCtx.currentTime;
+
+    // Main tone — soft sine with slight overtones
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, now);
+
+    // Add slight detune for warmth
+    const osc2 = audioCtx.createOscillator();
+    const gain2 = audioCtx.createGain();
+    osc2.type = 'triangle';
+    osc2.frequency.setValueAtTime(freq * 1.002, now);
+
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(velocity * 0.4, now + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 3);
+
+    gain2.gain.setValueAtTime(0, now);
+    gain2.gain.linearRampToValueAtTime(velocity * 0.15, now + 0.05);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 2.5);
+
+    osc.connect(gain);
+    gain.connect(masterGain);
+    osc2.connect(gain2);
+    gain2.connect(masterGain);
+
+    osc.start(now);
+    osc.stop(now + 3.5);
+    osc2.start(now);
+    osc2.stop(now + 3);
+  }
+
+  // Particles / voices
+  const voices = [];
+  const MAX_VOICES = 80;
+
+  class Voice {
+    constructor(x, y, freq) {
+      this.x = x;
+      this.y = y;
+      this.freq = freq;
+      this.life = 1;
+      this.decay = 0.003 + Math.random() * 0.004;
+      this.radius = 2 + Math.random() * 3;
+      this.vx = (Math.random() - 0.5) * 0.5;
+      this.vy = (Math.random() - 0.5) * 0.5 - 0.3;
+      this.hue = (freq / baseFreq) * 40 + 200; // map pitch to hue
+      this.trail = [];
+      this.maxTrail = 12 + Math.floor(Math.random() * 8);
+    }
+    update() {
+      this.life -= this.decay;
+      this.x += this.vx;
+      this.y += this.vy;
+      this.vy += 0.002; // gentle rise
+      this.trail.push({ x: this.x, y: this.y, life: this.life });
+      if (this.trail.length > this.maxTrail) this.trail.shift();
+      return this.life > 0;
+    }
+    draw(ctx) {
+      // Trail
+      for (let i = 0; i < this.trail.length; i++) {
+        const t = this.trail[i];
+        const alpha = (i / this.trail.length) * this.life * 0.4;
+        const r = this.radius * (i / this.trail.length);
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = `hsla(${this.hue}, 80%, 65%, ${alpha})`;
+        ctx.fill();
+      }
+      // Core
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius * this.life, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${this.hue}, 90%, 75%, ${this.life * 0.9})`;
+      ctx.fill();
+
+      // Glow
+      const glow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius * 4);
+      glow.addColorStop(0, `hsla(${this.hue}, 90%, 70%, ${this.life * 0.3})`);
+      glow.addColorStop(1, 'transparent');
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius * 4, 0, Math.PI * 2);
+      ctx.fillStyle = glow;
+      ctx.fill();
+    }
+  }
+
+  // Background constellation dots
+  const stars = [];
+  for (let i = 0; i < 120; i++) {
+    stars.push({
+      x: Math.random() * 2000,
+      y: Math.random() * 2000,
+      r: Math.random() * 1.2,
+      twinkle: Math.random() * Math.PI * 2,
+      speed: 0.01 + Math.random() * 0.03
+    });
+  }
+
+  function drawStars() {
+    stars.forEach(s => {
+      s.twinkle += s.speed;
+      const alpha = 0.2 + Math.sin(s.twinkle) * 0.15;
+      ctx.beginPath();
+      ctx.arc(s.x % W, s.y % H, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(180, 190, 220, ${alpha})`;
+      ctx.fill();
+    });
+  }
+
+  // Connections between nearby voices
+  function drawConnections() {
+    for (let i = 0; i < voices.length; i++) {
+      for (let j = i + 1; j < voices.length; j++) {
+        const a = voices[i], b = voices[j];
+        const dx = a.x - b.x, dy = a.y - b.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 100) {
+          const alpha = (1 - dist / 100) * Math.min(a.life, b.life) * 0.25;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.strokeStyle = `rgba(123, 111, 255, ${alpha})`;
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      }
+    }
+  }
+
+  // Scale shift
+  let scaleShift = 0;
+
+  // Input
+  let isDrawing = false;
+  let lastVoiceTime = 0;
+  const VOICE_COOLDOWN = 80; // ms between new voices
+
+  function spawnVoice(x, y) {
+    const now = Date.now();
+    if (now - lastVoiceTime < VOICE_COOLDOWN) return;
+    if (voices.length >= MAX_VOICES) return;
+
+    const freq = noteFromPosition(x + scaleShift * 50, y);
+    const velocity = 0.3 + (1 - y / H) * 0.5;
+    playNote(freq, velocity);
+    voices.push(new Voice(x, y, freq));
+    lastVoiceTime = now;
+  }
+
+  canvas.addEventListener('mousedown', (e) => {
+    isDrawing = true;
+    spawnVoice(e.clientX, e.clientY);
+  });
+  canvas.addEventListener('mousemove', (e) => {
+    if (!isDrawing) return;
+    spawnVoice(e.clientX, e.clientY);
+  });
+  canvas.addEventListener('mouseup', () => isDrawing = false);
+  canvas.addEventListener('mouseleave', () => isDrawing = false);
+
+  // Touch
+  canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    isDrawing = true;
+    const t = e.touches[0];
+    spawnVoice(t.clientX, t.clientY);
+  });
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (!isDrawing) return;
+    const t = e.touches[0];
+    spawnVoice(t.clientX, t.clientY);
+  });
+  canvas.addEventListener('touchend', () => isDrawing = false);
+
+  // Scroll to shift scale
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    scaleShift += e.deltaY > 0 ? 1 : -1;
+    scaleShift = Math.max(0, Math.min(12, scaleShift));
+  });
+
+  // Space to clear
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      voices.length = 0;
+    }
+  });
+
+  // Start
+  startBtn.addEventListener('click', () => {
+    initAudio();
+    overlay.classList.add('hidden');
+    // Fade hint
+    setTimeout(() => { hint.style.opacity = '0'; hint.style.transition = 'opacity 2s'; }, 8000);
+  });
+
+  // Render loop
+  function render() {
+    // Fade trail
+    ctx.fillStyle = 'rgba(10, 10, 15, 0.15)';
+    ctx.fillRect(0, 0, W, H);
+
+    drawStars();
+    drawConnections();
+
+    for (let i = voices.length - 1; i >= 0; i--) {
+      if (!voices[i].update()) {
+        voices.splice(i, 1);
+      } else {
+        voices[i].draw(ctx);
+      }
+    }
+
+    requestAnimationFrame(render);
+  }
+  render();
+
+  // Fade hint after a while
+  setTimeout(() => {
+    if (hint.style.opacity !== '0') {
+      hint.style.transition = 'opacity 3s';
+      hint.style.opacity = '0';
+    }
+  }, 15000);
+})();
+</script>
+</body>
+</html>
