@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Resonant Bloom — Generative Art</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a12;
+    font-family: 'Courier New', monospace;
+    color: #ccc;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  header {
+    width: 100%;
+    max-width: 1200px;
+    padding: 28px 24px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  h1 {
+    color: #fff;
+    font-size: 18px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+  }
+  .controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  button {
+    background: rgba(20, 20, 35, 0.8);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #aaa;
+    padding: 8px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+  }
+  button:hover {
+    border-color: rgba(123, 111, 255, 0.5);
+    color: #fff;
+    transform: translateY(-1px);
+  }
+  canvas {
+    display: block;
+    margin: 10px auto 40px;
+    border-radius: 12px;
+    cursor: crosshair;
+  }
+  .hint {
+    color: #555;
+    font-size: 11px;
+    letter-spacing: 2px;
+    margin-bottom: 18px;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>✦ Resonant Bloom</h1>
+    <div class="controls">
+      <button id="paletteBtn">Palette</button>
+      <button id="saveBtn">Save PNG</button>
+      <button id="resetBtn">Regenerate</button>
+    </div>
+  </header>
+  <div class="hint">MOVE MOUSE TO RESONATE · CLICK TO BLOOM</div>
+  <canvas id="c"></canvas>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const dpr = Math.max(window.devicePixelRatio || 1, 1);
+let W, H;
+
+function resize() {
+  W = Math.min(window.innerWidth - 24, 1200);
+  H = Math.min(Math.round(W * 0.7), 800);
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+resize();
+window.addEventListener('resize', () => { resize(); seed = Math.random() * 9999; });
+
+let mouse = { x: W / 2, y: H / 2 };
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  mouse.x = e.clientX - r.left;
+  mouse.y = e.clientY - r.top;
+});
+canvas.addEventListener('click', () => { burst(); });
+
+let seed = Math.random() * 9999;
+let paletteIdx = 0;
+
+const palettes = [
+  { name: 'Nebula',  colors: ['#ff006e','#8338ec','#3a86ff','#ffbe0b','#fb5607','#ff006e'] },
+  { name: 'Aurora',  colors: ['#00ff87','#60efff','#0061ff','#a855f7','#00ff87'] },
+  { name: 'Ember',   colors: ['#ff4d00','#ff9900','#ffcc00','#ff2200','#ff4d00'] },
+  { name: 'Frost',   colors: ['#caf0f8','#90e0ef','#00b4d8','#0077b6','#caf0f8'] },
+  { name: 'Phantom', colors: ['#e0aaff','#c77dff','#9d4edd','#5a189a','#e0aaff'] },
+];
+
+function rand(s) { const x = Math.sin(s++) * 43758.5453; return x - Math.floor(x); }
+
+function getColor(t, alpha = 1) {
+  const pal = palettes[paletteIdx].colors;
+  const idx = Math.abs(Math.floor(t * pal.length)) % pal.length;
+  const next = (idx + 1) % pal.length;
+  return pal[idx];
+}
+
+function drawBloom(cx, cy, t, harmonics, radius) {
+  const mx = (mouse.x - cx) / W;
+  const my = (mouse.y - cy) / H;
+  const resonance = 0.5 + 0.5 * Math.sin(t * 0.0004 + mx * 3);
+  const sym = Math.floor(5 + Math.floor(resonance * 8));
+  const layers = 6 + Math.floor(Math.abs(my) * 10);
+
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  for (let layer = 0; layer < layers; layer++) {
+    const phase = layer / layers;
+    const r = radius * (0.15 + phase * 0.85);
+    const hueShift = t * 0.0001 + layer * 0.15;
+    const wobble = Math.sin(t * 0.0003 + layer * 0.5) * 0.2;
+
+    ctx.beginPath();
+    for (let i = 0; i <= sym * 20; i++) {
+      const a = (i / (sym * 20)) * Math.PI * 2;
+      const harmonic = Math.sin(a * sym + t * 0.001 + wobble) * 0.5 + 0.5;
+      const nextHarmonic = Math.cos(a * (sym + 1) - t * 0.0008) * 0.5 + 0.5;
+      const combined = harmonic * 0.7 + nextHarmonic * 0.3;
+      const pr = r * (0.6 + combined * 0.4);
+      const x = Math.cos(a) * pr;
+      const y = Math.sin(a) * pr;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+
+    const color = getColor((phase + hueShift) % 1);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 0.6 + (1 - phase) * 1.2;
+    ctx.globalAlpha = 0.25 + phase * 0.45;
+    ctx.stroke();
+
+    ctx.globalAlpha = 0.04 + phase * 0.08;
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawBackground(t) {
+  const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, W * 0.7);
+  grad.addColorStop(0, '#0f0f1e');
+  grad.addColorStop(0.5, '#0a0a14');
+  grad.addColorStop(1, '#050508');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // faint grid
+  ctx.globalAlpha = 0.03;
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 0.5;
+  const gridSize = 40;
+  for (let x = 0; x < W; x += gridSize) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = 0; y < H; y += gridSize) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function burst() {
+  seed = Math.random() * 9999;
+}
+
+document.getElementById('paletteBtn').onclick = () => {
+  paletteIdx = (paletteIdx + 1) % palettes.length;
+};
+document.getElementById('saveBtn').onclick = () => {
+  const link = document.createElement('a');
+  link.download = 'resonant-bloom.png';
+  link.href = canvas.toDataURL();
+  link.click();
+};
+document.getElementById('resetBtn').onclick = () => {
+  seed = Math.random() * 9999;
+  paletteIdx = 0;
+};
+
+let lastT = 0;
+function frame(t) {
+  const dt = t - lastT; lastT = t;
+  drawBackground(t);
+
+  const cx = W / 2 + Math.sin(t * 0.0001) * 30;
+  const cy = H / 2 + Math.cos(t * 0.00013) * 20;
+  const baseRadius = Math.min(W, H) * 0.35;
+
+  drawBloom(cx, cy, t, 7, baseRadius);
+
+  // Orbiting smaller blooms
+  for (let i = 0; i < 3; i++) {
+    const angle = t * 0.0002 + i * (Math.PI * 2 / 3) + seed;
+    const dist = baseRadius * 0.7;
+    const bx = cx + Math.cos(angle) * dist;
+    const by = cy + Math.sin(angle) * dist;
+    drawBloom(bx, by, t + i * 1000, 5 + i, baseRadius * 0.35);
+  }
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
