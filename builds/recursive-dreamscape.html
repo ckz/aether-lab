@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recursive Dreamscape — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #05050a;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas { display: block; }
+  #hud {
+    position: fixed;
+    top: 16px;
+    left: 20px;
+    color: rgba(255,255,255,0.35);
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    pointer-events: none;
+    z-index: 10;
+  }
+  #hud .title { color: rgba(255,255,255,0.6); font-size: 13px; margin-bottom: 4px; letter-spacing: 3px; }
+  #controls {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 12px;
+    z-index: 10;
+  }
+  .ctrl {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.5);
+    padding: 8px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    transition: all 0.3s;
+  }
+  .ctrl:hover { border-color: rgba(123,111,255,0.5); color: #fff; }
+  .ctrl.active { background: rgba(123,111,255,0.15); border-color: rgba(123,111,255,0.6); color: #fff; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <div class="title">◈ RECURSIVE DREAMSCAPE</div>
+  <div id="stats">DEPTH: 8 | PARTICLES: 0</div>
+</div>
+<div id="controls">
+  <button class="ctrl active" onclick="setMode('spiral')">SPIRAL</button>
+  <button class="ctrl" onclick="setMode('tunnel')">TUNNEL</button>
+  <button class="ctrl" onclick="setMode('bloom')">BLOOM</button>
+  <button class="ctrl" onclick="setMode('chaos')">CHAOS</button>
+  <button class="ctrl" onclick="resetSim()">RESET</button>
+</div>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy;
+let mouse = { x: 0.5, y: 0.5, pressed: false };
+let time = 0;
+let mode = 'spiral';
+let particles = [];
+let maxDepth = 8;
+
+const PALETTES = [
+  { name: 'nebula',  colors: ['#ff6b9d','#c44dff','#6b5bff','#3b8bff','#00d4ff','#ff6bff'] },
+  { name: 'ember',   colors: ['#ff4500','#ff6a00','#ff9500','#ffc400','#ffe100','#fff176'] },
+  { name: 'deep',    colors: ['#0a3d62','#1e5f74','#3c8d90','#56b4a0','#82ccb8','#b8e8d4'] },
+  { name: 'void',    colors: ['#7b6fff','#9b8fff','#bbadff','#d4c8ff','#e8e0ff','#f5f3ff'] },
+  { name: 'toxic',   colors: ['#39ff14','#00ff88','#00ffcc','#00ccff','#0088ff','#6633ff'] },
+];
+let palette = PALETTES[0];
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2; cy = H / 2;
+}
+window.addEventListener('resize', resize);
+resize();
+
+document.addEventListener('mousemove', e => {
+  mouse.x = e.clientX / W;
+  mouse.y = e.clientY / H;
+});
+document.addEventListener('mousedown', () => mouse.pressed = true);
+document.addEventListener('mouseup', () => mouse.pressed = false);
+document.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX / W;
+  mouse.y = e.touches[0].clientY / H;
+}, { passive: false });
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('.ctrl').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  resetSim();
+}
+
+function resetSim() {
+  particles = [];
+  time = 0;
+}
+
+function hsl(h, s, l, a=1) { return `hsla(${h},${s}%,${l}%,${a})`; }
+
+function spawnParticle() {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = mode === 'tunnel' ? Math.random() * Math.min(W,H) * 0.4 : Math.random() * 60 + 10;
+  const ci = Math.floor(Math.random() * palette.colors.length);
+  const hueShift = (Math.random() - 0.5) * 40;
+  return {
+    x: cx + Math.cos(angle) * dist,
+    y: cy + Math.sin(angle) * dist,
+    vx: 0, vy: 0,
+    life: 1,
+    decay: 0.002 + Math.random() * 0.008,
+    size: 0.5 + Math.random() * 2.5,
+    hueShift,
+    ci,
+    angle,
+    dist,
+    speed: 0.3 + Math.random() * 1.5,
+    orbitSpeed: (Math.random() - 0.5) * 0.02,
+    phase: Math.random() * Math.PI * 2,
+  };
+}
+
+function getFlowAngle(x, y, t) {
+  const dx = x - cx, dy = y - cy;
+  const dist = Math.sqrt(dx*dx + dy*dy) + 0.001;
+  const normDist = dist / (Math.min(W,H) * 0.5);
+  const noise = Math.sin(x * 0.005 + t) * Math.cos(y * 0.005 - t * 0.7) * Math.PI;
+  
+  switch(mode) {
+    case 'spiral':
+      return Math.atan2(dy, dx) + Math.PI/2 + noise * 0.5 + normDist * 1.5;
+    case 'tunnel':
+      return Math.atan2(dy, dx) + noise * 0.3 + Math.sin(t * 0.5) * 0.5;
+    case 'bloom':
+      return Math.atan2(dy, dx) + Math.sin(t + normDist * 6) * Math.PI * 0.6;
+    case 'chaos':
+      return noise * 2 + Math.sin(t * 1.3 + dist * 0.01) * Math.PI;
+    default:
+      return Math.atan2(dy, dx);
+  }
+}
+
+function getColor(ci, hueShift, alpha) {
+  const base = palette.colors[ci % palette.colors.length];
+  return base; // simplified for performance
+}
+
+function drawRecursive(ctx, x, y, size, depth, t, hueShift) {
+  if (depth <= 0 || size < 2) return;
+  
+  const mx = (mouse.x - 0.5) * 2;
+  const my = (mouse.y - 0.5) * 2;
+  const angle = t * 0.5 + depth * 0.3 + mx;
+  const spread = 0.4 + Math.sin(t * 0.3) * 0.15;
+  
+  const branchCount = depth > 4 ? 3 : 2;
+  
+  for (let i = 0; i < branchCount; i++) {
+    const a = angle + (i / branchCount) * Math.PI * 2 * spread + my * 0.5;
+    const len = size * (0.55 + Math.sin(t + depth + i) * 0.1);
+    const nx = x + Math.cos(a) * len;
+    const ny = y + Math.sin(a) * len;
+    
+    const hue = (t * 20 + depth * 25 + i * 40 + hueShift) % 360;
+    const alpha = (depth / maxDepth) * 0.6;
+    const lw = depth * 0.4;
+    
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(nx, ny);
+    ctx.strokeStyle = hsl(hue, 70, 55 + depth * 3, alpha);
+    ctx.lineWidth = lw;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    
+    if (depth > 1 && Math.random() > 0.3) {
+      drawRecursive(ctx, nx, ny, len * 0.72, depth - 1, t + 0.2, hueShift);
+    }
+  }
+}
+
+function drawParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    const flow = getFlowAngle(p.x, p.y, time);
+    
+    p.vx += Math.cos(flow) * 0.15;
+    p.vy += Math.sin(flow) * 0.15;
+    p.vx *= 0.96; p.vy *= 0.96;
+    p.x += p.vx; p.y += p.vy;
+    p.life -= p.decay;
+    
+    if (p.life <= 0 || p.x < -100 || p.x > W+100 || p.y < -100 || p.y > H+100) {
+      particles.splice(i, 1);
+      continue;
+    }
+    
+    const alpha = p.life * 0.7;
+    const hue = (time * 25 + p.ci * 55 + p.hueShift) % 360;
+    
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fillStyle = hsl(hue, 80, 60, alpha);
+    ctx.fill();
+    
+    // trail
+    if (Math.abs(p.vx) + Math.abs(p.vy) > 0.5) {
+      const tx = p.x - p.vx * 3;
+      const ty = p.y - p.vy * 3;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(tx, ty);
+      ctx.strokeStyle = hsl(hue, 70, 55, alpha * 0.4);
+      ctx.lineWidth = p.size * 0.5;
+      ctx.stroke();
+    }
+  }
+}
+
+function frame() {
+  // Fade
+  ctx.fillStyle = 'rgba(5, 5, 10, 0.06)';
+  ctx.fillRect(0, 0, W, H);
+  
+  time += 0.008;
+  
+  // Mouse attraction glow
+  const mx = mouse.x * W, my = mouse.y * H;
+  const glow = ctx.createRadialGradient(mx, my, 0, mx, my, 180);
+  const gh = (time * 30) % 360;
+  glow.addColorStop(0, hsl(gh, 60, 50, 0.03));
+  glow.addColorStop(1, 'transparent');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Recursive structures from center
+  const depthScale = 4 + Math.sin(time * 0.4) * 2 + (mouse.pressed ? 3 : 0);
+  const maxD = Math.floor(Math.max(3, Math.min(maxDepth, depthScale)));
+  const baseSize = 40 + Math.sin(time * 0.6) * 15 + mouse.x * 20;
+  
+  drawRecursive(ctx, cx, cy, baseSize, maxD, time, time * 15);
+  
+  // Spawn particles
+  const spawnRate = mouse.pressed ? 8 : 3;
+  for (let i = 0; i < spawnRate; i++) particles.push(spawnParticle());
+  
+  // Cap particles
+  if (particles.length > 600) particles.splice(0, particles.length - 600);
+  
+  drawParticles();
+  
+  document.getElementById('stats').textContent = 
+    `DEPTH: ${maxD} | PARTICLES: ${particles.length} | MODE: ${mode.toUpperCase()}`;
+  
+  requestAnimationFrame(frame);
+}
+
+// Initial clear
+ctx.fillStyle = '#05050a';
+ctx.fillRect(0, 0, W, H);
+
+frame();
+</script>
+</body>
+</html>
