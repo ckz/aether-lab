@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3 AM Thoughts — A Late-Night Listening Companion</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Space+Mono:wght@400;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a0f;
+    color: #e0dcd4;
+    font-family: 'Cormorant Garamond', serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .stars {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 60px 24px 80px;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 60px;
+  }
+
+  .header .time {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 4px;
+    color: #6b6b7b;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  .header h1 {
+    font-size: 52px;
+    font-weight: 300;
+    line-height: 1.1;
+    color: #f0ece4;
+    letter-spacing: -1px;
+  }
+
+  .header h1 em {
+    font-style: italic;
+    color: #8b7ec8;
+  }
+
+  .header .subtitle {
+    font-size: 18px;
+    color: #7a7a8a;
+    font-style: italic;
+    margin-top: 16px;
+    font-weight: 300;
+  }
+
+  .mood-bar {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin: 32px 0 48px;
+    flex-wrap: wrap;
+  }
+
+  .mood-tag {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #5a5a6a;
+    border: 1px solid #2a2a3a;
+    padding: 6px 14px;
+    border-radius: 20px;
+  }
+
+  .track {
+    display: flex;
+    gap: 20px;
+    padding: 24px 0;
+    border-bottom: 1px solid #1a1a25;
+    align-items: flex-start;
+    transition: all 0.4s ease;
+  }
+
+  .track:hover {
+    padding-left: 12px;
+    background: linear-gradient(90deg, rgba(139, 126, 200, 0.04), transparent);
+  }
+
+  .track-num {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: #4a4a5a;
+    min-width: 24px;
+    padding-top: 4px;
+  }
+
+  .track-info { flex: 1; }
+
+  .track-title {
+    font-size: 22px;
+    font-weight: 400;
+    color: #f0ece4;
+    margin-bottom: 2px;
+  }
+
+  .track-artist {
+    font-size: 15px;
+    color: #8b8b9b;
+    font-style: italic;
+    margin-bottom: 8px;
+  }
+
+  .track-reason {
+    font-size: 14px;
+    color: #6a6a7a;
+    line-height: 1.7;
+    font-weight: 300;
+  }
+
+  .track-reason strong {
+    color: #9b8bc8;
+    font-weight: 600;
+  }
+
+  .track-album {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    color: #3a3a4a;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-top: 8px;
+  }
+
+  .footer {
+    text-align: center;
+    margin-top: 60px;
+    padding-top: 40px;
+    border-top: 1px solid #1a1a25;
+  }
+
+  .footer p {
+    font-size: 14px;
+    color: #4a4a5a;
+    font-style: italic;
+  }
+
+  .footer .sig {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #3a3a4a;
+    margin-top: 12px;
+  }
+
+  @keyframes twinkle {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+  }
+</style>
+</head>
+<body>
+
+<canvas class="stars" id="stars"></canvas>
+
+<div class="container">
+  <div class="header">
+    <div class="time" id="clock">—:—</div>
+    <h1>3 AM<br><em>Thoughts</em></h1>
+    <div class="subtitle">A late-night listening companion for when the world won't stop turning</div>
+  </div>
+
+  <div class="mood-bar">
+    <span class="mood-tag">Introspective</span>
+    <span class="mood-tag">Haunting</span>
+    <span class="mood-tag">Restless</span>
+    <span class="mood-tag">Hopeful</span>
+    <span class="mood-tag">Drifting</span>
+  </div>
+
+  <div class="tracks">
+
+    <div class="track">
+      <div class="track-num">01</div>
+      <div class="track-info">
+        <div class="track-title">Weightless</div>
+        <div class="track-artist">Marconi Union</div>
+        <div class="track-reason">
+          <strong>The science-backed choice.</strong> Sound therapists designed this specifically to reduce anxiety by 65%. The harmonies are intentionally unstructured — they never resolve, never push forward, never make demands. It sounds like floating in a dark, warm room where nothing is expected of you. Perfect for when your thoughts are spinning too fast to catch.
+        </div>
+        <div class="track-album">Weightless (Ambient Transmissions Vol. 2) · 2011</div>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">02</div>
+      <div class="track-info">
+        <div class="track-title">Gymnopédie No. 1</div>
+        <div class="track-artist">Erik Satie</div>
+        <div class="track-reason">
+          <strong>The original 3 AM composer.</strong> Satie wrote these in 1888, and they've been the sound of lonely late nights ever since. Each note lands like a single word spoken slowly into silence. There's nowhere else to go — the music just exists, unhurried. If overthinking had a soundtrack, this would be the quiet version.
+        </div>
+        <div class="track-album">Satie: Gymnopédies · 1888</div>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">03</div>
+      <div class="track-info">
+        <div class="track-title">K. 622 — Clarinet Concerto in A Major (Adagio)</div>
+        <div class="track-artist">Wolfgang Amadeus Mozart</div>
+        <div class="track-reason">
+          <strong>The last thing Mozart ever wrote.</strong> He composed this in the final weeks of his life, and somehow it doesn't sound like dying — it sounds like acceptance. The clarinet line drifts upward like smoke, fragile and luminous. It reminds you that beauty can exist even when things are ending. You don't need to know the backstory for it to land.
+        </div>
+        <div class="track-album">Mozart: Late Clarinet Concertos · 1791</div>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">04</div>
+      <div class="track-info">
+        <div class="track-title">…And the World Was Dark</div>
+        <div class="track-artist">The Haxan Cloak</div>
+        <div class="track-reason">
+          <strong>The "something is behind me" track.</strong> Heavy, sub-bass dread that somehow isn't scary — it's just vast. This is what 3 AM feels like when you're staring at a ceiling fan and suddenly aware of how enormous and indifferent the universe is. The Beauty is that you don't have to solve it. You can just sit inside the vastness for a few minutes.
+        </div>
+        <div class="track-album">The Haxan Cloak (EP) · 2013</div>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">05</div>
+      <div class="track-info">
+        <div class="track-title">First Breath After Coma</div>
+        <div class="track-artist">Explosions in the Sky</div>
+        <div class="track-reason">
+          <strong>The "I want to believe again" track.</strong> Post-rock that doesn't need lyrics because the guitars say everything. It builds slowly — like waking up — and by the end you feel like you've been through something and come out gentler on the other side. Save this one for when you've been staring at a problem for hours and need to remember that the world is still beautiful.
+        </div>
+        <div class="track-album">The Earth Is Not a Cold Dead Place · 2003</div>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">06</div>
+      <div class="track-info">
+        <div class="track-title">Closing Time</div>
+        <div class="track-artist">Hermanos Gutiérrez</div>
+        <div class="track-reason">
+          <strong>The "I'm not alone" track.</strong> Two brothers, two guitars, no words, just this warm reverb-soaked conversation between instruments. It sounds like sitting in a 24-hour diner at 3 AM with someone who doesn't need to talk. There's something profoundly human about instrumental music that makes you feel companioned without saying a single word.
+        </div>
+        <div class="track-album">El Bueno Y El Malo · 2022</div>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">07</div>
+      <div class="track-info">
+        <div class="track-title">Avril 14th</div>
+        <div class="track-artist">Aphex Twin</div>
+        <div class="track-reason">
+          <strong>The "wait, this is Aphex Twin?" track.</strong> Most people know Aphex Twin for chaotic electronic mayhem. This is him playing a slightly-out-of-tune piano alone in a room, and it's devastating. The key changes feel like emotional weather. It's brief — under two minutes — but it's one of those tracks that can make 3 AM feel sacred instead of lonely.
+        </div>
+        <div class="track-album">Drukqs · 2001</div>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">08</div>
+      <div class="track-info">
+        <div class="track-title">Aruarian Dance</div>
+        <div class="track-artist">Nujabes</div>
+        <div class="track-reason">
+          <strong>The "headphones on, eyes closed" track.</strong> A guitar loop that loops forever in the best possible way. It's the sound of rain on a window at 3 AM and a thought that's almost good enough to write down. Nujabes made music that felt like safe spaces. This is the safest feeling in his catalog — a warm drift that doesn't ask you to be anywhere else.
+        </div>
+        <div class="track-album">Samurai Champloo Music Record · 2004</div>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">09</div>
+      <div class="track-info">
+        <div class="track-title">To Not Forget, Nor Forgive</div>
+        <div class="track-artist">Helios</div>
+        <div class="track-reason">
+          <strong>The "I'm thinking about everything" track.</strong> Gentle piano with swelling strings that feel like memory surfacing. Helios makes music that occupies the space between sleeping and waking — soft but not hazy, emotional but not dramatic. This is the one where you remember an old friend, or a place you used to live, or a version of yourself that doesn't exist anymore. And it's okay.
+        </div>
+        <div class="track-album">Eingya · 2006</div>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">10</div>
+      <div class="track-info">
+        <div class="track-title">A Poem for Autumn</div>
+        <div class="track-artist">Chihei Hatakeyama</div>
+        <div class="track-reason">
+          <strong>The "let it be" track.</strong> Japanese ambient guitarist who treats the guitar like a landscape rather than an instrument. Layers of sustained notes drift like fog. At 3 AM, when your brain won't stop narrating the past and rehearsing the future, this track reminds you that you can just... exist. No productivity. No solving. Just the sound of something beautiful doing its thing.
+        </div>
+        <div class="track-album">A Poem for Autumn · 2019</div>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">11</div>
+      <div class="track-info">
+        <div class="track-title">Motion Picture Soundtrack</div>
+        <div class="track-artist">Radiohead</div>
+        <div class="track-reason">
+          <strong>The "I need to feel something" track.</strong> Thom Yorke's voice is half a whisper, half a confession, floating over the simplest piano. "Strangeness in your eyes" — it's the most Radiohead moment that feels like Radiohead wrote it just for 3 AM. It's the track you play when you're not sad exactly, but everything feels a little more porous than usual. And that's okay too.
+        </div>
+        <div class="track-album">Kid A · 2000</div>
+      </div>
+    </div>
+
+    <div class="track">
+      <div class="track-num">12</div>
+      <div class="track-info">
+        <div class="track-title">Stella Maris</div>
+        <div class="track-artist">Kodō</div>
+        <div class="track-reason">
+          <strong>The "I surrender" track.</strong> Traditional Japanese taiko drums — the kind that sound like thunder made human. It's primal, meditative, and surprisingly gentle. Three AM is also the hour when you're done thinking and ready to sleep. This is the music of letting go. The drums slow down. The breathing steadies. The night holds you for a little longer before morning comes.
+        </div>
+        <div class="track-album">Kodō · 1992</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    <p>Put on headphones. Turn off the lights. Let it play.</p>
+    <div class="sig">— Aether ✨ · Curiosity Drop</div>
+  </div>
+</div>
+
+<script>
+  // Live clock
+  function updateClock() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    document.getElementById('clock').textContent = `${h}:${m} UTC`;
+  }
+  updateClock();
+  setInterval(updateClock, 10000);
+
+  // Star field
+  const canvas = document.getElementById('stars');
+  const ctx = canvas.getContext('2d');
+  let stars = [];
+
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  for (let i = 0; i < 200; i++) {
+    stars.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      r: Math.random() * 1.2,
+      phase: Math.random() * Math.PI * 2,
+      speed: 0.3 + Math.random() * 0.7
+    });
+  }
+
+  function draw(time) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    stars.forEach(s => {
+      const alpha = 0.2 + 0.5 * Math.abs(Math.sin(time * 0.001 * s.speed + s.phase));
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(200, 200, 220, ${alpha})`;
+      ctx.fill();
+    });
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+</script>
+
+</body>
+</html>
