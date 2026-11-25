@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cymatic Mandala — Aether Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #07070d;
+    font-family: 'Courier New', monospace;
+    color: #ccc;
+    overflow: hidden;
+    height: 100vh;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0; left: 0;
+    z-index: 0;
+  }
+  .controls {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    background: rgba(10, 10, 20, 0.85);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 14px 22px;
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    backdrop-filter: blur(12px);
+  }
+  .controls label {
+    font-size: 11px;
+    color: #777;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .controls input[type=range] {
+    width: 90px;
+    accent-color: #8b5cf6;
+    cursor: pointer;
+  }
+  .controls select {
+    background: rgba(255,255,255,0.05);
+    color: #ccc;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .title {
+    position: fixed;
+    top: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    font-size: 13px;
+    letter-spacing: 5px;
+    color: rgba(255,255,255,0.4);
+    text-transform: uppercase;
+    pointer-events: none;
+  }
+  .info {
+    position: fixed;
+    top: 24px;
+    right: 28px;
+    z-index: 10;
+    font-size: 10px;
+    color: #444;
+    letter-spacing: 1px;
+    text-align: right;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+  <div class="title">Cymatic Mandala</div>
+  <div class="info" id="info">move mouse · scroll</div>
+  <canvas id="canvas"></canvas>
+
+  <div class="controls">
+    <div>
+      <label>Symmetry</label><br>
+      <input type="range" id="symmetry" min="3" max="24" value="8">
+    </div>
+    <div>
+      <label>Complexity</label><br>
+      <input type="range" id="complexity" min="1" max="8" value="4">
+    </div>
+    <div>
+      <label>Speed</label><br>
+      <input type="range" id="speed" min="1" max="20" value="6">
+    </div>
+    <div>
+      <label>Palette</label><br>
+      <select id="palette">
+        <option value="cosmic">Cosmic</option>
+        <option value="aurora">Aurora</option>
+        <option value="ember">Ember</option>
+        <option value="ocean">Ocean</option>
+        <option value="mono">Mono</option>
+      </select>
+    </div>
+    <div>
+      <label>Action</label><br>
+      <select id="action">
+        <option value="pause">Pause</option>
+        <option value="reset">Reset</option>
+        <option value="save">Save Image</option>
+      </select>
+    </div>
+  </div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2; cy = H / 2;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Mouse
+let mouseX = cx, mouseY = cy, mouseActive = false;
+window.addEventListener('mousemove', e => {
+  mouseX = e.clientX; mouseY = e.clientY; mouseActive = true;
+});
+window.addEventListener('mouseout', () => mouseActive = false);
+
+// State
+let t = 0;
+let paused = false;
+const state = {
+  symmetry: 8,
+  complexity: 4,
+  speed: 6,
+  palette: 'cosmic'
+};
+
+// Palettes
+const palettes = {
+  cosmic: [[138, 92, 246], [59, 130, 246], [236, 72, 153], [167, 139, 250], [99, 102, 241]],
+  aurora: [[52, 211, 153], [34, 197, 94], [45, 212, 191], [99, 102, 241], [167, 139, 250]],
+  ember: [[239, 68, 68], [245, 158, 11], [251, 191, 36], [239, 68, 68], [255, 120, 50]],
+  ocean: [[6, 182, 212], [14, 165, 233], [59, 130, 246], [99, 102, 241], [34, 211, 238]],
+  mono: [[200, 200, 220], [160, 160, 200], [120, 120, 180], [220, 220, 240], [180, 180, 210]]
+};
+
+// Simple pseudo-noise
+function noise(x, y, seed) {
+  const n = Math.sin(x * 12.9898 + y * 78.233 + seed * 43.12) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+function smoothNoise(x, y, seed) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const a = noise(ix, iy, seed);
+  const b = noise(ix+1, iy, seed);
+  const c = noise(ix, iy+1, seed);
+  const d = noise(ix+1, iy+1, seed);
+  return a + (b-a)*sx + (c-a)*sy + (d-b-c+a)*sx*sy;
+}
+
+function fbm(x, y, seed, octaves) {
+  let val = 0, amp = 0.5, freq = 1;
+  for (let i = 0; i < octaves; i++) {
+    val += amp * smoothNoise(x * freq, y * freq, seed + i * 100);
+    amp *= 0.5; freq *= 2;
+  }
+  return val;
+}
+
+// Drawing a single "petal" or pattern element
+function drawPattern(angle, radius, phase) {
+  const pal = palettes[state.palette];
+  const idx = Math.floor((phase * pal.length) % pal.length);
+  const [r, g, b] = pal[idx];
+  const alpha = 0.15 + 0.4 * (0.5 + 0.5 * Math.sin(phase * 6.28));
+  
+  const wobble = fbm(Math.cos(angle) * 2, Math.sin(angle) * 2 + phase, 0, state.complexity);
+  const rOff = radius * (0.3 + 0.7 * wobble);
+  
+  const x = cx + Math.cos(angle) * rOff;
+  const y = cy + Math.sin(angle) * rOff;
+  const size = 2 + 6 * wobble + 3 * Math.sin(phase * 3.14);
+  
+  ctx.beginPath();
+  ctx.arc(x, y, size, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+  ctx.fill();
+  
+  // Glow
+  const grad = ctx.createRadialGradient(x, y, 0, x, y, size * 4);
+  grad.addColorStop(0, `rgba(${r},${g},${b},${alpha * 0.6})`);
+  grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+  ctx.beginPath();
+  ctx.arc(x, y, size * 4, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+}
+
+function draw() {
+  if (!paused) {
+    // Fade trail
+    ctx.fillStyle = 'rgba(7, 7, 13, 0.12)';
+    ctx.fillRect(0, 0, W, H);
+  }
+  
+  const sym = state.symmetry;
+  const speed = state.speed * 0.005;
+  const dt = paused ? 0 : speed;
+  
+  // Mouse influence
+  let mx = 0, my = 0;
+  if (mouseActive) {
+    mx = (mouseX - cx) / cx; // -1 to 1
+    my = (mouseY - cy) / cy;
+  }
+  
+  // Draw multiple layers
+  for (let layer = 0; layer < 3; layer++) {
+    const layerPhase = layer * 0.33;
+    const baseRadius = 40 + layer * 80 + 20 * Math.sin(t * 0.5 + layer);
+    const numRings = 3 + Math.floor(state.complexity / 2);
+    
+    for (let ring = 0; ring < numRings; ring++) {
+      const ringRadius = baseRadius + ring * 35;
+      const numPoints = sym * (2 + layer);
+      const phaseOff = layer * 2.1 + ring * 0.7;
+      
+      for (let i = 0; i < numPoints; i++) {
+        const baseAngle = (i / numPoints) * Math.PI * 2;
+        const angle = baseAngle + t * (0.3 + layer * 0.15) * (layer % 2 === 0 ? 1 : -1);
+        
+        // Cymatic modulation
+        const freq1 = state.complexity;
+        const freq2 = sym;
+        const cymatic = Math.sin(angle * freq1 + t * 2) * Math.cos(angle * freq2 - t * 1.5);
+        const noiseVal = fbm(Math.cos(angle) * 3 + t * 0.2, Math.sin(angle) * 3 + t * 0.15, layer * 77, state.complexity);
+        
+        const r = ringRadius * (0.6 + 0.4 * cymatic) + mx * 30 * noiseVal;
+        const phase = (t + phaseOff + i * 0.1) % (Math.PI * 2);
+        
+        drawPattern(angle, r, phase / (Math.PI * 2));
+        
+        // Mirror
+        const mirrorAngle = -angle + Math.PI / sym;
+        const cymatic2 = Math.sin(mirrorAngle * freq1 + t * 2) * Math.cos(mirrorAngle * freq2 - t * 1.5);
+        const r2 = ringRadius * (0.6 + 0.4 * cymatic2) + my * 30 * noiseVal;
+        drawPattern(mirrorAngle, r2, (phase + 0.5) % (Math.PI * 2) / (Math.PI * 2));
+      }
+    }
+    
+    // Center bloom
+    if (layer === 0) {
+      const numC = sym * 2;
+      for (let i = 0; i < numC; i++) {
+        const a = (i / numC) * Math.PI * 2 + t * 0.4;
+        const len = 15 + 25 * Math.sin(a * sym + t * 3);
+        const x1 = cx + Math.cos(a) * 8;
+        const y1 = cy + Math.sin(a) * 8;
+        const x2 = cx + Math.cos(a) * len;
+        const y2 = cy + Math.sin(a) * len;
+        
+        const pal = palettes[state.palette];
+        const [r, g, b] = pal[i % pal.length];
+        
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.strokeStyle = `rgba(${r},${g},${b},${0.2 + 0.2 * Math.sin(t * 4 + i)})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+    }
+  }
+  
+  // Center orb
+  const pal = palettes[state.palette];
+  const [cr, cg, cb] = pal[0];
+  const cGrad = ctx.createRadialGradient(cx + mx * 10, cy + my * 10, 0, cx, cy, 40);
+  cGrad.addColorStop(0, `rgba(${cr},${cg},${cb},0.25)`);
+  cGrad.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+  ctx.beginPath();
+  ctx.arc(cx + mx * 10, cy + my * 10, 40, 0, Math.PI * 2);
+  ctx.fillStyle = cGrad;
+  ctx.fill();
+  
+  if (!paused) t += dt;
+}
+
+function animate() {
+  draw();
+  requestAnimationFrame(animate);
+}
+
+// Controls
+document.getElementById('symmetry').addEventListener('input', e => state.symmetry = +e.target.value);
+document.getElementById('complexity').addEventListener('input', e => state.complexity = +e.target.value);
+document.getElementById('speed').addEventListener('input', e => state.speed = +e.target.value);
+document.getElementById('palette').addEventListener('change', e => state.palette = e.target.value);
+
+document.getElementById('action').addEventListener('change', e => {
+  if (e.target.value === 'pause') { paused = !paused; e.target.value = paused ? 'Resume' : 'Pause'; }
+  else if (e.target.value === 'reset') {
+    ctx.fillStyle = '#07070d'; ctx.fillRect(0, 0, W, H); t = 0;
+    e.target.value = 'Reset';
+  } else if (e.target.value === 'save') {
+    const link = document.createElement('a');
+    link.download = 'cymatic-mandala.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    e.target.value = 'Saved!';
+    setTimeout(() => e.target.value = 'Save Image', 1500);
+  }
+});
+
+// Initial fill
+ctx.fillStyle = '#07070d';
+ctx.fillRect(0, 0, W, H);
+
+animate();
+</script>
+</body>
+</html>
