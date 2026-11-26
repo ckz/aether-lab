@@ -3,473 +3,335 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Aether Lab — Regex Playground</title>
+<title>Regex Playground — Aether Lab</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #0a0a14;
-    color: #c9c9d4;
-    font-family: 'SF Mono', 'Fira Code', 'Consolas', 'Courier New', monospace;
-    padding: 20px;
+    background: #0d0d14;
+    font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+    color: #ccc;
     min-height: 100vh;
+    padding: 30px 24px;
   }
   h1 {
-    color: #c4a0ff;
-    font-weight: normal;
+    color: #fff;
+    font-size: 18px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
     margin-bottom: 4px;
-    font-size: 20px;
   }
-  .sub { color: #555; font-size: 12px; margin-bottom: 20px; }
-  .container { max-width: 1400px; margin: 0 auto; }
-
-  /* Pattern bar */
-  .pattern-bar {
-    background: rgba(20, 20, 40, 0.8);
-    border: 1px solid rgba(120, 100, 200, 0.3);
-    border-radius: 6px;
-    padding: 14px 16px;
-    margin-bottom: 12px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+  .subtitle { color: #555; font-size: 11px; letter-spacing: 2px; margin-bottom: 24px; }
+  .container { max-width: 1100px; margin: 0 auto; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 768px) { .row { grid-template-columns: 1fr; } }
+  .panel {
+    background: rgba(20, 20, 35, 0.8);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 16px;
   }
-  .pattern-label {
-    color: #777;
-    font-size: 12px;
-    white-space: nowrap;
-    min-width: 50px;
+  .panel-title {
+    color: #7b6fff;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
   }
-  .pattern-input {
-    flex: 1;
-    min-width: 200px;
-    background: #0d0d1a;
-    border: 1px solid rgba(100, 80, 180, 0.3);
-    border-radius: 4px;
-    padding: 8px 12px;
-    color: #e8e8f0;
+  textarea, input[type="text"] {
+    width: 100%;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    color: #e0e0e0;
     font-family: inherit;
-    font-size: 14px;
+    font-size: 13px;
+    padding: 10px 12px;
     outline: none;
     transition: border-color 0.2s;
   }
-  .pattern-input:focus {
-    border-color: rgba(160, 140, 240, 0.6);
-  }
-  .flag-group {
-    display: flex;
-    gap: 6px;
-  }
+  textarea:focus, input[type="text"]:focus { border-color: rgba(123, 111, 255, 0.5); }
+  textarea { resize: vertical; min-height: 180px; line-height: 1.6; }
+  .regex-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .regex-row label { color: #888; font-size: 12px; white-space: nowrap; }
+  .regex-row input { flex: 1; }
+  .flags { display: flex; gap: 12px; margin-top: 8px; }
   .flag {
-    background: rgba(100, 80, 180, 0.15);
-    border: 1px solid rgba(100, 80, 180, 0.3);
-    border-radius: 4px;
-    padding: 4px 10px;
-    color: #9990cc;
-    font-family: inherit;
-    font-size: 13px;
-    cursor: pointer;
-    transition: all 0.15s;
+    display: flex; align-items: center; gap: 4px;
+    color: #888; font-size: 12px; cursor: pointer;
     user-select: none;
   }
-  .flag.active {
-    background: rgba(140, 110, 240, 0.25);
-    border-color: rgba(160, 140, 240, 0.7);
-    color: #d4c0ff;
-  }
-  .error-bar {
-    background: rgba(200, 60, 60, 0.15);
-    border: 1px solid rgba(200, 60, 60, 0.4);
-    border-radius: 4px;
-    padding: 10px 14px;
-    color: #f09090;
-    font-size: 13px;
-    margin-bottom: 12px;
-    display: none;
-  }
-  .error-bar.visible { display: block; }
-
-  /* Main layout */
-  .main-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-bottom: 16px;
-  }
-  @media (max-width: 800px) {
-    .main-grid { grid-template-columns: 1fr; }
-  }
-
-  .panel {
-    background: rgba(20, 20, 40, 0.8);
-    border: 1px solid rgba(120, 100, 200, 0.3);
-    border-radius: 6px;
-    padding: 14px;
-  }
-  .panel-title {
-    color: #9990cc;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 1.2px;
-    margin-bottom: 10px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .stats {
-    color: #666;
-    font-size: 10px;
-    letter-spacing: 0;
-    text-transform: none;
-  }
-
-  textarea.text-input {
-    width: 100%;
-    min-height: 300px;
-    background: #0d0d1a;
-    border: 1px solid rgba(100, 80, 180, 0.2);
-    border-radius: 4px;
-    padding: 12px;
-    color: #c9c9d4;
-    font-family: inherit;
-    font-size: 13px;
-    line-height: 1.7;
-    resize: vertical;
-    outline: none;
-  }
-  textarea.text-input:focus {
-    border-color: rgba(160, 140, 240, 0.5);
-  }
-
-  .output-area {
-    width: 100%;
-    min-height: 300px;
-    background: #0d0d1a;
-    border: 1px solid rgba(100, 80, 180, 0.2);
-    border-radius: 4px;
+  .flag input { cursor: pointer; accent-color: #7b6fff; }
+  .match { background: rgba(123, 111, 255, 0.25); border-radius: 2px; padding: 1px 0; }
+  .match-group { background: rgba(255, 170, 100, 0.2); border-bottom: 1px solid rgba(255, 170, 100, 0.4); }
+  .output {
+    min-height: 180px;
+    background: rgba(0,0,0,0.3);
+    border-radius: 8px;
     padding: 12px;
     font-size: 13px;
     line-height: 1.7;
     white-space: pre-wrap;
     word-break: break-word;
     overflow-y: auto;
-    max-height: 500px;
+    max-height: 400px;
   }
-  .match-highlight {
-    background: rgba(140, 110, 240, 0.35);
-    color: #fff;
-    border-radius: 2px;
-    padding: 1px 0;
-  }
-  .group-highlight {
-    background: rgba(200, 160, 60, 0.35);
-    color: #ffe;
-    border-radius: 2px;
-    padding: 1px 0;
-  }
-
-  /* Matches list */
-  .matches-panel {
-    background: rgba(20, 20, 40, 0.8);
-    border: 1px solid rgba(120, 100, 200, 0.3);
-    border-radius: 6px;
-    padding: 14px;
-    margin-bottom: 16px;
-  }
-  .matches-grid {
+  .error { color: #ff6b6b; font-size: 12px; margin-top: 6px; }
+  .stats {
     display: flex;
+    gap: 16px;
+    margin-top: 12px;
     flex-wrap: wrap;
+  }
+  .stat {
+    background: rgba(123, 111, 255, 0.1);
+    border: 1px solid rgba(123, 111, 255, 0.2);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 11px;
+    color: #aaa;
+  }
+  .stat strong { color: #fff; }
+  .groups { margin-top: 12px; }
+  .group-entry {
+    display: flex;
     gap: 8px;
-    max-height: 240px;
-    overflow-y: auto;
-  }
-  .match-chip {
-    background: rgba(140, 110, 240, 0.15);
-    border: 1px solid rgba(140, 110, 240, 0.3);
-    border-radius: 4px;
-    padding: 5px 10px;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
     font-size: 12px;
-    color: #d4c0ff;
-    cursor: pointer;
-    transition: background 0.15s;
   }
-  .match-chip:hover {
-    background: rgba(140, 110, 240, 0.3);
-  }
-  .match-chip .idx {
-    color: #666;
-    font-size: 10px;
-    margin-right: 4px;
-  }
-  .no-matches {
-    color: #555;
-    font-size: 13px;
-    padding: 20px;
-    text-align: center;
-  }
-
-  /* Library */
-  .library-panel {
-    background: rgba(20, 20, 40, 0.8);
-    border: 1px solid rgba(120, 100, 200, 0.3);
-    border-radius: 6px;
-    padding: 14px;
-  }
-  .library-list {
+  .group-num { color: #7b6fff; min-width: 60px; }
+  .group-val { color: #e0e0e0; }
+  .presets {
     display: flex;
+    gap: 8px;
     flex-wrap: wrap;
-    gap: 6px;
     margin-top: 10px;
   }
-  .lib-btn {
-    background: rgba(100, 80, 180, 0.1);
-    border: 1px solid rgba(100, 80, 180, 0.25);
-    border-radius: 4px;
-    padding: 5px 12px;
-    color: #b0a0d0;
-    font-family: inherit;
-    font-size: 12px;
+  .preset {
+    background: rgba(123, 111, 255, 0.1);
+    border: 1px solid rgba(123, 111, 255, 0.2);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 11px;
+    color: #aaa;
     cursor: pointer;
-    transition: all 0.15s;
+    transition: all 0.2s;
   }
-  .lib-btn:hover {
-    background: rgba(140, 110, 240, 0.2);
-    border-color: rgba(160, 140, 240, 0.5);
-    color: #e0d4ff;
-  }
-  .lib-desc {
+  .preset:hover { background: rgba(123, 111, 255, 0.2); color: #fff; }
+  .hint { color: #555; font-size: 11px; margin-top: 6px; }
+  .title-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .badge {
+    background: rgba(123, 111, 255, 0.15);
+    border: 1px solid rgba(123, 111, 255, 0.3);
+    border-radius: 6px;
+    padding: 4px 10px;
     font-size: 10px;
-    color: #666;
-    margin-left: 4px;
+    color: #aaa;
+    letter-spacing: 1px;
   }
 </style>
 </head>
 <body>
-<div class="container">
-  <h1>⧉ Regex Playground</h1>
-  <div class="sub">test · explore · master regular expressions — live, local, no dependencies</div>
+  <div class="container">
+    <div class="title-bar">
+      <div>
+        <h1>◈ Regex Playground</h1>
+        <div class="subtitle">Test regular expressions live • Self-contained • No server needed</div>
+      </div>
+      <div class="badge">AETHER LAB</div>
+    </div>
 
-  <!-- Pattern input -->
-  <div class="pattern-bar">
-    <span class="pattern-label">pattern</span>
-    <input class="pattern-input" id="pattern" type="text" placeholder="Enter regex…" value="[A-Z]\w+" autocomplete="off" spellcheck="false">
-    <div class="flag-group">
-      <div class="flag active" data-flag="g">g</div>
-      <div class="flag" data-flag="i">i</div>
-      <div class="flag" data-flag="m">m</div>
-      <div class="flag" data-flag="s">s</div>
+    <div class="row">
+      <div class="panel">
+        <div class="panel-title">Pattern</div>
+        <div class="regex-row">
+          <label>/</label>
+          <input type="text" id="pattern" value="[A-Z]\w+" placeholder="Enter regex pattern…">
+        </div>
+        <div class="flags">
+          <label class="flag"><input type="checkbox" id="flag-g"> g — global</label>
+          <label class="flag"><input type="checkbox" id="flag-i" checked> i — ignore case</label>
+          <label class="flag"><input type="checkbox" id="flag-m"> m — multiline</label>
+          <label class="flag"><input type="checkbox" id="flag-s"> s — dotAll</label>
+        </div>
+        <div class="presets">
+          <div class="preset" data-pattern="[A-Z]\w+" data-flags="gi">Capital Words</div>
+          <div class="preset" data-pattern="\b\d{3}-\d{3}-\d{4}\b">Phone Numbers</div>
+          <div class="preset" data-pattern="\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b">Emails</div>
+          <div class="preset" data-pattern="https?:\/\/[^\s]+">URLs</div>
+          <div class="preset" data-pattern="\b\d{4}-\d{2}-\d{2}\b">Dates (ISO)</div>
+          <div class="preset" data-pattern="(\w+)@(\w+)">Capture Groups</div>
+          <div class="preset" data-pattern="\[(.*?)\]">Bracket Tags</div>
+          <div class="preset" data-pattern="\b\w{5,}\b">5+ Letter Words</div>
+        </div>
+        <div class="hint">💡 Click a preset to load it. Flags update the match behavior.</div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Test String</div>
+        <textarea id="testString" placeholder="Paste or type your test text here…">Hello World! Contact us at hello@aether.dev or support@example.com.
+Call 555-123-4567 or 555-987-6543.
+Visit https://aether.dev or https://github.com/aether for more.
+Today is 2026-11-26 and tomorrow is 2026-11-27.
+Tags: [urgent] [bug] [feature-request]
+A quick brown fox jumps over the lazy dog.</textarea>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="panel">
+        <div class="panel-title">Matches</div>
+        <div class="output" id="output">—</div>
+        <div class="error" id="error"></div>
+        <div class="stats" id="stats"></div>
+        <div class="groups" id="groups"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Quick Reference</div>
+        <div class="output" style="font-size: 11px; line-height: 1.8; color: #888;">
+<span style="color:#7b6fff">.</span>  any char (except newline)
+<span style="color:#7b6fff">\d</span>  digit [0-9]
+<span style="color:#7b6fff">\w</span>  word char [a-zA-Z0-9_]
+<span style="color:#7b6fff">\s</span>  whitespace
+<span style="color:#7b6fff">[abc]</span>  char class
+<span style="color:#7b6fff">[^abc]</span>  negated class
+<span style="color:#7b6fff">a|b</span>  alternation
+<span style="color:#7b6fff">*</span>  0 or more
+<span style="color:#7b6fff">+</span>  1 or more
+<span style="color:#7b6fff">?</span>  0 or 1
+<span style="color:#7b6fff">{n,m}</span>  range
+<span style="color:#7b6fff">^</span>  start of string/line
+<span style="color:#7b6fff">$</span>  end of string/line
+<span style="color:#7b6fff">\b</span>  word boundary
+<span style="color:#7b6fff">(...)</span>  capture group
+<span style="color:#7b6fff">(?=...)</span>  positive lookahead</div>
+      </div>
     </div>
   </div>
-  <div class="error-bar" id="errorBar"></div>
-
-  <!-- Main panels -->
-  <div class="main-grid">
-    <div class="panel">
-      <div class="panel-title">test text <span class="stats" id="textStats"></span></div>
-      <textarea class="text-input" id="testText" placeholder="Paste or type text to test against…" spellcheck="false">The quick brown fox jumps over the lazy dog.
-Email: alice@example.com
-URL: https://aether.lab
-IP: 192.168.1.42
-Phone: +1 (555) 123-4567
-Date: 2026-10-19
-Price: $49.99
-Hex: #c4a0ff
-Var: myVariableName
-Path: /usr/local/bin/regex</textarea>
-    </div>
-    <div class="panel">
-      <div class="panel-title">matches <span class="stats" id="matchStats"></span></div>
-      <div class="output-area" id="output"></div>
-    </div>
-  </div>
-
-  <!-- Matches list -->
-  <div class="matches-panel">
-    <div class="panel-title">match details <span class="stats" id="matchDetailStats"></span></div>
-    <div class="matches-grid" id="matchesGrid"></div>
-  </div>
-
-  <!-- Library -->
-  <div class="library-panel">
-    <div class="panel-title">pattern library — click to load</div>
-    <div class="library-list" id="libraryList"></div>
-  </div>
-</div>
 
 <script>
-(function() {
-  const patternInput = document.getElementById('pattern');
-  const testText = document.getElementById('testText');
-  const output = document.getElementById('output');
-  const errorBar = document.getElementById('errorBar');
-  const matchesGrid = document.getElementById('matchesGrid');
-  const matchStats = document.getElementById('matchStats');
-  const matchDetailStats = document.getElementById('matchDetailStats');
-  const textStats = document.getElementById('textStats');
-  const flags = document.querySelectorAll('.flag');
-  const libraryList = document.getElementById('libraryList');
+  const patternEl = document.getElementById('pattern');
+  const testEl = document.getElementById('testString');
+  const outputEl = document.getElementById('output');
+  const errorEl = document.getElementById('error');
+  const statsEl = document.getElementById('stats');
+  const groupsEl = document.getElementById('groups');
+  const flagG = document.getElementById('flag-g');
+  const flagI = document.getElementById('flag-i');
+  const flagM = document.getElementById('flag-m');
+  const flagS = document.getElementById('flag-s');
+  const presets = document.querySelectorAll('.preset');
 
-  let activeFlags = new Set(['g']);
-
-  const LIBRARY = [
-    { name: 'Email', pattern: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}', flags: 'g', desc: 'RFC-style email' },
-    { name: 'URL', pattern: 'https?://[^\\s<>"]+', flags: 'g', desc: 'http(s) links' },
-    { name: 'IPv4', pattern: '\\b(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\b', flags: 'g', desc: 'IPv4 address' },
-    { name: 'US Phone', pattern: '\\+?1?[-.\\s]?\\(?\\d{3}\\)?[-.\\s]\\d{3}[-.\\s]\\d{4}', flags: 'g', desc: '(555) 123-4567' },
-    { name: 'Date', pattern: '\\d{4}-\\d{2}-\\d{2}', flags: 'g', desc: 'YYYY-MM-DD' },
-    { name: 'Price', pattern: '\\$\\d+(?:\\.\\d{2})?', flags: 'g', desc: '$49.99' },
-    { name: 'Hex Color', pattern: '#[0-9a-fA-F]{3,8}', flags: 'g', desc: '#RGB / #RRGGBB' },
-    { name: 'JS Var', pattern: '[a-zA-Z_$][a-zA-Z0-9_$]*', flags: 'g', desc: 'identifier' },
-    { name: 'IP w/ Port', pattern: '\\b(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?):\\d{1,5}\\b', flags: 'g', desc: 'host:port' },
-    { name: 'UUID', pattern: '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', flags: 'g', desc: 'UUID v4' },
-    { name: 'Word boundary', pattern: '\\b[a-zA-Z]{4,}\\b', flags: 'gi', desc: '4+ letter words' },
-    { name: 'Empty lines', pattern: '^\\s*$', flags: 'gm', desc: 'blank lines' },
-  ];
-
-  function getFlagStr() {
-    return Array.from(activeFlags).join('');
+  function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
-  function escapeHTML(str) {
-    return str.replace(/[&<>"']/g, c => ({
-      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-    })[c]);
-  }
+  function runRegex() {
+    const pattern = patternEl.value;
+    const text = testEl.value;
+    const flags = [
+      flagG.checked ? 'g' : '',
+      flagI.checked ? 'i' : '',
+      flagM.checked ? 'm' : '',
+      flagS.checked ? 's' : ''
+    ].join('');
 
-  function highlightMatches(text, matches) {
-    if (!matches.length) return escapeHTML(text);
+    errorEl.textContent = '';
+    statsEl.innerHTML = '';
+    groupsEl.innerHTML = '';
 
-    // Build highlighted HTML by replacing match ranges
-    let html = '';
-    let last = 0;
-    matches.forEach((m, i) => {
-      html += escapeHTML(text.slice(last, m.index));
-      html += '<span class="match-highlight">' + escapeHTML(m[0]) + '</span>';
-      last = m.index + m[0].length;
-    });
-    html += escapeHTML(text.slice(last));
-    return html;
-  }
-
-  function evaluate() {
-    const pat = patternInput.value;
-    const text = testText.value;
-    const flagStr = getFlagStr();
-    let regex;
-    let error = null;
-
-    if (!pat) {
-      output.innerHTML = '<span style="color:#444">Enter a pattern to see matches.</span>';
-      matchesGrid.innerHTML = '';
-      matchStats.textContent = '';
-      matchDetailStats.textContent = '';
-      textStats.textContent = text.length ? `${text.length} chars · ${text.split('\n').length} lines` : '';
-      errorBar.classList.remove('visible');
+    if (!pattern) {
+      outputEl.innerHTML = escapeHtml(text);
       return;
     }
 
     try {
-      regex = new RegExp(pat, flagStr);
-    } catch (e) {
-      error = e.message;
-    }
-
-    if (error) {
-      errorBar.textContent = '✗ ' + error;
-      errorBar.classList.add('visible');
-      output.innerHTML = '<span style="color:#444">—</span>';
-      matchesGrid.innerHTML = '';
-      matchStats.textContent = '';
-      matchDetailStats.textContent = '';
-      textStats.textContent = text.length ? `${text.length} chars · ${text.split('\n').length} lines` : '';
-      return;
-    }
-
-    errorBar.classList.remove('visible');
-
-    let matches;
-    if (activeFlags.has('g')) {
-      matches = [];
+      const regex = new RegExp(pattern, flags);
+      const matches = [];
       let m;
-      while ((m = regex.exec(text)) !== null) {
-        matches.push(m);
-        if (m[0].length === 0) { regex.lastIndex++; } // avoid zero-width loops
+
+      if (flagG.checked) {
+        let matchCount = 0;
+        while ((m = regex.exec(text)) !== null) {
+          matches.push(m);
+          matchCount++;
+          if (matchCount > 500) { errorEl.textContent = '⚠️ Match limit reached (500)'; break; }
+          if (!m[0].length) regex.lastIndex++; // avoid zero-width infinite loop
+        }
+      } else {
+        m = regex.exec(text);
+        if (m) matches.push(m);
       }
-    } else {
-      const m = regex.exec(text);
-      matches = m ? [m] : [];
-    }
 
-    // Output
-    output.innerHTML = highlightMatches(text, matches);
-    textStats.textContent = `${text.length} chars · ${text.split('\n').length} lines`;
+      // Highlight text
+      let html = '';
+      let lastIdx = 0;
+      const groupColors = ['rgba(255,170,100,0.2)', 'rgba(100,220,255,0.15)', 'rgba(255,100,200,0.15)', 'rgba(100,255,180,0.15)'];
+      const groupBorders = ['rgba(255,170,100,0.5)', 'rgba(100,220,255,0.4)', 'rgba(255,100,200,0.4)', 'rgba(100,255,180,0.4)'];
 
-    matchStats.textContent = matches.length ? `${matches.length} match${matches.length > 1 ? 'es' : ''}` : 'no matches';
-    matchDetailStats.textContent = matches.length ? `${matches.length} match${matches.length > 1 ? 'es' : ''}` : '';
-
-    // Match chips
-    if (matches.length === 0) {
-      matchesGrid.innerHTML = '<div class="no-matches">No matches found — try adjusting the pattern or flags.</div>';
-    } else {
-      matchesGrid.innerHTML = matches.map((m, i) => {
-        const groups = m.slice(1).filter(g => g !== undefined).map((g, gi) =>
-          `<span style="color:#bba0dd">$${gi}</span>=<span style="color:#f0d080">"${escapeHTML(g)}"</span>`
-        ).join(' · ');
-        return `<div class="match-chip" title="click to copy">
-          <span class="idx">#${i + 1}</span>
-          <span style="color:#fff">${escapeHTML(m[0])}</span>
-          ${groups ? '<br><span style="font-size:10px;color:#8878aa">' + groups + '</span>' : ''}
-          <span style="font-size:10px;color:#555;margin-left:4px">pos ${m.index}</span>
-        </div>`;
-      }).join('');
-
-      // Click-to-copy
-      matchesGrid.querySelectorAll('.match-chip').forEach(chip => {
-        chip.addEventListener('click', () => {
-          const text = chip.querySelector('span[style*="fff"]')?.textContent || '';
-          navigator.clipboard.writeText(text).then(() => {
-            chip.style.background = 'rgba(140,200,110,0.3)';
-            setTimeout(() => chip.style.background = '', 400);
-          });
-        });
+      matches.forEach(match => {
+        html += escapeHtml(text.slice(lastIdx, match.index));
+        const val = escapeHtml(match[0]);
+        html += `<span class="match">${val}</span>`;
+        // Highlight groups visually
+        for (let i = 1; i < match.length && i <= 4; i++) {
+          if (match[i] !== undefined) {
+            const gi = i - 1;
+            html += `<span class="match-group" style="background:${groupColors[gi]};border-bottom-color:${groupBorders[gi]}" title="Group ${i}">${escapeHtml(match[i])}</span>`;
+          }
+        }
+        lastIdx = match.index + match[0].length;
       });
+      html += escapeHtml(text.slice(lastIdx));
+      outputEl.innerHTML = html || '<span style="color:#555">No matches found.</span>';
+
+      // Stats
+      if (matches.length > 0) {
+        statsEl.innerHTML = `
+          <div class="stat">Matches: <strong>${matches.length}</strong></div>
+          <div class="stat">First: <strong>"${escapeHtml(matches[0][0].slice(0, 30))}"</strong></div>
+          <div class="stat">Index: <strong>${matches[0].index}</strong></div>
+          <div class="stat">Length: <strong>${matches[0][0].length}</strong></div>
+        `;
+      }
+
+      // Group details
+      if (matches.length > 0 && matches[0].length > 1) {
+        for (let i = 1; i < matches[0].length; i++) {
+          const entry = document.createElement('div');
+          entry.className = 'group-entry';
+          entry.innerHTML = `<span class="group-num">Group ${i}</span><span class="group-val">"${escapeHtml(matches[0][i] || '(empty)')}"</span>`;
+          groupsEl.appendChild(entry);
+        }
+      }
+
+    } catch (e) {
+      errorEl.textContent = '❌ ' + e.message;
+      outputEl.innerHTML = escapeHtml(text);
     }
   }
 
-  // Event bindings
-  patternInput.addEventListener('input', evaluate);
-  testText.addEventListener('input', evaluate);
-  flags.forEach(f => {
-    f.addEventListener('click', () => {
-      f.classList.toggle('active');
-      if (activeFlags.has(f.dataset.flag)) {
-        activeFlags.delete(f.dataset.flag);
-      } else {
-        activeFlags.add(f.dataset.flag);
-      }
-      evaluate();
+  patternEl.addEventListener('input', runRegex);
+  testEl.addEventListener('input', runRegex);
+  flagG.addEventListener('change', runRegex);
+  flagI.addEventListener('change', runRegex);
+  flagM.addEventListener('change', runRegex);
+  flagS.addEventListener('change', runRegex);
+
+  presets.forEach(p => {
+    p.addEventListener('click', () => {
+      patternEl.value = p.dataset.pattern;
+      const f = p.dataset.flags || '';
+      flagG.checked = f.includes('g');
+      flagI.checked = f.includes('i');
+      flagM.checked = f.includes('m');
+      flagS.checked = f.includes('s');
+      runRegex();
     });
   });
 
-  // Build library
-  libraryList.innerHTML = LIBRARY.map((item, i) =>
-    `<button class="lib-btn" data-i="${i}">${item.name} <span class="lib-desc">${item.desc}</span></button>`
-  ).join('');
-  libraryList.querySelectorAll('.lib-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const item = LIBRARY[parseInt(btn.dataset.i)];
-      patternInput.value = item.pattern;
-      activeFlags = new Set(item.flags.split(''));
-      flags.forEach(f => {
-        f.classList.toggle('active', activeFlags.has(f.dataset.flag));
-      });
-      evaluate();
-    });
-  });
-
-  // Initial run
-  evaluate();
-})();
+  runRegex();
 </script>
 </body>
 </html>
