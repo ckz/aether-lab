@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nebula Typist</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #05060f;
+    font-family: 'Courier New', monospace;
+    color: #ccc;
+    overflow: hidden;
+    height: 100vh;
+    cursor: none;
+  }
+  canvas {
+    display: block;
+    position: fixed;
+    top: 0; left: 0;
+    z-index: 1;
+  }
+  .overlay {
+    position: fixed;
+    z-index: 10;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 30px 40px;
+  }
+  .title {
+    color: rgba(255,255,255,0.7);
+    font-size: 13px;
+    letter-spacing: 5px;
+    text-transform: uppercase;
+  }
+  .stats {
+    display: flex;
+    gap: 40px;
+  }
+  .stat {
+    color: rgba(255,255,255,0.35);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  .stat span {
+    color: rgba(255,255,255,0.7);
+    font-weight: bold;
+  }
+  .prompt {
+    color: rgba(255,255,255,0.25);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-align: center;
+  }
+  .custom-cursor {
+    position: fixed;
+    width: 8px;
+    height: 8px;
+    background: #fff;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 100;
+    mix-blend-mode: difference;
+    transition: transform 0.1s ease;
+    box-shadow: 0 0 12px rgba(255,255,255,0.6);
+  }
+  .message {
+    position: fixed;
+    z-index: 20;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
+    transition: opacity 1.5s ease;
+  }
+  .message h1 {
+    color: rgba(255,255,255,0.9);
+    font-size: 28px;
+    letter-spacing: 8px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    font-weight: 100;
+  }
+  .message p {
+    color: rgba(255,255,255,0.4);
+    font-size: 12px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+  .message.hidden { opacity: 0; }
+  .combo-flash {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 48px;
+    color: #fff;
+    z-index: 15;
+    pointer-events: none;
+    opacity: 0;
+    text-shadow: 0 0 30px rgba(255,255,255,0.8);
+    letter-spacing: 4px;
+  }
+  @keyframes comboIn {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(2); }
+    30% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -70%) scale(0.8); }
+  }
+</style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div class="custom-cursor" id="cursor"></div>
+
+  <div class="message" id="intro">
+    <h1>Nebula Typist</h1>
+    <p>Start typing to create the cosmos</p>
+  </div>
+
+  <div class="overlay">
+    <div class="title">◈ Nebula Typist</div>
+    <div>
+      <div class="stats">
+        <div class="stat">Keys: <span id="keyCount">0</span></div>
+        <div class="stat">Particles: <span id="particleCount">0</span></div>
+        <div class="stat">Combo: <span id="combo">×1</span></div>
+        <div class="stat">Mode: <span id="mode">nebula</span></div>
+      </div>
+      <div class="prompt" style="margin-top:16px;">[ SPACE ] shift mode &nbsp; [ CLICK ] burst &nbsp; [ M ] mute trails</div>
+    </div>
+  </div>
+
+  <div class="combo-flash" id="comboFlash"></div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const cursorEl = document.getElementById('cursor');
+const introEl = document.getElementById('intro');
+const comboFlash = document.getElementById('comboFlash');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// State
+let particles = [];
+let trails = [];
+let mouse = { x: W/2, y: H/2 };
+let keyCount = 0;
+let combo = 1;
+let comboTimer = null;
+let comboTimeout = 1500;
+let started = false;
+let muted = false;
+const modes = ['nebula', 'firefly', 'rain', 'crystal', 'aurora'];
+let modeIndex = 0;
+let hue = 0;
+let frameCount = 0;
+
+// Color palettes per mode
+function getParticleColor(offset = 0) {
+  const mode = modes[modeIndex];
+  if (mode === 'nebula') {
+    return `hsl(${(hue + offset) % 360}, 90%, 65%)`;
+  } else if (mode === 'firefly') {
+    return `hsl(${55 + Math.random() * 30}, 100%, ${60 + Math.random() * 30}%)`;
+  } else if (mode === 'rain') {
+    return `hsl(${180 + Math.random() * 60}, 80%, ${50 + Math.random() * 30}%)`;
+  } else if (mode === 'crystal') {
+    return `hsl(${260 + Math.random() * 60}, 70%, ${55 + Math.random() * 35}%)`;
+  } else {
+    return `hsl(${120 + Math.random() * 80}, 85%, ${60 + Math.random() * 25}%)`;
+  }
+}
+
+function getParticleSpeed() {
+  const mode = modes[modeIndex];
+  if (mode === 'firefly') return 0.5 + Math.random() * 1.5;
+  if (mode === 'rain') return 3 + Math.random() * 8;
+  if (mode === 'crystal') return 0.3 + Math.random() * 0.8;
+  return 1 + Math.random() * 3;
+}
+
+class Particle {
+  constructor(x, y, key) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * getParticleSpeed() * 3;
+    this.vy = (Math.random() - 0.5) * getParticleSpeed() * 3;
+    this.life = 1;
+    this.decay = 0.003 + Math.random() * 0.012;
+    this.size = 1.5 + Math.random() * 4;
+    this.color = getParticleColor(Math.random() * 60);
+    this.rotation = Math.random() * Math.PI * 2;
+    this.rotSpeed = (Math.random() - 0.5) * 0.1;
+    this.char = key || String.fromCharCode(33 + Math.floor(Math.random() * 94));
+    this.isChar = key && key.length === 1 && key !== ' ';
+    this.wobble = Math.random() * Math.PI * 2;
+    this.wobbleSpeed = 0.02 + Math.random() * 0.05;
+  }
+  update() {
+    this.life -= this.decay;
+    this.wobble += this.wobbleSpeed;
+    this.x += this.vx + Math.sin(this.wobble) * 0.3;
+    this.y += this.vy + Math.cos(this.wobble) * 0.3;
+    this.rotation += this.rotSpeed;
+    this.size *= 0.998;
+    return this.life > 0;
+  }
+  draw(ctx) {
+    const alpha = this.life;
+    if (modes[modeIndex] === 'crystal') {
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(this.rotation);
+      ctx.strokeStyle = this.color.replace(')', `, ${alpha})`).replace('hsl', 'hsla');
+      ctx.lineWidth = 1;
+      const s = this.size * 3;
+      ctx.strokeRect(-s/2, -s/2, s, s);
+      ctx.strokeRect(-s/3, -s/3, s*0.66, s*0.66);
+      ctx.restore();
+    } else if (this.isChar) {
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(this.rotation);
+      ctx.font = `${Math.max(8, this.size * 4)}px Courier New`;
+      ctx.fillStyle = this.color.replace(')', `, ${alpha})`).replace('hsl', 'hsla');
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(this.char, 0, 0);
+      ctx.restore();
+    } else {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+      ctx.fillStyle = this.color.replace(')', `, ${alpha})`).replace('hsl', 'hsla');
+      ctx.fill();
+      // glow
+      if (this.life > 0.5) {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * 2.5, 0, Math.PI * 2);
+        const glow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size * 2.5);
+        glow.addColorStop(0, this.color.replace(')', `, ${alpha * 0.3})`).replace('hsl', 'hsla'));
+        glow.addColorStop(1, 'transparent');
+        ctx.fillStyle = glow;
+        ctx.fill();
+      }
+    }
+  }
+}
+
+function spawnParticles(x, y, count, key) {
+  for (let i = 0; i < count; i++) {
+    particles.push(new Particle(x, y, key));
+  }
+}
+
+function showCombo(comboVal) {
+  if (comboVal >= 5 && comboVal % 5 === 0) {
+    comboFlash.textContent = `${comboVal}× COMBO`;
+    comboFlash.style.animation = 'none';
+    comboFlash.offsetHeight;
+    comboFlash.style.animation = `comboIn 1.2s ease-out forwards`;
+  }
+}
+
+// Input
+document.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  cursorEl.style.left = e.clientX - 4 + 'px';
+  cursorEl.style.top = e.clientY - 4 + 'px';
+});
+
+document.addEventListener('click', (e) => {
+  if (!started) {
+    started = true;
+    introEl.classList.add('hidden');
+  }
+  spawnParticles(e.clientX, e.clientY, 25 + combo * 3);
+  showCombo(combo);
+});
+
+document.addEventListener('keydown', (e) => {
+  if (!started) {
+    started = true;
+    introEl.classList.add('hidden');
+  }
+
+  if (e.code === 'Space') {
+    modeIndex = (modeIndex + 1) % modes.length;
+    document.getElementById('mode').textContent = modes[modeIndex];
+    spawnParticles(W/2, H/2, 30, '✦');
+    return;
+  }
+  if (e.key === 'm' || e.key === 'M') {
+    muted = !muted;
+    return;
+  }
+
+  keyCount++;
+  combo++;
+  clearTimeout(comboTimer);
+  comboTimer = setTimeout(() => { combo = 1; }, comboTimeout);
+
+  document.getElementById('keyCount').textContent = keyCount;
+  document.getElementById('combo').textContent = `×${combo}`;
+
+  const count = 5 + Math.min(combo * 2, 25);
+  spawnParticles(mouse.x, mouse.y, count, e.key);
+  showCombo(combo);
+});
+
+// Animation loop
+function animate() {
+  frameCount++;
+  hue = (hue + 0.3) % 360;
+
+  if (!muted) {
+    ctx.fillStyle = 'rgba(5, 6, 15, 0.08)';
+    ctx.fillRect(0, 0, W, H);
+  } else {
+    ctx.fillStyle = 'rgba(5, 6, 15, 0.25)';
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Ambient particles drifting
+  if (frameCount % 10 === 0) {
+    particles.push(new Particle(Math.random() * W, Math.random() * H, null));
+  }
+
+  particles = particles.filter(p => {
+    p.update();
+    p.draw(ctx);
+    return p.life > 0;
+  });
+
+  document.getElementById('particleCount').textContent = particles.length;
+
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+</body>
+</html>
