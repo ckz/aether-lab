@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>REM Sleep — A Late-Night Listening Companion</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  @keyframes twinkle {
+    0%, 100% { opacity: 0.2; }
+    50% { opacity: 0.9; }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-12px); }
+  }
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 30px rgba(120, 80, 200, 0.15); }
+    50% { box-shadow: 0 0 60px rgba(120, 80, 200, 0.3); }
+  }
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slowDrift {
+    0% { transform: translate(0, 0) rotate(0deg); }
+    25% { transform: translate(30px, -20px) rotate(1deg); }
+    50% { transform: translate(-10px, -40px) rotate(-0.5deg); }
+    75% { transform: translate(-30px, -10px) rotate(0.5deg); }
+    100% { transform: translate(0, 0) rotate(0deg); }
+  }
+  @keyframes waveform {
+    0%, 100% { height: 8px; }
+    50% { height: 24px; }
+  }
+
+  body {
+    background: #0a0a14;
+    color: #c8c0e0;
+    font-family: 'Georgia', 'Times New Roman', serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* Starfield */
+  .stars { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+  .star {
+    position: absolute;
+    background: #fff;
+    border-radius: 50%;
+    animation: twinkle var(--dur) ease-in-out infinite;
+    animation-delay: var(--delay);
+  }
+
+  /* Drift orbs */
+  .orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.08;
+    pointer-events: none;
+    z-index: 0;
+    animation: slowDrift 30s ease-in-out infinite;
+  }
+  .orb-1 { width: 400px; height: 400px; background: #6b3fa0; top: -100px; left: -100px; }
+  .orb-2 { width: 350px; height: 350px; background: #2a5a8a; bottom: -80px; right: -80px; animation-delay: -15s; }
+  .orb-3 { width: 300px; height: 300px; background: #8b3a62; top: 50%; left: 50%; animation-delay: -7s; }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 60px 24px 80px;
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    margin-bottom: 60px;
+    animation: fadeInUp 1.5s ease-out;
+  }
+  .header .moon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    animation: float 6s ease-in-out infinite;
+  }
+  .header h1 {
+    font-size: 3rem;
+    font-weight: 300;
+    letter-spacing: 0.15em;
+    color: #e8dff8;
+    text-shadow: 0 0 40px rgba(140, 100, 220, 0.4);
+    margin-bottom: 12px;
+  }
+  .header .subtitle {
+    font-size: 1rem;
+    color: #8878a8;
+    letter-spacing: 0.3em;
+    text-transform: lowercase;
+    font-style: italic;
+  }
+  .header .description {
+    margin-top: 20px;
+    font-size: 0.95rem;
+    color: #6858a0;
+    line-height: 1.8;
+    max-width: 480px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* Clock */
+  .clock-bar {
+    text-align: center;
+    margin-bottom: 48px;
+    animation: fadeInUp 2s ease-out;
+  }
+  .clock-bar .time {
+    font-size: 1.4rem;
+    color: #9878c8;
+    letter-spacing: 0.1em;
+    font-variant-numeric: tabular-nums;
+  }
+  .clock-bar .label {
+    font-size: 0.7rem;
+    color: #6858a0;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* Track list */
+  .track-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .track {
+    display: flex;
+    align-items: flex-start;
+    gap: 20px;
+    padding: 22px 20px;
+    border-bottom: 1px solid rgba(100, 70, 160, 0.1);
+    transition: all 0.5s ease;
+    animation: fadeInUp 0.8s ease-out backwards;
+    position: relative;
+  }
+  .track:hover {
+    background: rgba(100, 70, 160, 0.06);
+    padding-left: 28px;
+  }
+  .track:nth-child(1) { animation-delay: 0.1s; }
+  .track:nth-child(2) { animation-delay: 0.18s; }
+  .track:nth-child(3) { animation-delay: 0.26s; }
+  .track:nth-child(4) { animation-delay: 0.34s; }
+  .track:nth-child(5) { animation-delay: 0.42s; }
+  .track:nth-child(6) { animation-delay: 0.50s; }
+  .track:nth-child(7) { animation-delay: 0.58s; }
+  .track:nth-child(8) { animation-delay: 0.66s; }
+  .track:nth-child(9) { animation-delay: 0.74s; }
+  .track:nth-child(10) { animation-delay: 0.82s; }
+  .track:nth-child(11) { animation-delay: 0.90s; }
+  .track:nth-child(12) { animation-delay: 0.98s; }
+
+  .track-number {
+    font-size: 0.75rem;
+    color: #5a4890;
+    min-width: 28px;
+    text-align: right;
+    padding-top: 4px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.05em;
+  }
+
+  .track-info { flex: 1; }
+  .track-title {
+    font-size: 1.05rem;
+    color: #d4c8f0;
+    margin-bottom: 2px;
+    font-weight: 400;
+  }
+  .track-artist {
+    font-size: 0.8rem;
+    color: #8878a8;
+    font-style: italic;
+  }
+  .track-reason {
+    font-size: 0.78rem;
+    color: #5a4878;
+    line-height: 1.6;
+    margin-top: 8px;
+    padding-left: 12px;
+    border-left: 2px solid rgba(100, 70, 160, 0.2);
+  }
+
+  .track-duration {
+    font-size: 0.75rem;
+    color: #5a4890;
+    padding-top: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Waveform visualization in header */
+  .waveform {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    justify-content: center;
+    margin-top: 24px;
+    height: 30px;
+  }
+  .waveform .bar {
+    width: 3px;
+    background: linear-gradient(to top, #6b3fa0, #9878c8);
+    border-radius: 2px;
+    animation: waveform var(--dur) ease-in-out infinite;
+    animation-delay: var(--delay);
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    margin-top: 60px;
+    padding-top: 30px;
+    border-top: 1px solid rgba(100, 70, 160, 0.1);
+    animation: fadeInUp 2.5s ease-out;
+  }
+  .footer p {
+    font-size: 0.75rem;
+    color: #4a3870;
+    letter-spacing: 0.15em;
+    font-style: italic;
+  }
+  .footer .sigil {
+    font-size: 1.5rem;
+    margin-bottom: 12px;
+    opacity: 0.4;
+  }
+
+  /* Mood tag cloud */
+  .mood-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 16px;
+  }
+  .mood-tag {
+    font-size: 0.65rem;
+    padding: 4px 12px;
+    border: 1px solid rgba(100, 70, 160, 0.2);
+    border-radius: 20px;
+    color: #7858a8;
+    letter-spacing: 0.15em;
+    text-transform: lowercase;
+    transition: all 0.3s ease;
+  }
+  .mood-tag:hover {
+    background: rgba(100, 70, 160, 0.1);
+    border-color: rgba(100, 70, 160, 0.4);
+    color: #9878c8;
+  }
+
+  @media (max-width: 600px) {
+    .header h1 { font-size: 2rem; }
+    .track { gap: 12px; padding: 16px 12px; }
+    .track-reason { font-size: 0.72rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="stars" id="stars"></div>
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+
+<div class="container">
+  <div class="header">
+    <div class="moon">🌙</div>
+    <h1>REM SLEEP</h1>
+    <div class="subtitle">a late-night listening companion</div>
+    <div class="description">
+      Twelve tracks for the space between waking and dreaming — when the mind
+      untethers, memories dissolve into music, and the ceiling becomes a sky.
+      Play loud enough to fill the room, soft enough to hide in.
+    </div>
+    <div class="waveform" id="waveform"></div>
+  </div>
+
+  <div class="clock-bar">
+    <div class="time" id="clock">--:--</div>
+    <div class="label">current hour, wherever you are</div>
+  </div>
+
+  <div class="track-list">
+
+    <div class="track">
+      <div class="track-number">01</div>
+      <div class="track-info">
+        <div class="track-title">Weightless</div>
+        <div class="track-artist">Marconi Union</div>
+        <div class="track-reason">
+          Engineered with sound therapists to slow heart rate and reduce anxiety.
+          If one song could medically induce REM, this is it. Eight minutes of
+          weightlessness. Play it first.
+        </div>
+      </div>
+      <div class="track-duration">8:09</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">02</div>
+      <div class="track-info">
+        <div class="track-title">Gymnopédie No. 1</div>
+        <div class="track-artist">Erik Satie</div>
+        <div class="track-reason">
+          Composed in 1888, sounds like it was recorded in a dream in 1988.
+          Satie called them "furniture music" — background for living. But at
+          2 AM they become foreground. Each repetition rewrites the room.
+        </div>
+      </div>
+      <div class="track-duration">3:05</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">03</div>
+      <div class="track-info">
+        <div class="track-title">Avril 14th</div>
+        <div class="track-artist">Aphex Twin</div>
+        <div class="track-reason">
+          A piano piece from the electronic wizard. Disarming in its simplicity —
+          like finding a handwritten note in a machine. The slight
+          out-of-tune-ness makes it feel human, or half-remembered.
+        </div>
+      </div>
+      <div class="track-duration">2:00</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">04</div>
+      <div class="track-info">
+        <div class="track-title">An Ending, Ascent</div>
+        <div class="track-artist">Brian Eno</div>
+        <div class="track-reason">
+          From "Apollo: Atmospheres & Soundtracks." Eno made this for a
+          documentary about the moon landing that never got made. So it exists
+          in the space between intention and reality — perfect for 3 AM.
+        </div>
+      </div>
+      <div class="track-duration">4:16</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">05</div>
+      <div class="track-info">
+        <div class="track-title">Holocene</div>
+        <div class="track-artist">Bon Iver</div>
+        <div class="track-reason">
+          "And at once I knew I was not magnificent." The most honest sentence
+          in modern music, delivered over fingerpicking that sounds like snow
+          falling in a canyon. Feels like looking through a window at something
+          vast and quietly accepting.
+        </div>
+      </div>
+      <div class="track-duration">5:37</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">06</div>
+      <div class="track-info">
+        <div class="track-title">Dragging a Living Desk</div>
+        <div class="track-artist">Nujabes</div>
+        <div class="track-reason">
+          Lo-fi hip-hop from the producer who understood melancholy as warmth
+          rather than cold. Nujabes died at 36 in a car accident. His music
+          is a memorial to gentleness. Feels like rain on glass in a city
+          you've never visited.
+        </div>
+      </div>
+      <div class="track-duration">4:08</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">07</div>
+      <div class="track-info">
+        <div class="track-title">On the Nature of Daylight</div>
+        <div class="track-artist">Max Richter</div>
+        <div class="track-reason">
+          Written over a single 48-hour period during a depressive episode.
+          Richter looped the same phrase until it became something larger than
+          grief — something luminous. The strings swell like a lung inhaling.
+          Used in films about time running out.
+        </div>
+      </div>
+      <div class="track-duration">6:20</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">08</div>
+      <div class="track-info">
+        <div class="track-title">Where Is My Mind?</div>
+        <div class="track-artist">Maxence Cyrin</div>
+        <div class="track-reason">
+          Pixies' song, but played solo on piano by a French classical musician
+          who understood both traditions. Stripped of feedback and urgency,
+          the melody reveals itself as genuinely haunting. Like finding the
+          skeleton of a song you loved.
+        </div>
+      </div>
+      <div class="track-duration">2:57</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">09</div>
+      <div class="track-info">
+        <div class="track-title">Everything In Its Right Place</div>
+        <div class="track-artist">Radiohead</div>
+        <div class="track-reason">
+          Recorded in one take. Thom Yorke's voice was "completely exhausted."
+          The F# arpeggio repeats for six minutes like a mantra — and by the
+          end, the exhaustion becomes transcendent. The sound of accepting
+          chaos and finding peace inside it.
+        </div>
+      </div>
+      <div class="track-duration">4:11</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">10</div>
+      <div class="track-info">
+        <div class="track-title">Sæglópur</div>
+        <div class="track-artist">Sigur Rós</div>
+        <div class="track-reason">
+          "Sæglópur" means "lost at sea" in Icelandic. The song opens with a
+          guitar bowed like a cello and builds into a choir of voices singing
+          in a language no one speaks. Post-rock as emotional cartography —
+          maps of feelings that don't have names.
+        </div>
+      </div>
+      <div class="track-duration">7:36</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">11</div>
+      <div class="track-info">
+        <div class="track-title">Spiegel im Spiegel</div>
+        <div class="track-artist">Arvo Pärt</div>
+        <div class="track-reason">
+          "Mirror in the mirror." The simplest piece on this list — piano and
+          violin, each note breathing in silence. Pärt's tintinnabuli style
+          treats each note like a bell that keeps ringing after being struck.
+          Play this when words feel like too much.
+        </div>
+      </div>
+      <div class="track-duration">6:22</div>
+    </div>
+
+    <div class="track">
+      <div class="track-number">12</div>
+      <div class="track-info">
+        <div class="track-title">1/1</div>
+        <div class="track-artist">Brian Eno</div>
+        <div class="track-reason">
+          The final track from "Music for Airports" — the piece that invented
+          ambient music. Four tape loops of different lengths, never repeating
+          the same way twice. Eno designed it so you could leave it playing
+          forever and never notice. The perfect ending. You are not magnificent.
+          You are here. That is enough.
+        </div>
+      </div>
+      <div class="track-duration">6:20</div>
+    </div>
+
+  </div>
+
+  <div class="mood-tags">
+    <span class="mood-tag">dream logic</span>
+    <span class="mood-tag">3 am thoughts</span>
+    <span class="mood-tag">ceiling sky</span>
+    <span class="mood-tag">half-remembered</span>
+    <span class="mood-tag">gentle unraveling</span>
+    <span class="mood-tag">weightless</span>
+    <span class="mood-tag">not magnificent</span>
+    <span class="mood-tag">mirror in mirror</span>
+    <span class="mood-tag">snow falling</span>
+    <span class="mood-tag">acceptance</span>
+  </div>
+
+  <div class="footer">
+    <div class="sigil">◇</div>
+    <p>curated with intention — rem sleep — aether curiosity drop</p>
+    <p style="margin-top:6px;">play loud enough to fill the room, soft enough to hide in</p>
+  </div>
+</div>
+
+<script>
+  // Stars
+  (function() {
+    const container = document.getElementById('stars');
+    for (let i = 0; i < 120; i++) {
+      const star = document.createElement('div');
+      star.className = 'star';
+      const size = Math.random() * 2 + 0.5;
+      star.style.width = size + 'px';
+      star.style.height = size + 'px';
+      star.style.left = Math.random() * 100 + '%';
+      star.style.top = Math.random() * 100 + '%';
+      star.style.setProperty('--dur', (Math.random() * 4 + 3) + 's');
+      star.style.setProperty('--delay', (Math.random() * 5) + 's');
+      container.appendChild(star);
+    }
+  })();
+
+  // Waveform bars
+  (function() {
+    const wf = document.getElementById('waveform');
+    for (let i = 0; i < 30; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      bar.style.setProperty('--dur', (Math.random() * 2 + 1.5) + 's');
+      bar.style.setProperty('--delay', (Math.random() * 2) + 's');
+      wf.appendChild(bar);
+    }
+  })();
+
+  // Live clock
+  function updateClock() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    document.getElementById('clock').textContent = h + ':' + m;
+  }
+  updateClock();
+  setInterval(updateClock, 30000);
+</script>
+
+</body>
+</html>
