@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aurora Fractal Explorer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { 
+    width: 100%; height: 100%; overflow: hidden; 
+    background: #000; font-family: 'Courier New', monospace;
+    cursor: crosshair;
+  }
+  canvas { display: block; position: fixed; top: 0; left: 0; }
+  #ui {
+    position: fixed; bottom: 20px; left: 20px; z-index: 10;
+    color: rgba(255,255,255,0.7); font-size: 12px;
+    background: rgba(0,0,0,0.5); padding: 12px 16px; border-radius: 8px;
+    backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1);
+    transition: opacity 0.5s;
+  }
+  #ui h3 { font-size: 13px; margin-bottom: 8px; color: #0ff; letter-spacing: 2px; }
+  #ui .row { display: flex; align-items: center; margin: 4px 0; gap: 8px; }
+  #ui label { min-width: 70px; font-size: 11px; opacity: 0.8; }
+  #ui input[type="range"] { width: 100px; accent-color: #0ff; }
+  #ui .val { min-width: 30px; text-align: right; font-size: 11px; color: #0ff; }
+  #ui .btn {
+    background: rgba(0,255,255,0.15); border: 1px solid rgba(0,255,255,0.3);
+    color: #0ff; padding: 4px 10px; border-radius: 4px; cursor: pointer;
+    font-family: inherit; font-size: 11px; margin-top: 6px; margin-right: 4px;
+    transition: all 0.2s;
+  }
+  #ui .btn:hover { background: rgba(0,255,255,0.3); }
+  #ui .btn.active { background: rgba(0,255,255,0.4); border-color: #0ff; }
+  #title {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 10;
+    color: rgba(255,255,255,0.6); font-size: 14px; letter-spacing: 4px;
+    text-transform: uppercase; pointer-events: none;
+    text-shadow: 0 0 20px rgba(0,255,255,0.5);
+  }
+  #stats {
+    position: fixed; top: 20px; right: 20px; z-index: 10;
+    color: rgba(255,255,255,0.4); font-size: 11px; text-align: right;
+    pointer-events: none;
+  }
+  .hint {
+    position: fixed; bottom: 20px; right: 20px; z-index: 10;
+    color: rgba(255,255,255,0.3); font-size: 11px; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="title">Aurora Fractal Explorer</div>
+<div id="stats"></div>
+<div id="ui">
+  <h3>CONTROLS</h3>
+  <div class="row">
+    <label>Depth</label>
+    <input type="range" id="depth" min="2" max="8" value="5" step="1">
+    <span class="val" id="depthVal">5</span>
+  </div>
+  <div class="row">
+    <label>Speed</label>
+    <input type="range" id="speed" min="1" max="100" value="40">
+    <span class="val" id="speedVal">40</span>
+  </div>
+  <div class="row">
+    <label>Complexity</label>
+    <input type="range" id="complexity" min="3" max="12" value="7" step="1">
+    <span class="val" id="complexityVal">7</span>
+  </div>
+  <div class="row">
+    <label>Hue</label>
+    <input type="range" id="hue" min="0" max="360" value="160">
+    <span class="val" id="hueVal">160</span>
+  </div>
+  <div class="row">
+    <label>Spread</label>
+    <input type="range" id="spread" min="50" max="400" value="200">
+    <span class="val" id="spreadVal">200</span>
+  </div>
+  <div style="margin-top:8px">
+    <button class="btn active" id="btnAurora">Aurora</button>
+    <button class="btn" id="btnFractal">Fractal</button>
+    <button class="btn" id="btnBoth">Both</button>
+    <button class="btn" id="btnSave">Save Frame</button>
+  </div>
+</div>
+<div class="hint">Move mouse to influence • Click to burst</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let W, H, cx, cy;
+let time = 0;
+let mouse = { x: 0, y: 0, active: false };
+let bursts = [];
+let frame = 0;
+let fps = 0, lastFpsTime = 0, fpsCount = 0;
+
+// Settings
+const settings = {
+  depth: 5,
+  speed: 40,
+  complexity: 7,
+  hue: 160,
+  spread: 200,
+  mode: 'aurora'
+};
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Mouse
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.active = true;
+});
+canvas.addEventListener('mouseleave', () => mouse.active = false);
+canvas.addEventListener('click', e => {
+  bursts.push({
+    x: e.clientX, y: e.clientY,
+    life: 1, maxLife: 1,
+    count: 40 + Math.random() * 30
+  });
+});
+
+// Touch support
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+  mouse.active = true;
+}, { passive: false });
+canvas.addEventListener('touchstart', e => {
+  const t = e.touches[0];
+  mouse.x = t.clientX;
+  mouse.y = t.clientY;
+  mouse.active = true;
+  bursts.push({
+    x: t.clientX, y: t.clientY,
+    life: 1, maxLife: 1,
+    count: 40 + Math.random() * 30
+  });
+});
+
+// UI bindings
+function bindSlider(id, setting, valId) {
+  const el = document.getElementById(id);
+  const val = document.getElementById(valId);
+  el.addEventListener('input', () => {
+    settings[setting] = parseFloat(el.value);
+    val.textContent = el.value;
+  });
+}
+bindSlider('depth', 'depth', 'depthVal');
+bindSlider('speed', 'speed', 'speedVal');
+bindSlider('complexity', 'complexity', 'complexityVal');
+bindSlider('hue', 'hue', 'hueVal');
+bindSlider('spread', 'spread', 'spreadVal');
+
+document.getElementById('btnAurora').addEventListener('click', () => setMode('aurora'));
+document.getElementById('btnFractal').addEventListener('click', () => setMode('fractal'));
+document.getElementById('btnBoth').addEventListener('click', () => setMode('both'));
+document.getElementById('btnSave').addEventListener('click', saveFrame);
+
+function setMode(m) {
+  settings.mode = m;
+  document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(m === 'both' ? 'btnBoth' : m === 'fractal' ? 'btnFractal' : 'btnAurora').classList.add('active');
+}
+
+function saveFrame() {
+  const link = document.createElement('a');
+  link.download = `aurora-fractal-${Date.now()}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+// Aurora ribbon rendering
+function drawAurora(t) {
+  const layers = 5;
+  for (let l = 0; l < layers; l++) {
+    const layerOffset = l * 0.4;
+    const alpha = 0.08 + l * 0.02;
+    const hueShift = l * 25;
+    const baseY = H * 0.25 + l * (H * 0.08);
+    
+    ctx.beginPath();
+    ctx.moveTo(0, H);
+    
+    const segments = 120;
+    for (let i = 0; i <= segments; i++) {
+      const x = (i / segments) * W;
+      const nx = i / segments;
+      
+      // Multiple sine waves for organic feel
+      let y = baseY;
+      y += Math.sin(nx * settings.complexity + t * 0.7 + layerOffset) * settings.spread * 0.5;
+      y += Math.sin(nx * settings.complexity * 0.5 + t * 0.3 + layerOffset * 2) * settings.spread * 0.3;
+      y += Math.sin(nx * settings.complexity * 1.7 + t * 1.1 + l) * settings.spread * 0.2;
+      
+      // Mouse influence
+      if (mouse.active) {
+        const dx = x - mouse.x;
+        const dy = y - mouse.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const influence = Math.max(0, 1 - dist / 300) * 80;
+        y -= influence * Math.sin(nx * 3 + t);
+      }
+      
+      // Burst influence
+      for (const b of bursts) {
+        const dx = x - b.x;
+        const dy = y - b.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const influence = Math.max(0, 1 - dist / 200) * b.life * 60;
+        y -= influence;
+      }
+      
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    
+    ctx.lineTo(W, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+    
+    const grad = ctx.createLinearGradient(0, baseY - settings.spread, 0, H);
+    const h = (settings.hue + hueShift + Math.sin(t + l) * 30) % 360;
+    grad.addColorStop(0, `hsla(${h}, 90%, 60%, ${alpha * 1.5})`);
+    grad.addColorStop(0.3, `hsla(${(h + 20) % 360}, 85%, 50%, ${alpha})`);
+    grad.addColorStop(0.6, `hsla(${(h + 40) % 360}, 80%, 40%, ${alpha * 0.5})`);
+    grad.addColorStop(1, `hsla(${(h + 60) % 360}, 70%, 20%, 0)`);
+    ctx.fillStyle = grad;
+    ctx.fill();
+  }
+}
+
+// Fractal tree/branch rendering
+function drawFractal(t) {
+  const baseX = cx + (mouse.active ? (mouse.x - cx) * 0.3 : Math.sin(t * 0.5) * W * 0.2);
+  const baseY = H + 20;
+  const maxLen = H * 0.35;
+  const branchWidth = Math.max(1, 12 - settings.depth * 0.5);
+  
+  function branch(x, y, angle, length, depth, hueOff) {
+    if (depth > settings.depth || length < 3) return;
+    
+    const ex = x + Math.cos(angle) * length;
+    const ey = y + Math.sin(angle) * length;
+    
+    // Mouse repulsion
+    let finalEx = ex, finalEy = ey;
+    if (mouse.active) {
+      const dx = ex - mouse.x;
+      const dy = ey - mouse.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 150) {
+        const push = (1 - dist / 150) * 30;
+        finalEx += (dx / dist) * push;
+        finalEy += (dy / dist) * push;
+      }
+    }
+    
+    const progress = depth / settings.depth;
+    const alpha = 0.3 + progress * 0.5;
+    const h = (settings.hue + hueOff + progress * 60 + t * 20) % 360;
+    const width = branchWidth * (1 - progress * 0.7);
+    
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(finalEx, finalEy);
+    ctx.strokeStyle = `hsla(${h}, 80%, ${40 + progress * 30}%, ${alpha})`;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    
+    // Glow at tips
+    if (depth >= settings.depth - 1) {
+      ctx.beginPath();
+      ctx.arc(finalEx, finalEy, 2 + Math.sin(t * 3 + depth) * 1, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${(h + 40) % 360}, 100%, 70%, 0.6)`;
+      ctx.fill();
+    }
+    
+    const sway = Math.sin(t * 0.8 + depth * 0.5 + hueOff) * 0.15;
+    const spreadAngle = Math.PI / settings.complexity;
+    const lenFactor = 0.68 + Math.sin(t * 0.3 + depth) * 0.05;
+    
+    branch(finalEx, finalEy, angle - spreadAngle + sway, length * lenFactor, depth + 1, hueOff + 15);
+    branch(finalEx, finalEy, angle + spreadAngle + sway, length * lenFactor, depth + 1, hueOff - 15);
+    
+    // Occasional extra branch
+    if (depth < settings.depth - 1 && Math.sin(t + depth * 7 + hueOff) > 0.6) {
+      branch(finalEx, finalEy, angle + sway * 2, length * lenFactor * 0.8, depth + 2, hueOff + 30);
+    }
+  }
+  
+  branch(baseX, baseY, -Math.PI / 2, maxLen * 0.4, 0, 0);
+  if (settings.depth >= 4) {
+    branch(baseX - 30, baseY + 20, -Math.PI / 2 - 0.4, maxLen * 0.3, 0, 60);
+    branch(baseX + 30, baseY + 20, -Math.PI / 2 + 0.4, maxLen * 0.3, 0, -60);
+  }
+}
+
+// Particles
+const particles = [];
+const MAX_PARTICLES = 150;
+
+function spawnParticle(x, y, hue) {
+  if (particles.length >= MAX_PARTICLES) return;
+  particles.push({
+    x: x || Math.random() * W,
+    y: y || H + 10,
+    vx: (Math.random() - 0.5) * 2,
+    vy: -Math.random() * 3 - 1,
+    life: 1,
+    decay: 0.003 + Math.random() * 0.008,
+    size: 1 + Math.random() * 3,
+    hue: hue !== undefined ? hue : (settings.hue + Math.random() * 60) % 360
+  });
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx + Math.sin(time + i) * 0.3;
+    p.y += p.vy;
+    p.life -= p.decay;
+    if (p.life <= 0 || p.y < -10) particles.splice(i, 1);
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const alpha = p.life * 0.7;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${p.hue}, 90%, 70%, ${alpha})`;
+    ctx.fill();
+    
+    // Glow
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life * 3, 0, Math.PI * 2);
+    ctx.fillStyle = `hsla(${p.hue}, 90%, 60%, ${alpha * 0.15})`;
+    ctx.fill();
+  }
+}
+
+// Star field background
+const stars = [];
+function initStars() {
+  for (let i = 0; i < 200; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      size: Math.random() * 1.5,
+      twinkle: Math.random() * Math.PI * 2,
+      speed: 0.5 + Math.random() * 2
+    });
+  }
+}
+initStars();
+
+function drawStars(t) {
+  for (const s of stars) {
+    const alpha = 0.3 + Math.sin(t * s.speed + s.twinkle) * 0.3;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+    ctx.fill();
+  }
+}
+
+// Burst particles
+function updateBursts() {
+  for (let i = bursts.length - 1; i >= 0; i--) {
+    const b = bursts[i];
+    b.life -= 0.015;
+    // Spawn particles during burst
+    if (b.life > 0 && Math.random() < 0.5) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = Math.random() * 50 * b.life;
+      spawnParticle(b.x + Math.cos(angle) * dist, b.y + Math.sin(angle) * dist, settings.hue + Math.random() * 120);
+    }
+    if (b.life <= 0) bursts.splice(i, 1);
+  }
+}
+
+// Main render loop
+function render(timestamp) {
+  requestAnimationFrame(render);
+  
+  // FPS counter
+  fpsCount++;
+  if (timestamp - lastFpsTime >= 1000) {
+    fps = fpsCount;
+    fpsCount = 0;
+    lastFpsTime = timestamp;
+  }
+  
+  const dt = 0.016; // ~60fps
+  time += dt * settings.speed * 0.025;
+  frame++;
+  
+  // Clear with fade for trail effect
+  ctx.fillStyle = 'rgba(2, 3, 8, 0.15)';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Full clear every 120 frames to prevent mud buildup
+  if (frame % 120 === 0) {
+    ctx.fillStyle = 'rgba(2, 3, 8, 0.6)';
+    ctx.fillRect(0, 0, W, H);
+  }
+  
+  // Stars
+  drawStars(time);
+  
+  // Aurora
+  if (settings.mode === 'aurora' || settings.mode === 'both') {
+    drawAurora(time);
+  }
+  
+  // Fractal
+  if (settings.mode === 'fractal' || settings.mode === 'both') {
+    drawFractal(time);
+  }
+  
+  // Ambient particles
+  if (frame % 3 === 0 && particles.length < MAX_PARTICLES * 0.7) {
+    const px = mouse.active ? mouse.x + (Math.random() - 0.5) * 200 : Math.random() * W;
+    spawnParticle(px, H + 10, (settings.hue + Math.random() * 80 - 40 + 360) % 360);
+  }
+  
+  updateParticles();
+  updateBursts();
+  drawParticles();
+  
+  // Stats
+  document.getElementById('stats').innerHTML = 
+    `${fps} FPS<br>${particles.length} particles<br>frame ${frame}`;
+}
+
+// Periodic full clear for color integrity
+setInterval(() => {
+  ctx.fillStyle = 'rgba(2, 3, 8, 0.4)';
+  ctx.fillRect(0, 0, W, H);
+}, 5000);
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>
